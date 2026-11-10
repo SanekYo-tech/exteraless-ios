@@ -1,10 +1,15 @@
 name: iOS Build
 
-# Сборки дорогие (macOS-минуты). Политика: только ручной запуск.
-# Прогонять один раз на веху: изменение сборочной конфигурации,
-# врезка PluginHost/Python, готовность релиза.
+# Сборки дорогие (macOS-минуты) и arm64-раннеры в пике перегружены
+# (job отменяется, если раннер не выделен). Политика:
+#   * workflow_dispatch — вручную, всегда собирает;
+#   * schedule 10:00 UTC — самое тихое окно, собирает ТОЛЬКО если
+#     HEAD изменился с последней успешной сборки (гейт ниже).
+
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * *"
 
 concurrency:
   group: ios-build-${{ github.ref }}
@@ -14,7 +19,33 @@ permissions:
   contents: read
 
 jobs:
+  gate:
+    # Пропускается при ручном запуске (тогда строим всегда).
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Check if anything changed since last green build
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          LAST_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-build.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // empty' 2>/dev/null || true)"
+          if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" = "$GITHUB_SHA" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "HEAD уже собран успешно, пропускаем"
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "изменения с $LAST_SHA — собираем"
+          fi
+
   build:
+    needs: gate
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.gate.outputs.should_build == 'true') }}
     name: Telegram-iOS (exteraless base)
     runs-on: macos-26
     timeout-minutes: 360
