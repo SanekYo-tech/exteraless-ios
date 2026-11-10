@@ -4,11 +4,13 @@
     "Crypto.Util",
     "aiofiles",
     "alib",
+    "app.exteraless.plugins",
     "bulletin",
     "cactuslib",
     "cffi",
     "de.robv.android.xposed",
     "elyxcore",
+    "elyxcore._plugin",
     "elyxcore._plugin_engine",
     "frida_gadget_api",
     "git",
@@ -35,6 +37,7 @@
     "ui.dialogs",
     "ui.quanta",
     "websocket",
+    "zwylib",
     "zwylib_companion"
   ]
 }
