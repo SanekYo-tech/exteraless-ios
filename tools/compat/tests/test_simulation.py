@@ -51,13 +51,13 @@ def test_simulation_plugins_define_classes(simulation):
 
 
 def test_plugin_classes_instantiate(simulation):
-    """Классы плагинов обязаны создаваться как обычные Python-объекты.
+    """Классы плагинов обязаны создаваться поверх настоящего SDK.
 
     Это runtime-smoke уровня «хост может создать плагин»: классы,
-    наследующие dynamic_proxy/BasePlugin-стабы, не должны требовать
-    Java-конструктора.
+    наследующие BasePlugin/dynamic_proxy, создаются как обычные
+    Python-объекты (Java-конструктор не нужен).
     """
-    from tools.compat.simulate_plugins import _install_sdk_stubs, _clear_modules
+    from tools.compat.simulate_plugins import _install_real_sdk, _clear_modules
     from python.virtualjava import MockBackend, install, uninstall, reset_caches
 
     instantiable = 0
@@ -68,7 +68,7 @@ def test_plugin_classes_instantiate(simulation):
         reset_caches()
         _clear_modules()
         install(backend)
-        _install_sdk_stubs(backend)
+        _install_real_sdk()
         namespace = {
             "__name__": "__plugin__it",
             "__file__": plugin.path,
@@ -83,8 +83,7 @@ def test_plugin_classes_instantiate(simulation):
         for name, value in list(namespace.items()):
             if not isinstance(value, type):
                 continue
-            # Плагин может переприсвоить __name__ (модуль = id плагина),
-            # поэтому сверяем с актуальным именем namespace.
+            # Плагин может переприсвоить __name__ — сверяем с актуальным.
             if value.__module__ != namespace["__name__"]:
                 continue
             candidates += 1
@@ -96,9 +95,7 @@ def test_plugin_classes_instantiate(simulation):
                 instantiable += 1
             except Exception:
                 pass
-        break  # достаточно одного плагина для smoke
-    assert candidates > 0 or True  # candidates считается по одному плагину
-    # Слабый, но честный гейт: классы вообще создаются без падения
-    # метакласса virtual-java.
+        break  # smoke: одного плагина достаточно
+    # Слабый, но честный гейт: классы создаются без падения метаклассов.
     assert instantiable >= 1, (
         "ни один класс плагина не инстанцируется — прокси-метаклассы сломаны")

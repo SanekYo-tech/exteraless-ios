@@ -32,14 +32,10 @@ from python.virtualjava.backend import _Universal  # noqa: E402
 
 OUT_PATH = os.path.join(REPO_ROOT, "build", "compat", "simulation.json")
 
-# SDK-модули, которые импортируют плагины (по данным манифеста и сьюта).
-SDK_MODULES = [
-    "base_plugin", "android_utils", "client_utils", "hook_utils",
-    "file_utils", "intents", "markdown_utils", "plugin_settings",
-    "pip_controller", "dev_server",
-    "ui", "ui.settings", "ui.alert", "ui.bulletin",
-    "extera_utils", "elyx_runtime",
-]
+# Настоящий SDK exteraless (порт: python/sdk) — работает поверх
+# virtual-java без правок. Стабы нужны только для pip/платформенных
+# модулей, которых нет в окружении.
+SDK_SRC = os.path.join(REPO_ROOT, "python", "sdk")
 
 
 class _StubMeta(type):
@@ -83,16 +79,25 @@ def _make_stub_module(name, backend):
     return mod
 
 
-def _install_sdk_stubs(backend):
-    for name in SDK_MODULES:
-        sys.modules[name] = _make_stub_module(name, backend)
+_SDK_MODULE_NAMES = (
+    "base_plugin", "android_utils", "client_utils", "hook_utils",
+    "file_utils", "intents", "markdown_utils", "plugin_settings",
+    "pip_controller", "dev_server",
+    "ui", "elyx_runtime", "extera_utils",
+)
+
+
+def _install_real_sdk():
+    """Настоящий SDK поверх virtual-java (sdksrc без правок)."""
+    if SDK_SRC not in sys.path:
+        sys.path.insert(0, SDK_SRC)
 
 
 def _clear_modules():
     for name in list(sys.modules):
         root = name.split(".", 1)[0]
         if root in ("java", "javax", "android", "androidx", "org", "com",
-                    "kotlin", "dalvik") or name in SDK_MODULES:
+                    "kotlin", "dalvik") or name in _SDK_MODULE_NAMES:
             del sys.modules[name]
 
 
@@ -117,7 +122,7 @@ def simulate_plugin(plugin, backend, extra_stubs=()):
     reset_caches()
     _clear_modules()
     install(backend)
-    _install_sdk_stubs(backend)
+    _install_real_sdk()
     for name in extra_stubs:
         sys.modules.setdefault(name, _make_stub_module(name, backend))
 
@@ -171,7 +176,7 @@ def simulate_with_retries(plugin):
                 and error["message"].startswith("No module named '")):
             missing = error["message"].split("'")[1].split(".")[0]
             if (missing.split(".")[0] not in JAVA_MODULE_ROOTS
-                    and missing not in SDK_MODULES):
+                    and missing not in _SDK_MODULE_NAMES):
                 extra_stubs.add(missing)
                 continue
         break

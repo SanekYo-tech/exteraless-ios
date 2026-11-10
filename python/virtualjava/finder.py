@@ -17,6 +17,10 @@ from .proxy import get_class, _is_class_name
 JAVA_ROOTS = ("java", "javax", "android", "androidx", "org", "com",
               "kotlin", "dalvik")
 
+# Chaquopy-модули, которых на iOS-мосте нет. Отказ честный (ImportError),
+# как отсутствие класса — SDK exteraless рассчитывает на graceful-деградацию.
+DENY_MODULES = ("java.android",)
+
 _ALIASES_PATH_CANDIDATES = (
     os.path.join("third_party", "exteraless-android", "TMessagesProj",
                  "src", "main", "python", "extera_utils", "class_aliases.py"),
@@ -69,13 +73,10 @@ class JavaPackage(types.ModuleType):
                         "jboolean", "jbyte", "jshort", "jchar", "jvoid",
                         "jpackage", "findClass"):
                 return _chaquopy_builtin(name, backend)
-        if self.__name__ == "java.chaquopy":
-            from .proxy import dynamic_proxy
-            if name == "dynamic_proxy":
-                return dynamic_proxy
-            if name == "Override":
-                return lambda func: func
-            raise AttributeError(name)
+            if name == "chaquopy":
+                module = _chaquopy_module()
+                sys.modules.setdefault("java.chaquopy", module)
+                return module
         full = f"{self.__name__}.{name}"
         if _is_class_name(name):
             return get_class(resolve_name(full), backend)
@@ -107,6 +108,63 @@ def _chaquopy_builtin(name, backend):
     return _generic
 
 
+# --- java.chaquopy: API форка exteraless-chaquopy (security-гейты) ---------
+# На iOS эти хуки реализует C-мост: политика reflection, guard на вызовы,
+# фолбэк для ненайденных классов. Здесь — честная эмуляция для симуляции.
+
+_CHAQUOPY_STATE = {
+    "reflection_policy": None,
+    "call_fallback": None,
+    "sealed": False,
+}
+
+
+def _chaquopy_module():
+    import types as _types
+    mod = _types.ModuleType("java.chaquopy")
+    mod.__path__ = []
+
+    def set_reflection_policy(fn):
+        if _CHAQUOPY_STATE["sealed"]:
+            raise RuntimeError("reflection policy sealed")
+        _CHAQUOPY_STATE["reflection_policy"] = fn
+
+    def get_reflection_policy():
+        return _CHAQUOPY_STATE["reflection_policy"]
+
+    def seal_reflection_policy():
+        _CHAQUOPY_STATE["sealed"] = True
+
+    def set_call_fallback(fn):
+        _CHAQUOPY_STATE["call_fallback"] = fn
+
+    mod.set_reflection_policy = set_reflection_policy
+    mod.get_reflection_policy = get_reflection_policy
+    mod.seal_reflection_policy = seal_reflection_policy
+    mod.set_call_fallback = set_call_fallback
+
+    from .proxy import JavaClass, dynamic_proxy  # noqa: F401
+
+    class GuardedMethod:  # noqa: D401 — эмуляция GuardedMethod chaquopy
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __getattr__(self, name):
+            from .backend import _Universal
+            return _Universal(f"GuardedMethod.{name}", None)
+
+    class ProxyClass:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    mod.GuardedMethod = GuardedMethod
+    mod.ProxyClass = ProxyClass
+    mod.JavaClass = JavaClass
+    mod.dynamic_proxy = dynamic_proxy
+    mod.Override = lambda func: func
+    return mod
+
+
 class JavaClassModule(types.ModuleType):
     """`import com.x.Y`: модуль, делегирующий атрибуты прокси-классу."""
 
@@ -120,6 +178,10 @@ class JavaClassModule(types.ModuleType):
 class _Loader(importlib.abc.Loader):
 
     def create_module(self, spec):
+        if spec.name == "java.chaquopy":
+            module = _chaquopy_module()
+            module.__loader__ = self
+            return module
         if _is_class_name(spec.name.rsplit(".", 1)[-1]):
             # Класс как модуль: __path__ обязателен, чтобы работали
             # цепочки вида Components.Premium.StarParticlesView
@@ -141,6 +203,10 @@ class _Finder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         root = fullname.split(".", 1)[0]
         if root not in JAVA_ROOTS:
+            return None
+        if fullname in DENY_MODULES or any(
+                fullname.startswith(denied + ".")
+                for denied in DENY_MODULES):
             return None
         return importlib.util.spec_from_loader(fullname, _Loader())
 
