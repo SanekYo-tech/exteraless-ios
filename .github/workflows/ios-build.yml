@@ -1,0 +1,145 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "telegram-ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Telegram-iOS (exteraless base)
+    runs-on: macos-26
+    timeout-minutes: 360
+
+    env:
+      SOURCE_DIR: /Users/Shared/telegram-ios
+      BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/telegram-ios"
+          XCODE_VERSION="$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')"
+          XCODE_APP="$(ls -d /Applications/Xcode_${XCODE_VERSION}.app 2>/dev/null || true)"
+          if [ -z "$XCODE_APP" ]; then
+            echo "Xcode $XCODE_VERSION не найден, берём новейший установленный"
+            XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+          fi
+          echo "Using $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Configure api credentials
+        env:
+          TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID }}
+          TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/telegram-ios/build-system"
+          python3 - <<'EOF'
+          import json, os
+          path = "exteraless-configuration.json"
+          with open(path) as fh:
+              config = json.load(fh)
+          app_id = os.environ.get("TELEGRAM_APP_ID", "").strip()
+          app_hash = os.environ.get("TELEGRAM_APP_HASH", "").strip()
+          if app_id and app_hash:
+              config["api_id"] = app_id
+              config["api_hash"] = app_hash
+              print("api credentials: overridden from secrets")
+          else:
+              print("api credentials: repo defaults (official Telegram-iOS)")
+          with open(path, "w") as fh:
+              json.dump(config, fh, indent="\t")
+              fh.write("\n")
+          EOF
+
+      - name: Create canonical source directory
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /Users/Shared
+          rm -rf "$SOURCE_DIR"
+          cp -R "$GITHUB_WORKSPACE/telegram-ios" "$SOURCE_DIR"
+
+      - name: Restore Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: /private/var/tmp/_bazel_containerhost
+          key: bazel-ios-${{ github.sha }}
+          restore-keys: |
+            bazel-ios-
+
+      - name: Import fake codesigning
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          export APP_VERSION="$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')"
+          export BUILD_NUMBER="${{ github.run_number }}"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            build \
+            --configurationPath="build-system/exteraless-configuration.json" \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER"
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR"
+          OUTPUT_PATH="build/artifacts"
+          rm -rf "$OUTPUT_PATH"
+          mkdir -p "$OUTPUT_PATH"
+          found=0
+          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
+            cp "$f" "$OUTPUT_PATH/"
+            found=1
+          done
+          if [ "$found" = "0" ]; then
+            echo "IPA не найдена" >&2
+            find bazel-out -name "*.ipa" 2>/dev/null | head -20 >&2
+            exit 1
+          fi
+          mkdir -p build/DSYMs
+          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
+            [ -e "$f" ] && cp -R "$f" build/DSYMs/ || true
+          done
+          if compgen -G "build/DSYMs/*" > /dev/null; then
+            zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
+          fi
+          ls -lh "$OUTPUT_PATH"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exteraless-ios-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
+          path: |
+            ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.ipa
+            ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.DSYMs.zip
+          if-no-files-found: error
+          retention-days: 30

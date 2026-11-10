@@ -1,0 +1,24 @@
+# Сборки и генерация
+build/
+**/__pycache__/
+*.pyc
+
+# Корпус и внешние клоны (восстанавливаются скриптами, см. README)
+third_party/corpus-sources/
+third_party/corpus/
+
+# Bazel
+**/bazel-*
+telegram-ios/build/artifacts/
+
+# macOS/IDE
+.DS_Store
+*.xcuserstate
+.idea/
+.vscode/
+
+# Секреты и локальные ключи
+local.properties
+*.keystore
+*.p12
+*.mobileprovision
