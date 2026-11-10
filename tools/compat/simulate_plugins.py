@@ -152,32 +152,42 @@ def simulate_plugin(plugin, backend, extra_stubs=()):
     }
 
 
+JAVA_MODULE_ROOTS = ("java", "javax", "android", "androidx", "org",
+                     "com", "kotlin", "dalvik")
+
+
+def simulate_with_retries(plugin):
+    """Симуляция со стабами недостающих pip/платформенных модулей.
+
+    ModuleNotFoundError на внешний модуль -> стаб + повтор (до 3 раундов),
+    стабы записываются в результат. Возвращает (result, backend).
+    """
+    backend = MockBackend()
+    extra_stubs = set()
+    for _attempt in range(3):
+        result = simulate_plugin(plugin, backend, extra_stubs)
+        error = result["error"]
+        if (error and error["type"] == "ModuleNotFoundError"
+                and error["message"].startswith("No module named '")):
+            missing = error["message"].split("'")[1].split(".")[0]
+            if (missing.split(".")[0] not in JAVA_MODULE_ROOTS
+                    and missing not in SDK_MODULES):
+                extra_stubs.add(missing)
+                continue
+        break
+    result["stubbed_modules"] = sorted(extra_stubs)
+    return result, backend
+
+
 def main():
     plugins = list(corpus.load_corpus())
     if not plugins:
         raise SystemExit(f"корпус пуст: {corpus.CORPUS_DIR}")
 
-    JAVA_MODULE_ROOTS = ("java", "javax", "android", "androidx", "org",
-                         "com", "kotlin", "dalvik")
     results = []
     touched = {}
     for plugin in plugins:
-        backend = MockBackend()
-        extra_stubs = set()
-        # До 3 раундов: ModuleNotFoundError на pip/платформенный модуль
-        # -> стабим и повторяем (записываем, что это была за зависимость).
-        for _attempt in range(3):
-            result = simulate_plugin(plugin, backend, extra_stubs)
-            error = result["error"]
-            if (error and error["type"] == "ModuleNotFoundError"
-                    and error["message"].startswith("No module named '")):
-                missing = error["message"].split("'")[1].split(".")[0]
-                if (missing.split(".")[0] not in JAVA_MODULE_ROOTS
-                        and missing not in SDK_MODULES):
-                    extra_stubs.add(missing)
-                    continue
-            break
-        result["stubbed_modules"] = sorted(extra_stubs)
+        result, backend = simulate_with_retries(plugin)
         results.append(result)
         for record in backend.calls:
             key = f"{record.target}#{record.member}"

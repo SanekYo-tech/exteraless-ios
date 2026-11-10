@@ -65,6 +65,12 @@ jobs:
       - name: Generate manifest
         run: python -m tools.compat.generate_manifest
 
+      - name: Simulate corpus (virtual-java)
+        run: python -m tools.compat.simulate_plugins || true
+
+      - name: Feature inventory
+        run: python -m tools.compat.feature_inventory || true
+
       - name: Run test suite
         run: |
           set -euo pipefail
@@ -72,7 +78,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq default-jdk-headless >/dev/null
           python -m pytest tools/compat/tests -q --no-header
 
-      - name: Upload manifest report
+      - name: Upload compat reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -80,5 +86,8 @@ jobs:
           path: |
             build/compat/manifest.json
             build/compat/report.md
+            build/compat/simulation.json
+            build/compat/features.json
+            build/compat/features-report.md
           if-no-files-found: warn
           retention-days: 14

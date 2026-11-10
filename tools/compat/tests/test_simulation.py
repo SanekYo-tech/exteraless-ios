@@ -23,23 +23,24 @@ from tools.compat import simulate_plugins  # noqa: E402
 def simulation():
     if not corpus.load_corpus():
         pytest.skip(f"no corpus at {corpus.CORPUS_DIR}")
-    results = []
-    for plugin in corpus.load_corpus():
-        from python.virtualjava import MockBackend
-        backend = MockBackend()
-        result = simulate_plugins.simulate_plugin(plugin, backend)
-        result["stubbed_modules"] = []
-        results.append(result)
-    return results
+    from tools.compat.simulate_plugins import simulate_with_retries
+    return [simulate_with_retries(plugin)[0]
+            for plugin in corpus.load_corpus()]
 
 
 def test_simulation_import_rate(simulation):
     ok = sum(1 for r in simulation if r["ok"])
     rate = ok / len(simulation)
+    details = []
+    for r in simulation:
+        if not r["ok"]:
+            err = r["error"]
+            details.append(
+                f"{r['name']}: {err['type']} стр.{err['line']}: "
+                f"{(err['message'] or '')[:150]}")
     assert rate >= 0.9, (
         f"импорт проходит только {rate:.0%} корпуса "
-        f"({ok}/{len(simulation)}); упавшие: "
-        + ", ".join(r["name"] for r in simulation if not r["ok"]))
+        f"({ok}/{len(simulation)}):\n" + "\n".join(details))
 
 
 def test_simulation_plugins_define_classes(simulation):
