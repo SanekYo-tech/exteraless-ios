@@ -1,11 +1,9 @@
 name: iOS Build
 
+# Сборки дорогие (macOS-минуты). Политика: только ручной запуск.
+# Прогонять один раз на веху: изменение сборочной конфигурации,
+# врезка PluginHost/Python, готовность релиза.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "telegram-ios/**"
-      - ".github/workflows/ios-build.yml"
   workflow_dispatch:
 
 concurrency:
