@@ -10,6 +10,7 @@
 import argparse
 import hashlib
 import os
+import re
 import shutil
 
 from . import corpus
@@ -18,6 +19,14 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", ".github"}
 SKIP_NAMES = {"conftest.py", "baseline.py", "setup.py"}
 # Деревья исходников SDK не считаем плагинами.
 SKIP_PATH_PARTS = ("extera_utils", "elyx_runtime")
+
+# Плагин каталога обязан объявлять метаданные (__id__). Всё без него —
+# дев-скрипты репозиториев или модули многофайловых Elyx-плагинов.
+METADATA_MARKER = re.compile(r"^__id__\s*=", re.M)
+
+
+def has_plugin_metadata(text):
+    return METADATA_MARKER.search(text) is not None
 
 
 def iter_plugin_files(roots):
@@ -69,7 +78,7 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     seen_names = set()
     seen_hashes = set()
-    copied, skipped_dup, skipped_empty = 0, 0, 0
+    copied, skipped_dup, skipped_empty, skipped_nometa = 0, 0, 0, 0
 
     for src in iter_plugin_files(roots):
         with open(src, "rb") as fh:
@@ -79,9 +88,12 @@ def main():
             continue
         seen_hashes.add(digest)
         with open(src, encoding="utf-8", errors="replace") as fh:
-            text = fh.read(4096)
+            text = fh.read()
         if len(text.strip()) < 16:
             skipped_empty += 1
+            continue
+        if not has_plugin_metadata(text):
+            skipped_nometa += 1
             continue
         name = flatten_name(src, seen_names)
         shutil.copyfile(src, os.path.join(args.out, name))
@@ -89,7 +101,8 @@ def main():
 
     total = len([f for f in os.listdir(args.out)
                  if f.endswith(corpus.PLUGIN_EXTENSIONS)])
-    print(f"copied={copied} dup={skipped_dup} empty={skipped_empty} total_in_out={total}")
+    print(f"copied={copied} dup={skipped_dup} empty={skipped_empty} "
+          f"nometa={skipped_nometa} total_in_out={total}")
     print(f"out: {args.out}")
 
 

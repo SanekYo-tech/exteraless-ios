@@ -32,6 +32,19 @@ JAVA_ROOTS = ("java", "javax", "android", "androidx", "org", "com", "kotlin", "d
 
 PLUGIN_EXTENSIONS = (".plugin", ".py")
 
+SOURCE_ROOTS = (JAVA_ROOT,)
+# TMessagesProj_Modules (media/media3) в корпус порта не входят.
+MODULE_ROOTS = ()
+
+
+def find_java_source(fqcn):
+    rel = os.path.join(*fqcn.split(".")) + ".java"
+    for root in SOURCE_ROOTS:
+        path = os.path.join(root, rel)
+        if os.path.isfile(path):
+            return path
+    return None
+
 
 class Plugin:
 
