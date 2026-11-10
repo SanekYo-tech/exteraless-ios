@@ -1,0 +1,84 @@
+name: Compat Tests
+
+# Дёшево (Linux-минуты): гоняем весь портированный сьют exteraless
+# на каждом пушу в затронутые пути. macOS-сборки — отдельный workflow,
+# только вручную.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/**"
+      - "third_party/exteraless-android/**"
+      - "third_party/corpus-sources/**"
+      - ".github/workflows/compat-tests.yml"
+  pull_request:
+    paths:
+      - "tools/**"
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: pytest (compat suite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Clone plugin corpus sources
+        run: |
+          set -euo pipefail
+          mkdir -p third_party/corpus-sources
+          for repo in \
+            The-MoonTg-project/extera-plugins \
+            Den4ikSuperOstryyPer4ik/CactusPlugins \
+            mr-Vestr/plugins \
+            py-sato/Privacy-Cleaner \
+            corerudo/for-vibecoders \
+            n08i40k/tg-streaks \
+            xvxrn/botile \
+            AlexeiCrystal/anti-ayugram-easter-eggs \
+            0x11DFE/Auto-Forwarder-Plugin \
+            0x11DFE/Message-Repeater-Pro; do
+            git clone --depth 1 "https://github.com/$repo" \
+              "third_party/corpus-sources/$(basename "$repo")" || true
+          done
+
+      - name: Assemble corpus
+        run: python -m tools.compat.collect_corpus
+
+      - name: Generate manifest
+        run: python -m tools.compat.generate_manifest
+
+      - name: Run test suite
+        run: |
+          set -euo pipefail
+          # JDK нужен Java-харнес-тестам; на Ubuntu-раннере его нет по умолчанию.
+          sudo apt-get update -qq && sudo apt-get install -y -qq default-jdk-headless >/dev/null
+          python -m pytest tools/compat/tests -q --no-header
+
+      - name: Upload manifest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-report
+          path: |
+            build/compat/manifest.json
+            build/compat/report.md
+          if-no-files-found: warn
+          retention-days: 14

@@ -22,3 +22,5 @@ local.properties
 *.keystore
 *.p12
 *.mobileprovision
+
+third_party/Python-Apple-support/
