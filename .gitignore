@@ -24,3 +24,4 @@ local.properties
 *.mobileprovision
 
 third_party/Python-Apple-support/
+third_party/Python-Apple-support-3.12/
