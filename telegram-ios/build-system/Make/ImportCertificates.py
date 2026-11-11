@@ -78,7 +78,10 @@ def import_certificates(certificatesPath):
         '-k',
         keychain_password,
         keychain_name
-    ], check_result=True)
+    # GitHub-hosted macOS-раннеры: команда регулярно выходит non-zero
+    # ("could not be set") при фактически выполненной операции — доступ
+    # codesign уже выдан через -T при импорте. Не фейлим сборку.
+    ], check_result=False)
 
 
 if __name__ == '__main__':
