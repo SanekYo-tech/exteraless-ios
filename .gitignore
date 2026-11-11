@@ -26,3 +26,11 @@ local.properties
 third_party/Python-Apple-support/
 third_party/Python-Apple-support-3.12/
 reference-ipa/
+
+# _exteraless_bridge build artifacts (C extension, stage 2)
+*.pyd
+*.so
+*.egg-info/
+
+# local reference dumps (too large for the repo)
+reference-ipa/

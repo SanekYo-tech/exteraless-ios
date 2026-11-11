@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exteraless-bridge"
+version = "0.1.0"
+description = "exteraless virtual-java C bridge (stage 2): BridgeBackend + xt_register_service registry"
+requires-python = ">=3.12"
+
+# Расширение описано в setup.py (Extension). Основной сценарий этого этапа —
+# не pip-пакет, а сборка в дерево репозитория:
+#     cd python/bridge && python setup.py build_ext --inplace
