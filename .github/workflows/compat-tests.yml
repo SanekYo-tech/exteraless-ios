@@ -1,18 +1,115 @@
 name: Compat Tests
 
 # Дёшево (Linux-минуты): pytest-сьют и swift test PluginHost (без Apple SDK).
-# Только workflow_dispatch. Ручной запуск всегда выполняет оба джоба.
-# macOS-сборки — отдельные workflow, тоже только вручную.
+# push и pull_request — с path filters. workflow_dispatch запускает оба джоба.
+# macOS-сборки (IPA и CPython framework) — отдельные workflow, только вручную.
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "tools/**"
+      - "third_party/exteraless-android/**"
+      - "third_party/corpus-sources/**"
+      - "python/**"
+      - "swift/**"
+      - ".github/workflows/compat-tests.yml"
+  pull_request:
+    paths:
+      - "tools/**"
+      - "third_party/exteraless-android/**"
+      - "third_party/corpus-sources/**"
+      - "python/**"
+      - "swift/**"
+      - ".github/workflows/compat-tests.yml"
 
 permissions:
   contents: read
 
 jobs:
+  # Фильтр по файлам коммита: pytest не качает корпус на чистый swift/**,
+  # swift test не качает тулчейн (~1 ГБ) на чистый python/ или tools/.
+  # Ручной workflow_dispatch всегда запускает оба джоба.
+  changes:
+    name: path filter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      compat: ${{ steps.filter.outputs.compat }}
+      swift: ${{ steps.filter.outputs.swift }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          emit() {
+            echo "compat=$1" >> "$GITHUB_OUTPUT"
+            echo "swift=$2" >> "$GITHUB_OUTPUT"
+            echo "compat=$1 swift=$2"
+          }
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "manual dispatch; running both jobs"
+            emit true true
+            exit 0
+          fi
+
+          classify() {
+            local compat=false swift=false f
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              case "$f" in
+                tools/*|third_party/exteraless-android/*|third_party/corpus-sources/*|python/*|.github/workflows/compat-tests.yml)
+                  compat=true ;;
+              esac
+              case "$f" in
+                swift/*|.github/workflows/compat-tests.yml)
+                  swift=true ;;
+              esac
+            done
+            # Пустой или нераспознанный diff — оба джоба, чтобы CI не «зеленел» молча.
+            if [ "$compat" = false ] && [ "$swift" = false ]; then
+              echo "no classified paths; running both jobs"
+              compat=true
+              swift=true
+            fi
+            emit "$compat" "$swift"
+          }
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+
+          if [ -z "${base:-}" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "no base commit; running both jobs"
+            emit true true
+            exit 0
+          fi
+
+          if ! git fetch --depth=1 origin "$base"; then
+            echo "could not fetch base; running both jobs"
+            emit true true
+            exit 0
+          fi
+
+          files="$(git diff --name-only "$base" HEAD)"
+          printf '%s\n' "$files"
+          printf '%s\n' "$files" | classify
+
   tests:
     name: pytest (compat suite)
+    needs: changes
+    if: needs.changes.outputs.compat == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -86,6 +183,8 @@ jobs:
   # Linux, без Apple SDK. Тулчейн — релиз swift.org под Ubuntu 24.04, не macOS.
   swift-tests:
     name: swift test (PluginHost, Linux)
+    needs: changes
+    if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
