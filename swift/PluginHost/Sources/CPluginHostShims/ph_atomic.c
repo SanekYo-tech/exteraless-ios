@@ -2,6 +2,11 @@
 
 #include <stdatomic.h>
 
+_Static_assert(sizeof(_Atomic int32_t) == sizeof(int32_t),
+               "Swift AtomicInt32 allocates MemoryLayout<Int32>; _Atomic int32_t must match");
+_Static_assert(_Alignof(_Atomic int32_t) <= _Alignof(int32_t),
+               "_Atomic int32_t alignment exceeds Int32; Swift storage would be misaligned");
+
 void ph_atomic_init_i32(void *storage, int32_t value)
 {
     atomic_init((_Atomic int32_t *)storage, value);

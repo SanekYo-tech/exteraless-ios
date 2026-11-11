@@ -10,8 +10,10 @@ class_exists) и регистрация Python-колбэка через ctypes 
 тесты честно скипаются: pytest.importorskip.
 """
 
+import base64
 import ctypes
 import json
+import math
 import os
 import sys
 
@@ -345,3 +347,108 @@ def test_python_ctypes_service_swift_path():
     finally:
         uninstall()
         xt_unregister_service("pysvc.call")
+
+
+# --- bytes / неконечные float: явные теги, не падение и не порча значения ---
+
+def test_bytes_and_nonfinite_roundtrip_and_wire_tags(bridge_sandbox):
+    from org.telegram.messenger import MessagesController  # noqa: F401
+
+    samples = (
+        b"",
+        b"a",
+        b"ab",
+        b"abc",
+        b"\x00\xff",
+        bytes(range(256)),
+    )
+    for raw in samples:
+        assert MessagesController.echoFirst(raw) == raw
+        bridge_sandbox.set(ANDROID_UTILITIES, "blob", raw)
+        assert log_last()["args"] == {
+            "__bytes__": base64.b64encode(raw).decode("ascii"),
+        }
+
+    assert MessagesController.echoFirst(float("inf")) == float("inf")
+    assert MessagesController.echoFirst(float("-inf")) == float("-inf")
+    echoed_nan = MessagesController.echoFirst(float("nan"))
+    assert type(echoed_nan) is float and math.isnan(echoed_nan)
+
+    bridge_sandbox.set(ANDROID_UTILITIES, "blob", float("inf"))
+    assert log_last()["args"] == {"__float__": "inf"}
+    bridge_sandbox.set(ANDROID_UTILITIES, "blob", float("-inf"))
+    assert log_last()["args"] == {"__float__": "-inf"}
+    bridge_sandbox.set(ANDROID_UTILITIES, "blob", float("nan"))
+    assert log_last()["args"] == {"__float__": "nan"}
+
+    nested = [b"\xff", {"k": float("-inf"), "n": float("nan"), "ok": 1.5}]
+    echoed = MessagesController.echoFirst(nested)
+    assert echoed[0] == b"\xff"
+    assert echoed[1]["k"] == float("-inf")
+    assert math.isnan(echoed[1]["n"])
+    assert echoed[1]["ok"] == 1.5
+
+    # словарь с тем же ключом и лишним полем — не тег
+    plain = {"__bytes__": "YQ==", "x": 1}
+    assert MessagesController.echoFirst(plain) == plain
+
+    buf = bytearray(b"xy")
+    assert MessagesController.echoFirst(buf) is buf
+
+
+def test_invalid_bytes_and_float_tags_raise(bridge_sandbox):
+    CFUNC = ctypes.CFUNCTYPE(
+        ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p,
+        ctypes.c_char_p, ctypes.POINTER(ctypes.c_char_p))
+    libc = ctypes.CDLL("ucrtbase.dll")
+    libc.malloc.restype = ctypes.c_void_p
+    libc.malloc.argtypes = [ctypes.c_size_t]
+    holder = {}
+
+    def make_call(payload_obj):
+        encoded = json.dumps(payload_obj).encode("utf-8")
+
+        def call(fqcn, member, json_args, result):
+            buf = libc.malloc(len(encoded) + 1)
+            ctypes.memmove(buf, encoded, len(encoded) + 1)
+            result[0] = ctypes.cast(ctypes.c_void_p(buf), ctypes.c_char_p)
+            return 0
+
+        cb = CFUNC(call)
+        holder["cb"] = cb
+        return cb
+
+    xt_register_service(
+        "badtag.call",
+        ctypes.cast(make_call({"__bytes__": "***"}), ctypes.c_void_p).value)
+    try:
+        backend = BridgeBackend(service="badtag")
+        with pytest.raises(ValueError, match="__bytes__"):
+            backend.call(MESSAGES_CONTROLLER, "getInstance", (), {})
+        xt_register_service(
+            "badtag.call",
+            ctypes.cast(make_call({"__float__": "Infinity"}),
+                        ctypes.c_void_p).value)
+        with pytest.raises(ValueError, match="__float__"):
+            backend.call(MESSAGES_CONTROLLER, "getInstance", (), {})
+    finally:
+        uninstall()
+        xt_unregister_service("badtag.call")
+        holder.clear()
+
+
+def test_host_release_handle_drops_slot_and_keeps_neighbors():
+    objs = [object() for _ in range(64)]
+    handles = [xt_register_handle(obj) for obj in objs]
+    proto = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int64)
+    release = proto(xt_builtin_ptr("release_handle"))
+    assert release(handles[0]) == 1
+    assert xt_resolve_handle(handles[0]) is None
+    assert release(handles[0]) == 0
+    assert xt_release_handle(handles[3]) is True
+    for obj, handle in zip(objs, handles):
+        if handle in (handles[0], handles[3]):
+            assert xt_resolve_handle(handle) is None
+        else:
+            assert xt_resolve_handle(handle) is obj
+            assert xt_register_handle(obj) == handle

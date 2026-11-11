@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+// TODO(mac): mach task_info / phys_footprint. Ветка ниже компилируется только
+// с Apple SDK (`canImport(Darwin)`). Linux CI её не видит.
+import Darwin
+#endif
 
 /// Сторож плагинов — семантика PluginsWatchdog.java (39 КБ эталона):
 ///
@@ -36,6 +41,7 @@ enum ProcessFootprint {
         if result == KERN_SUCCESS { return Int(info.phys_footprint / 1024) }
         return 0
 #else
+        // Linux (swift test без Apple SDK): resident pages из /proc/self/statm.
         guard let statm = try? String(contentsOfFile: "/proc/self/statm", encoding: .utf8),
               let residentPages = statm.split(separator: " ").dropFirst().first,
               let pages = Int(residentPages) else { return 0 }
@@ -76,7 +82,9 @@ public actor PluginWatchdog {
     /// Уведомление UI-слоя: плагин завис/отвыс.
     public typealias NotRespondingObserver = @Sendable (String, Bool) -> Void
     /// Снимок footprint живых плагинов (КБ) из менеджера интерпретаторов.
-    public typealias FootprintProvider = @Sendable () -> [(String, Int)]
+    /// async: снимок живёт в акторе `SubinterpreterManager`. Синхронное
+    /// замыкание по-прежнему подходит — Swift поднимает его в async.
+    public typealias FootprintProvider = @Sendable () async -> [(String, Int)]
     /// Реакция на таймаут: бросить интерпретатор (владелец — PluginHost).
     public typealias AbandonAction = @Sendable (String) async -> Void
 

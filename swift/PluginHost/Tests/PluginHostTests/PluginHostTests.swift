@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import PluginHost
 
@@ -132,7 +133,7 @@ final class PluginEventQueueTests: XCTestCase {
                 updateJSON: "{\"i\":\(index)}")))
         }
         let handled = Recorder<PluginEvent>()
-        queue.start(handler: { event in handled.append(event); return .none })
+        await queue.start(handler: { event in handled.append(event); return .none })
         let done = await waitUntil { await queue.stats.dispatched == 1 }
         XCTAssertTrue(done, "100 апдейтов должны стать одним диспатчем")
         XCTAssertEqual(handled.count, 1)
@@ -149,7 +150,7 @@ final class PluginEventQueueTests: XCTestCase {
         let queue = PluginEventQueue()
         let gate = Gate()
         let order = Recorder<String>()
-        queue.start(handler: { event in
+        await queue.start(handler: { event in
             order.append(String(describing: event.kind))
             await gate.wait()
             return .none
@@ -160,10 +161,10 @@ final class PluginEventQueueTests: XCTestCase {
                 CreateSettingsPayload(pluginId: "p1", account: 1)))
         }
         let poppedSettings = await waitUntil {
-            order.values.first == "createSettings"
+            order.values.first == Optional("createSettings")
         }
         XCTAssertTrue(poppedSettings)
-        XCTAssertEqual(order.values.first, "createSettings")
+        XCTAssertEqual(order.values.first, Optional("createSettings"))
         // Пока loop занят настройками — приходит апдейт (ниже приоритетом).
         await queue.submit(.update(UpdatePayload(
             updateName: "TL_updateUserStatus", account: 1, updateJSON: "{}")))
@@ -171,13 +172,13 @@ final class PluginEventQueueTests: XCTestCase {
         _ = try await settingsTask.value
         let settled = await waitUntil { await order.count == 2 }
         XCTAssertTrue(settled, "после открытия гейта должен уйти батч апдейтов")
-        XCTAssertEqual(order.values.last, "updates")
+        XCTAssertEqual(order.values.last, Optional("updates"))
     }
 
     func testStaleSettingsRequestIsReplaced() async throws {
         let gate = Gate()
         let queue = PluginEventQueue()
-        queue.start(handler: { _ in await gate.wait(); return .none })
+        await queue.start(handler: { _ in await gate.wait(); return .none })
         // Занимаем диспатч долгим запросом настроек ДРУГОГО плагина.
         let blocker = Task {
             try await queue.submitAwaiting(.createSettings(
@@ -185,16 +186,21 @@ final class PluginEventQueueTests: XCTestCase {
         }
         let popped = await waitUntil { await queue.stats.dispatched == 1 }
         XCTAssertTrue(popped, "блокирующий запрос должен диспатчиться и висеть в гейте")
-        // Пока loop занят — два запроса p1: второй замещает первого (дроп устаревших).
+        // Пока loop занят — два запроса p1: второй замещает первого.
+        // Второй submitAwaiting нельзя await'ить до открытия гейта: диспатчер
+        // всё ещё в wait(), запрос не завершится (взаимная блокировка).
         let first = Task {
             try await queue.submitAwaiting(.createSettings(
                 CreateSettingsPayload(pluginId: "p1", account: 1)))
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
-        _ = try await queue.submitAwaiting(.createSettings(
-            CreateSettingsPayload(pluginId: "p1", account: 1)))
-        let dropped = await queue.stats.droppedStale
-        XCTAssertEqual(dropped, 1)
+        let firstQueued = await waitUntil { await queue.stats.enqueued >= 2 }
+        XCTAssertTrue(firstQueued, "первый запрос p1 должен встать в очередь")
+        let second = Task {
+            try await queue.submitAwaiting(.createSettings(
+                CreateSettingsPayload(pluginId: "p1", account: 1)))
+        }
+        let dropped = await waitUntil { await queue.stats.droppedStale == 1 }
+        XCTAssertTrue(dropped, "второй запрос p1 должен заместить первый")
         await gate.open()
         do {
             _ = try await first.value
@@ -202,7 +208,9 @@ final class PluginEventQueueTests: XCTestCase {
         } catch let error as PluginHostError {
             guard case .superseded = error else { return XCTFail("ожидали superseded: \(error)") }
         }
-        _ = try? await blocker.value
+        let secondResult = try await second.value
+        XCTAssertEqual(secondResult, .none)
+        _ = try await blocker.value
     }
 
     func testDispatchTimeoutAbandonsButQueueContinues() async throws {
@@ -219,7 +227,7 @@ final class PluginEventQueueTests: XCTestCase {
                 return .none
             }
         }
-        queue.start(
+        await queue.start(
             handler: handler,
             onTimeout: { event in timedOut.append(String(describing: event.kind)) },
             limits: .init(dispatchTimeout: 0.05))
@@ -320,7 +328,7 @@ final class PermissionsTests: XCTestCase {
         let loaded = store.loadPlugins()
         XCTAssertEqual(loaded, [plugin])
         store.saveGrants(["ab": [.messagesRead, .network]])
-        XCTAssertEqual(store.loadGrants()["ab"], [.messagesRead, .network])
+        XCTAssertEqual(store.loadGrants()["ab"] ?? [], [.messagesRead, .network])
     }
 
     func testRequestedPermissions() {
@@ -391,16 +399,17 @@ final class PluginWatchdogTests: XCTestCase {
         // Первый процесс: маркер написан, смерть, страйк 1 — оставить включённым.
         let first = PluginWatchdog(store: store)
         await first.start()
-        first.noteRiskyOperation("crasher")
+        await first.noteRiskyOperation("crasher")
         let second = PluginWatchdog(store: store)
         await second.start()
-        XCTAssertNil(await second.recoverAfterCrash())
+        let firstRecovery = await second.recoverAfterCrash()
+        XCTAssertNil(firstRecovery)
         // Второй процесс: снова маркер — страйк 2 → выключить.
-        second.noteRiskyOperation("crasher")
+        await second.noteRiskyOperation("crasher")
         let third = PluginWatchdog(store: store)
         await third.start()
         let disabled = await third.recoverAfterCrash()
-        XCTAssertEqual(disabled, "crasher")
+        XCTAssertEqual(disabled, Optional("crasher"))
     }
 
     func testNotRespondingLifecycle() async {
@@ -417,8 +426,8 @@ final class PluginWatchdogTests: XCTestCase {
         await watchdog.clearNotResponding("frozen")
         let recovered = await waitUntil { await watchdog.isNotResponding("frozen") == false }
         XCTAssertTrue(recovered)
-        XCTAssertEqual(events.values.last?.0, "frozen")
-        XCTAssertEqual(events.values.last?.1, false)
+        XCTAssertEqual(events.values.last?.0, Optional("frozen"))
+        XCTAssertEqual(events.values.last?.1, Optional(false))
     }
 }
 

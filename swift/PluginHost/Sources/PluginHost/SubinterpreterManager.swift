@@ -85,16 +85,21 @@ public struct InterpreterCallContext: Sendable {
 
 /// Потокобезопасный одноразовый резюм: результат может прийти раньше await
 /// (воркер успел) — тогда awaitValue возвращает сразу.
-final class OneShotResult<T>: @unchecked Sendable {
+///
+/// `CheckedContinuation` и `any Error` не Sendable. `resume` контрактно
+/// безопасен с любого потока; NSLock сериализует запись. `nonisolated(unsafe)`
+/// только гасит диагностику Swift 6, лок не убирает. Наружу уходит
+/// `any Error & Sendable` (`PluginHostError` / `DispatchTimeoutError`).
+final class OneShotResult<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var result: Result<T, Error>?
-    private var continuation: CheckedContinuation<T, Error>?
+    nonisolated(unsafe) private var result: Result<T, any Error>?
+    nonisolated(unsafe) private var continuation: CheckedContinuation<T, any Error>?
     private var isAwaited = false
 
     func succeed(_ value: T) { complete(.success(value)) }
-    func fail(_ error: Error) { complete(.failure(error)) }
+    func fail(_ error: any Error & Sendable) { complete(.failure(error)) }
 
-    private func complete(_ outcome: Result<T, Error>) {
+    private func complete(_ outcome: Result<T, any Error>) {
         lock.lock()
         defer { lock.unlock() }
         guard result == nil else { return }
@@ -106,7 +111,7 @@ final class OneShotResult<T>: @unchecked Sendable {
     }
 
     func awaitValue() async throws -> T {
-        try await withCheckedThrowingContinuation { cont in
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<T, any Error>) in
             lock.lock()
             defer { lock.unlock() }
             if let result {
@@ -116,10 +121,20 @@ final class OneShotResult<T>: @unchecked Sendable {
                     "OneShotResult: двойной await"))
             } else {
                 isAwaited = true
-                continuation = cont
+                // Континуация убегает в другое поле и резюмится с воркера.
+                nonisolated(unsafe) let escaped = cont
+                continuation = escaped
             }
         }
     }
+}
+
+/// Ошибка из `@Sendable`-catch. `sending` забирает не-Sendable `any Error`
+/// в эту функцию (SE-0430): `PluginHostError` возвращаем как есть, остальное
+/// сводим к тексту. Вызывающий больше не использует `error`.
+func bridgePluginError(_ error: sending any Error) -> PluginHostError {
+    if let pluginError = error as? PluginHostError { return pluginError }
+    return .runtimeFailure(String(describing: error))
 }
 
 // MARK: - Почтовый ящик воркера
@@ -147,7 +162,7 @@ final class InterpreterMailbox: @unchecked Sendable {
     /// Запустить воркер: `spawn` создаёт интерпретатор (Py_NewInterpreterFromConfig
     /// на ЭТОМ потоке) и возвращает контекст либо кидает.
     func start(name: String, spawn: @escaping @Sendable () throws -> InterpreterCallContext,
-               onSpawnFailure: @escaping @Sendable (Error) -> Void) {
+               onSpawnFailure: @escaping @Sendable (PluginHostError) -> Void) {
         precondition(thread == nil, "mailbox уже запущен")
         let thread = Thread { [weak self] in
             guard let self else { return }
@@ -155,7 +170,8 @@ final class InterpreterMailbox: @unchecked Sendable {
             do {
                 context = try spawn()
             } catch {
-                onSpawnFailure(error)
+                // sending-параметр bridgePluginError забирает не-Sendable Error.
+                onSpawnFailure(bridgePluginError(error))
                 self.poisonSelf()
                 return
             }
@@ -306,7 +322,7 @@ public actor SubinterpreterManager {
             do {
                 reply.succeed(try context.engine.runScript(context.reference, script))
             } catch {
-                reply.fail(error)
+                reply.fail(bridgePluginError(error))
             }
         }
         if !accepted {
@@ -349,7 +365,7 @@ public actor SubinterpreterManager {
                 try context.engine.destroyInterpreter(context.reference)
                 done.succeed(true)
             } catch {
-                done.fail(error)
+                done.fail(bridgePluginError(error))
             }
         }
         managed.mailbox.poison()

@@ -82,7 +82,11 @@ public protocol PluginSettingsService: AnyObject, Sendable {
 
 /// UI: AndroidUtilities#dp (6 плагинов) / runOnUIThread (3) / typeface (3),
 /// BottomSheet (4), PluginSettingsActivity (4), LayoutHelper (4), UItem (4).
-public protocol PluginUIService: AnyObject, Sendable {
+///
+/// Не `Sendable` (Swift 6): `constructUI` принимает `[Any]` из JSON, а `Any`
+/// не Sendable — протокол с таким требованием не может уточнять Sendable.
+/// Ссылка неизменна после init и зовётся синхронно из `dispatchJSON`.
+public protocol PluginUIService: AnyObject {
     /// org.telegram.messenger.AndroidUtilities#dp(value).
     func dp(_ value: Double) -> Double
     /// AndroidUtilities#runOnUIThread(runnable[, delay]) — постановка и выход.
@@ -296,8 +300,10 @@ public final class BridgeServices: @unchecked Sendable {
         return string
     }
 
-    /// ARGB-цвет темы в 0xAARRGGBB-double (v1: чёрный; сервис этапа 5).
+    /// ARGB-цвет темы как число 0xAARRGGBB (v1: непрозрачный чёрный без сервиса).
+    /// `0xFF000000` не влезает в `Int32` — битовый шаблон, затем unsigned.
     private func themeColorToARGB(_ key: String) -> Double {
-        Double(UInt32(bitPattern: settings?.themeColor(forKey: key) ?? 0xFF000000))
+        let bits = settings?.themeColor(forKey: key) ?? Int32(bitPattern: 0xFF00_0000)
+        return Double(UInt32(bitPattern: bits))
     }
 }

@@ -42,23 +42,29 @@ public enum PluginHostError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-/// Колбэки в UI-слой Telegram-iOS (все — на главном акторе).
-@MainActor public protocol PluginHostDelegate: AnyObject {
+/// Колбэки в UI-слой Telegram-iOS. Методы изолированы на главном акторе
+/// и вызываются из `notify` (`Task { @MainActor in }`).
+///
+/// Сам протокол не `@MainActor`: экзистенциал лежит в `WeakDelegateBox`
+/// под NSLock и читается с фоновых задач. Изоляция на типе в Swift 6
+/// сделала бы такую ссылку ошибкой. Конформеры по-прежнему зовут методы
+/// только с главного актора (класс `@MainActor` подходит).
+public protocol PluginHostDelegate: AnyObject, Sendable {
     /// Список плагинов изменился (установка/удаление/включение/ошибки).
-    func pluginHostDidReloadPlugins(_ host: PluginHost)
+    @MainActor func pluginHostDidReloadPlugins(_ host: PluginHost)
     /// Плагин завис: notResponding, вызовы прекращены (см. PluginWatchdog).
-    func pluginHost(_ host: PluginHost, didMarkNotResponding pluginId: String)
+    @MainActor func pluginHost(_ host: PluginHost, didMarkNotResponding pluginId: String)
     /// Плагин восстановлен (перезагрузка сторожа).
-    func pluginHost(_ host: PluginHost, didRecover pluginId: String)
+    @MainActor func pluginHost(_ host: PluginHost, didRecover pluginId: String)
     /// Ошибка загрузки/исполнения плагина (loadError модели).
-    func pluginHost(_ host: PluginHost, pluginId: String, didFailWithError message: String)
+    @MainActor func pluginHost(_ host: PluginHost, pluginId: String, didFailWithError message: String)
 }
 
 extension PluginHostDelegate {
-    public func pluginHostDidReloadPlugins(_ host: PluginHost) {}
-    public func pluginHost(_ host: PluginHost, didMarkNotResponding pluginId: String) {}
-    public func pluginHost(_ host: PluginHost, didRecover pluginId: String) {}
-    public func pluginHost(_ host: PluginHost, pluginId: String, didFailWithError message: String) {}
+    @MainActor public func pluginHostDidReloadPlugins(_ host: PluginHost) {}
+    @MainActor public func pluginHost(_ host: PluginHost, didMarkNotResponding pluginId: String) {}
+    @MainActor public func pluginHost(_ host: PluginHost, didRecover pluginId: String) {}
+    @MainActor public func pluginHost(_ host: PluginHost, pluginId: String, didFailWithError message: String) {}
 }
 
 /// Фасад плагин-системы: старт/стоп рантайма, жизненный цикл плагинов,
@@ -95,7 +101,9 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     /// Комплект Swift-сервисов моста (заглушки v1, реализация — этап 5).
-    public struct BridgeServiceSet: Sendable {
+    /// `@unchecked Sendable`: `PluginUIService` не Sendable (`constructUI`
+    /// принимает `[Any]`, см. протокол). Ссылки неизменяемы после init.
+    public struct BridgeServiceSet: @unchecked Sendable {
         public var messages: (any PluginMessagesService)?
         public var settings: (any PluginSettingsService)?
         public var ui: (any PluginUIService)?
@@ -254,10 +262,11 @@ public final class PluginHost: @unchecked Sendable {
                 await self?.abandonInterpreter(for: pluginId)
             },
             footprint: { [weak self] in
-                await self?.interpreters.footprintSnapshot() ?? []
+                guard let self else { return [] }
+                return await self.interpreters.footprintSnapshot()
             })
 
-        queue.start(
+        await queue.start(
             handler: { [weak self] event in
                 guard let self else { throw PluginHostError.notRunning }
                 return try await self.handleEvent(event)
@@ -287,7 +296,7 @@ public final class PluginHost: @unchecked Sendable {
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
     /// Финализация CPython пропускается, если есть брошенные интерпретаторы.
     public func stop() async {
-        queue.stop()
+        await queue.stop()
         await watchdog.stop()
         await interpreters.destroyAll()
         let hasAbandoned = await interpreters.hasAbandoned

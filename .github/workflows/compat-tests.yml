@@ -1,20 +1,11 @@
 name: Compat Tests
 
-# Дёшево (Linux-минуты): гоняем весь портированный сьют exteraless
-# на каждом пушу в затронутые пути. macOS-сборки — отдельный workflow,
-# только вручную.
+# Дёшево (Linux-минуты): pytest-сьют и swift test PluginHost (без Apple SDK).
+# Только workflow_dispatch. Ручной запуск всегда выполняет оба джоба.
+# macOS-сборки — отдельные workflow, тоже только вручную.
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "tools/**"
-      - "third_party/exteraless-android/**"
-      - "third_party/corpus-sources/**"
-      - ".github/workflows/compat-tests.yml"
-  pull_request:
-    paths:
-      - "tools/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -91,3 +82,69 @@ jobs:
             build/compat/features-report.md
           if-no-files-found: warn
           retention-days: 14
+
+  # Linux, без Apple SDK. Тулчейн — релиз swift.org под Ubuntu 24.04, не macOS.
+  swift-tests:
+    name: swift test (PluginHost, Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      SWIFT_ROOT: ${{ runner.tool_cache }}/swift-6.4.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Swift build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            binutils \
+            git \
+            gnupg2 \
+            libc6-dev \
+            libcurl4-openssl-dev \
+            libedit2 \
+            libgcc-13-dev \
+            libncurses-dev \
+            libpython3-dev \
+            libsqlite3-0 \
+            libstdc++-13-dev \
+            libxml2-dev \
+            libz3-dev \
+            pkg-config \
+            tzdata \
+            unzip \
+            zip \
+            zlib1g-dev
+
+      - name: Cache Swift 6.4.2 toolchain
+        id: swift-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SWIFT_ROOT }}
+          key: swift-6.4.2-ubuntu24.04-x86_64
+
+      - name: Install Swift 6.4.2
+        if: steps.swift-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$SWIFT_ROOT"
+          tarball="swift-6.4.2-RELEASE-ubuntu24.04.tar.gz"
+          url="https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-RELEASE/${tarball}"
+          curl -fL --retry 3 --retry-delay 2 -o "${SWIFT_ROOT}/${tarball}" "$url"
+          tar -xzf "${SWIFT_ROOT}/${tarball}" -C "$SWIFT_ROOT" --strip-components=1
+          rm -f "${SWIFT_ROOT}/${tarball}"
+          test -x "${SWIFT_ROOT}/usr/bin/swift"
+
+      - name: Swift on PATH
+        run: echo "${SWIFT_ROOT}/usr/bin" >> "$GITHUB_PATH"
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Test PluginHost
+        working-directory: swift/PluginHost
+        run: swift test

@@ -49,8 +49,8 @@ public actor PluginEventQueue {
         }
     }
 
-    typealias Handler = @Sendable (PluginEvent) async throws -> PluginEventResult
-    typealias TimeoutObserver = @Sendable (PluginEvent) async -> Void
+    public typealias Handler = @Sendable (PluginEvent) async throws -> PluginEventResult
+    public typealias TimeoutObserver = @Sendable (PluginEvent) async -> Void
 
     private struct Envelope {
         let event: PluginEvent
@@ -68,7 +68,7 @@ public actor PluginEventQueue {
     final class OneShotReply: @unchecked Sendable {
         private let box = OneShotResult<PluginEventResult>()
         func succeed(_ value: PluginEventResult) { box.succeed(value) }
-        func fail(_ error: Error) { box.fail(error) }
+        func fail(_ error: any Error & Sendable) { box.fail(error) }
         func awaitValue() async throws -> PluginEventResult { try await box.awaitValue() }
     }
 
@@ -256,11 +256,12 @@ public actor PluginEventQueue {
             if let onTimeout { await onTimeout(envelope.event) }
             envelope.reply?.fail(PluginHostError.timeout(String(describing: envelope.event.kind)))
         } catch {
-            envelope.reply?.fail(error)
+            // `any Error` не Sendable: через границу ждёт только PluginHostError.
+            envelope.reply?.fail(bridgePluginError(error))
         }
     }
 
-    private func failPending(_ error: Error) {
+    private func failPending(_ error: any Error & Sendable) {
         for envelope in uiSettings + sendMessage + requests {
             envelope.reply?.fail(error)
         }
@@ -281,15 +282,22 @@ func withDispatchTimeout<T: Sendable>(
 ) async throws -> T {
     if seconds <= 0 { return try await operation() }
     let outcome = OneShotResult<T>()
-    let operationTask = Task {
+    // detached: не наследовать изоляцию актора очереди. В Swift 6.2+ обычный
+    // Task из nonisolated async, вызванного с актора, сел бы на этот актор,
+    // и таймер не шёл бы параллельно зависшему диспатчу.
+    let operationTask = Task.detached {
         do {
             outcome.succeed(try await operation())
         } catch {
-            outcome.fail(error)
+            outcome.fail(bridgePluginError(error))
         }
     }
-    let timerTask = Task {
-        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    let timerTask = Task.detached {
+        do {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        } catch {
+            return // отмена после успешного диспатча — не подменять результат
+        }
         outcome.fail(DispatchTimeoutError())
     }
     defer {
@@ -299,4 +307,4 @@ func withDispatchTimeout<T: Sendable>(
     return try await outcome.awaitValue()
 }
 
-struct DispatchTimeoutError: Error {}
+struct DispatchTimeoutError: Error, Sendable {}

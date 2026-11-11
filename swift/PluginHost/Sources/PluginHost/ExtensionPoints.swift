@@ -188,7 +188,7 @@ public struct CreateSettingsPayload: Hashable, Sendable {
 // MARK: - Событие
 
 /// Стратегия хука (PluginsConstants.Strategy, сравнивается строкой в Java/Python).
-public enum HookStrategy: String, Codable, CaseIterable, Sendable {
+public enum HookStrategy: String, Codable, CaseIterable, Hashable, Sendable {
     case `default` = "DEFAULT"
     case cancel = "CANCEL"
     case modify = "MODIFY"
@@ -223,7 +223,9 @@ public enum PluginEvent: Equatable, Sendable {
     case updates(UpdatesPayload)
     case sendMessage(SendMessagePayload)
     case createSettings(CreateSettingsPayload)
-    case coalescedUpdates(CoalesceKey, [PluginEvent])
+    // indirect: кейс снова содержит PluginEvent. Косвенность даёт кейсу
+    // конечный размер (массив и так на куче; indirect не меняет матчинг).
+    indirect case coalescedUpdates(CoalesceKey, [PluginEvent])
 }
 
 extension PluginEvent {

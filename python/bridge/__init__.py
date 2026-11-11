@@ -8,7 +8,14 @@
   ``xt_install_mock_service`` или ctypes-колбэки из тестов);
 * handle-таблица (``xt_register_handle`` / ``xt_resolve_handle``) —
   JavaInstance и произвольные объекты ходят аргументами и результатами
-  по int64-id, сохраняя identity;
+  по int64-id, сохраняя identity. Таблица своя у каждого интерпретатора;
+  ``xt_set_interpreter_id`` выбирает ещё одну таблицу внутри текущего.
+  Swift освобождает слот через ``xt_builtin_ptr("release_handle")``
+  (``xt_host_release_handle`` сам берёт GIL);
+* ``bytes`` и неконечные float (``inf``/``-inf``/``nan``) идут по JSON
+  тегами ``{"__bytes__": "<base64>"}`` и
+  ``{"__float__": "inf"|"-inf"|"nan"}`` — см. комментарий в
+  ``_exteraless_bridge.c``;
 * ``member_kind``/``class_exists`` — из манифеста совместимости
   (``build/compat/manifest.json``, путь можно передать в ``BridgeBackend``).
 
@@ -49,6 +56,7 @@ xt_resolve_handle = _bridge.xt_resolve_handle
 xt_release_handle = _bridge.xt_release_handle
 xt_handle_count = _bridge.xt_handle_count
 xt_clear_handles = _bridge.xt_clear_handles
+xt_set_interpreter_id = _bridge.xt_set_interpreter_id
 
 __all__ = [
     "BridgeBackend",
@@ -56,5 +64,5 @@ __all__ = [
     "xt_install_mock_service", "xt_builtin_ptr",
     "xt_mock_log", "xt_mock_log_clear",
     "xt_register_handle", "xt_resolve_handle", "xt_release_handle",
-    "xt_handle_count", "xt_clear_handles",
+    "xt_handle_count", "xt_clear_handles", "xt_set_interpreter_id",
 ]
