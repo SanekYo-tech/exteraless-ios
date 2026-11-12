@@ -128,6 +128,13 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
+      - name: Build C bridge (_exteraless_bridge)
+        run: |
+          set -euo pipefail
+          cd python/bridge
+          pip install -q setuptools
+          python setup.py build_ext --inplace
+
       - name: Clone plugin corpus sources
         run: |
           set -euo pipefail

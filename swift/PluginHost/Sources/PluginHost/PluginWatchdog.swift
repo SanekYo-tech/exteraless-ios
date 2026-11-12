@@ -114,11 +114,11 @@ public actor PluginWatchdog {
         self.log = log
     }
 
-    public convenience init(store: PluginStore,
-                           log: (@Sendable (String) -> Void)? = nil) {
-        self.init(markerURL: store.watchdogMarkerURL,
-                  persistURL: store.directory.appendingPathComponent("watchdog.json"),
-                  log: log)
+    public init(store: PluginStore,
+                log: (@Sendable (String) -> Void)? = nil) {
+        self.markerURL = store.watchdogMarkerURL
+        self.persist = store.directory.appendingPathComponent("watchdog.json")
+        self.log = log
     }
 
     // MARK: - Жизненный цикл

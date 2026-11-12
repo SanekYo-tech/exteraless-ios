@@ -185,10 +185,10 @@ public final class PluginHost: @unchecked Sendable {
 
     public let configuration: Configuration
     public let events: PluginEventBus
-    public private(set) let permissions: PermissionsModel
-    public private(set) let security: SecurityGates
+    public let permissions: PermissionsModel
+    public let security: SecurityGates
     /// Реестр моста: точка входа C-моста этапа 2 (`_exteraless_bridge`).
-    public private(set) let bridge: BridgeServices
+    public let bridge: BridgeServices
 
     private let runtime: PythonRuntime
     private let interpreters: SubinterpreterManager
