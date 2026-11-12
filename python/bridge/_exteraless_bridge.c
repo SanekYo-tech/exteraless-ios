@@ -123,6 +123,26 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+/* Python 3.12 не имеет PyMutex (появился в 3.13). Фолбэк — обычный
+ * lock из pthread-слоя CPython; инициализация ленивая, чтобы не
+ * зависеть от порядка инициализации модуля. */
+#if PY_VERSION_HEX >= 0x030D0000
+typedef PyMutex xt_mutex_t;
+#  define XT_MUTEX_INIT {0}
+static inline void xt_mutex_lock(xt_mutex_t *m) { PyMutex_Lock(m); }
+static inline void xt_mutex_unlock(xt_mutex_t *m) { PyMutex_Unlock(m); }
+#else
+typedef PyThread_type_lock xt_mutex_t;
+#  define XT_MUTEX_INIT NULL
+static inline void xt_mutex_lock(xt_mutex_t *m) {
+    if (*m == NULL) { *m = PyThread_allocate_lock(); }
+    if (*m != NULL) { PyThread_acquire_lock(*m, WAIT_LOCK); }
+}
+static inline void xt_mutex_unlock(xt_mutex_t *m) {
+    if (*m != NULL) { PyThread_release_lock(*m); }
+}
+#endif
+
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -178,7 +198,7 @@ typedef struct {
 } ServiceEntry;
 
 /* Реестр — процессный: указатели на C-функции, не объекты Python. */
-static PyMutex g_reg_mu;
+static xt_mutex_t g_reg_mu = XT_MUTEX_INIT;
 static ServiceEntry g_services[XT_MAX_SERVICES];
 static int g_n_services = 0;
 
@@ -257,14 +277,14 @@ static void *registry_find(const char *name)
     void *fn = NULL;
     if (copy_service_name(name, buf, sizeof(buf)) < 0)
         return NULL;
-    PyMutex_Lock(&g_reg_mu);
+    xt_mutex_lock(&g_reg_mu);
     for (int i = 0; i < g_n_services; i++) {
         if (strcmp(g_services[i].name, buf) == 0) {
             fn = g_services[i].fn;
             break;
         }
     }
-    PyMutex_Unlock(&g_reg_mu);
+    xt_mutex_unlock(&g_reg_mu);
     return fn;
 }
 
@@ -278,11 +298,11 @@ static int registry_upsert(const char *name, void *fn)
         return -1;
     }
     memcpy(buf, name, strlen(name) + 1);
-    PyMutex_Lock(&g_reg_mu);
+    xt_mutex_lock(&g_reg_mu);
     for (int i = 0; i < g_n_services; i++) {
         if (strcmp(g_services[i].name, buf) == 0) {
             g_services[i].fn = fn;
-            PyMutex_Unlock(&g_reg_mu);
+            xt_mutex_unlock(&g_reg_mu);
             return 0;
         }
     }
@@ -293,7 +313,7 @@ static int registry_upsert(const char *name, void *fn)
         g_services[g_n_services].fn = fn;
         g_n_services++;
     }
-    PyMutex_Unlock(&g_reg_mu);
+    xt_mutex_unlock(&g_reg_mu);
     if (rc < 0) {
         PyErr_SetString(PyExc_RuntimeError,
                         "xt_register_service: registry is full "
@@ -309,7 +329,7 @@ static int registry_remove(const char *name)
     int removed = 0;
     if (copy_service_name(name, buf, sizeof(buf)) < 0)
         return 0;
-    PyMutex_Lock(&g_reg_mu);
+    xt_mutex_lock(&g_reg_mu);
     for (int i = 0; i < g_n_services; i++) {
         if (strcmp(g_services[i].name, buf) == 0) {
             g_services[i] = g_services[g_n_services - 1];
@@ -318,7 +338,7 @@ static int registry_remove(const char *name)
             break;
         }
     }
-    PyMutex_Unlock(&g_reg_mu);
+    xt_mutex_unlock(&g_reg_mu);
     return removed;
 }
 
@@ -2856,8 +2876,10 @@ static int module_exec(PyObject *module)
 
 static PyModuleDef_Slot module_slots[] = {
     {Py_mod_exec, module_exec},
+#if PY_VERSION_HEX >= 0x030D0000
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
     {Py_mod_gil, Py_MOD_GIL_USED},
+#endif
     {0, NULL}
 };
 
