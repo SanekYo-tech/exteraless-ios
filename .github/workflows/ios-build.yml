@@ -93,13 +93,14 @@ jobs:
           # В репо лежит p12 без рабочего приватного ключа (публичная часть
           # AppStore-серта Telegram). Генерим свежую self-signed пару;
           # EKU codeSigning обязателен — security find-identity отбирает
-          # identity по нему.
+          # identity по нему. Пароль p12 — secret: empty-pass p12 от
+          # OpenSSL 3 не проходит MAC-проверку security import.
           openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
             -keyout self.key -out self.cer \
             -subj "/CN=Telegram Fake Signing/O=Telegram/C=US" \
             -addext "extendedKeyUsage=codeSigning"
           openssl pkcs12 -export -out SelfSigned.p12 \
-            -inkey self.key -in self.cer -passout pass: -legacy
+            -inkey self.key -in self.cer -passout pass:secret -legacy
           cp self.cer Public.cer
           rm -f self.key self.cer
           cd "$SOURCE_DIR"

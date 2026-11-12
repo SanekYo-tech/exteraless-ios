@@ -45,13 +45,16 @@ def import_certificates(certificatesPath):
     for file_name in os.listdir(certificatesPath):
         file_path = certificatesPath + '/' + file_name
         if file_path.endswith('.p12') or file_path.endswith('.cer'):
+            # p12 из CI экспортирован с паролем secret (empty-pass p12
+            # с OpenSSL 3 не проходит MAC-проверку security import).
+            p12_password = 'secret' if file_path.endswith('.p12') else ''
             run_executable_with_output('security', arguments=[
                 'import',
                 file_path,
                 '-k',
                 keychain_name,
                 '-P',
-                '',
+                p12_password,
                 '-T',
                 '/usr/bin/codesign',
                 '-T',
