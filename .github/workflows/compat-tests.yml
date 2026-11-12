@@ -162,8 +162,11 @@ jobs:
       - name: Run test suite
         run: |
           set -euo pipefail
-          # JDK нужен Java-харнес-тестам; на Ubuntu-раннере его нет по умолчанию.
-          sudo apt-get update -qq && sudo apt-get install -y -qq default-jdk-headless >/dev/null
+          # JDK нужен Java-харнес-тестам, но его установка не должна
+          # ронять сьют: при сетевом флейке apt тесты с javac делают skip.
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq default-jdk-headless >/dev/null \
+            || echo "::warning::JDK install failed (apt/network flake) — Java harness tests will skip"
           python -m pytest tools/compat/tests -q --no-header
 
       - name: Upload compat reports
