@@ -43,6 +43,14 @@ def init_one(rel_path, url, sha, force=False):
     abs_path = os.path.join(REPO_ROOT, rel_path)
     os.makedirs(abs_path, exist_ok=True)
 
+    # .gitmodules пишем всегда (идемпотентно), до возможного раннего выхода:
+    # путь в пинах — уже полный от корня репо (telegram-ios/...).
+    name = rel_path.replace("/", "_")
+    run(["git", "config", "-f", ".gitmodules",
+         f"submodule.{name}.path", rel_path], cwd=REPO_ROOT)
+    run(["git", "config", "-f", ".gitmodules",
+         f"submodule.{name}.url", url], cwd=REPO_ROOT)
+
     if submodule_ready(abs_path) and not force:
         result = run(["git", "rev-parse", "HEAD"], cwd=abs_path, check=False)
         if result.returncode == 0 and result.stdout.strip() == sha:
@@ -66,13 +74,6 @@ def init_one(rel_path, url, sha, force=False):
     # fetch точного коммита (shallow) и checkout
     run(["git", "fetch", "--depth", "1", "origin", sha], cwd=abs_path)
     run(["git", "checkout", "-q", "FETCH_HEAD"], cwd=abs_path)
-
-    # .gitmodules в родителе
-    name = rel_path.replace("/", "_")
-    run(["git", "config", "-f", ".gitmodules",
-         f"submodule.{name}.path", rel_path], cwd=REPO_ROOT)
-    run(["git", "config", "-f", ".gitmodules",
-         f"submodule.{name}.url", url], cwd=REPO_ROOT)
     return True
 
 
@@ -88,7 +89,7 @@ def main():
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    with open(PINS_PATH, encoding="utf-8") as fh:
+    with open(PINS_PATH, encoding="utf-8-sig") as fh:
         pins = json.load(fh)["submodules"]
 
     items = list(pins.items())

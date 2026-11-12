@@ -1,39 +1,39 @@
-[submodule "submodules_rlottie_rlottie"]
-	path = submodules/rlottie/rlottie
+[submodule "telegram-ios_submodules_rlottie_rlottie"]
+	path = telegram-ios/submodules/rlottie/rlottie
 	url = https://github.com/TelegramMessenger/rlottie.git
-[submodule "build-system_bazel-rules_rules_apple"]
-	path = build-system/bazel-rules/rules_apple
+[submodule "telegram-ios_build-system_bazel-rules_rules_apple"]
+	path = telegram-ios/build-system/bazel-rules/rules_apple
 	url = https://github.com/ali-fareed/rules_apple.git
-[submodule "build-system_bazel-rules_rules_swift"]
-	path = build-system/bazel-rules/rules_swift
+[submodule "telegram-ios_build-system_bazel-rules_rules_swift"]
+	path = telegram-ios/build-system/bazel-rules/rules_swift
 	url = https://github.com/bazelbuild/rules_swift.git
-[submodule "build-system_bazel-rules_apple_support"]
-	path = build-system/bazel-rules/apple_support
+[submodule "telegram-ios_build-system_bazel-rules_apple_support"]
+	path = telegram-ios/build-system/bazel-rules/apple_support
 	url = https://github.com/bazelbuild/apple_support.git
-[submodule "submodules_TgVoipWebrtc_tgcalls"]
-	path = submodules/TgVoipWebrtc/tgcalls
+[submodule "telegram-ios_submodules_TgVoipWebrtc_tgcalls"]
+	path = telegram-ios/submodules/TgVoipWebrtc/tgcalls
 	url = https://github.com/TelegramMessenger/tgcalls.git
-[submodule "third-party_libvpx_libvpx"]
-	path = third-party/libvpx/libvpx
+[submodule "telegram-ios_third-party_libvpx_libvpx"]
+	path = telegram-ios/third-party/libvpx/libvpx
 	url = https://github.com/webmproject/libvpx.git
-[submodule "third-party_webrtc_webrtc"]
-	path = third-party/webrtc/webrtc
+[submodule "telegram-ios_third-party_webrtc_webrtc"]
+	path = telegram-ios/third-party/webrtc/webrtc
 	url = https://github.com/ali-fareed/webrtc.git
-[submodule "build-system_bazel-rules_rules_xcodeproj"]
-	path = build-system/bazel-rules/rules_xcodeproj
+[submodule "telegram-ios_build-system_bazel-rules_rules_xcodeproj"]
+	path = telegram-ios/build-system/bazel-rules/rules_xcodeproj
 	url = https://github.com/MobileNativeFoundation/rules_xcodeproj.git
-[submodule "third-party_dav1d_dav1d"]
-	path = third-party/dav1d/dav1d
+[submodule "telegram-ios_third-party_dav1d_dav1d"]
+	path = telegram-ios/third-party/dav1d/dav1d
 	url = https://github.com/ali-fareed/dav1d.git
-[submodule "third-party_td_td"]
-	path = third-party/td/td
+[submodule "telegram-ios_third-party_td_td"]
+	path = telegram-ios/third-party/td/td
 	url = https://github.com/tdlib/td
-[submodule "third-party_wallet-engine_wallet-engine"]
-	path = third-party/wallet-engine/wallet-engine
+[submodule "telegram-ios_third-party_wallet-engine_wallet-engine"]
+	path = telegram-ios/third-party/wallet-engine/wallet-engine
 	url = https://github.com/i582/wallet-engine.git
-[submodule "submodules_tlottie_tlottie"]
-	path = submodules/tlottie/tlottie
+[submodule "telegram-ios_submodules_tlottie_tlottie"]
+	path = telegram-ios/submodules/tlottie/tlottie
 	url = https://github.com/dkaraush/tlottie.git
-[submodule "third-party_mtproto-engine"]
-	path = third-party/mtproto-engine
+[submodule "telegram-ios_third-party_mtproto-engine"]
+	path = telegram-ios/third-party/mtproto-engine
 	url = https://github.com/TelegramMessenger/mtproto-engine.git
