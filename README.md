@@ -29,6 +29,10 @@ git clone --depth 1 https://github.com/The-MoonTg-project/extera-plugins third_p
 git clone --depth 1 https://github.com/Den4ikSuperOstryyPer4ik/CactusPlugins third_party/corpus-sources/CactusPlugins
 git clone --depth 1 https://github.com/mr-Vestr/plugins third_party/corpus-sources/vestr-plugins
 
+# 0. перед первой сборкой: сабмодули Telegram-iOS (пины — docs/submodule-pins.json)
+git submodule update --init --recursive
+# если сабмодули не инициализированы (снапшот без них): python tools/fetch_submodules.py
+
 # 2. собрать корпус в один каталог
 python -m tools.compat.collect_corpus
 

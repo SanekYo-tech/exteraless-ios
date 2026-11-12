@@ -3,6 +3,11 @@
 **/__pycache__/
 *.pyc
 
+# Артефакты сборки C-моста
+python/bridge/build/
+python/bridge/*.pyd
+python/bridge/*.so
+
 # Корпус и внешние клоны (восстанавливаются скриптами, см. README)
 third_party/corpus-sources/
 third_party/corpus/
