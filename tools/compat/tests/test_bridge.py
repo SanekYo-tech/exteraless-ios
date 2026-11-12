@@ -73,6 +73,11 @@ def bridge_sandbox():
     xt_clear_handles()
 
 
+ucrtbase_skip = pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="ucrtbase.dll malloc/free — Windows-only (ctypes-колбэк тест)",
+)
+
 def log_last():
     return xt_mock_log()[-1]
 
@@ -274,6 +279,7 @@ def test_service_registry_introspection():
         xt_unregister_service("echo.call")
 
 
+@ucrtbase_skip
 def test_service_error_marker_raises_member_error():
     # сервис отвечает {"__error__": ...} => JavaMemberError
     CFUNC = ctypes.CFUNCTYPE(
@@ -302,6 +308,7 @@ def test_service_error_marker_raises_member_error():
         xt_unregister_service("hosterr.call")
 
 
+@ucrtbase_skip
 def test_python_ctypes_service_swift_path():
     """Регистрация Python-колбэка через ctypes — прототип регистрации Swift.
 
@@ -396,6 +403,7 @@ def test_bytes_and_nonfinite_roundtrip_and_wire_tags(bridge_sandbox):
     assert MessagesController.echoFirst(buf) is buf
 
 
+@ucrtbase_skip
 def test_invalid_bytes_and_float_tags_raise(bridge_sandbox):
     CFUNC = ctypes.CFUNCTYPE(
         ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p,
