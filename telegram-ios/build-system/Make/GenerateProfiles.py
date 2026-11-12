@@ -43,9 +43,11 @@ def setup_temp_keychain(p12_path, p12_password=''):
     ], check_result=True)
 
     # Set partition list for access
+    # (hosted-раннеры могут вернуть non-zero при выполненной операции —
+    # не фейлим, как в ImportCertificates.py)
     run_executable_with_output('security', arguments=[
         'set-key-partition-list', '-S', 'apple-tool:,apple:', '-k', keychain_password, keychain_name
-    ], check_result=True)
+    ], check_result=False)
 
     return keychain_name
 
@@ -102,6 +104,11 @@ def process_provisioning_profile(source, destination, certificate_data, signing_
     parsed_plist_file = tempfile.mktemp()
     with open(parsed_plist_file, 'w+') as file:
         file.write(parsed_plist)
+
+    # Фейк-профили upstream истекли — продлеваем при переподписи.
+    run_executable_with_output('plutil', arguments=[
+        '-replace', 'ExpirationDate', '-date', '2030-10-30T17:06:30Z',
+        parsed_plist_file], check_result=False)
 
     # Remove all existing developer certificates
     while True:

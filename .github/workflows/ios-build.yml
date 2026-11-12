@@ -86,6 +86,39 @@ jobs:
           restore-keys: |
             bazel-ios-
 
+      - name: Generate fresh fake signing cert and profiles
+        run: |
+          set -euo pipefail
+          cd "$SOURCE_DIR/build-system/fake-codesigning/certs"
+          # В репо лежит p12 без рабочего приватного ключа (публичная часть
+          # AppStore-серта Telegram). Генерим свежую self-signed пару;
+          # EKU codeSigning обязателен — security find-identity отбирает
+          # identity по нему.
+          openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
+            -keyout self.key -out self.cer \
+            -subj "/CN=Telegram Fake Signing/O=Telegram/C=US" \
+            -addext "extendedKeyUsage=codeSigning"
+          openssl pkcs12 -export -out SelfSigned.p12 \
+            -inkey self.key -in self.cer -passout pass: -legacy
+          cp self.cer Public.cer
+          rm -f self.key self.cer
+          cd "$SOURCE_DIR"
+          # Переподписываем профили свежим сертом (DeveloperCertificates
+          # заменяется, ExpirationDate продлевается до 2030) — иначе
+          # openssl/plisttool валятся на истёкших и чужих подписях.
+          mkdir -p build-input/regen-profiles
+          python3 - <<'EOF'
+          import sys
+          sys.path.insert(0, 'build-system/Make')
+          import GenerateProfiles
+          GenerateProfiles.generate_provisioning_profiles(
+              source_path='build-system/fake-codesigning/profiles',
+              destination_path='build-input/regen-profiles',
+              certs_path='build-system/fake-codesigning/certs')
+          EOF
+          cp -f build-input/regen-profiles/*.mobileprovision \
+            build-system/fake-codesigning/profiles/
+
       - name: Import fake codesigning
         run: |
           set -euo pipefail
