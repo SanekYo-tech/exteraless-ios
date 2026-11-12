@@ -9,6 +9,6 @@
 	"appstore_id": "0",
 	"app_specific_url_scheme": "exl",
 	"premium_iap_product_id": "",
-	"enable_siri": "false",
-	"enable_icloud": "false"
+	"enable_siri": false,
+	"enable_icloud": false
 }
