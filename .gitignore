@@ -1,5 +1,5 @@
-# Сборки и генерация
-build/
+# Сборки и генерация (только в корне репо — не трогать исходники vendored-дерева!)
+/build/
 **/__pycache__/
 *.pyc
 
@@ -7,8 +7,8 @@ build/
 third_party/corpus-sources/
 third_party/corpus/
 
-# Bazel
-**/bazel-*
+# Bazel (симлинки в корне рабочей области)
+/bazel-*
 telegram-ios/build/artifacts/
 
 # macOS/IDE
@@ -23,14 +23,11 @@ local.properties
 *.p12
 *.mobileprovision
 
+# ...но фейковые фикстуры upstream-сборки — не секреты, они должны жить в git
+!telegram-ios/build-system/fake-codesigning/**
+!telegram-ios/buildbox/fake-codesigning/**
+
+# Эталонная IPA и внешние study-клоны
+reference-ipa/
 third_party/Python-Apple-support/
 third_party/Python-Apple-support-3.12/
-reference-ipa/
-
-# _exteraless_bridge build artifacts (C extension, stage 2)
-*.pyd
-*.so
-*.egg-info/
-
-# local reference dumps (too large for the repo)
-reference-ipa/
