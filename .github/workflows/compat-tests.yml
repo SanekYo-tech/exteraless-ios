@@ -191,7 +191,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      SWIFT_ROOT: ${{ runner.tool_cache }}/swift-6.4.2
+      # литеральный путь (контекст runner недоступен в job-level env/with —
+      # workflow становится невалидным, запуск падает без джобов)
+      SWIFT_ROOT: /home/runner/swift-6.4.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
