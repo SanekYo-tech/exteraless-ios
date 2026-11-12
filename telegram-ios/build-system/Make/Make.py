@@ -275,6 +275,11 @@ class BazelCommandLine:
                 '--features=swift.split_derived_files_generation',
             ]
 
+        # codesign в sandbox-экшенах не находит identity из пользовательского
+        # keychain, если HOME не проброшен (экшены запускаются с env -):
+        # наследуем HOME из клиентского окружения.
+        combined_arguments += ['--action_env=HOME']
+
         return combined_arguments
 
     def invoke_build(self):
