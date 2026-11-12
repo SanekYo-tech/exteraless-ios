@@ -34,7 +34,7 @@ jobs:
             -inkey self.key -in self.cer -passout pass:secret -legacy
           cp self.cer Public.cer
           rm -f self.key self.cer
-          openssl x509 -in SelfSigned.p12 -passin pass:secret -legacy -noout -subject -fingerprint
+          openssl x509 -in SelfSigned.p12 -passin pass:secret -noout -subject -fingerprint
 
       - name: Import via ImportCertificates
         run: |
