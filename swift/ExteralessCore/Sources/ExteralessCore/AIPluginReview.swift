@@ -62,7 +62,9 @@ public actor AIPluginReviewTools {
                 blobs += Self.embeddedBlobs(name: file.name, lines: lines)
             } else { blobs.append(Blob(origin: file.name, data: file.data)) }
         }
-        guard !files.isEmpty || !blobs.isEmpty else { throw AIError.emptyResponse }
+        let hasTextFiles = !files.isEmpty
+        let hasBinaryBlobs = !blobs.isEmpty
+        guard hasTextFiles || hasBinaryBlobs else { throw AIError.emptyResponse }
     }
 
     public func handler(language: String = "English") -> AIToolHandler {
