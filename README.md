@@ -59,16 +59,18 @@ iOS-расширениями для последующей самостояте�
 Проверки и артефакты: [docs/ci-unsigned.md](docs/ci-unsigned.md).
 
 Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
-Текущий следующий этап — [CPython runtime и native embedding probe](docs/python-runtime.md).
+Проверенный CPython runtime + native engine: [runtime build 10](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774).
+Подробности и следующий этап интеграции — [docs/python-runtime.md](docs/python-runtime.md).
 
 ## Статус этапов
 
 - [x] 0a. Репозиторий + манифест-генератор + корпус
 - [x] 0b. CI: unsigned Telegram-iOS 13.1.1 + проверенный артефакт
-- [ ] 1. CPython 3.12 xcframework
+- [x] 1. CPython 3.12.16 xcframework + реальные iOS-simulator probes
+- [x] Нативный CPythonEngine и Swift-адаптер (component validation)
 - [ ] 2. Мост `_exteraless_bridge`
 - [ ] 3. Virtual-Java слой
-- [ ] 4. PluginHost (Swift)
+- [ ] 4. Встройка PluginHost в клиент Telegram
 - [ ] 5. Extension points
 - [ ] 6. UI менеджера плагинов
 

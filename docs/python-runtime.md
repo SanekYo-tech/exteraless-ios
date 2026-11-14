@@ -1,5 +1,29 @@
 # Встроенный CPython: проверяемая поставка для iOS
 
+## Подтверждённая веха — 14.11.2026
+
+**[Run 43615992774](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774)
+на `013fc301` полностью прошёл за 2 мин 15 с.**
+
+- iOS-simulator: настоящий **CPython 3.12.16**, загрузка `.fwork` extensions,
+  SSL/SQLite/compression и built-in C-мост; два OWN_GIL интерпретатора.
+- Native engine на iOS: два worker-потока, изоляция, исключения/SystemExit,
+  Unicode/NUL, отказ чужому потоку, защита finalize/destroy и нормальное завершение.
+- Swift adapter с host CPython **3.12.10** на macOS также прошёл реальные проверки.
+- Артефакты `Python-3.12-device-probe-10` и `Python-3.12-ios-runtime-10` опубликованы.
+  Скачанный IPA проверен повторно: SHA-256 совпал с manifest, все **56 device Mach-O**
+  имеют iOS ARM64 и допустимый unsigned/ad-hoc статус. Source fingerprint совпал
+  с git blobs проверенного коммита.
+
+Симуляторные отчёты указывают `execution: simctl spawn --standalone` и
+`application_installation_verified: false`; физическая установка проверяется
+пользователем после подписи. Локальная копия диагностической IPA и отчётов:
+`build/artifacts/python-runtime-43615992774/`.
+
+У upstream framework `Info.plist` сохранилась строка 3.12.10, но заголовки,
+support manifest и исполняемый runtime согласованно сообщают **3.12.16**.
+Проверка версии движка опирается на заголовки и `Py_GetVersion`, не на plist.
+
 ## Исходная веха
 
 Unsigned Telegram-iOS 13.1.1 успешно собран и проверен в
@@ -198,8 +222,8 @@ Runtime ID с hardware suffix исключаются. При отсутстви�
 выбор завершается ошибкой с её именем, SDK и списком runtimes, без подмены
 другим устройством. На сохранённом inventory при SDK 27.1 это даёт
 `iOS-27-0` / `iPhone 17`: generic 27.1 содержит только Duo, а 27.2 новее SDK.
-Это проверяется локальной регрессией; успешный CI run с исправлением ещё
-не подтверждён.
+Это проверяется локальной регрессией. Полный runtime CI прошёл после перехода
+к standalone-процессам, см. подтверждённую веху выше.
 
 Run `43613723001` на macOS 26 / Xcode 26.6 снова завис в системном `launchctl`
 до Python. Host-лог содержит разрывы XPC после отмены клиентов, но не устанавливает
@@ -232,12 +256,10 @@ python tools/runtime/check_host_embedding.py --probe engine --fault-injection --
 При отказе сохраняются и логи CoreSimulator со стороны macOS. Telegram build
 имеет собственный toolchain; runtime-компонент не требует Xcode 27.
 
-1. Подтвердить новые native/Swift probes по CI; C-core уже проверен на Windows,
-   адаптер написан, в app Bazel-граф пока не включён.
-2. Привязка native callbacks, их thread/GIL ownership и освобождение handles
+1. Привязка native callbacks, их thread/GIL ownership и освобождение handles
    на правильном интерпретаторе; probe не проверяет foreign-thread callbacks.
-3. Врезка runtime, bridge, stdlib/SDK и ресурсов в успешный Bazel-граф клиента.
-4. Настоящие сервисы Telegram и жизненный цикл загрузки плагина, затем UI.
+2. Врезка runtime, bridge, stdlib/SDK и ресурсов в успешный Bazel-граф клиента.
+3. Настоящие сервисы Telegram и жизненный цикл загрузки плагина, затем UI.
 
 Субинтерпретатор не является границей памяти/процесса. `abandon` не
 останавливает зависший нативный поток и не освобождает его память. Следующая
