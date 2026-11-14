@@ -203,8 +203,8 @@ public actor AITranslationClient {
         }
         try Task.checkCancellation()
         let to = try AITranslationLanguage.normalize(to, provider: .google)
-        let request = try AITranslationRequest.build(provider: .google, query: query, from: from, to: to, html: false, configuration: config)
-        let data = try await transport.data(for: request, timeout: 60)
+        let fallbackRequest = try AITranslationRequest.build(provider: .google, query: query, from: from, to: to, html: false, configuration: config)
+        let data = try await transport.data(for: fallbackRequest, timeout: 60)
         return (try AITranslationRequest.parse(data, provider: .google, configuration: config), .google)
     }
 
