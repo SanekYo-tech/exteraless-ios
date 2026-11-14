@@ -17,6 +17,8 @@ public enum ClientSettingsError: Error, Equatable, LocalizedError, Sendable {
     case invalidDefinition(key: String)
     case conflictingDefinition(key: String)
     case invalidValue(key: String, reason: ValidationReason)
+    case conflictingChanges
+    case concurrentModification
     case nonFiniteNumber
     case invalidJSON
     case unsupportedVersion(Int64)
@@ -41,6 +43,8 @@ public enum ClientSettingsError: Error, Equatable, LocalizedError, Sendable {
             case .range: return "The value is outside the allowed range for \(key)."
             case .step: return "The value does not match the allowed step for \(key)."
             }
+        case .conflictingChanges: return "A setting cannot be updated and reset in the same batch."
+        case .concurrentModification: return "The affected settings have changed. Refresh the snapshot before trying again."
         case .nonFiniteNumber: return "Settings cannot contain NaN or infinite numbers."
         case .invalidJSON: return "The settings document is invalid. The existing file has been preserved."
         case let .unsupportedVersion(version): return "This settings document requires a newer client (version \(version))."
@@ -63,6 +67,20 @@ public struct ClientSettingsSnapshot: Sendable {
     public let storedKeys: Set<String>
     public let secretKeys: Set<String>
     public let lastError: ClientSettingsError?
+
+    /// Also allows a journal to reconstruct an expected CAS state. Construction
+    /// grants no write access: applyPublic rechecks the live schema and file.
+    public init(definitions: [ClientSettingDefinition], values: [String: ClientSettingValue],
+                storedKeys: Set<String>, secretKeys: Set<String> = [], lastError: ClientSettingsError? = nil) {
+        let secretKeys = secretKeys.union(definitions.filter(\.isSecret).map(\.key))
+        var values = values
+        for key in secretKeys where values[key] != nil { values[key] = .null }
+        self.definitions = definitions
+        self.values = values
+        self.storedKeys = storedKeys
+        self.secretKeys = secretKeys
+        self.lastError = lastError
+    }
 }
 
 /// Synchronous, process-local read cache with serialized durable writes.
@@ -95,6 +113,7 @@ public final class ClientSettings: @unchecked Sendable {
         case reload
         case set(String, ClientSettingValue)
         case setPublic(String, ClientSettingValue)
+        case applyPublic([String: ClientSettingValue], Set<String>, ClientSettingsSnapshot?)
         case reset(String)
         case migrateKey(String, String)
     }
@@ -113,16 +132,25 @@ public final class ClientSettings: @unchecked Sendable {
     private var storageURL: URL?
     private var secretStore: any ClientSecretStore
     private var registeredDefinitions: [ClientSettingDefinition] = []
+    private let afterFileReplace: (@Sendable () throws -> Void)?
 
     /// The initial file read is completed before this initializer returns.
     /// Inject a fake secretStore in tests; no production in-memory fallback exists.
-    public init(storageURL: URL, secretStore: any ClientSecretStore = ClientSecrets.systemStore()) throws {
+    public convenience init(storageURL: URL, secretStore: any ClientSecretStore = ClientSecrets.systemStore()) throws {
+        try self.init(storageURL: storageURL, secretStore: secretStore, afterFileReplace: nil)
+    }
+
+    /// Internal fault injection at the real post-rename/pre-directory-sync seam.
+    /// Production initializers never supply a hook; fixtures must not re-enter.
+    init(storageURL: URL, secretStore: any ClientSecretStore, afterFileReplace: (@Sendable () throws -> Void)?) throws {
         self.secretStore = secretStore
+        self.afterFileReplace = afterFileReplace
         try self.configure(storageURL: storageURL)
     }
 
     private init(defaultStorage: ()) {
         self.secretStore = ClientSecrets.systemStore()
+        self.afterFileReplace = nil
         do {
             try self.configure(storageURL: Self.defaultStorageURL())
         } catch {
@@ -200,6 +228,20 @@ public final class ClientSettings: @unchecked Sendable {
         try self.perform(.setPublic(key, value))
     }
 
+    /// One atomic public-settings patch, including removal of overrides. All
+    /// affected keys must be registered and public; update/reset overlap fails.
+    /// When expected is provided, compare affected effective JSON values AND
+    /// override presence against disk under flock before writing. Unaffected
+    /// keys are merged from that file. Credentials are neither read nor mutated.
+    /// A post-rename error can still mean the entire batch committed; the cache
+    /// then reflects the committed state. Build rollback's expected state from
+    /// the intended patch, not a later snapshot that may include another edit.
+    public func applyPublic(_ values: [String: ClientSettingValue], resetting: Set<String> = [],
+                            expected: ClientSettingsSnapshot? = nil) throws {
+        guard !values.isEmpty || !resetting.isEmpty else { return }
+        try self.perform(.applyPublic(values, resetting, expected))
+    }
+
     /// Removes an override (or Keychain item), so future defaults also take effect.
     public func reset(_ key: String) throws {
         try self.perform(.reset(key))
@@ -231,11 +273,7 @@ public final class ClientSettings: @unchecked Sendable {
     public func readSnapshot() -> ClientSettingsSnapshot {
         self.cacheLock.lock()
         defer { self.cacheLock.unlock() }
-        var values = self.cache.values
-        for key in self.cache.secretKeys where values[key] != nil {
-            values[key] = .null
-        }
-        return ClientSettingsSnapshot(definitions: self.cache.definitions, values: values,
+        return ClientSettingsSnapshot(definitions: self.cache.definitions, values: self.cache.values,
                                       storedKeys: self.cache.storedKeys, secretKeys: self.cache.secretKeys,
                                       lastError: self.cache.error)
     }
@@ -288,9 +326,15 @@ public final class ClientSettings: @unchecked Sendable {
         let change: Change
         var failure: ClientSettingsError?
         do {
-            let result = try self.runLocked(operation)
-            failure = result.error
-            change = self.publish(result)
+            if case let .applyPublic(values, resetting, expected) = operation {
+                let result = try self.runPublicBatchLocked(values, resetting: resetting, expected: expected)
+                failure = result.failure
+                change = result.change
+            } else {
+                let result = try self.runLocked(operation)
+                failure = result.error
+                change = self.publish(result)
+            }
         } catch {
             let safeError = Self.storageError(error, operation: "read or write")
             failure = safeError
@@ -305,6 +349,12 @@ public final class ClientSettings: @unchecked Sendable {
                 recovered = try? ClientSettingsFile.withLock(at: url) {
                     let document = try ClientSettingsFile.read(at: url)
                     learnedSecretKeys.formUnion(document.secretKeys)
+                    if case .applyPublic = operation {
+                        self.cacheLock.lock()
+                        let cached = self.cache
+                        self.cacheLock.unlock()
+                        return try self.resolvePublic(document, definitions: self.registeredDefinitions, cached: cached)
+                    }
                     return try self.resolve(document, definitions: self.registeredDefinitions)
                 }
             }
@@ -321,6 +371,92 @@ public final class ClientSettings: @unchecked Sendable {
         self.writerLock.unlock()
         change.deliver()
         if let failure { throw failure }
+    }
+
+    /// The caller holds writerLock. CAS, the single file replacement and cache
+    /// publication share the same flock; delivery happens in perform after both
+    /// locks have been released. This path cannot enter secret migration logic.
+    private func runPublicBatchLocked(_ values: [String: ClientSettingValue], resetting: Set<String>,
+                                      expected: ClientSettingsSnapshot?) throws -> (change: Change, failure: ClientSettingsError?) {
+        guard let url = self.storageURL else { throw ClientSettingsError.notConfigured }
+        let definitions = self.registeredDefinitions
+        self.cacheLock.lock()
+        let cached = self.cache
+        self.cacheLock.unlock()
+        return try ClientSettingsFile.withLock(at: url) {
+            let original = try ClientSettingsFile.read(at: url)
+            var document = original
+            document.secretKeys.formUnion(cached.secretKeys)
+            document.secretKeys.formUnion(definitions.filter(\.isSecret).map(\.key))
+            let affected = Set(values.keys).union(resetting)
+            // A formerly public key becoming secret wins over stale expected
+            // values, including a key whose owning domain is not registered here.
+            guard affected.isDisjoint(with: document.secretKeys),
+                  affected.isDisjoint(with: expected?.secretKeys ?? []) else {
+                throw ClientSettingsError.secretAccessDenied
+            }
+            guard resetting.isDisjoint(with: values.keys) else { throw ClientSettingsError.conflictingChanges }
+
+            var validated: [String: ClientSettingValue] = [:]
+            var affectedDefinitions: [String: ClientSettingDefinition] = [:]
+            for key in affected.sorted() {
+                let definition = try Self.definition(key, in: definitions)
+                affectedDefinitions[key] = definition
+                validated[key] = try definition.validatedValue(values[key] ?? definition.defaultValue)
+            }
+            if let expected {
+                for key in affected.sorted() {
+                    guard let definition = affectedDefinitions[key], let anticipated = expected.values[key],
+                          expected.storedKeys.contains(key) == (document.values[key] != nil) else {
+                        throw ClientSettingsError.concurrentModification
+                    }
+                    do { try anticipated.validateJSON() }
+                    catch { throw ClientSettingsError.concurrentModification }
+                    let current = document.values[key] ?? definition.defaultValue
+                    guard current.isSameJSONValue(as: anticipated) else {
+                        throw ClientSettingsError.concurrentModification
+                    }
+                }
+            }
+            for (key, value) in validated {
+                if resetting.contains(key) { document.values.removeValue(forKey: key) }
+                else { document.values[key] = value }
+            }
+            // A public batch must not copy/migrate even an unrelated known
+            // plaintext credential. Native registration must finish that first.
+            guard document.secretKeys.isDisjoint(with: document.values.keys) else {
+                throw ClientSettingsError.secretAccessDenied
+            }
+            var committed = try self.resolvePublic(document, definitions: definitions, cached: cached, validated: validated)
+            if document != original || (document.legacy && !definitions.isEmpty) {
+                committed.error = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace)
+            }
+            return (self.publish(committed), committed.error)
+        }
+    }
+
+    /// Refresh public values from the candidate/file, retaining the last native
+    /// credential cache. Used for public batch recovery too: no Keychain I/O.
+    private func resolvePublic(_ document: ClientSettingsFile.Document, definitions: [ClientSettingDefinition],
+                               cached: Cache, validated: [String: ClientSettingValue] = [:]) throws -> Cache {
+        var result = Cache()
+        result.definitions = definitions
+        result.secretKeys = document.secretKeys.union(cached.secretKeys).union(definitions.filter(\.isSecret).map(\.key))
+        for definition in definitions {
+            let key = definition.key
+            if result.secretKeys.contains(key) {
+                result.values[key] = cached.values[key] ?? definition.defaultValue
+                if cached.storedKeys.contains(key) { result.storedKeys.insert(key) }
+            } else {
+                if let value = validated[key] {
+                    result.values[key] = value
+                } else {
+                    result.values[key] = try definition.validatedValue(document.values[key] ?? definition.defaultValue)
+                }
+                if document.values[key] != nil { result.storedKeys.insert(key) }
+            }
+        }
+        return result
     }
 
     private func runLocked(_ operation: Operation) throws -> Cache {
@@ -445,7 +581,7 @@ public final class ClientSettings: @unchecked Sendable {
             // Structural v0 -> v1 migration happens with registration/mutation.
             let upgrade = document.legacy && !definitions.isEmpty
             if document != original || upgrade {
-                next.error = try ClientSettingsFile.write(document, at: url)
+                next.error = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace)
             }
             return next
         }
@@ -584,7 +720,7 @@ private enum ClientSettingsFile {
 
     /// Returns a post-commit durability error separately so the caller still
     /// publishes the committed generation. Pre-rename failures throw normally.
-    static func write(_ document: Document, at url: URL) throws -> ClientSettingsError? {
+    static func write(_ document: Document, at url: URL, afterReplace: (@Sendable () throws -> Void)? = nil) throws -> ClientSettingsError? {
         guard document.secretKeys.isDisjoint(with: document.values.keys) else { throw ClientSettingsError.invalidJSON }
         var root = document.extra
         root["$format"] = .string(self.format)
@@ -626,6 +762,8 @@ private enum ClientSettingsFile {
             url.path.withCString { destination in rename(source, destination) }
         }
         guard renamed == 0 else { throw self.posixError("replace") }
+        do { try afterReplace?() }
+        catch { return .storageFailure(operation: "sync directory", code: (error as NSError).code) }
         let directoryDescriptor = directory.path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
         guard directoryDescriptor >= 0 else { return self.posixError("open directory after replace") }
         defer { _ = close(directoryDescriptor) }

@@ -121,6 +121,52 @@ final class PluginServiceStorageTests: XCTestCase {
         XCTAssertThrowsError(try PluginJSONValue(jsonObject: NSNumber(value: Double.nan)))
     }
 
+    func testBulkMergeAndReplacePreserveOpaqueKeysAndOwners() throws {
+        let storage = PluginServiceStorage(rootDirectory: try directory())
+        try storage.setSetting(pluginId: "alpha", key: "keep", value: .integer(1))
+        try storage.setSetting(pluginId: "beta", key: "private", value: .bool(true))
+        try storage.writeSettingsJSON(pluginId: "alpha", json: "{\"__handle__\":123,\"nullable\":null}", replace: false)
+        let decoded = try JSONDecoder().decode([String: PluginJSONValue].self,
+            from: Data(storage.settingsJSON(pluginId: "alpha").utf8))
+        XCTAssertEqual(decoded, ["keep": .integer(1), "__handle__": .integer(123), "nullable": .null])
+        try storage.writeSettingsJSON(pluginId: "alpha", json: "{\"new\":false}", replace: true)
+        XCTAssertEqual(try storage.settingsSnapshot(pluginId: "alpha"), ["new": .bool(false)])
+        XCTAssertEqual(try storage.settingsSnapshot(pluginId: "beta"), ["private": .bool(true)])
+    }
+
+    func testBulkValidationFailureDoesNotPartiallyApply() throws {
+        let storage = PluginServiceStorage(rootDirectory: try directory())
+        try storage.replaceSettings(pluginId: "alpha", values: ["before": .integer(7)])
+        XCTAssertThrowsError(try storage.updateSettings(pluginId: "alpha", values: ["valid": .bool(true), "": .null]))
+        XCTAssertThrowsError(try storage.replaceSettings(pluginId: "alpha", values: ["bad": .number(.nan)]))
+        XCTAssertThrowsError(try storage.writeSettingsJSON(pluginId: "alpha", json: "[]", replace: true))
+        XCTAssertEqual(try storage.settingsSnapshot(pluginId: "alpha"), ["before": .integer(7)])
+    }
+
+    func testExplicitBulkRestoreCanRepairCorruption() throws {
+        let storage = PluginServiceStorage(rootDirectory: try directory())
+        try storage.setSetting(pluginId: "alpha", key: "old", value: .null)
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: storage.settingsDirectory(), includingPropertiesForKeys: nil).first)
+        try Data("{broken".utf8).write(to: file)
+        XCTAssertThrowsError(try storage.updateSettings(pluginId: "alpha", values: ["k": .bool(true)]))
+        try storage.replaceSettings(pluginId: "alpha", values: ["restored": .integer(3)])
+        XCTAssertEqual(try storage.settingsSnapshot(pluginId: "alpha"), ["restored": .integer(3)])
+    }
+
+    func testConcurrentBulkMergesKeepBothKeysOfEveryUpdate() throws {
+        let storage = PluginServiceStorage(rootDirectory: try directory())
+        let errors = Recorder<String>()
+        DispatchQueue.concurrentPerform(iterations: 8) { index in
+            do {
+                try storage.updateSettings(pluginId: "alpha", values: [
+                    "a\(index)": .integer(Int64(index)), "b\(index)": .bool(true),
+                ])
+            } catch { errors.append(String(describing: error)) }
+        }
+        XCTAssertTrue(errors.values.isEmpty)
+        XCTAssertEqual(try storage.settingsSnapshot(pluginId: "alpha").count, 16)
+    }
+
     func testLogRingKeepsNewestEntriesInOrderAndBoundsUTF8() {
         let logs = PluginServiceLogBuffer(capacity: 3, maximumMessageBytes: 5)
         logs.append(pluginId: "alpha", message: "old")

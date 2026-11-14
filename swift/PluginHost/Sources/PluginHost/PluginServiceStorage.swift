@@ -90,6 +90,49 @@ public final class PluginServiceStorage: @unchecked Sendable {
         return true
     }
 
+    public func settingsSnapshot(pluginId: String) throws -> [String: PluginJSONValue] {
+        try Self.validatePluginId(pluginId)
+        lock.lock(); defer { lock.unlock() }
+        return try readSettings(pluginId: pluginId)
+    }
+
+    /// Explicit replacement/restore, distinct from an implicit read fallback.
+    /// All keys and the complete output are validated before atomic replacement.
+    public func replaceSettings(pluginId: String, values: [String: PluginJSONValue]) throws {
+        try Self.validatePluginId(pluginId)
+        for key in values.keys { try validateKey(key) }
+        lock.lock(); defer { lock.unlock() }
+        try writeSettings(values, pluginId: pluginId)
+    }
+
+    public func updateSettings(pluginId: String, values: [String: PluginJSONValue]) throws {
+        try Self.validatePluginId(pluginId)
+        for key in values.keys { try validateKey(key) }
+        lock.lock(); defer { lock.unlock() }
+        var current = try readSettings(pluginId: pluginId)
+        for (key, value) in values { current[key] = value }
+        try writeSettings(current, pluginId: pluginId)
+    }
+
+    public func settingsJSON(pluginId: String) throws -> String {
+        let values = try settingsSnapshot(pluginId: pluginId)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return String(decoding: try encoder.encode(values), as: UTF8.self)
+    }
+
+    public func writeSettingsJSON(pluginId: String, json: String, replace: Bool) throws {
+        let data = Data(json.utf8)
+        guard data.count <= maximumSettingsBytes else {
+            throw BridgeFailure.storage("Settings payload exceeds 1 MiB")
+        }
+        let values: [String: PluginJSONValue]
+        do { values = try JSONDecoder().decode([String: PluginJSONValue].self, from: data) }
+        catch { throw BridgeFailure.malformed("Settings payload must be a JSON object") }
+        if replace { try replaceSettings(pluginId: pluginId, values: values) }
+        else { try updateSettings(pluginId: pluginId, values: values) }
+    }
+
     private func validateKey(_ key: String) throws {
         guard !key.isEmpty, key.utf8.count <= 256, !key.contains("\0") else {
             throw BridgeFailure.malformed("Setting key must contain 1...256 UTF-8 bytes without NUL")

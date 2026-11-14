@@ -76,4 +76,23 @@ public enum ClientSettingValue: Codable, Equatable, Sendable {
             break
         }
     }
+
+    /// CAS compares the JSON value on disk, not an encoder's choice of 1 vs 1.0.
+    /// Exact conversion avoids equating Int64.max with a rounded Double. Unlike
+    /// NSNumber equality, true and 1 remain different, including inside objects.
+    func isSameJSONValue(as other: ClientSettingValue) -> Bool {
+        switch (self, other) {
+        case let (.integer(integer), .number(number)), let (.number(number), .integer(integer)):
+            return Int64(exactly: number) == integer
+        case let (.array(lhs), .array(rhs)):
+            return lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { pair in pair.0.isSameJSONValue(as: pair.1) }
+        case let (.object(lhs), .object(rhs)):
+            return lhs.count == rhs.count && lhs.allSatisfy { key, value in
+                guard let other = rhs[key] else { return false }
+                return value.isSameJSONValue(as: other)
+            }
+        default:
+            return self == other
+        }
+    }
 }

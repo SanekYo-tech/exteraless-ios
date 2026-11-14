@@ -222,6 +222,18 @@ public struct PluginTextMessageRequest: Sendable {
     }
 }
 
+/// A native effect may run after dispatch has returned or after an async cache
+/// read. Recheck this lease at the actual effect, not only at queue admission.
+public struct PluginNativeCallLease: Sendable {
+    private let current: @Sendable () -> Bool
+
+    public init(isCurrent: @escaping @Sendable () -> Bool) { self.current = isCurrent }
+    public var isCurrent: Bool { self.current() }
+    public func check() throws {
+        guard isCurrent else { throw BridgeFailure.invalidHandle("Native effect owner or permission expired") }
+    }
+}
+
 /// Optional extension surface, discovered as `ui as? PluginPlatformService`.
 /// Synchronous methods read value snapshots or enqueue native effects; none may
 /// wait for the main queue or execute Python. A send returns a request id, not a
@@ -231,19 +243,25 @@ public protocol PluginPlatformService: AnyObject {
     var serviceStorage: PluginServiceStorage { get }
     var serviceLogs: PluginServiceLogBuffer { get }
     var runtimeVersion: String { get }
-    func addToClipboard(_ text: String, pluginId: String) throws
-    func openURL(_ url: URL, pluginId: String) throws
-    func sendMessage(_ request: PluginTextMessageRequest) throws -> String
+    /// Additional application-settings locations protected from raw plugin file
+    /// writes. Ordinary SDK-only hosts can have no additional client settings.
+    var protectedPaths: [String] { get }
+    func addToClipboard(_ text: String, pluginId: String, lease: PluginNativeCallLease) throws
+    func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws
+    func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String
+    func releaseInstances(pluginId: String)
 }
 
 public extension PluginPlatformService {
-    func addToClipboard(_ text: String, pluginId: String) throws {
+    var protectedPaths: [String] { [] }
+    func releaseInstances(pluginId: String) {}
+    func addToClipboard(_ text: String, pluginId: String, lease: PluginNativeCallLease) throws {
         throw BridgeFailure.unimplemented("AndroidUtilities.addToClipboard: no platform implementation")
     }
-    func openURL(_ url: URL, pluginId: String) throws {
+    func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws {
         throw BridgeFailure.unimplemented("Browser.openUrl: no platform implementation")
     }
-    func sendMessage(_ request: PluginTextMessageRequest) throws -> String {
+    func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String {
         throw BridgeFailure.unimplemented("Runtime.sendMessage: no platform implementation")
     }
 }

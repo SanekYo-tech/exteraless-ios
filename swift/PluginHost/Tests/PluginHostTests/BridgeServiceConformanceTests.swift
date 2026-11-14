@@ -24,6 +24,7 @@ final class BridgeServiceConformanceTests: XCTestCase {
         let clipboards = Recorder<String>()
         let openedURLs = Recorder<URL>()
         let sends = Recorder<PluginTextMessageRequest>()
+        let effectLeases = Recorder<PluginNativeCallLease>()
         let nativeMainWork = Recorder<Int>()
 
         init(root: URL) { serviceStorage = PluginServiceStorage(rootDirectory: root) }
@@ -49,9 +50,19 @@ final class BridgeServiceConformanceTests: XCTestCase {
         func constructUI(fqcn: String, arguments: [Any]) throws -> Int64 {
             throw BridgeFailure.unimplemented("Unsupported UI: \(fqcn)")
         }
-        func addToClipboard(_ text: String, pluginId: String) throws { clipboards.append(text) }
-        func openURL(_ url: URL, pluginId: String) throws { openedURLs.append(url) }
-        func sendMessage(_ request: PluginTextMessageRequest) throws -> String {
+        func addToClipboard(_ text: String, pluginId: String, lease: PluginNativeCallLease) throws {
+            try lease.check()
+            effectLeases.append(lease)
+            clipboards.append(text)
+        }
+        func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws {
+            try lease.check()
+            effectLeases.append(lease)
+            openedURLs.append(url)
+        }
+        func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String {
+            try lease.check()
+            effectLeases.append(lease)
             sends.append(request)
             return "recorded-request"
         }
@@ -68,11 +79,12 @@ final class BridgeServiceConformanceTests: XCTestCase {
 
     private func request(_ bridge: BridgeServices, _ operation: String = "call", _ fqcn: String,
                          _ member: String, args: [Any] = [], instance: Any? = nil, value: Any? = nil,
-                         pluginId: String? = "alpha", claimedPluginId: String? = nil) throws -> [String: Any] {
+                          pluginId: String? = "alpha", claimedPluginId: String? = nil, ownerToken: String? = nil) throws -> [String: Any] {
         var object: [String: Any] = ["op": operation, "fqcn": fqcn, "member": member, "args": args, "kwargs": [String: Any]()]
         if let instance { object["instance"] = instance }
         if let value { object["value"] = value }
         if let claimedPluginId { object["pluginId"] = claimedPluginId }
+        if let ownerToken { object["ownerToken"] = ownerToken }
         let json = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
         let response = bridge.dispatchJSON(json, pluginId: pluginId)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
@@ -121,6 +133,51 @@ final class BridgeServiceConformanceTests: XCTestCase {
         XCTAssertEqual(try value(request(bridge, "call", locale, "getString", args: ["Cancel"])) as? String, "Cancel")
         assertFailure(try request(bridge, "get", Self.userConfig, "selectedAccount"), "ServiceUnavailable")
         assertFailure(try request(bridge, "get", Self.theme, "key_missing"), "JavaMemberError", containing: "UnsupportedThemeKey")
+    }
+
+    func testNativeEffectsRetainTheirOriginalEpochUntilExecution() throws {
+        let (services, bridge) = try fixture()
+        let lifetimes = PluginNativeEffectBudget()
+        let active = try lifetimes.reserve(pluginId: "alpha", bytes: 0)
+        bridge.ownerValidator = { id, token, _ in id == "alpha" && token == "epoch-one" }
+        bridge.effectOwnerValidator = { id, token in id == "alpha" && token == "epoch-one" && active.isActive }
+        _ = try value(request(bridge, "call", Self.runtime, "addToClipboard", args: ["first"], ownerToken: "epoch-one"))
+        let lease = try XCTUnwrap(services.effectLeases.values.first)
+        XCTAssertTrue(lease.isCurrent)
+        active.finish()
+        XCTAssertFalse(lease.isCurrent)
+        assertFailure(try request(bridge, "call", Self.runtime, "addToClipboard", args: ["retired"], ownerToken: "epoch-one"), "InvalidHandle")
+        bridge.effectOwnerValidator = { _, token in token == "epoch-two" }
+        XCTAssertFalse(lease.isCurrent, "An old lease must not acquire the replacement owner's epoch")
+        XCTAssertEqual(services.clipboards.values, ["first"])
+    }
+
+    func testEffectLeaseRechecksPermissionRevocation() throws {
+        let permissions = PermissionsModel()
+        let directory = tempDirectory("effect-permissions")
+        let store = try PluginStore(directory: directory)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        permissions.setGranted("alpha", [.intents], to: store)
+        let (services, bridge) = try fixture(permissions: permissions)
+        _ = try value(request(bridge, "call", Self.runtime, "openURL", args: ["https://example.invalid/test"]))
+        let lease = try XCTUnwrap(services.effectLeases.values.first)
+        XCTAssertTrue(lease.isCurrent)
+        permissions.setGranted("alpha", [], to: store)
+        XCTAssertFalse(lease.isCurrent)
+    }
+
+    func testOwnedRunnableCompletionAndRejectedAdmissionStayInTheirEpoch() throws {
+        let (_, bridge) = try fixture()
+        bridge.ownerValidator = { _, _, _ in true }
+        bridge.onOwnedCallback = { _, token, _, _, _, _ in token != "rejected" }
+        let marker: [String: Any] = ["__handle__": 17]
+        assertFailure(try request(bridge, "call", Self.utilities, "runOnUIThread", args: [marker], ownerToken: "rejected"), "InvalidHandle")
+        _ = try value(request(bridge, "call", Self.utilities, "runOnUIThread", args: [marker], ownerToken: "one"))
+        _ = try value(request(bridge, "call", Self.utilities, "runOnUIThread", args: [marker], ownerToken: "two"))
+        XCTAssertEqual(try value(request(bridge, "call", Self.runtime, "completeCallback", args: [17], ownerToken: "rejected")) as? Bool, false)
+        XCTAssertEqual(try value(request(bridge, "call", Self.runtime, "completeCallback", args: [17], ownerToken: "one")) as? Bool, true)
+        XCTAssertEqual(try value(request(bridge, "call", Self.runtime, "completeCallback", args: [17], ownerToken: "one")) as? Bool, false)
+        XCTAssertEqual(try value(request(bridge, "call", Self.runtime, "completeCallback", args: [17], ownerToken: "two")) as? Bool, true)
     }
 
     func testOperationsCannotAliasOrTriggerEffects() throws {

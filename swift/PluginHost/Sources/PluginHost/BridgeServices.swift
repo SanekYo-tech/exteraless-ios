@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 /// Backend operations are distinct: reading a method, calling a field, or writing
@@ -95,6 +96,10 @@ public final class BridgeServices: @unchecked Sendable {
     /// discarded references through releaseInstances(pluginId:).
     public typealias Callback = @Sendable (_ pluginId: String, _ handle: Int64,
                                            _ method: String, _ argsJSON: String, _ delayMs: Int) -> Void
+    /// Runtime hosts use this path: the scheduler compares the immutable native
+    /// epoch with its synchronously captured owner and returns actual admission.
+    public typealias OwnedCallback = @Sendable (_ pluginId: String, _ ownerToken: String?, _ handle: Int64,
+                                                _ method: String, _ argsJSON: String, _ delayMs: Int) -> Bool
 
     private let lock = NSLock()
     private let messages: (any PluginMessagesService)?
@@ -103,6 +108,10 @@ public final class BridgeServices: @unchecked Sendable {
     private let permissions: PermissionsModel?
     private let reflection: SecurityGates?
     private var callback: Callback?
+    private var ownedCallback: OwnedCallback?
+    private var additionalProvider: (any PluginBridgeExtension)?
+    private var validateOwner: (@Sendable (String, String?, Bool) -> Bool)?
+    private var validateEffectOwner: (@Sendable (String, String) -> Bool)?
     private var instances: [Int64: InstanceRecord] = [:]
     private var instanceIds: [InstanceRecord: Int64] = [:]
     private var nextInstanceId: Int64 = -1
@@ -115,7 +124,11 @@ public final class BridgeServices: @unchecked Sendable {
         var references: [Int64: Int] = [:]
         var count = 0
     }
-    private var pendingCallbacks: [String: PendingCallbacks] = [:]
+    private struct CallbackOrigin: Hashable {
+        let pluginId: String
+        let ownerToken: String?
+    }
+    private var pendingCallbacks: [CallbackOrigin: PendingCallbacks] = [:]
     private var pendingCallbackCount = 0
 
     private enum InstanceValue: Hashable {
@@ -159,6 +172,30 @@ public final class BridgeServices: @unchecked Sendable {
         }
     }
 
+    public var extensionProvider: (any PluginBridgeExtension)? {
+        get { lock.lock(); defer { lock.unlock() }; return additionalProvider }
+        set { lock.lock(); additionalProvider = newValue; lock.unlock() }
+    }
+
+    public var onOwnedCallback: OwnedCallback? {
+        get { lock.lock(); defer { lock.unlock() }; return ownedCallback }
+        set { lock.lock(); ownedCallback = newValue; lock.unlock() }
+    }
+
+    /// Installed by PluginHost. ownerToken must have been injected by immutable
+    /// per-interpreter C state; raw JSON from Python does not choose its lifetime.
+    public var ownerValidator: (@Sendable (String, String?, Bool) -> Bool)? {
+        get { lock.lock(); defer { lock.unlock() }; return validateOwner }
+        set { lock.lock(); validateOwner = newValue; lock.unlock() }
+    }
+
+    /// Stricter than cleanup admission: unloading/stopping/maintenance owners may
+    /// clean up native leases but must not start a new delayed user-facing effect.
+    public var effectOwnerValidator: (@Sendable (String, String) -> Bool)? {
+        get { lock.lock(); defer { lock.unlock() }; return validateEffectOwner }
+        set { lock.lock(); validateEffectOwner = newValue; lock.unlock() }
+    }
+
     /// Returns {ok:true,value:...} or {ok:false,error:{kind,message}}.
     public func dispatchJSON(_ json: String, pluginId: String?) -> String {
         do {
@@ -167,6 +204,30 @@ public final class BridgeServices: @unchecked Sendable {
                 throw BridgeFailure.malformed("Expected a JSON request object")
             }
             let request = try Request(object)
+            try validateClass(request, pluginId: pluginId)
+            if let validator = ownerValidator {
+                guard let pluginId, !pluginId.isEmpty,
+                      object["ownerToken"] == nil || object["ownerToken"] is String,
+                      validator(pluginId, object["ownerToken"] as? String, request.isBootstrapOperation) else {
+                    throw BridgeFailure.permission("Native interpreter owner expired or missing")
+                }
+            }
+            if let pluginId, !pluginId.isEmpty, let provider = extensionProvider {
+                let methods = provider.exportedMethods[request.fqcn] ?? []
+                if request.operation == .classExists {
+                    if !methods.isEmpty { return encode(["ok": true, "value": true]) }
+                } else if request.operation == .memberKind {
+                    if methods.contains(request.member) { return encode(["ok": true, "value": "method"]) }
+                } else {
+                    var owned = object
+                    owned["pluginId"] = pluginId
+                    let source = String(decoding: try JSONSerialization.data(withJSONObject: owned), as: UTF8.self)
+                    if let response = try provider.dispatch(requestJSON: source, pluginId: pluginId) {
+                        try validateExtensionResponse(response)
+                        return response
+                    }
+                }
+            }
             let value = try dispatch(request, pluginId: pluginId)
             return encode(["ok": true, "value": value])
         } catch let failure as BridgeFailure {
@@ -185,7 +246,14 @@ public final class BridgeServices: @unchecked Sendable {
         let arguments: [Any]
         let instance: Int64?
         let value: Any?
+        let ownerToken: String?
         var name: String { "\(fqcn)#\(member)" }
+        var isBootstrapOperation: Bool {
+            if operation == .get || operation == .memberKind || operation == .classExists { return true }
+            return operation == .call && fqcn == BridgeServices.runtimeClassName
+                && ["getFilesDir", "getCacheDir", "getPluginsDir", "getProtectedPaths", "getVersion",
+                    "hasPermission", "isUnsafeMode", "log", "logEvent"].contains(member)
+        }
 
         init(_ object: [String: Any]) throws {
             guard let op = object["op"] as? String, let operation = BridgeOperation(rawValue: op) else {
@@ -235,6 +303,15 @@ public final class BridgeServices: @unchecked Sendable {
             if operation == .set || operation == .setInstance, object["value"] == nil {
                 throw BridgeFailure.malformed("\(op) requires value (JSON null is allowed)")
             }
+            if let token = object["ownerToken"] {
+                guard let token = token as? String, !token.isEmpty, token.utf8.count <= 256,
+                      !token.utf8.contains(0) else {
+                    throw BridgeFailure.malformed("ownerToken must be a bounded native epoch")
+                }
+                self.ownerToken = token
+            } else {
+                self.ownerToken = nil
+            }
             self.operation = operation
             self.fqcn = fqcn
             self.member = member
@@ -250,7 +327,7 @@ public final class BridgeServices: @unchecked Sendable {
         }
     }
 
-    private func dispatch(_ request: Request, pluginId: String?) throws -> Any {
+    private func validateClass(_ request: Request, pluginId: String?) throws {
         // Runtime is a native capability, not a Java package. Only this exact
         // fqcn bypasses the Java-root policy; its operations still validate owner
         // identity and enforce the existing effect permissions below.
@@ -258,6 +335,28 @@ public final class BridgeServices: @unchecked Sendable {
            case .denied(let reason) = reflection.checkClass(fqcn: request.fqcn, pluginId: pluginId) {
             throw BridgeFailure.permission(reason)
         }
+    }
+
+    private func validateExtensionResponse(_ response: String) throws {
+        guard response.utf8.count <= 16 * 1024 * 1024,
+              let object = try JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any],
+              let status = object["ok"] as? NSNumber,
+              CFGetTypeID(status) == CFBooleanGetTypeID() else {
+            throw BridgeFailure.malformed("Native extension returned an invalid response envelope")
+        }
+        if status.boolValue {
+            guard object["value"] != nil else {
+                throw BridgeFailure.malformed("Native extension success omitted value")
+            }
+        } else {
+            guard let error = object["error"] as? [String: Any], error["kind"] is String,
+                  error["message"] is String else {
+                throw BridgeFailure.malformed("Native extension failure omitted kind/message")
+            }
+        }
+    }
+
+    private func dispatch(_ request: Request, pluginId: String?) throws -> Any {
         var record: InstanceRecord?
         if let handle = request.instance {
             record = try instance(handle, fqcn: request.fqcn, pluginId: pluginId)
@@ -345,7 +444,8 @@ public final class BridgeServices: @unchecked Sendable {
                 try request.arity(1...1)
                 let owner = try requiredPluginId(pluginId)
                 let text = try PluginServiceArgument.string(request.arguments[0], name: request.name)
-                try requirePlatform(request.name).addToClipboard(text, pluginId: owner)
+                try requirePlatform(request.name).addToClipboard(text, pluginId: owner,
+                    lease: nativeEffectLease(pluginId: owner, ownerToken: request.ownerToken, permission: .ui))
                 return NSNull()
             default: throw unsupported(request)
             }
@@ -369,7 +469,7 @@ public final class BridgeServices: @unchecked Sendable {
             if request.arguments.count == 2 {
                 _ = try contextArgument(request.arguments[0], pluginId: pluginId)
             }
-            return try openURL(request.arguments[request.arguments.count - 1], pluginId: requiredPluginId(pluginId))
+            return try openURL(request.arguments[request.arguments.count - 1], pluginId: requiredPluginId(pluginId), ownerToken: request.ownerToken)
         default:
             throw unsupported(request)
         }
@@ -396,7 +496,7 @@ public final class BridgeServices: @unchecked Sendable {
             guard handle > 0 else {
                 throw BridgeFailure.invalidHandle("completeCallback requires a Python-owned positive callback handle")
             }
-            return completeCallback(handle: handle, pluginId: pluginId)
+            return completeCallback(handle: handle, origin: CallbackOrigin(pluginId: pluginId, ownerToken: request.ownerToken))
         }
         let service = try requirePlatform(request.name)
         switch request.member {
@@ -415,12 +515,30 @@ public final class BridgeServices: @unchecked Sendable {
             try request.arity(1...1)
             let key = try PluginServiceArgument.string(request.arguments[0], name: "removeSetting.key")
             return try service.serviceStorage.removeSetting(pluginId: pluginId, key: key)
+        case "getSettings":
+            try request.arity(0...0)
+            // Opaque JSON text preserves arbitrary user keys such as __handle__;
+            // they must not be reinterpreted as native transport markers.
+            return try service.serviceStorage.settingsJSON(pluginId: pluginId)
+        case "setSettings", "updateSettings":
+            try request.arity(1...1)
+            let json = try PluginServiceArgument.string(request.arguments[0], name: request.name)
+            try service.serviceStorage.writeSettingsJSON(pluginId: pluginId, json: json,
+                                                         replace: request.member == "setSettings")
+            return NSNull()
+        case "clearSettings":
+            try request.arity(0...0)
+            try service.serviceStorage.replaceSettings(pluginId: pluginId, values: [:])
+            return NSNull()
         case "getFilesDir", "getCacheDir", "getPluginsDir":
             try request.arity(0...0)
             try PluginServiceStorage.validatePluginId(pluginId)
             if request.member == "getPluginsDir" { return try service.serviceStorage.pluginsDirectory().path }
             if request.member == "getCacheDir" { return try service.serviceStorage.cacheDirectory(pluginId: pluginId).path }
             return try service.serviceStorage.filesDirectory(pluginId: pluginId).path
+        case "getProtectedPaths":
+            try request.arity(0...0)
+            return service.protectedPaths
         case "log":
             try request.arity(1...1)
             service.serviceLogs.append(pluginId: pluginId,
@@ -431,15 +549,16 @@ public final class BridgeServices: @unchecked Sendable {
             return service.runtimeVersion
         case "addToClipboard":
             try request.arity(1...1)
-            try service.addToClipboard(PluginServiceArgument.string(request.arguments[0], name: request.name), pluginId: pluginId)
+            try service.addToClipboard(PluginServiceArgument.string(request.arguments[0], name: request.name), pluginId: pluginId,
+                lease: nativeEffectLease(pluginId: pluginId, ownerToken: request.ownerToken, permission: .ui))
             return NSNull()
         case "openURL":
             try request.arity(1...1)
-            return try openURL(request.arguments[0], pluginId: pluginId)
+            return try openURL(request.arguments[0], pluginId: pluginId, ownerToken: request.ownerToken)
         case "sendMessage":
             try request.arity(3...3)
             let account = try service.platformSnapshot.account(at: accountIndex(request.arguments[2]))
-            return try sendMessage(peer: request.arguments[0], text: request.arguments[1], account: account, pluginId: pluginId)
+            return try sendMessage(peer: request.arguments[0], text: request.arguments[1], account: account, pluginId: pluginId, ownerToken: request.ownerToken)
         default:
             throw unsupported(request)
         }
@@ -493,7 +612,7 @@ public final class BridgeServices: @unchecked Sendable {
                 guard request.arguments.count == 2 else {
                     throw BridgeFailure.unimplemented("SendMessagesHelper.sendMessage supports only (peerId, text); SendMessageParams/TLRPC overloads are unsupported")
                 }
-                return try sendMessage(peer: request.arguments[0], text: request.arguments[1], account: account, pluginId: record.pluginId)
+                return try sendMessage(peer: request.arguments[0], text: request.arguments[1], account: account, pluginId: record.pluginId, ownerToken: request.ownerToken)
             }
         case .legacy:
             break
@@ -541,20 +660,30 @@ public final class BridgeServices: @unchecked Sendable {
         guard delay >= 0, delay <= Int64(Int32.max) else {
             throw BridgeFailure.malformed("runOnUIThread.delayMs must be a nonnegative Int32")
         }
-        let callback = try reserveCallback(handle: handle, pluginId: owner)
+        let origin = CallbackOrigin(pluginId: owner, ownerToken: request.ownerToken)
+        let (callback, owned) = try reserveCallback(handle: handle, origin: origin)
         // Invoke only after releasing lock: native completion may arrive as soon
         // as the scheduler is called, and must observe its reserved reference.
-        callback(owner, handle, "run", "[]", Int(delay))
+        if let owned {
+            guard owned(owner, request.ownerToken, handle, "run", "[]", Int(delay)) else {
+                _ = completeCallback(handle: handle, origin: origin)
+                throw BridgeFailure.invalidHandle("runOnUIThread: originating interpreter is no longer active")
+            }
+        } else {
+            callback?(owner, handle, "run", "[]", Int(delay))
+        }
         return NSNull()
     }
 
-    private func reserveCallback(handle: Int64, pluginId: String) throws -> Callback {
+    private func reserveCallback(handle: Int64, origin: CallbackOrigin) throws -> (Callback?, OwnedCallback?) {
         lock.lock()
         defer { lock.unlock() }
-        guard let callback else {
+        guard ownedCallback != nil || (validateOwner == nil && callback != nil) else {
             throw BridgeFailure.unavailable("runOnUIThread: owning-interpreter callback scheduler is not installed")
         }
-        let ownerCount = pendingCallbacks[pluginId]?.count ?? 0
+        let ownerCount = pendingCallbacks.reduce(0) { result, pair in
+            result + (pair.key.pluginId == origin.pluginId ? pair.value.count : 0)
+        }
         guard ownerCount < Self.maximumPendingCallbacksPerPlugin else {
             throw BridgeFailure.unavailable("runOnUIThread: per-plugin pending callback limit (\(Self.maximumPendingCallbacksPerPlugin)) reached")
         }
@@ -562,31 +691,31 @@ public final class BridgeServices: @unchecked Sendable {
             throw BridgeFailure.unavailable("runOnUIThread: global pending callback limit (\(Self.maximumPendingCallbacks)) reached")
         }
         // No counter or dictionary entry is created on a rejected admission.
-        pendingCallbacks[pluginId, default: PendingCallbacks()].references[handle, default: 0] += 1
-        pendingCallbacks[pluginId, default: PendingCallbacks()].count = ownerCount + 1
+        pendingCallbacks[origin, default: PendingCallbacks()].references[handle, default: 0] += 1
+        pendingCallbacks[origin, default: PendingCallbacks()].count += 1
         pendingCallbackCount += 1
-        return callback
+        return (callback, ownedCallback)
     }
 
-    private func completeCallback(handle: Int64, pluginId: String) -> Bool {
+    private func completeCallback(handle: Int64, origin: CallbackOrigin) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        guard let referenceCount = pendingCallbacks[pluginId]?.references[handle] else { return false }
+        guard let referenceCount = pendingCallbacks[origin]?.references[handle] else { return false }
         let isLastReference = referenceCount == 1
         if isLastReference {
-            pendingCallbacks[pluginId]?.references.removeValue(forKey: handle)
+            pendingCallbacks[origin]?.references.removeValue(forKey: handle)
         } else {
-            pendingCallbacks[pluginId]?.references[handle] = referenceCount - 1
+            pendingCallbacks[origin]?.references[handle] = referenceCount - 1
         }
-        pendingCallbacks[pluginId]?.count -= 1
+        pendingCallbacks[origin]?.count -= 1
         pendingCallbackCount -= 1
-        if pendingCallbacks[pluginId]?.count == 0 {
-            pendingCallbacks.removeValue(forKey: pluginId)
+        if pendingCallbacks[origin]?.count == 0 {
+            pendingCallbacks.removeValue(forKey: origin)
         }
         return isLastReference
     }
 
-    private func openURL(_ raw: Any, pluginId: String) throws -> Any {
+    private func openURL(_ raw: Any, pluginId: String, ownerToken: String?) throws -> Any {
         let text = try PluginServiceArgument.string(raw, name: "Browser.openUrl.url")
         guard let url = URL(string: text), let scheme = url.scheme?.lowercased(),
               ["https", "http", "tg", "mailto", "tel"].contains(scheme),
@@ -595,11 +724,12 @@ public final class BridgeServices: @unchecked Sendable {
         }
         try requirePermission(.intents, pluginId: pluginId,
                               fqcn: "org.telegram.messenger.browser.Browser", member: "openUrl")
-        try requirePlatform("Browser.openUrl").openURL(url, pluginId: pluginId)
+        try requirePlatform("Browser.openUrl").openURL(url, pluginId: pluginId,
+            lease: nativeEffectLease(pluginId: pluginId, ownerToken: ownerToken, permission: .intents))
         return NSNull()
     }
 
-    private func sendMessage(peer: Any, text: Any, account: PluginServiceAccount, pluginId: String) throws -> Any {
+    private func sendMessage(peer: Any, text: Any, account: PluginServiceAccount, pluginId: String, ownerToken: String?) throws -> Any {
         let peerKind: PluginTextMessageRequest.PeerKind
         let id: Int64
         if let object = peer as? [String: Any] {
@@ -623,7 +753,8 @@ public final class BridgeServices: @unchecked Sendable {
         try requirePermission(.messagesSend, pluginId: pluginId,
                               fqcn: "org.telegram.messenger.SendMessagesHelper", member: "sendMessage")
         let request = PluginTextMessageRequest(pluginId: pluginId, account: account, peerKind: peerKind, peerId: id, text: message)
-        let requestId = try requirePlatform("Runtime.sendMessage").sendMessage(request)
+        let requestId = try requirePlatform("Runtime.sendMessage").sendMessage(request,
+            lease: nativeEffectLease(pluginId: pluginId, ownerToken: ownerToken, permission: .messagesSend))
         return ["status": "scheduled", "requestId": requestId]
     }
 
@@ -632,7 +763,7 @@ public final class BridgeServices: @unchecked Sendable {
     private func classExists(_ fqcn: String) -> Bool {
         if fqcn == Self.runtimeClassName { return true } // completeCallback is intrinsic.
         if fqcn == "org.telegram.ui.ActionBar.Theme" { return settings != nil }
-        if fqcn == "org.telegram.messenger.AndroidUtilities" { return ui != nil || onCallback != nil }
+        if fqcn == "org.telegram.messenger.AndroidUtilities" { return ui != nil || onCallback != nil || onOwnedCallback != nil }
         if Self.accountClassNames.contains(fqcn) { return messages != nil || platform != nil }
         return platform != nil && ["org.telegram.messenger.ApplicationLoader",
             "android.content.Context", "java.io.File", "org.telegram.messenger.LocaleController",
@@ -654,7 +785,7 @@ public final class BridgeServices: @unchecked Sendable {
             if fqcn.hasSuffix(".SendMessagesHelper"), member == "sendMessage" { return "method" }
         }
         let methods: [String: Set<String>] = [
-            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getFilesDir", "getPluginsDir", "getCacheDir", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode"],
+            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getSettings", "setSettings", "updateSettings", "clearSettings", "getFilesDir", "getPluginsDir", "getCacheDir", "getProtectedPaths", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode"],
             "org.telegram.messenger.AndroidUtilities": ["dp", "dpf2", "runOnUIThread", "addToClipboard"],
             "org.telegram.messenger.LocaleController": ["getInstance", "getString", "getLocaleStringIso639"],
             "org.telegram.messenger.ApplicationLoader": ["getFilesDir", "getFilesDirFixed", "getCacheDir"],
@@ -744,15 +875,20 @@ public final class BridgeServices: @unchecked Sendable {
     /// callback budget. The host retires the owner queue before its next lifetime.
     public func releaseInstances(pluginId: String) {
         lock.lock()
-        defer { lock.unlock() }
-        if let callbacks = pendingCallbacks.removeValue(forKey: pluginId) {
-            pendingCallbackCount -= callbacks.count
+        let provider = additionalProvider
+        for origin in pendingCallbacks.keys.filter({ $0.pluginId == pluginId }) {
+            if let callbacks = pendingCallbacks.removeValue(forKey: origin) {
+                pendingCallbackCount -= callbacks.count
+            }
         }
         let released = instances.filter { $0.value.pluginId == pluginId }
         for (handle, record) in released {
             instances.removeValue(forKey: handle)
             instanceIds.removeValue(forKey: record)
         }
+        lock.unlock()
+        provider?.releaseInstances(pluginId: pluginId)
+        platform?.releaseInstances(pluginId: pluginId)
     }
 
     public func releaseInstance(handle: Int64, fqcn: String, pluginId: String) throws {
@@ -842,6 +978,19 @@ public final class BridgeServices: @unchecked Sendable {
         if let reflection, !reflection.checkPermission(pluginId: pluginId, fqcn: fqcn, member: member) {
             throw BridgeFailure.permission("\(fqcn)#\(member) requires \(permission.rawValue)")
         }
+    }
+
+    private func nativeEffectLease(pluginId: String, ownerToken: String?, permission: PluginPermission) throws -> PluginNativeCallLease {
+        let lease = PluginNativeCallLease { [weak self] in
+            guard let self else { return false }
+            if self.ownerValidator != nil {
+                guard let ownerToken, let isActive = self.effectOwnerValidator,
+                      isActive(pluginId, ownerToken) else { return false }
+            }
+            return self.permissions?.has(pluginId, permission) ?? true
+        }
+        try lease.check()
+        return lease
     }
 
     private func encode(_ object: [String: Any]) -> String {

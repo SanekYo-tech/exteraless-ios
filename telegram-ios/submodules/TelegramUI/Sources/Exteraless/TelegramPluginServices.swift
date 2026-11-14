@@ -18,6 +18,8 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     private let snapshotLock = NSLock()
     private var snapshot = PluginPlatformSnapshot()
+    private var protectedClientPaths: Set<String> = []
+    private let effectBudget = PluginNativeEffectBudget()
 
     // Main-thread state. Slot ids survive reordering/account switches and are
     // never recycled for a different record during this service's lifetime.
@@ -52,6 +54,12 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     /// Coordinator/UI can read logs without entering a plugin's interpreter.
     public var logEntries: [PluginServiceLogEntry] { self.serviceLogs.entries }
+
+    public var protectedPaths: [String] {
+        self.snapshotLock.lock()
+        defer { self.snapshotLock.unlock() }
+        return self.protectedClientPaths.sorted()
+    }
 
     /// Keep observing both presentation and active accounts after the initial
     /// publication: theme/language/account changes need no interpreter restart.
@@ -100,6 +108,13 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         self.platformSnapshot.accounts.first(where: { $0.recordId == recordId })?.index
     }
 
+    /// Main-actor consumers resolve the record captured by a worker snapshot;
+    /// they must not redirect delayed work to the newly selected account.
+    public func context(recordId: Int64) -> AccountContext? {
+        precondition(Thread.isMainThread)
+        return accountContexts[recordId]
+    }
+
     public func clearContext() {
         precondition(Thread.isMainThread)
         self.accountsDisposable?.dispose()
@@ -113,6 +128,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         self.snapshotLock.lock()
         self.snapshot = PluginPlatformSnapshot()
         self.snapshotLock.unlock()
+        self.effectBudget.cancelAll()
     }
 
     private func allocateSlot(recordId: Int64) -> Int32? {
@@ -156,8 +172,14 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
             themeColors: Self.themeColors(data.theme, traits: traits),
             strings: Self.localizedStrings(data.strings), localeIdentifier: data.strings.primaryComponent.languageCode,
             accounts: accounts, selectedAccountIndex: selected)
+        let protectedPath = self.sharedContext.map { shared in
+            URL(fileURLWithPath: shared.basePath, isDirectory: true)
+                .appendingPathComponent("exteraless", isDirectory: true)
+                .standardizedFileURL.resolvingSymlinksInPath().path
+        }
         self.snapshotLock.lock()
         self.snapshot = snapshot
+        if let protectedPath { self.protectedClientPaths.insert(protectedPath) }
         self.snapshotLock.unlock()
     }
 
@@ -196,17 +218,29 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     // MARK: Native effects
 
-    public func addToClipboard(_ text: String, pluginId: String) throws {
+    public func releaseInstances(pluginId: String) {
+        self.effectBudget.cancel(pluginId: pluginId)
+    }
+
+    public func addToClipboard(_ text: String, pluginId: String, lease: PluginNativeCallLease) throws {
+        try lease.check()
+        let ticket = try effectBudget.reserve(pluginId: pluginId, bytes: text.utf8.count)
         DispatchQueue.main.async {
+            defer { ticket.finish() }
+            guard ticket.isActive, lease.isCurrent else { return }
             UIPasteboard.general.string = text
         }
     }
 
-    public func openURL(_ url: URL, pluginId: String) throws {
+    public func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws {
+        try lease.check()
+        let ticket = try effectBudget.reserve(pluginId: pluginId, bytes: url.absoluteString.utf8.count)
         let logs = self.serviceLogs
         DispatchQueue.main.async {
+            defer { ticket.finish() }
+            guard ticket.isActive, lease.isCurrent else { return }
             UIApplication.shared.open(url, options: [:], completionHandler: { opened in
-                if !opened {
+                if !opened, lease.isCurrent {
                     logs.append(pluginId: pluginId, level: .error, message: "Browser.openUrl: iOS could not open the URL")
                 }
             })
@@ -215,7 +249,8 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     /// Scheduling succeeds synchronously; the bounded log records the native
     /// enqueue result. This does not claim network delivery or fabricate a TL id.
-    public func sendMessage(_ request: PluginTextMessageRequest) throws -> String {
+    public func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String {
+        try lease.check()
         let current = try self.platformSnapshot.account(at: request.account.index)
         guard current.recordId == request.account.recordId else {
             throw BridgeFailure.invalidHandle("sendMessage: account record has changed")
@@ -225,17 +260,21 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
               request.text.utf16.count <= 4096 else {
             throw BridgeFailure.malformed("sendMessage: invalid plain-text request")
         }
-        let requestId = UUID().uuidString
+        let ticket = try effectBudget.reserve(pluginId: request.pluginId, bytes: request.text.utf8.count)
+        let requestId = ticket.id.uuidString
+        let effectLease = PluginNativeCallLease { ticket.isActive && lease.isCurrent }
         Task { @MainActor [weak self] in
+            defer { ticket.finish() }
             guard let self else { return }
-            await self.enqueueMessage(request, requestId: requestId)
+            await self.enqueueMessage(request, requestId: requestId, lease: effectLease)
         }
         return requestId
     }
 
     @MainActor
-    private func enqueueMessage(_ request: PluginTextMessageRequest, requestId: String) async {
+    private func enqueueMessage(_ request: PluginTextMessageRequest, requestId: String, lease: PluginNativeCallLease) async {
         do {
+            try lease.check()
             guard let context = self.accountContexts[request.account.recordId],
                   self.accountSlots[request.account.recordId] == request.account.index else {
                 throw BridgeFailure.unavailable("sendMessage: account is no longer active")
@@ -257,6 +296,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
                 TelegramEngine.EngineData.Item.Peer.SendPaidMessageStars(id: peerId),
                 TelegramEngine.EngineData.Item.Peer.CachedData(id: peerId)
             ) |> take(1) |> last).get()
+            try lease.check()
             guard let (maybePeer, advertisedPrice, cachedData) = peerData, let peer = maybePeer else {
                 throw BridgeFailure.unavailable("sendMessage: peer is not present in the active account")
             }
@@ -299,6 +339,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
             guard self.accountContexts[request.account.recordId] === context else {
                 throw BridgeFailure.unavailable("sendMessage: account was removed while preparing the message")
             }
+            try lease.check()
             // Plugin-origin effects must not recursively re-enter the same send
             // hook. Core retains its original media/Postbox enqueue pipeline.
             let message = EnqueueMessage.message(text: request.text, attributes: [], inlineStickers: [:],

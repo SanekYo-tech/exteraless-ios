@@ -27,11 +27,19 @@ private struct SettingsTestSecretFailure: LocalizedError {
 
 private final class SettingsTestSecrets: ClientSecretStore, @unchecked Sendable {
     private let values = SettingsTestBox<[String: Data]>([:])
+    let readCount = SettingsTestBox(0)
+    let writeCount = SettingsTestBox(0)
+    let failReads = SettingsTestBox(false)
     let failWrites = SettingsTestBox(false)
 
-    func data(for key: String) throws -> Data? { self.values.value[key] }
+    func data(for key: String) throws -> Data? {
+        self.readCount.update { $0 += 1 }
+        if self.failReads.value { throw SettingsTestSecretFailure() }
+        return self.values.value[key]
+    }
 
     func set(_ data: Data?, for key: String) throws {
+        self.writeCount.update { $0 += 1 }
         if self.failWrites.value { throw SettingsTestSecretFailure() }
         self.values.update { $0[key] = data }
     }
@@ -65,6 +73,13 @@ final class ClientSettingsTests: XCTestCase {
 
     private func document(_ url: URL) throws -> [String: ClientSettingValue] {
         return try JSONDecoder().decode([String: ClientSettingValue].self, from: Data(contentsOf: url))
+    }
+
+    /// An intended forward state, constructed before any write/observer runs.
+    private func expectedState(_ before: ClientSettingsSnapshot, applying values: [String: ClientSettingValue]) -> ClientSettingsSnapshot {
+        return ClientSettingsSnapshot(definitions: before.definitions,
+                                      values: before.values.merging(values) { _, new in new },
+                                      storedKeys: before.storedKeys.union(values.keys), secretKeys: before.secretKeys)
     }
 
     func testPersistentTypedValuesAndInitialSnapshot() throws {
@@ -127,6 +142,8 @@ final class ClientSettingsTests: XCTestCase {
         XCTAssertTrue(store.bool("fixture.enabled"), "A failed reload keeps the last complete generation")
         XCTAssertThrowsError(try store.set(.bool(false), for: "fixture.enabled"))
         XCTAssertThrowsError(try store.reset("fixture.enabled"))
+        XCTAssertThrowsError(try store.applyPublic(["fixture.enabled": .bool(false)], expected: store.readSnapshot()))
+        XCTAssertThrowsError(try store.applyPublic([:], resetting: ["fixture.enabled"]))
         XCTAssertThrowsError(try ClientSettings(storageURL: url))
         XCTAssertEqual(try Data(contentsOf: url), corrupt)
 
@@ -458,6 +475,386 @@ final class ClientSettingsTests: XCTestCase {
         try store.reset(definition.key)
         XCTAssertNil(try secrets.data(for: definition.key))
         XCTAssertEqual(store.string(definition.key), "")
+    }
+
+    func testPublicBatchWritesAndPublishesTheWholePatchOnce() throws {
+        let url = try self.storageURL()
+        let writes = SettingsTestBox(0)
+        let store = try ClientSettings(storageURL: url, secretStore: SettingsTestSecrets(), afterFileReplace: {
+            writes.update { $0 += 1 }
+        })
+        try store.register([self.definition("fixture.a", .integer(0)), self.definition("fixture.b", .integer(0)),
+                            self.definition("fixture.reset", .integer(5))])
+        try store.set(.integer(9), for: "fixture.reset")
+        let before = store.readSnapshot()
+        writes.update { $0 = 0 }
+        let events = SettingsTestBox<[Set<String>]>([])
+        let observed = SettingsTestBox<[ClientSettingsSnapshot]>([])
+        let files = SettingsTestBox<[Data]>([])
+        let observation = store.observe { keys in
+            events.update { $0.append(keys) }
+            observed.update { $0.append(store.readSnapshot()) }
+            if let data = try? Data(contentsOf: url) { files.update { $0.append(data) } }
+        }
+        defer { observation.cancel() }
+        try store.applyPublic(["fixture.a": .integer(10), "fixture.b": .integer(20)], resetting: ["fixture.reset"], expected: before)
+        XCTAssertEqual(writes.value, 1)
+        XCTAssertEqual(events.value, [Set(["fixture.a", "fixture.b", "fixture.reset"])])
+        XCTAssertEqual(observed.value.count, 1)
+        let committed = try XCTUnwrap(observed.value.first)
+        XCTAssertEqual(committed.values, ["fixture.a": .integer(10), "fixture.b": .integer(20), "fixture.reset": .integer(5)])
+        XCTAssertEqual(committed.storedKeys, Set(["fixture.a", "fixture.b"]))
+        XCTAssertEqual(files.value, [try Data(contentsOf: url)], "Observers see the complete replacement, never a partially written patch")
+        try store.applyPublic([:], expected: before)
+        XCTAssertEqual(writes.value, 1)
+        XCTAssertEqual(events.value.count, 1, "An empty batch is not a refresh or a write")
+    }
+
+    func testPublicBatchRejectsInvalidKeysEnumsRangesAndOverlapBeforeAnyWrite() throws {
+        let url = try self.storageURL()
+        let writes = SettingsTestBox(0)
+        let store = try ClientSettings(storageURL: url, secretStore: SettingsTestSecrets(), afterFileReplace: {
+            writes.update { $0 += 1 }
+        })
+        let count = ClientSettingDefinition(key: "fixture.count", title: "Count", section: "Fixture", defaultValue: .integer(2), minimum: 0, maximum: 8, step: 2)
+        let mode = ClientSettingDefinition(key: "fixture.mode", title: "Mode", section: "Fixture", defaultValue: .string("one"),
+                                           options: [.init(value: .string("one"), title: "One"), .init(value: .string("two"), title: "Two")])
+        try store.register([count, mode, self.definition("fixture.a", .bool(false)), self.definition("fixture.reset", .integer(5))])
+        try store.set(.integer(9), for: "fixture.reset")
+        let before = store.readSnapshot()
+        let original = try Data(contentsOf: url)
+        writes.update { $0 = 0 }
+        let cases: [([String: ClientSettingValue], Set<String>, ClientSettingsError)] = [
+            (["fixture.a": .bool(true), "fixture.mode": .string("invalid")], ["fixture.reset"], .invalidValue(key: "fixture.mode", reason: .option)),
+            (["fixture.a": .bool(true), "fixture.count": .integer(10)], ["fixture.reset"], .invalidValue(key: "fixture.count", reason: .range)),
+            (["fixture.a": .bool(true), "fixture.count": .integer(3)], [], .invalidValue(key: "fixture.count", reason: .step)),
+            (["fixture.a": .bool(true), "fixture.count": .number(.infinity)], [], .nonFiniteNumber),
+            (["fixture.a": .bool(true), "fixture.unknown": .null], [], .unregisteredKey("fixture.unknown")),
+            (["fixture.a": .bool(true)], ["fixture.unknown"], .unregisteredKey("fixture.unknown")),
+            (["fixture.a": .bool(true), "invalid/key": .bool(true)], [], .invalidKey),
+            (["fixture.a": .bool(true)], ["fixture.a"], .conflictingChanges)
+        ]
+        for (values, resetting, error) in cases {
+            XCTAssertThrowsError(try store.applyPublic(values, resetting: resetting, expected: before)) {
+                XCTAssertEqual($0 as? ClientSettingsError, error)
+            }
+            XCTAssertEqual(try Data(contentsOf: url), original)
+            XCTAssertEqual(store.snapshot(), before.values)
+            XCTAssertEqual(store.readSnapshot().storedKeys, before.storedKeys)
+        }
+        XCTAssertEqual(writes.value, 0)
+    }
+
+    func testPublicBatchSerializationFailureDoesNotPartiallyApplyResetsOrValues() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        try store.register([self.definition("fixture.a", .integer(0)), self.definition("fixture.large", .string("")),
+                            self.definition("fixture.reset", .bool(false))])
+        try store.set(.bool(true), for: "fixture.reset")
+        let before = store.readSnapshot()
+        let original = try Data(contentsOf: url)
+        let tooLarge = String(repeating: "x", count: 8 * 1024 * 1024)
+        XCTAssertThrowsError(try store.applyPublic(["fixture.a": .integer(1), "fixture.large": .string(tooLarge)],
+                                                 resetting: ["fixture.reset"], expected: before))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertEqual(store.snapshot(), before.values)
+        XCTAssertEqual(store.readSnapshot().storedKeys, before.storedKeys)
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)),
+                       Set(["client-settings.json", "client-settings.json.lock"]))
+    }
+
+    func testPublicBatchPreservesUnknownMetadataAndUnrelatedConcurrentUpdates() throws {
+        let url = try self.storageURL()
+        let definitions = [self.definition("fixture.a", .integer(0)), self.definition("fixture.other", .integer(0))]
+        let first = try ClientSettings(storageURL: url)
+        let second = try ClientSettings(storageURL: url)
+        try first.register(definitions)
+        try second.register(definitions)
+        let before = first.readSnapshot()
+        try second.set(.integer(42), for: "fixture.other")
+        XCTAssertEqual(first.integer("fixture.other"), 0, "Keep the first process cache deliberately stale")
+        var root = try self.document(url)
+        guard case var .object(values) = root["values"] else { return XCTFail("Missing values") }
+        values["future.unknown"] = .object(["items": .array([.null, .integer(Int64.max)])])
+        root["values"] = .object(values)
+        root["futureMetadata"] = .string("keep")
+        try JSONEncoder().encode(root).write(to: url)
+        try first.register([ClientSettingDefinition(key: "fixture.a", title: "Updated label", section: "Fixture", defaultValue: .integer(0))])
+        try first.applyPublic(["fixture.a": .integer(7)], expected: before)
+        XCTAssertEqual(first.integer("fixture.a"), 7)
+        XCTAssertEqual(first.integer("fixture.other"), 42)
+        let after = try self.document(url)
+        XCTAssertEqual(after["version"], .integer(1))
+        XCTAssertEqual(after["futureMetadata"], .string("keep"))
+        guard case let .object(persisted) = after["values"] else { return XCTFail("Missing values") }
+        XCTAssertEqual(persisted["future.unknown"], values["future.unknown"])
+        XCTAssertEqual(persisted["fixture.other"], .integer(42))
+    }
+
+    func testPublicBatchRollbackRestoresAbsenceInsteadOfPersistingOldDefaults() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        try store.register([self.definition("fixture.absent", .integer(10)), self.definition("fixture.storedDefault", .integer(20))])
+        try store.set(.integer(20), for: "fixture.storedDefault")
+        let before = store.readSnapshot()
+        let patch: [String: ClientSettingValue] = ["fixture.absent": .integer(11), "fixture.storedDefault": .integer(21)]
+        let intended = self.expectedState(before, applying: patch)
+        try store.applyPublic(patch, expected: before)
+        let previousOverrides = before.values.filter { before.storedKeys.contains($0.key) }
+        try store.applyPublic(previousOverrides, resetting: ["fixture.absent"], expected: intended)
+        XCTAssertEqual(store.snapshot(), before.values)
+        XCTAssertEqual(store.readSnapshot().storedKeys, before.storedKeys)
+        guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+        XCTAssertNil(values["fixture.absent"])
+        XCTAssertEqual(values["fixture.storedDefault"], .integer(20))
+        try store.register([self.definition("fixture.absent", .integer(100)), self.definition("fixture.storedDefault", .integer(200))])
+        XCTAssertEqual(store.integer("fixture.absent"), 100, "A reset follows the future default")
+        XCTAssertEqual(store.integer("fixture.storedDefault"), 20, "An explicit old default remains an explicit override")
+    }
+
+    func testPublicBatchCASChecksDiskPresenceEvenWhenEffectiveValueIsUnchanged() throws {
+        let url = try self.storageURL()
+        let definition = self.definition("fixture.a", .integer(5))
+        let first = try ClientSettings(storageURL: url)
+        let second = try ClientSettings(storageURL: url)
+        try first.register([definition])
+        try second.register([definition])
+        let absent = first.readSnapshot()
+        try second.applyPublic([definition.key: .integer(5)])
+        XCTAssertFalse(first.readSnapshot().storedKeys.contains(definition.key))
+        XCTAssertThrowsError(try first.applyPublic([definition.key: .integer(8)], expected: absent)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        let stored = first.readSnapshot()
+        XCTAssertTrue(stored.storedKeys.contains(definition.key))
+        try second.applyPublic([:], resetting: [definition.key])
+        XCTAssertThrowsError(try first.applyPublic([:], resetting: [definition.key], expected: stored)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        let missing = ClientSettingsSnapshot(definitions: [definition], values: [:], storedKeys: [])
+        XCTAssertThrowsError(try first.applyPublic([definition.key: .integer(8)], expected: missing)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        XCTAssertEqual(first.integer(definition.key), 5)
+        XCTAssertFalse(first.readSnapshot().storedKeys.contains(definition.key))
+    }
+
+    func testPublicBatchConcurrentCASHasExactlyOneCompleteWinner() throws {
+        let url = try self.storageURL()
+        let definitions = [self.definition("fixture.a", .integer(0)), self.definition("fixture.b", .integer(0))]
+        let stores = [try ClientSettings(storageURL: url), try ClientSettings(storageURL: url)]
+        for store in stores { try store.register(definitions) }
+        let expected = stores[0].readSnapshot()
+        let winners = SettingsTestBox<[Int]>([])
+        let failures = SettingsTestBox<[ClientSettingsError]>([])
+        let group = DispatchGroup()
+        for (index, store) in stores.enumerated() {
+            group.enter()
+            DispatchQueue.global().async {
+                defer { group.leave() }
+                let value = index + 1
+                do {
+                    try store.applyPublic(["fixture.a": .integer(Int64(value)), "fixture.b": .integer(Int64(value))], expected: expected)
+                    winners.update { $0.append(value) }
+                } catch {
+                    failures.update { $0.append(error as? ClientSettingsError ?? .invalidJSON) }
+                }
+            }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 3.0), .success)
+        XCTAssertEqual(winners.value.count, 1)
+        XCTAssertEqual(failures.value, [.concurrentModification])
+        let winner = try XCTUnwrap(winners.value.first)
+        let verify = try ClientSettings(storageURL: url)
+        try verify.register(definitions)
+        XCTAssertEqual(verify.integer("fixture.a"), winner)
+        XCTAssertEqual(verify.integer("fixture.b"), winner)
+    }
+
+    func testPublicBatchDoesNotUseKeychainForCommitOrFailureRecovery() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let secret = ClientSettingDefinition(key: "fixture.secret", title: "Secret", section: "Fixture", defaultValue: .string(""), isSecret: true)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        try store.register([secret, self.definition("fixture.a", .integer(0))])
+        try store.set(.string("cached-credential"), for: secret.key)
+        let before = store.readSnapshot()
+        let reads = secrets.readCount.value
+        let writes = secrets.writeCount.value
+        secrets.failReads.update { $0 = true }
+        secrets.failWrites.update { $0 = true }
+        try store.applyPublic(["fixture.a": .integer(1)], expected: before)
+        let committed = try Data(contentsOf: url)
+        for (values, resetting) in [
+            (["fixture.a": ClientSettingValue.integer(2), secret.key: .string("denied")], Set<String>()),
+            (["fixture.a": ClientSettingValue.integer(2)], Set([secret.key]))
+        ] {
+            XCTAssertThrowsError(try store.applyPublic(values, resetting: resetting, expected: before)) {
+                XCTAssertEqual($0 as? ClientSettingsError, .secretAccessDenied, "Secret classification wins over the stale public CAS state")
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: url), committed)
+        XCTAssertEqual(store.integer("fixture.a"), 1)
+        XCTAssertEqual(store.string(secret.key), "cached-credential")
+        XCTAssertEqual(store.snapshot()[secret.key], .null)
+        XCTAssertEqual(secrets.readCount.value, reads)
+        XCTAssertEqual(secrets.writeCount.value, writes)
+    }
+
+    func testPublicBatchDiskSecretClassificationOverridesAnOlderPublicSnapshot() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let normal = self.definition("fixture.credential", .string(""))
+        let other = self.definition("fixture.other", .integer(0))
+        let old = try ClientSettings(storageURL: url, secretStore: secrets)
+        try old.register([normal, other])
+        try old.set(.string("legacy-credential"), for: normal.key)
+        let before = old.readSnapshot()
+        let upgraded = try ClientSettings(storageURL: url, secretStore: secrets)
+        let secure = ClientSettingDefinition(key: normal.key, title: "Credential", section: "Fixture", defaultValue: .string(""), isSecret: true)
+        try upgraded.register([secure, other])
+        let original = try Data(contentsOf: url)
+        let reads = secrets.readCount.value
+        let writes = secrets.writeCount.value
+        XCTAssertThrowsError(try old.applyPublic([normal.key: .string("denied"), other.key: .integer(1)], expected: before)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .secretAccessDenied)
+        }
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertEqual(old.snapshot()[normal.key], .null)
+        let publicOnly = try ClientSettings(storageURL: url, secretStore: secrets)
+        try publicOnly.register([other])
+        XCTAssertThrowsError(try publicOnly.applyPublic([:], resetting: [normal.key])) {
+            XCTAssertEqual($0 as? ClientSettingsError, .secretAccessDenied)
+        }
+        XCTAssertEqual(secrets.readCount.value, reads)
+        XCTAssertEqual(secrets.writeCount.value, writes)
+    }
+
+    func testPublicBatchCannotWriteOrMigrateALearnedPlaintextSecret() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        try store.register([self.definition("fixture.credential", .string("")), self.definition("fixture.other", .integer(0))])
+        try store.set(.string("legacy-credential"), for: "fixture.credential")
+        let before = store.readSnapshot()
+        secrets.failWrites.update { $0 = true }
+        let secret = ClientSettingDefinition(key: "fixture.credential", title: "Credential", section: "Fixture", defaultValue: .string(""), isSecret: true)
+        XCTAssertThrowsError(try store.register([secret]))
+        let original = try Data(contentsOf: url)
+        let reads = secrets.readCount.value
+        let writes = secrets.writeCount.value
+        XCTAssertThrowsError(try store.applyPublic([secret.key: .string("denied")], expected: before)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .secretAccessDenied)
+        }
+        XCTAssertThrowsError(try store.applyPublic(["fixture.other": .integer(1)])) {
+            XCTAssertEqual($0 as? ClientSettingsError, .secretAccessDenied)
+        }
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertEqual(secrets.readCount.value, reads)
+        XCTAssertEqual(secrets.writeCount.value, writes)
+    }
+
+    func testPublicBatchRollbackDoesNotOverwriteAnObserverEditBeforeReturn() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        try store.register([self.definition("fixture.a", .integer(0))])
+        let before = store.readSnapshot()
+        let patch: [String: ClientSettingValue] = ["fixture.a": .integer(1)]
+        let intended = self.expectedState(before, applying: patch)
+        let errors = SettingsTestBox<[String]>([])
+        let observation = store.observe { keys in
+            if keys.contains("fixture.a") && store.integer("fixture.a") == 1 {
+                do { try store.set(.integer(2), for: "fixture.a") }
+                catch { errors.update { $0.append(error.localizedDescription) } }
+            }
+        }
+        defer { observation.cancel() }
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            do { try store.applyPublic(patch, expected: before) }
+            catch { errors.update { $0.append(error.localizedDescription) } }
+        }
+        XCTAssertEqual(group.wait(timeout: .now() + 3.0), .success, "A batch must deliver observers outside writer/flock")
+        XCTAssertEqual(errors.value, [])
+        XCTAssertEqual(store.integer("fixture.a"), 2)
+        XCTAssertThrowsError(try store.applyPublic([:], resetting: ["fixture.a"], expected: intended)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        XCTAssertEqual(store.integer("fixture.a"), 2)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains("fixture.a"))
+    }
+
+    func testPublicBatchPostRenameErrorPublishesActualStateAndCanRollback() throws {
+        let url = try self.storageURL()
+        let failAfterRename = SettingsTestBox(false)
+        let writes = SettingsTestBox(0)
+        let store = try ClientSettings(storageURL: url, secretStore: SettingsTestSecrets(), afterFileReplace: {
+            writes.update { $0 += 1 }
+            if failAfterRename.value {
+                throw NSError(domain: NSPOSIXErrorDomain, code: 5, userInfo: [NSLocalizedDescriptionKey: "DO-NOT-EXPOSE-SECRET-FIXTURE"])
+            }
+        })
+        try store.register([self.definition("fixture.a", .integer(0)), self.definition("fixture.b", .integer(0))])
+        let before = store.readSnapshot()
+        let patch: [String: ClientSettingValue] = ["fixture.a": .integer(7), "fixture.b": .integer(8)]
+        let intended = self.expectedState(before, applying: patch)
+        let events = SettingsTestBox<[Set<String>]>([])
+        let observation = store.observe { keys in events.update { $0.append(keys) } }
+        defer { observation.cancel() }
+        failAfterRename.update { $0 = true }
+        XCTAssertThrowsError(try store.applyPublic(patch, expected: before)) { error in
+            XCTAssertEqual(error as? ClientSettingsError, .storageFailure(operation: "sync directory", code: 5))
+            XCTAssertFalse(error.localizedDescription.contains("DO-NOT-EXPOSE"))
+        }
+        XCTAssertEqual(writes.value, 1)
+        XCTAssertEqual(events.value, [Set(patch.keys)])
+        XCTAssertEqual(store.snapshot(), intended.values)
+        XCTAssertEqual(store.readSnapshot().storedKeys, intended.storedKeys)
+        guard case let .object(persisted) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+        XCTAssertEqual(persisted, patch)
+        failAfterRename.update { $0 = false }
+        try store.applyPublic([:], resetting: Set(patch.keys), expected: intended)
+        XCTAssertEqual(writes.value, 2)
+        XCTAssertEqual(events.value.count, 2)
+        XCTAssertEqual(store.snapshot(), before.values)
+        XCTAssertEqual(store.readSnapshot().storedKeys, before.storedKeys)
+        XCTAssertNil(store.lastError)
+    }
+
+    func testPublicBatchCASUsesExactJSONValuesIncludingNestedNumbersAndNullPresence() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        try store.register([self.definition("fixture.value", .null)])
+        let nested: ClientSettingValue = .object(["nested": .array([.number(1.0), .integer(Int64.max), .bool(true), .null])])
+        try store.set(nested, for: "fixture.value")
+        let before = store.readSnapshot()
+        // Pin the integer-token form explicitly instead of depending on whether
+        // a particular Foundation encoder chooses 1 or 1.0 for the same number.
+        var root = try self.document(url)
+        root["values"] = .object(["fixture.value": .object(["nested": .array([.integer(1), .integer(Int64.max), .bool(true), .null])])])
+        try JSONEncoder().encode(root).write(to: url)
+        try store.applyPublic(["fixture.value": .integer(Int64.max)], expected: before)
+        let exactInteger = store.readSnapshot()
+        try store.set(.number(Double(Int64.max)), for: "fixture.value")
+        XCTAssertThrowsError(try store.applyPublic(["fixture.value": .null], expected: exactInteger)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        try store.set(.bool(true), for: "fixture.value")
+        let boolean = store.readSnapshot()
+        try store.set(.integer(1), for: "fixture.value")
+        XCTAssertThrowsError(try store.applyPublic(["fixture.value": .null], expected: boolean)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        try store.applyPublic([:], resetting: ["fixture.value"])
+        let absentNull = store.readSnapshot()
+        try store.applyPublic(["fixture.value": .null], expected: absentNull)
+        XCTAssertThrowsError(try store.applyPublic([:], resetting: ["fixture.value"], expected: absentNull)) {
+            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        }
+        XCTAssertEqual(store.value("fixture.value"), .null)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains("fixture.value"))
     }
 
     #if !canImport(Security)
