@@ -83,7 +83,7 @@ public actor PluginEventQueue {
     private var uiSettings: [Envelope] = []
     private var sendMessage: [Envelope] = []
     private var requests: [Envelope] = []
-    private var coalesced: [CoalesceKey: CoalescedBucket] = []
+    private var coalesced: [CoalesceKey: CoalescedBucket] = [:]
     private var latestSettingsRequest: [String: Int] = [:]
     private var nextSequence = 0
     private var loopTask: Task<Void, Never>?
