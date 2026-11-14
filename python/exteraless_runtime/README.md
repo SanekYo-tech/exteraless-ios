@@ -139,12 +139,17 @@ Reload invokes the previous instance's unload hook before the SDK loads again.
 
 ## Verification
 
-Tests live in `tools/compat/tests/test_ios_runtime.py` with three small local
+Tests live in `tools/compat/tests/test_ios_runtime.py` with four small local
 fixtures. Each case runs in a fresh isolated Python subprocess with a hard timeout.
 Native host services/handle transport and the dependency-case distribution
 metadata are unit doubles. The adapter, virtualjava, SDK loader, BasePlugin
 registration, requirement parser and settings serializer execute as real code.
 These tests do not measure plugin-corpus compatibility or execute UIKit/Swift/C.
+
+The embedded audit regression additionally executes the real sealed
+`python/vendor` bundle without a `files` grant, including a genuine frozen `os`
+without `__file__`. See [AUDIT_PATHS.md](AUDIT_PATHS.md) for the reproduced cause,
+explicit read-only path providers and foreign-file/DNS denial checks.
 
 Run (pytest must already be installed):
 
@@ -155,10 +160,10 @@ Run (pytest must already be installed):
 With `-s`, each case prints `IOS_RUNTIME_UNIT_OK` with actual SDK function-call
 counts collected by the isolated worker's profiler and native-double call counts.
 
-Verified locally on 2026-11-14: **6 passed on CPython 3.12.10**, **6 passed on
+Verified locally: **12 passed on CPython 3.12.10**, **12 passed on
 CPython 3.14.8**. The hard timeout is 20 seconds per isolated subprocess.
 The lifecycle/settings case recorded actual SDK `load_plugin` (1),
 `get_settings_json` (1), `notify_setting_changed` (3), `dispatch_setting_click` (2),
-`unload_plugin` (2), and 61 strict native-double calls. The hooks case recorded
+`unload_plugin` (2), and 60 strict native-double calls. The hooks case recorded
 `call_app_event` (4) and `call_send_message_hook` (5). Metadata inspection made
 zero host calls and did not import the SDK plugin loader or the plugin module.

@@ -154,7 +154,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         }
         let snapshot = PluginPlatformSnapshot(displayScale: scale,
             themeColors: Self.themeColors(data.theme, traits: traits),
-            strings: Self.localizedStrings(data.strings), localeIdentifier: data.strings.baseLanguageCode,
+            strings: Self.localizedStrings(data.strings), localeIdentifier: data.strings.primaryComponent.languageCode,
             accounts: accounts, selectedAccountIndex: selected)
         self.snapshotLock.lock()
         self.snapshot = snapshot
@@ -254,13 +254,24 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
             // request is invented for a peer the account does not already know.
             let peerData = await (context.engine.data.get(
                 TelegramEngine.EngineData.Item.Peer.Peer(id: peerId),
-                TelegramEngine.EngineData.Item.Peer.SendPaidMessageStars(id: peerId)
+                TelegramEngine.EngineData.Item.Peer.SendPaidMessageStars(id: peerId),
+                TelegramEngine.EngineData.Item.Peer.CachedData(id: peerId)
             ) |> take(1) |> last).get()
-            guard let (maybePeer, paidStars) = peerData, let peer = maybePeer else {
+            guard let (maybePeer, advertisedPrice, cachedData) = peerData, let peer = maybePeer else {
                 throw BridgeFailure.unavailable("sendMessage: peer is not present in the active account")
             }
             guard canSendMessagesToPeer(peer) else {
                 throw BridgeFailure.permission("sendMessage: this peer does not allow messages")
+            }
+            var paidStars = advertisedPrice
+            if case .channel(let channel) = peer {
+                if channel.flags.contains(.isCreator) || channel.adminRights != nil {
+                    paidStars = nil
+                } else {
+                    // Match the chat's effective per-account price, including
+                    // an explicit zero exemption in the cached channel data.
+                    paidStars = (cachedData as? CachedChannelData)?.sendPaidMessageStars ?? channel.sendPaidMessageStars
+                }
             }
             if let paidStars, paidStars > .zero {
                 throw BridgeFailure.unimplemented("sendMessage: paid-message parameters are unsupported")
@@ -295,11 +306,11 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
                 localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
             let result = await (enqueueMessagesFromPlugin(account: context.account, peerId: peerId, messages: [message])
                 |> take(1) |> last).get()
-            // `last` emits nil even if a hook completes without a value, so an
-            // empty/cancelled native signal is reported instead of a stuck Task.
+            // `last` emits nil even if the native signal completes without a
+            // value, so an empty result is reported instead of a stuck Task.
             let ids = result?.compactMap { $0 } ?? []
             guard !ids.isEmpty else {
-                throw BridgeFailure.unavailable("sendMessage: native enqueue produced no message (possibly cancelled by a hook)")
+                throw BridgeFailure.unavailable("sendMessage: native enqueue produced no message")
             }
             self.serviceLogs.append(pluginId: request.pluginId,
                 message: "sendMessage \(requestId): enqueued local message ids \(ids.map { String($0.id) }.joined(separator: ","))")

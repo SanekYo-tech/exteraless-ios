@@ -105,18 +105,23 @@ class Platform:
 
     def hasPermission(self, plugin_id, permission):
         self.check_plugin(plugin_id)
-        value = self.call("hasPermission", permission)
-        if type(value) is not bool:
-            raise RuntimeStateError("native hasPermission must return bool")
-        return value
+        return self._permission_query("hasPermission", permission)
 
     def checkPermission(self, plugin_id, permission, what):
         return self.hasPermission(plugin_id, permission)
 
     def isUnsafeMode(self):
-        value = self.call("isUnsafeMode")
+        return self._permission_query("isUnsafeMode")
+
+    def _permission_query(self, member, *args):
+        try:
+            value = self.call(member, *args)
+        except Exception as error:
+            # SDK audit deliberately swallows ordinary helper failures. A failed
+            # native permission query must remain a denial through that boundary.
+            raise PermissionError(f"native {member} unavailable: {error}") from error
         if type(value) is not bool:
-            raise RuntimeStateError("native isUnsafeMode must return bool")
+            raise PermissionError(f"native {member} must return bool")
         return value
 
     def log(self, plugin_id, text):
@@ -205,16 +210,8 @@ class Platform:
         files.get_cache_dir = self.getCacheDir
         files._media_cache_dir = lambda: None
         files._app_cache_dir = self.getCacheDir
-        original_own_roots = files._own_roots
-
-        def own_roots(plugin_id):
-            self.check_plugin(plugin_id)
-            return list(dict.fromkeys([
-                *original_own_roots(plugin_id),
-                files._real(self.getFilesDir()), files._real(self.getCacheDir()),
-            ]))
-
-        files._own_roots = own_roots
+        from . import _audit_paths
+        _audit_paths.install(self, loader, dependencies, files)
         loader.java_runtime_mark = self.mark
         loader._plugins_dir_cached = self.plugins_dir
         loader._ensure_requirements = dependencies.ensure_requirements

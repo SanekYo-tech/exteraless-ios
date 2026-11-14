@@ -15,6 +15,8 @@ It adapts `ExteralessPluginRuntime.shared` to closure-driven `PluginManagerActio
 - `settings: (String) async throws -> String`
 - `updateSetting: (String, String, String) async throws -> Void` (id, key, JSON scalar)
 - `click: (String, String) async throws -> Void` (id, callback id)
+- optional `permissions: (String) -> [PluginPermission]`
+- optional `setPermissions: (String, [PluginPermission]) async throws -> Void`
 
 The factory calls `runtime.update(context:)` first. The facade method labels are the
 ones in the wave request. Snapshot/status/log reads
@@ -25,10 +27,16 @@ policy, callback registration and Python worker scheduling. Failed loads must th
 and/or be reflected in `Plugin.loadError`/`loaded`; the UI never shows an installation
 success banner. Settings values and callbacks always return through the host.
 
-Register `ExteralessPluginEntry.setControllerFactory(exteralessPluginManagerController)`
-during bootstrap, including when runtime startup fails, so the error screen remains
-reachable. The factory bridge uses NSLock; controller creation is main-thread-only.
-AccountContext protocols and PeerInfo's module dependencies are unchanged.
+Register the main-actor factory through `ExteralessPluginEntry` during bootstrap,
+including when runtime startup fails, so the error screen remains reachable:
+
+```swift
+ExteralessPluginEntry.setControllerFactory { context in
+    MainActor.assumeIsolated { exteralessPluginManagerController(context: context) }
+}
+```
+
+The factory bridge uses NSLock; controller creation is main-thread-only.
 
 ## Implementation details
 
@@ -80,6 +88,10 @@ These are source checks, not Swift type checking or UIKit/animation verification
   failing AST parse/load replaces it with the actual error and current host snapshot.
 - Toggle/remove controls become unavailable during their operation. A load error
   must never look like a running plugin. Long titles and errors wrap beside controls.
+- Plugin detail shows declared permissions and the actual granted-permission
+  switches. Changing a grant updates the displayed state once the host operation
+  finishes; reopening the detail retains it. Permission labels and their technical
+  names wrap without covering switches in large text sizes.
 - Opening plugin settings shows loading, then the real rows or an explicit empty/
   error state. Header/divider, switch, selector, input, text callbacks, slider and
   subpages must remain usable after a schema refresh. Errors preserve an input draft.
@@ -98,7 +110,8 @@ After the combined iOS build, use the permitted simulator and XcodeBuildMCP to d
 the screens. Follow `telegram-ios/AGENTS.md`: record with `simctl io recordVideo`,
 extract timestamped/indexed sheets with `tools/animation_sheet.py`, inspect the whole
 transition and every flagged frame. Record push/pop/interactive cancellation,
-picker open/cancel/import failure, toggle failure, settings loading/error/empty,
+picker open/cancel/import failure, toggle failure, permission changes/reopen,
+settings loading/error/empty,
 callback/subpage navigation, slider release/cancel and input save failure. Cover
 light/dark, long content, Dynamic Type, keyboard, narrow phone and regular-width
 layouts. If available, include Duo reserved-corner postures. Use a small controlled

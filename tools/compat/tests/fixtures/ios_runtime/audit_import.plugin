@@ -1,0 +1,46 @@
+__id__ = "ios_audit_probe"
+__name__ = "Read-only bundle audit probe"
+__permissions__ = ["ui", "messages.send", "network"]
+__requirements__ = ["requests>=2.34.2,<3", "cachetools>=8,<9"]
+
+from base_plugin import BasePlugin
+
+
+class AuditImportPlugin(BasePlugin):
+    def on_plugin_load(self):
+        import cachetools
+        import certifi
+        import requests
+        from pathlib import Path
+        from file_utils import get_plugin_dir, get_plugin_cache_dir
+
+        cache = cachetools.LRUCache(2)
+        cache["value"] = 7
+        self.dependencies = {
+            "cachetools": cachetools.__version__,
+            "requests": requests.__version__,
+            "cache_value": cache["value"],
+            "cachetools_file": cachetools.__file__,
+            "requests_file": requests.__file__,
+            "certifi_file": certifi.where(),
+            "certificate_bytes": len(Path(certifi.where()).read_bytes()),
+            "plugin_data": get_plugin_dir(),
+            "plugin_cache": get_plugin_cache_dir(),
+        }
+        self.set_setting("imported", True)
+
+    def read_file(self, path):
+        with open(path, "rb") as source:
+            return len(source.read(64))
+
+    def pathlib_read(self, path):
+        from pathlib import Path
+        return len(Path(path).read_bytes())
+
+    def sdk_read(self, path):
+        from file_utils import read_file
+        return len(read_file(path))
+
+    def audit_event(self, event, args):
+        import sys
+        sys.audit(event, *args)

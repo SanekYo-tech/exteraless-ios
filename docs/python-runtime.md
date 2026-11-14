@@ -2,11 +2,25 @@
 
 ## Интеграционная волна — 14.11.2026
 
+Commit `36e3aba2` опубликован. **[Compat 43629521052](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43629521052)
+прошёл**: 243 pytest / 20 skipped, 79 PluginHost и 16 PluginHooks Swift tests.
+**[Component 43629521505](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43629521505)**
+подтвердил те же Swift suites на macOS, компиляцию `NativeBridgeBinding` и
+работу адаптера с реальным CPython 3.12.10. Сквозной SDK executable также
+скомпилирован и запущен: AST/disabled install проходят, затем импорт bundled
+`cachetools` ошибочно требует `files` в SDK audit. Причина воспроизведена и
+локально исправлена через явные runtime paths: `_audit_paths.py` учитывает frozen
+`os` без `__file__`. 12 SDK tests и 33 dependency tests проходят; следующий native
+CI подтверждает этот fix. Cleanup/finalize после исходной ошибки прошли. Диагностики:
+`build/artifacts/python-runtime-43629521505/`; fingerprints 70 source files
+сверены с git commit, generated dependency seal также совпал.
+
 В текущем дереве runtime подключён к Bazel-графу Telegram: `PluginHost`,
 отдельный `PluginHooks`, static C-мост, dynamic Python.framework и 54 native
 extension frameworks. Main-app lifecycle соединён с нативными Telegram services,
-SDK loader и менеджером плагинов. Компиляция этой интеграции на Mac и итоговая
-Telegram IPA ещё ожидают CI; подтверждённая runtime-веха ниже относится к базе.
+SDK loader и менеджером плагинов. Core Swift и native adapter на Mac уже прошли;
+сквозной SDK gate и итоговая Telegram IPA ожидают повторной native проверки.
+Подтверждённая iOS runtime-веха ниже относится к базе.
 
 - `python/exteraless_runtime/` исполняет настоящий SDK loader: AST metadata,
   load/unload, event dispatch, JSON settings, callbacks на owner worker.

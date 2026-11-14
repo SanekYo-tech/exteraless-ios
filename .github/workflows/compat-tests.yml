@@ -128,6 +128,19 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
+      - name: Cache pinned pure Python wheels
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/python-wheel-cache
+          key: python-pure-dependencies-${{ hashFiles('python/runtime/dependency-lock.json') }}
+
+      - name: Stage dependencies for SDK audit fixtures
+        run: |
+          python -B tools/runtime/vendor_dependencies.py \
+            --cache "$RUNNER_TEMP/python-wheel-cache" \
+            --output "$GITHUB_WORKSPACE/python/vendor" \
+            --report "$RUNNER_TEMP/python-dependencies.json"
+
       - name: Build C bridge (_exteraless_bridge)
         run: |
           set -euo pipefail

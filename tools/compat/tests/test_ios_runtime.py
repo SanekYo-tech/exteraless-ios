@@ -19,7 +19,7 @@ import weakref
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).parent / "fixtures" / "ios_runtime"
-CASES = ("metadata", "lifecycle_settings", "hooks", "load_errors", "cleanup", "bootstrap", "requirements", "permissions", "callback_cleanup")
+CASES = ("metadata", "lifecycle_settings", "hooks", "load_errors", "cleanup", "bootstrap", "requirements", "permissions", "callback_cleanup", "audit_paths", "audit_paths_frozen", "audit_layout")
 
 
 class StrictNativeHost:
@@ -192,14 +192,15 @@ class StrictNativeHost:
         return module
 
 
-def bootstrap(directory, plugin_id="ios_runtime_probe", configure=True, dependency_provider=None):
+def bootstrap(directory, plugin_id="ios_runtime_probe", configure=True, dependency_provider=None, real_dependencies=False):
     import virtualjava
     import exteraless_runtime as runtime
     from exteraless_runtime import _dependencies
     # Keep SDK unit workers independent of an optional real bundle staged by a
     # concurrent build. Bundle discovery/path validation has its own data-only tests.
-    provider = dependency_provider or _dependencies.ProvidedDependencies({})
-    _dependencies.create_provider = lambda: provider
+    if not real_dependencies:
+        provider = dependency_provider or _dependencies.ProvidedDependencies({})
+        _dependencies.create_provider = lambda: provider
     host = StrictNativeHost(directory)
     bridge = host.module()
     sys.modules["_exteraless_bridge"] = bridge
@@ -607,10 +608,167 @@ def case_permissions(directory):
         return previous(request)
 
     bridge.xt_call_host = broken
-    raises(RuntimeError, lambda: loader.has_permission("network", host.plugin_id), "unavailable")
+    raises(PermissionError, lambda: loader.has_permission("network", host.plugin_id), "unavailable")
     bridge.xt_call_host = previous
     runtime.unload()
     return host
+
+
+def _audit_paths_case(directory, frozen_os=False):
+    if frozen_os:
+        # Re-create the actual CPython frozen module with an embedded-style
+        # unavailable _stdlib_dir. No SDK helper/import implementation is mocked.
+        from importlib.machinery import FrozenImporter
+        sys._stdlib_dir = None
+        spec = FrozenImporter.find_spec("os")
+        assert spec is not None
+        frozen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(frozen)
+        assert not hasattr(frozen, "__file__") and frozen.__spec__.origin == "frozen"
+        sys.modules["os"] = frozen
+
+    runtime, host, bridge = bootstrap(directory, "ios_audit_probe", configure=False, real_dependencies=True)
+    host.permissions = {"ui", "messages.send", "network"}
+    # Neither mutable sys.path nor an ambient app-wide TMPDIR conveys file trust.
+    shared_temp = directory / "shared-temp"
+    shared_temp.mkdir()
+    os.environ["TMPDIR"] = str(shared_temp)
+    sys.path.extend((str(host.plugins), str(directory)))
+    runtime.configure(host.plugin_id or "ios_audit_probe", host.plugins, host.settings)
+    loader = sys.modules["extera_utils.plugin_loader"]
+    audit = sys.modules["extera_utils.audit_gate"]
+    vendor = ROOT / "python/vendor"
+    assert runtime._state.dependencies.vendor_dir == vendor
+    assert "cachetools" not in sys.modules and "requests" not in sys.modules
+    assert audit._runtime_paths()
+    assert audit._is_runtime_file(str(vendor / "cachetools/__init__.py"))
+    assert not audit._is_runtime_file(str(host.plugins))
+    assert not audit._is_runtime_file(str(host.settings))
+    assert not audit._is_runtime_file(str(directory))
+    assert not audit._is_runtime_file(str(shared_temp / "other-plugin.txt"))
+    path = copy_fixture(host, "audit_import")
+    try:
+        runtime.load_json(path)
+    except BaseException:
+        print("AUDIT_PATH_DIAGNOSTIC " + json.dumps({
+            "frozen_os": frozen_os, "os_file": getattr(audit.os, "__file__", None),
+            "stdlib_dir": getattr(sys, "_stdlib_dir", None), "sys_path": sys.path,
+            "runtime_prefixes": audit._runtime_prefixes,
+            "vendor_on_sys_path": str(vendor) in sys.path,
+        }))
+        raise
+    record = loader.plugins[host.plugin_id]
+    assert record.instance.dependencies["cachetools"] == "8.0.0"
+    assert record.instance.dependencies["requests"] == "2.34.2"
+    assert record.instance.dependencies["cache_value"] == 7
+    assert record.instance.dependencies["certificate_bytes"] > 0
+    assert Path(record.instance.dependencies["plugin_data"]).is_dir()
+    assert Path(record.instance.dependencies["plugin_cache"]).is_dir()
+    assert Path(record.instance.dependencies["requests_file"]).is_relative_to(vendor)
+    assert Path(record.instance.dependencies["cachetools_file"]).is_relative_to(vendor)
+    assert host.value("imported") is True and "files" not in host.permissions
+    assert not any(Path(name).is_relative_to(vendor) for name in loader._owner_files)
+    handle = bridge.xt_register_handle(record.instance)
+
+    def invoke(method, *args):
+        return json.loads(runtime.invoke_handle_json(handle, method, json.dumps(args)))
+
+    certificate = record.instance.dependencies["certifi_file"]
+    assert invoke("read_file", certificate) > 0
+    assert invoke("pathlib_read", certificate) > 0
+    assert invoke("sdk_read", certificate) > 0
+    own_file = host.files / "mine.txt"
+    own_file.write_text("own data", encoding="utf-8")
+    assert invoke("read_file", str(own_file)) == 8
+
+    foreign_files = [directory / "foreign.txt", shared_temp / "other-plugin.txt",
+                     host.plugins / "other.plugin", host.settings / "other.json"]
+    for foreign in foreign_files:
+        foreign.write_text("not this plugin's data", encoding="utf-8")
+        for method in ("read_file", "pathlib_read", "sdk_read"):
+            raises(PermissionError, lambda: invoke(method, str(foreign)), "files")
+
+    # Real audit events, without opening a write descriptor or making a syscall.
+    mutations = [("open", [certificate, "w", os.O_WRONLY | os.O_TRUNC]),
+                 ("os.rename", [certificate, str(own_file), -1, -1]),
+                 ("os.rename", [str(vendor.parent), str(own_file), -1, -1]),
+                 ("os.link", [certificate, str(own_file), -1, -1])]
+    for permission_set in (set(host.permissions), {*host.permissions, "files", "hooks"}):
+        host.permissions = permission_set
+        for event, args in mutations:
+            raises(PermissionError, lambda: invoke("audit_event", event, args), "read-only")
+    host.permissions = {"ui", "messages.send"}
+    import socket
+    raises(socket.gaierror,
+           lambda: invoke("audit_event", "socket.getaddrinfo", ["never-resolved.invalid", 443, 0, 0, 0]),
+           "network")
+    original_call = bridge.xt_call_host
+    for member in ("isUnsafeMode", "hasPermission"):
+        def unavailable(request, failed_member=member):
+            if request["member"] == failed_member:
+                raise RuntimeError("permission service unavailable")
+            return original_call(request)
+        bridge.xt_call_host = unavailable
+        try:
+            raises(PermissionError,
+                   lambda: invoke("audit_event", "socket.getaddrinfo", ["never-resolved.invalid", 443, 0, 0, 0]),
+                   "unavailable")
+        finally:
+            bridge.xt_call_host = original_call
+    assert loader.has_permission("network", host.plugin_id) is False
+    assert loader.has_permission("files", host.plugin_id) is False
+    assert loader.unsafe_mode() is False
+    assert loader.current_plugin_id() is None
+    print("AUDIT_PATHS_OK " + json.dumps({
+        "frozen_os": frozen_os, "os_file": getattr(audit.os, "__file__", None),
+        "vendor_imported": True, "foreign_reads_denied": 12,
+        "runtime_mutations_denied": 8, "dns_audit_denied": True,
+        "unavailable_permission_provider_denied": True,
+    }))
+    runtime.unload()
+    assert not loader.plugins and not bridge.xt_handle_count()
+    return host
+
+
+def case_audit_paths(directory):
+    return _audit_paths_case(directory)
+
+
+def case_audit_paths_frozen(directory):
+    return _audit_paths_case(directory, frozen_os=True)
+
+
+def case_audit_layout(directory):
+    from exteraless_runtime._audit_paths import RuntimePaths, _framework_directories
+    from exteraless_runtime import RuntimeStateError
+    app = directory / "Fixture.app"
+    python = app / "python"
+    stdlib = app / "python-stdlib/lib/python3.12"
+    dynload = stdlib / "lib-dynload"
+    dynload.mkdir(parents=True)
+    frameworks = app / "Frameworks"
+    for name in ("Python", "_ssl", "TelegramUI"):
+        binary = frameworks / (name + ".framework") / name
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"path-only fixture; never loaded")
+    marker = dynload / "_ssl.cpython-312-iphoneos.fwork"
+    marker.write_text("Frameworks/_ssl.framework/_ssl\n", encoding="utf-8")
+    framework_roots = _framework_directories(python, [str(stdlib)])
+    data = app / "Library/Application Support/exteraless"
+    paths = RuntimePaths([stdlib, *framework_roots], excluded=[data / "plugins", data / "settings"])
+    assert paths.contains(marker)
+    assert paths.contains(frameworks / "_ssl.framework/_ssl")
+    assert paths.contains(frameworks / "Python.framework/Python")
+    assert not paths.contains(frameworks / "TelegramUI.framework/TelegramUI")
+    assert not paths.contains(data / "plugins/foreign.plugin")
+    assert not paths.contains(data / "settings/foreign.json")
+    assert not paths.contains(str(stdlib) + "-foreign/os.py")
+    too_broad = RuntimePaths([app], excluded=[data / "plugins"])
+    assert not too_broad.contains(data / "plugins/foreign.plugin")
+    assert not too_broad.directories
+    marker.write_text("../../Library/Application Support/foreign\n", encoding="utf-8")
+    raises(RuntimeStateError, lambda: _framework_directories(python, [str(stdlib)]), "marker")
+    return None
 
 
 def worker(case, directory):
@@ -636,7 +794,7 @@ def worker(case, directory):
         host = globals()["case_" + case](Path(directory))
     finally:
         sys.setprofile(None)
-    if case != "metadata":
+    if case not in ("metadata", "audit_layout"):
         assert counts.get("load_plugin", 0) > 0 and counts.get("unload_plugin", 0) > 0
     if case == "lifecycle_settings":
         assert counts.get("get_settings_json", 0) and counts.get("notify_setting_changed", 0)
@@ -667,4 +825,7 @@ else:
         summary = next((line for line in result.stdout.splitlines()
                         if line.startswith("IOS_RUNTIME_UNIT_OK ")), None)
         assert summary is not None
+        for line in result.stdout.splitlines():
+            if line.startswith("AUDIT_PATHS_OK "):
+                print(line)
         print(summary)
