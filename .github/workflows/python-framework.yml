@@ -16,8 +16,10 @@ permissions:
 jobs:
   validate:
     name: CPython 3.12 + native bridge (iOS)
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - name: Checkout
         uses: actions/checkout@v4

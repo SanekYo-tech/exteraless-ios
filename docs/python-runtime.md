@@ -156,8 +156,11 @@ Mach-O и отсутствие developer signing в диагностическо
 Локально уже выполнен native probe на CPython **3.12.10 / Windows**:
 `ok: true`, два OWN_GIL интерпретатора, built-in bridge, SSL и SQLite.
 Новый C-engine probe также прошёл на Windows: два собственных native потока,
-изоляция данных, исключения и нормальное завершение. Swift-адаптер ещё требует
-успешной компиляции/исполнения отдельным CI probe.
+изоляция данных, исключения и нормальное завершение. Swift-адаптер **скомпилирован
+и выполнен с настоящим CPython 3.12.10 на macOS** в
+[43612335857](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43612335857):
+`swift-engine-smoke.json` подтверждает `ok`, два native workers, изоляцию,
+Unicode/NUL, восстановление после исключений, cleanup bootstrap и finalize.
 Это не результат на iOS. Проверка iOS считается выполненной только по
 успеху workflow и его `simulator-smoke.json`; device installation — отдельно.
 В отчёте явно стоит `execution: simctl spawn` и
@@ -206,6 +209,13 @@ python tools/runtime/check_host_embedding.py --probe engine --fault-injection --
 ```
 
 ## Следующее после успешного probe
+
+`43612335857` подтвердил исправленный выбор iPhone 17 / iOS 27.0, но
+`launchctl version` снова завис — проблема воспроизвелась и на обычной модели
+до запуска Python. Runtime workflow переведён на `macos-26` с явным
+`DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer` (SDK iOS 26.5).
+При отказе сохраняются и логи CoreSimulator со стороны macOS. Telegram build
+имеет собственный toolchain; runtime-компонент не требует Xcode 27.
 
 1. Подтвердить новые native/Swift probes по CI; C-core уже проверен на Windows,
    адаптер написан, в app Bazel-граф пока не включён.

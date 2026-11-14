@@ -69,6 +69,15 @@ def collect_probe_diagnostics(udid, output, report_path, error):
                            stdout=log, stderr=subprocess.STDOUT, timeout=45, check=False)
     except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
         print('Could not finish simulator log capture:', diagnostic_error)
+    # If simctl itself cannot spawn anything, diagnostics inside the device
+    # cannot work either. Read the host services independently of that channel.
+    try:
+        with (output / 'core-simulator-host.log').open('w', encoding='utf-8') as log:
+            subprocess.run(['log', 'show', '--last', '4m', '--style', 'compact',
+                            '--predicate', 'process == "CoreSimulatorService" OR process == "simdiskimaged"'],
+                           stdout=log, stderr=subprocess.STDOUT, timeout=20, check=False)
+    except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
+        print('Could not finish host simulator log capture:', diagnostic_error)
     folders = [Path.home() / 'Library/Logs/DiagnosticReports',
                Path.home() / 'Library/Developer/CoreSimulator/Devices' / udid / 'data/Library/Logs/CrashReporter']
     for folder in folders:

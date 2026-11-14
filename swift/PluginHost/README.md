@@ -29,8 +29,8 @@ swift/PluginHost/
 Swift-модуль скомпилирован на macOS и Linux; Compat run `43604630628`
 подтвердил оба job (pytest и Swift). Обычные SwiftPM-тесты используют `FakeEngine`.
 Реальный адаптер `CPythonXCFrameworkEngine` и C-core `python/runtime/engine.c`
-добавлены отдельно: C-core проверен на Windows/CPython 3.12.10, сборка и выполнение
-Swift с настоящим CPython проверяются отдельным native probe. Подробности и
+проверены отдельно: C-core на Windows/CPython 3.12.10, Swift с настоящим CPython
+на macOS в run `43612335857` (включая cleanup и finalize). Подробности и
 границы проверки: [python-runtime.md](../../docs/python-runtime.md).
 
 ## Разработка и тесты (бесплатно, без macOS)
