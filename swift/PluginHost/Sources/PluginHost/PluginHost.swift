@@ -334,8 +334,8 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Удалить плагин: интерпретатор, файл, модель, согласия.
     public func uninstallPlugin(id: String) async throws {
-        await unloadPlugin(id)
-        if let plugin = state.plugin(id), let path = plugin.path {
+        await unloadPlugin(id: id)
+        if let plugin = state.plugin(id: id), let path = plugin.path {
             try? FileManager.default.removeItem(atPath: path)
         }
         state.removePlugin(id: id)
@@ -346,7 +346,7 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Включить/выключить плагин (персистентно).
     public func setPluginEnabled(id: String, _ enabled: Bool) async throws {
-        guard var plugin = state.plugin(id) else { throw PluginHostError.pluginNotFound(id) }
+        guard var plugin = state.plugin(id: id) else { throw PluginHostError.pluginNotFound(id) }
         guard plugin.enabled != enabled else { return }
         plugin.enabled = enabled
         state.upsert(plugin)
@@ -354,15 +354,15 @@ public final class PluginHost: @unchecked Sendable {
         if enabled {
             await loadPlugin(plugin)
         } else {
-            await unloadPlugin(id)
+            await unloadPlugin(id: id)
         }
         notifyReload()
     }
 
     /// Перезагрузить плагин (developer mode).
     public func reloadPlugin(id: String) async throws {
-        await unloadPlugin(id)
-        if let plugin = state.plugin(id) {
+        await unloadPlugin(id: id)
+        if let plugin = state.plugin(id: id) {
             await loadPlugin(plugin)
         }
         await watchdog.clearNotResponding(id)
@@ -374,7 +374,7 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Обновить hasSettings-флаг плагина (этап 5: после разбора create_settings).
     public func updatePluginFlags(id: String, hasSettings: Bool) {
-        guard var plugin = state.plugin(id) else { return }
+        guard var plugin = state.plugin(id: id) else { return }
         plugin.hasSettings = hasSettings
         state.upsert(plugin)
         persistPlugins()
@@ -416,7 +416,7 @@ public final class PluginHost: @unchecked Sendable {
             await interpreters.destroy(handle)
         }
         state.removeHandle(for: id)
-        if var plugin = state.plugin(id) {
+        if var plugin = state.plugin(id: id) {
             plugin.loaded = false
             state.upsert(plugin)
             persistPlugins()

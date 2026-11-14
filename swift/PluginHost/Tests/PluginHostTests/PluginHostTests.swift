@@ -170,7 +170,7 @@ final class PluginEventQueueTests: XCTestCase {
             updateName: "TL_updateUserStatus", account: 1, updateJSON: "{}")))
         await gate.open()
         _ = try await settingsTask.value
-        let settled = await waitUntil { await order.count == 2 }
+        let settled = await waitUntil { order.count == 2 }
         XCTAssertTrue(settled, "после открытия гейта должен уйти батч апдейтов")
         XCTAssertEqual(order.values.last, Optional("updates"))
     }
@@ -412,7 +412,7 @@ final class PluginWatchdogTests: XCTestCase {
         XCTAssertEqual(disabled, Optional("crasher"))
     }
 
-    func testNotRespondingLifecycle() async {
+    func testNotRespondingLifecycle() async throws {
         let store = try PluginStore(directory: tempDirectory("watchdog-nr"))
         let watchdog = PluginWatchdog(store: store)
         let events = Recorder<(String, Bool)>()
@@ -442,9 +442,9 @@ final class PluginHostTests: XCTestCase {
                 programName: "test",
                 compatibilityDirectories: ["/vj", "/sdk"],
                 pluginRootDirectory: directory.path),
-            storageDirectory: directory,
+            interpreters: PythonInterpreterLimits(callTimeout: 1),
             queue: PluginEventQueue.Limits(dispatchTimeout: 2),
-            interpreters: PythonInterpreterLimits(callTimeout: 1))
+            storageDirectory: directory)
         let host = try PluginHost(engine: engine, configuration: configuration)
         try await host.start()
 
@@ -466,9 +466,9 @@ final class PluginHostTests: XCTestCase {
             $0.contains("\"on_app_event\"") && $0.contains("\"app_start\"")
         })
 
-        try await host.setPluginEnabled("tester", false)
+        try await host.setPluginEnabled(id: "tester", false)
         XCTAssertFalse(host.events.subscribers.hasSubscribers(.appEvent))
-        try await host.stop()
+        await host.stop()
         XCTAssertFalse(host.isRunning)
     }
 
