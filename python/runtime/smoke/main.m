@@ -4,11 +4,12 @@
 #endif
 #import "runtime_probe.h"
 #import "engine_probe.h"
+#import "bridge_callback_probe.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-static int RunProbe(NSString *report, BOOL engine) {
+static int RunProbe(NSString *report, NSInteger mode) {
     NSString *resources = NSBundle.mainBundle.resourcePath;
     NSString *home = [resources stringByAppendingPathComponent:@"python-stdlib"];
     NSString *stdlib = [home stringByAppendingPathComponent:@"lib/python3.12"];
@@ -20,9 +21,15 @@ static int RunProbe(NSString *report, BOOL engine) {
     }
     fprintf(stderr, "EXL_PROBE_RESOURCES %s\n", resources.UTF8String);
     const char *executable = NSBundle.mainBundle.executablePath.UTF8String;
-    int status = engine
-        ? EXLRunEngineProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String)
-        : EXLRunRuntimeProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String);
+    int status;
+    if (mode == 2) {
+        NSString *python = [resources stringByAppendingPathComponent:@"python"];
+        status = EXLRunBridgeCallbackProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, python.UTF8String, report.UTF8String);
+    } else if (mode == 1) {
+        status = EXLRunEngineProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String);
+    } else {
+        status = EXLRunRuntimeProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String);
+    }
     NSData *previous = [NSData dataWithContentsOfFile:report];
     NSMutableDictionary *result = previous ? [[NSJSONSerialization JSONObjectWithData:previous options:0 error:nil] mutableCopy] : nil;
     if (![result isKindOfClass:NSMutableDictionary.class]) result = [NSMutableDictionary dictionary];
@@ -79,7 +86,7 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         fprintf(stderr, "EXL_PROBE_MAIN_ENTERED\n");
         fflush(stderr);
-        // Both CLI modes execute the native probes. Simulator builds use a
+        // CLI modes execute the native probes. Simulator builds use a
         // Foundation-only entry point; the device artifact has a UIKit display.
         if (argc == 3 && strcmp(argv[1], "--headless-report") == 0) {
             return RunProbe([NSString stringWithUTF8String:argv[2]], NO);
@@ -87,8 +94,11 @@ int main(int argc, char **argv) {
         if (argc == 3 && strcmp(argv[1], "--engine-report") == 0) {
             return RunProbe([NSString stringWithUTF8String:argv[2]], YES);
         }
+        if (argc == 3 && strcmp(argv[1], "--bridge-report") == 0) {
+            return RunProbe([NSString stringWithUTF8String:argv[2]], 2);
+        }
 #ifdef EXL_SIMULATOR_COMPONENT
-        fputs("usage: ExteralessPythonSmoke --headless-report|--engine-report report.json\n", stderr);
+        fputs("usage: ExteralessPythonSmoke --headless-report|--engine-report|--bridge-report report.json\n", stderr);
         return 2;
 #else
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(EXLProbeDelegate.class));

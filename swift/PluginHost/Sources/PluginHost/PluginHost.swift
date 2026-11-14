@@ -100,7 +100,7 @@ public final class PluginHost: @unchecked Sendable {
         }
     }
 
-    /// Комплект Swift-сервисов моста (заглушки v1, реализация — этап 5).
+    /// Комплект Swift-сервисов моста, предоставляемых основным приложением.
     /// `@unchecked Sendable`: `PluginUIService` не Sendable (`constructUI`
     /// принимает `[Any]`, см. протокол). Ссылки неизменяемы после init.
     public struct BridgeServiceSet: @unchecked Sendable {
@@ -116,15 +116,31 @@ public final class PluginHost: @unchecked Sendable {
         }
     }
 
+    /// Capture synchronously in the native onCallback, BEFORE creating a Task or
+    /// applying its delay. A Python handle is meaningful only in this interpreter
+    /// lifetime. Tokens from another host or a reloaded interpreter are rejected.
+    public struct CallbackOwner: Hashable, Sendable {
+        public var pluginId: String { interpreter.pluginId }
+        fileprivate let hostIdentity: UUID
+        fileprivate let interpreter: InterpreterHandle
+    }
+
     // MARK: - Внутреннее состояние (lock-защищённое)
 
-    private final class HostState: @unchecked Sendable {
+    // Internal for deterministic lifecycle/overlap tests; all access remains locked.
+    final class HostState: @unchecked Sendable {
         private let lock = NSLock()
         private var plugins: [Plugin] = []
         private var handles: [String: InterpreterHandle] = [:]
-        private var inflight: Set<String> = []
+        private var inflight: [InterpreterHandle: Int] = [:]
+        private var mutations: Set<String> = []
+        private var loading: Set<String> = []
+        private var unloading: [String: InterpreterHandle] = [:]
+        private var batch: (id: UUID, owners: Set<InterpreterHandle>)?
         private var running = false
+        private var starting = false
         private var stopping = false
+        private var stopped = false
 
         var isRunning: Bool {
             lock.lock(); defer { lock.unlock() }
@@ -139,22 +155,46 @@ public final class PluginHost: @unchecked Sendable {
         func shouldStart() throws -> Bool {
             lock.lock(); defer { lock.unlock() }
             guard !stopping else { throw PluginHostError.notRunning }
-            return !running
+            guard !running, !starting else { return false }
+            starting = true
+            return true
+        }
+
+        func endStarting() {
+            lock.lock(); starting = false; lock.unlock()
         }
 
         func markRunning() -> Bool {
             lock.lock(); defer { lock.unlock() }
-            guard !stopping else { return false }
+            guard starting, !stopping else { return false }
             running = true
             return true
         }
 
-        func beginStopping() {
+        func beginStopping() -> [(Plugin, InterpreterHandle)]? {
             lock.lock(); defer { lock.unlock() }
+            guard !stopping else { return nil }
+            let active = plugins.compactMap { plugin -> (Plugin, InterpreterHandle)? in
+                // Loading workers also need a bounded drain before destroyAll;
+                // destroying a worker stuck in load_json would wait indefinitely.
+                guard !plugin.notResponding, let handle = handles[plugin.id] else { return nil }
+                return (plugin, handle)
+            }
             stopping = true
             running = false
             handles.removeAll()
+            batch = nil
             for index in plugins.indices { plugins[index].loaded = false }
+            return active
+        }
+
+        var hasStopped: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return stopped
+        }
+
+        func finishStopping() {
+            lock.lock(); stopped = true; lock.unlock()
         }
 
         func pluginList() -> [Plugin] { lock.lock(); defer { lock.unlock() }; return plugins }
@@ -173,7 +213,7 @@ public final class PluginHost: @unchecked Sendable {
             return plugin
         }
 
-        func recomputeGate(_ gate: SubscriberGate) {
+        func recomputeGate(_ gate: SubscriberGate, permissions: PermissionsModel) {
             // Снимок и публикация под тем же lock, что beginStopping:
             // старый снимок loaded-плагинов не откроет gate после stop.
             lock.lock(); defer { lock.unlock() }
@@ -181,7 +221,8 @@ public final class PluginHost: @unchecked Sendable {
             guard !stopping else { return }
             for plugin in plugins
             where plugin.isEnabled && plugin.loaded && !plugin.notResponding {
-                for kind in ExtensionPointKind.allCases where plugin.handles(kind) {
+                for kind in ExtensionPointKind.allCases
+                where plugin.handles(kind) && permissions.has(plugin.id, kind.requiredPermission) {
                     gate.add(kind, 1)
                 }
             }
@@ -193,6 +234,21 @@ public final class PluginHost: @unchecked Sendable {
             handles[id] = nil
         }
 
+        func target(id: String, expected: InterpreterHandle? = nil,
+                    allowLoading: Bool = false) -> (plugin: Plugin, handle: InterpreterHandle)? {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, unloading[id] == nil, let handle = handles[id],
+                  expected == nil || expected == handle,
+                  let plugin = plugins.first(where: { $0.id == id }), !plugin.notResponding,
+                  plugin.loaded || (allowLoading && loading.contains(id)) else { return nil }
+            return (plugin, handle)
+        }
+
+        func handlesSnapshot() -> [InterpreterHandle] {
+            lock.lock(); defer { lock.unlock() }
+            return stopping ? [] : Array(handles.values)
+        }
+
         func handle(for id: String) -> InterpreterHandle? {
             lock.lock(); defer { lock.unlock() }
             return handles[id]
@@ -200,24 +256,195 @@ public final class PluginHost: @unchecked Sendable {
 
         func setHandle(_ handle: InterpreterHandle) -> Bool {
             lock.lock(); defer { lock.unlock() }
-            guard !stopping else { return false }
+            guard !stopping, loading.contains(handle.pluginId), handles[handle.pluginId] == nil,
+                  unloading[handle.pluginId] == nil else { return false }
             handles[handle.pluginId] = handle
             return true
         }
 
-        func removeHandle(for id: String) {
+        func isCurrent(_ handle: InterpreterHandle) -> Bool {
             lock.lock(); defer { lock.unlock() }
-            handles[id] = nil
+            return !stopping && handles[handle.pluginId] == handle
         }
 
-        func markInflight(_ id: String, _ flag: Bool) {
+        func beginInvocation(_ handle: InterpreterHandle, allowUnloading: Bool = false) throws {
             lock.lock(); defer { lock.unlock() }
-            if flag { inflight.insert(id) } else { inflight.remove(id) }
+            try validateInvocation(handle, allowUnloading: allowUnloading)
+            inflight[handle, default: 0] += 1
         }
 
-        func inflightSnapshot() -> [String] {
+        func checkInvocation(_ handle: InterpreterHandle, allowUnloading: Bool = false) throws {
             lock.lock(); defer { lock.unlock() }
-            return Array(inflight)
+            try validateInvocation(handle, allowUnloading: allowUnloading)
+        }
+
+        private func validateInvocation(_ handle: InterpreterHandle, allowUnloading: Bool) throws {
+            guard !stopping || allowUnloading else { throw PluginHostError.notRunning }
+            guard handles[handle.pluginId] == handle || (allowUnloading && unloading[handle.pluginId] == handle),
+                  allowUnloading || unloading[handle.pluginId] == nil else {
+                throw PluginHostError.superseded("Interpreter owner changed: \(handle.pluginId)")
+            }
+            guard let plugin = plugins.first(where: { $0.id == handle.pluginId }) else {
+                throw PluginHostError.pluginNotFound(handle.pluginId)
+            }
+            guard !plugin.notResponding else { throw PluginHostError.pluginNotResponding(handle.pluginId) }
+            guard plugin.loaded || loading.contains(handle.pluginId) || allowUnloading else {
+                throw PluginHostError.pluginNotFound(handle.pluginId)
+            }
+        }
+
+        func endInvocation(_ handle: InterpreterHandle) {
+            lock.lock(); defer { lock.unlock() }
+            guard let count = inflight[handle] else { return }
+            if count == 1 { inflight.removeValue(forKey: handle) }
+            else { inflight[handle] = count - 1 }
+        }
+
+        func inflightSnapshot() -> [InterpreterHandle] {
+            lock.lock(); defer { lock.unlock() }
+            return inflight.keys.filter { handles[$0.pluginId] == $0 }
+        }
+
+        func beginBatch() -> (id: UUID, targets: [(plugin: Plugin, handle: InterpreterHandle)]) {
+            lock.lock(); defer { lock.unlock() }
+            let id = UUID()
+            guard !stopping else { return (id, []) }
+            batch = (id, Set(handles.values))
+            let targets: [(plugin: Plugin, handle: InterpreterHandle)] = plugins.compactMap { plugin in
+                guard plugin.loaded, !plugin.notResponding, unloading[plugin.id] == nil,
+                      let handle = handles[plugin.id] else { return nil }
+                return (plugin, handle)
+            }
+            return (id, targets)
+        }
+
+        func endBatch(_ id: UUID) {
+            lock.lock(); defer { lock.unlock() }
+            if batch?.id == id { batch = nil }
+        }
+
+        func batchInflightSnapshot() -> [InterpreterHandle] {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, let batch else { return [] }
+            return inflight.keys.filter { batch.owners.contains($0) && handles[$0.pluginId] == $0 }
+        }
+
+        func beginMutation(_ id: String) throws {
+            lock.lock(); defer { lock.unlock() }
+            guard !mutations.contains(id), !loading.contains(id), unloading[id] == nil else {
+                throw PluginHostError.runtimeFailure("Plugin operation already in progress: \(id)")
+            }
+            mutations.insert(id)
+        }
+
+        func endMutation(_ id: String) {
+            lock.lock(); mutations.remove(id); lock.unlock()
+        }
+
+        func beginLoading(_ id: String, duringMutation: Bool = false) throws {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping else { throw PluginHostError.notRunning }
+            guard !loading.contains(id), handles[id] == nil, unloading[id] == nil,
+                  duringMutation || !mutations.contains(id) else {
+                throw PluginHostError.runtimeFailure("Plugin is already active or loading: \(id)")
+            }
+            loading.insert(id)
+            if let index = plugins.firstIndex(where: { $0.id == id }) {
+                plugins[index].loaded = false
+                plugins[index].notResponding = false
+                plugins[index].loadError = nil
+                plugins[index].loadDebug = nil
+            }
+        }
+
+        func endLoading(_ id: String) {
+            lock.lock(); loading.remove(id); lock.unlock()
+        }
+
+        func isLoading(_ id: String) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return loading.contains(id)
+        }
+
+        func publishLoaded(_ plugin: Plugin, handle: InterpreterHandle) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, loading.contains(plugin.id), handles[plugin.id] == handle,
+                  unloading[plugin.id] == nil,
+                  let index = plugins.firstIndex(where: { $0.id == plugin.id }),
+                  !plugins[index].notResponding else { return false }
+            plugins[index] = plugin
+            return true
+        }
+
+        func failLoading(_ plugin: Plugin, expected: InterpreterHandle?) -> Plugin? {
+            lock.lock(); defer { lock.unlock() }
+            guard loading.contains(plugin.id), unloading[plugin.id] == nil,
+                  handles[plugin.id] == expected || (stopping && handles[plugin.id] == nil),
+                  let index = plugins.firstIndex(where: { $0.id == plugin.id }) else { return nil }
+            var failed = plugin
+            failed.loaded = false
+            failed.notResponding = plugins[index].notResponding
+            handles[plugin.id] = nil
+            if let expected { inflight.removeValue(forKey: expected) }
+            plugins[index] = failed
+            return failed
+        }
+
+        func beginUnloading(id: String, expected: InterpreterHandle?, duringMutation: Bool = false) -> (plugin: Plugin, handle: InterpreterHandle)? {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, unloading[id] == nil, let handle = handles[id],
+                  duringMutation || !mutations.contains(id),
+                  expected == nil || expected == handle,
+                  let index = plugins.firstIndex(where: { $0.id == id }) else { return nil }
+            let plugin = plugins[index]
+            unloading[id] = handle
+            plugins[index].loaded = false
+            return (plugin, handle)
+        }
+
+        func ownsUnloading(_ handle: InterpreterHandle) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return unloading[handle.pluginId] == handle
+                && (handles[handle.pluginId] == handle || (stopping && handles[handle.pluginId] == nil))
+        }
+
+        func finishUnloading(_ handle: InterpreterHandle, errorMessage: String?) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard unloading[handle.pluginId] == handle,
+                  handles[handle.pluginId] == handle || (stopping && handles[handle.pluginId] == nil) else { return false }
+            handles[handle.pluginId] = nil
+            unloading[handle.pluginId] = nil
+            inflight.removeValue(forKey: handle)
+            if let index = plugins.firstIndex(where: { $0.id == handle.pluginId }) {
+                plugins[index].loaded = false
+                if let errorMessage {
+                    plugins[index].loadError = errorMessage
+                    plugins[index].loadDebug = errorMessage
+                }
+            }
+            return true
+        }
+
+        func handle(watchdogKey: String) -> InterpreterHandle? {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping else { return nil }
+            return handles.values.first { $0.hostWatchdogKey == watchdogKey }
+        }
+
+        func applyNotResponding(watchdogKey: String, value: Bool) -> String? {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, let handle = handles.values.first(where: { $0.hostWatchdogKey == watchdogKey }),
+                  let index = plugins.firstIndex(where: { $0.id == handle.pluginId }) else { return nil }
+            plugins[index].notResponding = value
+            if value { plugins[index].loaded = false }
+            return handle.pluginId
+        }
+
+        func updateFlags(id: String, hasSettings: Bool) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard let index = plugins.firstIndex(where: { $0.id == id }) else { return false }
+            plugins[index].hasSettings = hasSettings
+            return true
         }
     }
 
@@ -249,6 +476,8 @@ public final class PluginHost: @unchecked Sendable {
     private let store: PluginStore
     private let watchdog: PluginWatchdog
     private let state = HostState()
+    private let callbackHostIdentity = UUID()
+    private let persistenceLock = NSLock()
     private let delegateBox = WeakDelegateBox()
     private let log: (@Sendable (String) -> Void)?
 
@@ -292,6 +521,9 @@ public final class PluginHost: @unchecked Sendable {
         self.events = PluginEventBus(subscribers: gate, queue: queue)
         self.log = log
         self.delegate = delegate
+        for plugin in self.store.loadPlugins() {
+            self.state.upsert(plugin)
+        }
     }
 
     // MARK: - Старт/стоп
@@ -300,6 +532,7 @@ public final class PluginHost: @unchecked Sendable {
     /// safeMode (PluginsConstants.KEY_SAFE_MODE): рантайм стартует без плагинов.
     public func start(safeMode: Bool = false) async throws {
         guard try state.shouldStart() else { return }
+        defer { state.endStarting() }
         try await runtime.initialize(configuration.runtime)
         try await checkStartStillAllowed()
         try? FileManager.default.createDirectory(
@@ -308,15 +541,20 @@ public final class PluginHost: @unchecked Sendable {
 
         await watchdog.start(
             limits: configuration.watchdog,
-            observer: { [weak self] pluginId, isNotResponding in
-                self?.applyNotResponding(pluginId, isNotResponding)
+            observer: { [weak self] watchdogKey, isNotResponding in
+                self?.applyNotResponding(watchdogKey, isNotResponding)
             },
-            abandon: { [weak self] pluginId in
-                await self?.abandonInterpreter(for: pluginId)
+            abandon: { [weak self] watchdogKey in
+                await self?.abandonInterpreter(watchdogKey: watchdogKey)
             },
             footprint: { [weak self] in
                 guard let self else { return [] }
-                return await self.interpreters.footprintSnapshot()
+                var snapshot: [(String, Int)] = []
+                for handle in self.state.handlesSnapshot() {
+                    let footprint = await self.interpreters.footprintKB(handle)
+                    snapshot.append((handle.hostWatchdogKey, footprint))
+                }
+                return snapshot
             })
         try await checkStartStillAllowed()
 
@@ -366,36 +604,101 @@ public final class PluginHost: @unchecked Sendable {
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
     /// Терминальная операция. При pending/abandoned CPython не финализируется.
     public func stop() async {
-        state.beginStopping()
+        let active = state.beginStopping()
         gate.reset()
         await queue.stop()
         await watchdog.stop()
+        guard let active else {
+            // Repeat the actor-service cleanup for a late start, but do not race
+            // destroyAll against the first stop's bounded worker drains.
+            if state.hasStopped {
+                let canFinalize = await interpreters.canFinalizeProcess
+                await runtime.shutdown(canFinalizeProcess: canFinalize)
+            }
+            return
+        }
+        for (plugin, handle) in active {
+            // An already-retiring worker owns its unload hook. A FIFO barrier
+            // still bounds its drain before destroyAll can mark it destroying.
+            let script = state.ownsUnloading(handle) ? "None" : "_exteraless_runtime.unload()"
+            do {
+                _ = try await withDispatchTimeout(configuration.interpreters.callTimeout) {
+                    try await self.interpreters.invoke(handle, script: script)
+                }
+            } catch is DispatchTimeoutError {
+                await interpreters.abandon(handle)
+                log?("PluginHost unload timed out: \(plugin.id)")
+            } catch {
+                log?("PluginHost unload \(plugin.id): \(error)")
+            }
+        }
         await interpreters.destroyAll()
+        for plugin in state.pluginList() { bridge.releaseInstances(pluginId: plugin.id) }
         let canFinalize = await interpreters.canFinalizeProcess
         await runtime.shutdown(canFinalizeProcess: canFinalize)
+        state.finishStopping()
         notifyReload()
     }
 
     // MARK: - Жизненный цикл плагинов
 
-    /// Установить плагин: копия файла в каталог, метаданные в стор.
-    /// Метаданные (AST) готовит Python-сторона; TODO(этап 5): парсинг метаданных
-    /// в бутстрап-интерпретаторе прямо на устройстве (SDK metadata_parser).
+    /// Прочитать метаданные через AST SDK, не исполняя устанавливаемый файл.
+    public func readPluginMetadata(sourceURL: URL) async throws -> Plugin {
+        guard isRunning else { throw PluginHostError.notRunning }
+        var policy = PythonInterpreterConfiguration()
+        policy.allowThreads = false
+        let inspector = try await interpreters.createInterpreter(
+            for: "exteralessMetadataInspector",
+            bootstrapScript: configuration.runtime.metadataBootstrapScript(),
+            configuration: policy)
+        do {
+            let output = try await interpreters.invoke(inspector,
+                script: PluginRuntimeScript.call("metadata_json", [sourceURL.path]))
+            let metadata = try PluginRuntimeScript.metadata(output)
+            await interpreters.destroy(inspector)
+            return metadata
+        } catch {
+            await interpreters.destroy(inspector)
+            throw error
+        }
+    }
+
+    @discardableResult
+    public func importPlugin(sourceURL: URL) async throws -> Plugin {
+        let metadata = try await readPluginMetadata(sourceURL: sourceURL)
+        return try await installPlugin(sourceURL: sourceURL, metadata: metadata)
+    }
+
+    /// Установить проверенный файл, затем загрузить его на worker плагина.
     @discardableResult
     public func installPlugin(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
         guard Plugin.isValidID(metadata.id) else {
             throw PluginHostError.invalidPlugin("id \(metadata.id) не проходит валидацию ^[A-Za-z][A-Za-z0-9_-]{1,31}$")
         }
+        try state.beginMutation(metadata.id)
+        defer { state.endMutation(metadata.id) }
         let target = URL(fileURLWithPath: configuration.runtime.pluginRootDirectory)
             .appendingPathComponent(metadata.id + ".plugin")
-        try? FileManager.default.removeItem(at: target)
-        try FileManager.default.copyItem(at: sourceURL, to: target)
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if sourceURL.standardizedFileURL != target.standardizedFileURL {
+            let staged = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).incoming")
+            defer { try? FileManager.default.removeItem(at: staged) }
+            try FileManager.default.copyItem(at: sourceURL, to: staged)
+            await unloadPlugin(id: metadata.id, duringMutation: true)
+            if FileManager.default.fileExists(atPath: target.path) {
+                _ = try FileManager.default.replaceItemAt(target, withItemAt: staged)
+            } else {
+                try FileManager.default.moveItem(at: staged, to: target)
+            }
+        } else {
+            await unloadPlugin(id: metadata.id, duringMutation: true)
+        }
         var plugin = metadata
         plugin.path = target.path
         plugin = state.upsert(plugin)
         persistPlugins()
         if plugin.enabled {
-            await loadPlugin(plugin)
+            await loadPlugin(plugin, duringMutation: true)
             plugin = state.plugin(id: plugin.id) ?? plugin
         }
         notifyReload()
@@ -404,7 +707,9 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Удалить плагин: интерпретатор, файл, модель, согласия.
     public func uninstallPlugin(id: String) async throws {
-        await unloadPlugin(id: id)
+        try state.beginMutation(id)
+        defer { state.endMutation(id) }
+        await unloadPlugin(id: id, duringMutation: true)
         if let plugin = state.plugin(id: id), let path = plugin.path {
             try? FileManager.default.removeItem(atPath: path)
         }
@@ -416,37 +721,101 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Включить/выключить плагин (персистентно).
     public func setPluginEnabled(id: String, _ enabled: Bool) async throws {
+        try state.beginMutation(id)
+        defer { state.endMutation(id) }
         guard var plugin = state.plugin(id: id) else { throw PluginHostError.pluginNotFound(id) }
         guard plugin.enabled != enabled else { return }
         plugin.enabled = enabled
         state.upsert(plugin)
         persistPlugins()
         if enabled {
-            await loadPlugin(plugin)
+            await loadPlugin(plugin, duringMutation: true)
         } else {
-            await unloadPlugin(id: id)
+            await unloadPlugin(id: id, duringMutation: true)
         }
         notifyReload()
     }
 
     /// Перезагрузить плагин (developer mode).
     public func reloadPlugin(id: String) async throws {
-        await unloadPlugin(id: id)
+        try state.beginMutation(id)
+        defer { state.endMutation(id) }
+        await unloadPlugin(id: id, duringMutation: true)
         if let plugin = state.plugin(id: id) {
-            await loadPlugin(plugin)
+            await loadPlugin(plugin, duringMutation: true)
         }
-        await watchdog.clearNotResponding(id)
         notifyReload()
     }
 
     /// Снимок списка плагинов (для UI).
     public func pluginList() -> [Plugin] { state.pluginList() }
 
+    public func grantedPermissions(id: String) -> [PluginPermission] {
+        PluginPermission.allCases.filter { permissions.has(id, $0) }
+    }
+
+    public func setGrantedPermissions(id: String, permissions grants: [PluginPermission]) throws {
+        guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
+        permissions.setGranted(id, grants, to: store)
+        recomputeGate()
+        notifyReload()
+    }
+
+    public func deliverAppEvent(_ name: String) async throws {
+        guard events.subscribers.hasSubscribers(.appEvent) else { return }
+        _ = try await queue.submitAwaiting(.appEvent(AppEventPayload(name: name)))
+    }
+
+    public func settingsJSON(id: String, account: Int32) async throws -> String {
+        guard let plugin = state.plugin(id: id), plugin.loaded else { throw PluginHostError.pluginNotFound(id) }
+        return try await events.requestCreateSettings(CreateSettingsPayload(pluginId: id, account: account))
+    }
+
+    public func updateSetting(id: String, key: String, valueJSON: String) async throws {
+        _ = try PluginRuntimeScript.jsonValue(valueJSON)
+        guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_changed_json", [key, valueJSON]),
+                                   expectedHandle: target.handle)
+    }
+
+    public func clickSetting(id: String, callbackId: String) async throws {
+        guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_click_json", [callbackId]),
+                                   expectedHandle: target.handle)
+    }
+
+    /// Synchronous and safe on the C callback worker, including on_plugin_load
+    /// after setHandle and before plugin.loaded becomes true. Capture before delay.
+    public func callbackOwner(id: String) -> CallbackOwner? {
+        guard let target = state.target(id: id, allowLoading: true) else { return nil }
+        return CallbackOwner(hostIdentity: callbackHostIdentity, interpreter: target.handle)
+    }
+
+    /// Immediate/unscheduled invocation (e.g. the strict native probe). Delayed
+    /// callbacks must use the expectedOwner overload with a token captured at enqueue.
+    public func invokeCallback(id: String, handle: Int64, method: String, argumentsJSON: String = "[]") async throws {
+        guard let owner = callbackOwner(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        try await invokeCallback(id: id, handle: handle, method: method, argumentsJSON: argumentsJSON,
+                                 expectedOwner: owner)
+    }
+
+    /// Stale tokens fail before Python entry. In particular, this path performs
+    /// no completeCallback/release against the replacement interpreter's accounting;
+    /// unload already retired the old owner's bridge objects and pending callbacks.
+    public func invokeCallback(id: String, handle: Int64, method: String, argumentsJSON: String = "[]",
+                               expectedOwner: CallbackOwner) async throws {
+        guard expectedOwner.hostIdentity == callbackHostIdentity, expectedOwner.pluginId == id,
+              let target = state.target(id: id, expected: expectedOwner.interpreter, allowLoading: true) else {
+            throw PluginHostError.superseded("Callback interpreter owner expired: \(id)")
+        }
+        _ = try PluginRuntimeScript.jsonValue(argumentsJSON)
+        let source = "_exteraless_runtime.invoke_handle_json(\(handle), \(PluginRuntimeScript.quote(method)), \(PluginRuntimeScript.quote(argumentsJSON)))"
+        _ = try await invokePlugin(target.plugin, source, expectedHandle: target.handle)
+    }
+
     /// Обновить hasSettings-флаг плагина (этап 5: после разбора create_settings).
     public func updatePluginFlags(id: String, hasSettings: Bool) {
-        guard var plugin = state.plugin(id: id) else { return }
-        plugin.hasSettings = hasSettings
-        state.upsert(plugin)
+        guard state.updateFlags(id: id, hasSettings: hasSettings) else { return }
         persistPlugins()
         recomputeGate()
     }
@@ -454,10 +823,23 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Загрузка/выгрузка
 
     @discardableResult
-    private func loadPlugin(_ plugin: Plugin) async -> Plugin {
+    private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false) async -> Plugin {
         var plugin = plugin
+        var created: InterpreterHandle?
+        var publishedHandle = false
+        do {
+            try state.beginLoading(plugin.id, duringMutation: duringMutation)
+        } catch {
+            // A rejected duplicate owns no generation and must not publish a
+            // failed copy over an active/in-progress load or release its handles.
+            log?("PluginHost skipped load \(plugin.id): \(error)")
+            return state.plugin(id: plugin.id) ?? plugin
+        }
+        defer { state.endLoading(plugin.id) }
+        plugin = state.plugin(id: plugin.id) ?? plugin
         do {
             guard !state.isStopping else { throw PluginHostError.notRunning }
+            guard let path = plugin.path else { throw PluginHostError.invalidPlugin("Plugin file path is missing") }
             // Загрузка — рискованная операция: маркер сторожа немедленно
             // (notePluginEnter(id, risky=true) в PluginsWatchdog.java).
             await watchdog.noteRiskyOperation(plugin.id)
@@ -465,81 +847,151 @@ public final class PluginHost: @unchecked Sendable {
             let handle = try await interpreters.createInterpreter(
                 for: plugin.id,
                 bootstrapScript: configuration.runtime.bootstrapScript(interpreterPluginId: plugin.id))
+            created = handle
             guard state.setHandle(handle) else {
-                await interpreters.destroy(handle)
                 throw PluginHostError.notRunning
             }
-            plugin.loaded = true
-            plugin.loadError = nil
-            plugin.notResponding = false
-            // TODO(этап 5): диспатч загрузки через SDK-лоадер (plugin_loader.py),
-            // снятие handles*-флагов и hasSettings по факту регистрации хуков.
+            publishedHandle = true
+            let output = try await invokePlugin(plugin, PluginRuntimeScript.call("load_json", [path]), expectedHandle: handle)
+            plugin = try PluginRuntimeScript.applyLoadResult(output, to: plugin)
+            guard state.publishLoaded(plugin, handle: handle) else {
+                throw PluginHostError.superseded("Load owner was retired: \(plugin.id)")
+            }
         } catch {
+            var expectedForFailure = created
+            if let created {
+                if await unloadPlugin(id: plugin.id, expectedHandle: created, duringMutation: duringMutation) {
+                    expectedForFailure = nil
+                } else if !publishedHandle {
+                    // A handle rejected at publication has no admitted callbacks.
+                    // Published handles during stop are drained by stop itself.
+                    await interpreters.destroy(created)
+                }
+            }
             plugin.loaded = false
             plugin.loadError = String(describing: error)
-            notifyFailure(plugin.id, plugin.loadError ?? "load error")
+            plugin.loadDebug = String(describing: error)
+            if let failed = state.failLoading(plugin, expected: expectedForFailure) {
+                plugin = failed
+                // The loading reservation is still held, so no replacement can
+                // publish native objects between the state check and this release.
+                bridge.releaseInstances(pluginId: plugin.id)
+                notifyFailure(plugin.id, plugin.loadError ?? "load error")
+            }
+            if let created { await watchdog.clearNotResponding(created.hostWatchdogKey) }
         }
         await watchdog.scheduleMarkerClear()
         if state.isStopping { await watchdog.stop() }
-        plugin = state.upsert(plugin)
         persistPlugins()
         recomputeGate()
-        return plugin
+        return state.plugin(id: plugin.id) ?? plugin
     }
 
-    private func unloadPlugin(id: String) async {
-        if let handle = state.handle(for: id) {
-            await interpreters.destroy(handle)
-        }
-        state.removeHandle(for: id)
-        if var plugin = state.plugin(id: id) {
-            plugin.loaded = false
-            state.upsert(plugin)
-            persistPlugins()
-        }
+    @discardableResult
+    private func unloadPlugin(id: String, expectedHandle: InterpreterHandle? = nil,
+                              errorMessage: String? = nil, duringMutation: Bool = false) async -> Bool {
+        guard let target = state.beginUnloading(id: id, expected: expectedHandle, duringMutation: duringMutation) else { return false }
         recomputeGate()
+        if !target.plugin.notResponding {
+            do {
+                _ = try await invokePlugin(target.plugin, "_exteraless_runtime.unload()",
+                                           expectedHandle: target.handle, allowUnloading: true)
+            } catch {
+                log?("PluginHost unload \(id): \(error)")
+            }
+        }
+        await interpreters.destroy(target.handle)
+        guard state.ownsUnloading(target.handle) else { return false }
+        // Keep the retirement reservation until the bridge has been cleared.
+        // A new load cannot reuse this pluginId while cleanup is suspended.
+        bridge.releaseInstances(pluginId: id)
+        guard state.finishUnloading(target.handle, errorMessage: errorMessage) else { return false }
+        persistPlugins()
+        recomputeGate()
+        if let errorMessage {
+            log?("PluginHost \(id): \(errorMessage)")
+            notifyFailure(id, errorMessage)
+            notifyReload()
+        }
+        await watchdog.clearNotResponding(target.handle.hostWatchdogKey)
+        return true
     }
 
     /// Бросить интерпретатор плагина (политика abandon).
-    private func abandonInterpreter(for pluginId: String) async {
-        guard let handle = state.handle(for: pluginId) else { return }
+    private func abandonInterpreter(watchdogKey: String) async {
+        guard let handle = state.handle(watchdogKey: watchdogKey) else { return }
         await interpreters.abandon(handle)
     }
 
     // MARK: - Диспатч событий (обработчик очереди)
 
     private func handleEvent(_ event: PluginEvent) async throws -> PluginEventResult {
+        let batch = state.beginBatch()
+        defer { state.endBatch(batch.id) }
         let kind = event.kind
-        let subscribers = state.pluginList().filter {
-            $0.isEnabled && $0.loaded && !$0.notResponding && $0.handles(kind)
+        let subscribers = batch.targets.filter { target in
+            let plugin = target.plugin
+            guard plugin.isEnabled else { return false }
+            if case let .coalescedUpdates(_, items) = event {
+                return items.contains { plugin.handles($0.kind) && permissions.has(plugin.id, $0.kind.requiredPermission) }
+            }
+            return plugin.handles(kind) && permissions.has(plugin.id, kind.requiredPermission)
         }
         switch event {
         case .createSettings(let payload):
-            guard let plugin = subscribers.first(where: { $0.id == payload.pluginId }) else {
+            guard let target = subscribers.first(where: { $0.plugin.id == payload.pluginId }) else {
                 return .settingsJSON("[]")
             }
-            let output = try await invokePlugin(plugin, PluginScriptBuilder.dispatch(for: event))
+            let output = try await invokePlugin(target.plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle)
             return .settingsJSON(output)
 
-        case .sendMessage:
-            var strategy = HookStrategy.default
-            for plugin in subscribers {
-                guard let output = try? await invokePlugin(
-                    plugin, PluginScriptBuilder.dispatch(for: event)) else { continue }
-                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                // TODO(этап 5): порядок разрешения стратегий — как в
-                // PythonPluginsEngine эталона (приоритеты хуков, MODIFY_FINAL).
-                if let resolved = HookStrategy(rawValue: trimmed), resolved != .default {
-                    strategy = resolved
-                    break
+        case .sendMessage(let payload):
+            var result = PluginSendMessageResult()
+            var currentParams = payload.paramsJSON
+            for target in subscribers {
+                let plugin = target.plugin
+                do {
+                    let currentEvent = PluginEvent.sendMessage(SendMessagePayload(
+                        account: payload.account, paramsJSON: currentParams))
+                    let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle)
+                    let decision = try PluginRuntimeScript.applyingSendResult(output, to: currentParams)
+                    switch decision.strategy {
+                    case .default:
+                        break
+                    case .cancel:
+                        return .sendMessage(decision)
+                    case .modify, .modifyFinal:
+                        currentParams = decision.paramsJSON!
+                        result = PluginSendMessageResult(strategy: decision.strategy, paramsJSON: currentParams)
+                        if decision.strategy == .modifyFinal { return .sendMessage(result) }
+                    }
+                } catch {
+                    await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
             }
-            return .strategy(strategy)
+            return .sendMessage(result)
 
-        case .coalescedUpdates, .update, .updates, .appEvent, .preRequest, .postRequest:
+        case .coalescedUpdates(_, let items):
+            for target in subscribers {
+                let plugin = target.plugin
+                do {
+                    let interested = items.filter { plugin.handles($0.kind) }
+                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.batchDispatch(interested), expectedHandle: target.handle)
+                } catch {
+                    await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
+                }
+            }
+            return .none
+
+        case .update, .updates, .appEvent, .preRequest, .postRequest:
             // N апдейтов = один вход: батч уже собран очередью, диспатчим целиком.
-            for plugin in subscribers {
-                _ = try? await invokePlugin(plugin, PluginScriptBuilder.dispatch(for: event))
+            for target in subscribers {
+                let plugin = target.plugin
+                do {
+                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle)
+                } catch {
+                    await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
+                }
             }
             return .none
         }
@@ -547,46 +999,56 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Вызов интерпретатора плагина с пер-плагинным таймаутом; таймаут →
     /// сторож (abandon, notResponding), остальные плагины продолжают.
-    private func invokePlugin(_ plugin: Plugin, _ script: String) async throws -> String {
-        guard let handle = state.handle(for: plugin.id) else {
-            throw PluginHostError.pluginNotFound(plugin.id)
-        }
-        state.markInflight(plugin.id, true)
-        defer { state.markInflight(plugin.id, false) }
+    private func invokePlugin(_ plugin: Plugin, _ script: String, expectedHandle handle: InterpreterHandle,
+                              allowUnloading: Bool = false) async throws -> String {
+        try state.beginInvocation(handle, allowUnloading: allowUnloading)
+        defer { state.endInvocation(handle) }
         do {
             let timeout = configuration.interpreters.callTimeout
             return try await withDispatchTimeout(timeout) {
-                try await self.interpreters.invoke(handle, script: script)
+                // Admission and detached execution may straddle unload. Recheck
+                // the same handle, never resolve pluginId to a newer interpreter.
+                try self.state.checkInvocation(handle, allowUnloading: allowUnloading)
+                return try await self.interpreters.invoke(handle, script: script)
             }
         } catch is DispatchTimeoutError {
-            await watchdog.pluginTimedOut(plugin.id)
+            await interpreters.abandon(handle)
+            await reportTimeout(handle)
             throw PluginHostError.timeout(plugin.id)
+        }
+    }
+
+    private func recordExecutionFailure(_ plugin: Plugin, expectedHandle: InterpreterHandle, message: String) async {
+        _ = await unloadPlugin(id: plugin.id, expectedHandle: expectedHandle, errorMessage: message)
+    }
+
+    private func reportTimeout(_ handle: InterpreterHandle) async {
+        guard state.isCurrent(handle) else { return }
+        await watchdog.pluginTimedOut(handle.hostWatchdogKey)
+        // Watchdog callbacks are keyed by generation too; a late completion of
+        // its abandon action cannot mark or abandon a replacement interpreter.
+        if !state.isCurrent(handle) {
+            await watchdog.clearNotResponding(handle.hostWatchdogKey)
         }
     }
 
     /// Диспатч завис целиком: бросить все ещё исполняющиеся интерпретаторы.
     private func handleBatchTimeout(_ event: PluginEvent) async {
         log?("PluginHost: таймаут диспатча \(String(describing: event.kind))")
-        for pluginId in state.inflightSnapshot() {
-            await watchdog.pluginTimedOut(pluginId)
+        for handle in state.batchInflightSnapshot() {
+            await reportTimeout(handle)
         }
     }
 
     // MARK: - Гейт и уведомления
 
     private func recomputeGate() {
-        state.recomputeGate(gate)
+        state.recomputeGate(gate, permissions: permissions)
     }
 
-    private func applyNotResponding(_ pluginId: String, _ isNotResponding: Bool) {
-        if var plugin = state.plugin(id: pluginId) {
-            plugin.notResponding = isNotResponding
-            if isNotResponding {
-                plugin.loaded = false
-            }
-            state.upsert(plugin)
-            persistPlugins()
-        }
+    private func applyNotResponding(_ watchdogKey: String, _ isNotResponding: Bool) {
+        guard let pluginId = state.applyNotResponding(watchdogKey: watchdogKey, value: isNotResponding) else { return }
+        persistPlugins()
         recomputeGate()
         if isNotResponding {
             notify { $0.pluginHost($1, didMarkNotResponding: pluginId) }
@@ -612,6 +1074,10 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     private func persistPlugins() {
+        // Take the snapshot AFTER serializing writers; an older caller must not
+        // write its pre-reload snapshot after a newer generation has persisted.
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
         let plugins = state.pluginList()
         do {
             try store.savePlugins(plugins)
@@ -619,6 +1085,11 @@ public final class PluginHost: @unchecked Sendable {
             log?("PluginHost: не сохранить plugins.json — \(error)")
         }
     }
+}
+
+extension InterpreterHandle {
+    /// Transient watchdog identity. Crash-recovery markers keep the real pluginId.
+    var hostWatchdogKey: String { "\(pluginId)#\(id)" }
 }
 
 // MARK: - Флаги хуков плагина
@@ -639,77 +1110,56 @@ extension Plugin {
 
 // MARK: - Скрипты диспатча (v1)
 
-/// Построение Python-скриптов диспатча. TODO(этап 5): имя точки входа
-/// (`__exteraless_dispatch__`) и формат аргументов фиксирует интеграция с
-/// python/sdk/extera_utils/plugin_loader.py; сейчас — стаб контрактного слоя.
-private enum PluginScriptBuilder {
-    static func dispatch(for event: PluginEvent) -> String {
+/// Native event payload -> JSON text -> platform loader. Values never become
+/// Python syntax, preserving JSON null/booleans and arbitrary user strings.
+enum PluginScriptBuilder {
+    static func dispatch(for event: PluginEvent) throws -> String {
         switch event {
         case .appEvent(let payload):
-            return call("on_app_event", [("event_type", quote(payload.name))])
+            return try call("on_app_event", ["event_type": payload.name])
         case .preRequest(let payload):
-            return call("pre_request_hook", [
-                ("request_name", quote(payload.requestName)),
-                ("account", String(payload.account)),
-                ("request", payload.requestJSON),
+            return try call("pre_request_hook", [
+                "request_name": payload.requestName,
+                "account": payload.account,
+                "request": try PluginRuntimeScript.jsonValue(payload.requestJSON),
             ])
         case .postRequest(let payload):
-            return call("post_request_hook", [
-                ("request_name", quote(payload.requestName)),
-                ("account", String(payload.account)),
-                ("response", payload.responseJSON ?? "null"),
-                ("error", quote(payload.errorMessage ?? "")),
+            return try call("post_request_hook", [
+                "request_name": payload.requestName,
+                "account": payload.account,
+                "response": try payload.responseJSON.map(PluginRuntimeScript.jsonValue) ?? NSNull(),
+                "error": payload.errorMessage ?? "",
             ])
         case .update(let payload):
-            return call("on_update_hook", [
-                ("update_name", quote(payload.updateName)),
-                ("account", String(payload.account)),
-                ("update", payload.updateJSON),
+            return try call("on_update_hook", [
+                "update_name": payload.updateName,
+                "account": payload.account,
+                "update": try PluginRuntimeScript.jsonValue(payload.updateJSON),
             ])
         case .updates(let payload):
-            return call("on_updates_hook", [
-                ("container_name", quote(payload.containerName)),
-                ("account", String(payload.account)),
-                ("updates", "[" + payload.updatesJSON.map(quote).joined(separator: ", ") + "]"),
+            return try call("on_updates_hook", [
+                "container_name": payload.containerName,
+                "account": payload.account,
+                "updates": try payload.updatesJSON.map(PluginRuntimeScript.jsonValue),
             ])
-        case .coalescedUpdates(let key, let items):
-            // N апдейтов одним входом: сериализуем батч целиком.
-            let batch = items.compactMap { item -> String? in
-                guard case .update(let payload) = item else { return nil }
-                return "{" + pair(("update_name", quote(payload.updateName)))
-                    + ", " + pair(("account", String(payload.account)))
-                    + ", " + pair(("update", payload.updateJSON)) + "}"
-            }.joined(separator: ", ")
-            return call("on_updates_hook", [
-                ("container_name", quote(key.container)),
-                ("account", String(key.account)),
-                ("updates", "[\(batch)]"),
-            ])
+        case .coalescedUpdates(_, let items):
+            return try batchDispatch(items)
         case .sendMessage(let payload):
-            return call("on_send_message_hook", [
-                ("account", String(payload.account)),
-                ("params", payload.paramsJSON),
+            return try call("on_send_message_hook", [
+                "account": payload.account,
+                "params": try PluginRuntimeScript.jsonValue(payload.paramsJSON),
             ])
-        case .createSettings:
-            return call("create_settings", [])
+        case .createSettings(let payload):
+            return try call("create_settings", ["account": payload.account])
         }
     }
 
-    /// Скрипт вызова точки входа с JSON-объектом аргументов.
-    private static func call(_ hook: String, _ pairs: [(String, String)]) -> String {
-        "__exteraless_dispatch__(\(quote(hook)), {" + pairs.map(pair).joined(separator: ", ") + "})"
+    static func batchDispatch(_ events: [PluginEvent]) throws -> String {
+        // A single interpreter entry, preserving on_update vs on_updates semantics.
+        "[" + (try events.map { try dispatch(for: $0) }).joined(separator: ", ") + "]"
     }
 
-    private static func pair(_ entry: (String, String)) -> String {
-        "\(quote(entry.0)): \(entry.1)"
-    }
-
-    /// JSON-строка (эскейп по минимуму; значения-JSON вставляются как есть).
-    private static func quote(_ value: String) -> String {
-        let escaped = value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        return "\"\(escaped)\""
+    private static func call(_ hook: String, _ payload: [String: Any]) throws -> String {
+        PluginRuntimeScript.call("dispatch_json", [hook, try PluginRuntimeScript.encodeJSON(payload)])
     }
 }

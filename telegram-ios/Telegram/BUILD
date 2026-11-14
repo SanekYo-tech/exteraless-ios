@@ -1024,6 +1024,10 @@ ios_framework(
     }),
     linkopts = [
         "$(location //third-party/boringssl:crypto)",
+        # Resolve sibling Python.framework from the shared framework itself,
+        # including when loaded by an executable in PlugIns/*.appex.
+        "-rpath",
+        "@loader_path/..",
     ],
     deps = [
         "//submodules/TelegramUI:TelegramUI",
@@ -1928,6 +1932,7 @@ ios_application(
     ],
     resources = [
         ":LaunchScreen",
+        "//third-party/exteraless:RuntimeResources",
         #":DefaultAppIcon",
     ],
     frameworks = [
@@ -1961,6 +1966,9 @@ ios_application(
     deps = [
         ":Main",
         ":Lib",
+        # Explicit root embedding for Python and every PEP 730 dlopen module.
+        # The static C bridge/PluginHost are linked into TelegramUIFramework.
+        "//third-party/exteraless:RuntimeFrameworks",
     ],
     visibility = ["//visibility:public"],
 )

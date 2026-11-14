@@ -448,7 +448,8 @@ def test_invalid_bytes_and_float_tags_raise(bridge_sandbox):
 def test_host_release_handle_drops_slot_and_keeps_neighbors():
     objs = [object() for _ in range(64)]
     handles = [xt_register_handle(obj) for obj in objs]
-    proto = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int64)
+    # The release ABI is owner-only; PYFUNCTYPE preserves this interpreter's GIL.
+    proto = ctypes.PYFUNCTYPE(ctypes.c_int, ctypes.c_int64)
     release = proto(xt_builtin_ptr("release_handle"))
     assert release(handles[0]) == 1
     assert xt_resolve_handle(handles[0]) is None

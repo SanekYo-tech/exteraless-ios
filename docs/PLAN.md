@@ -18,7 +18,7 @@ Telegram-iOS 13.1.1 (Swift/ObjC, Bazel)
         └── CPython 3.12 (PEP 684, суб-интерпретаторы на плагин)
             ├── virtual-java: манифест-прокси классов (генерируется tools/compat)
             ├── SDK: порт TMessagesProj/src/main/python (elyx_runtime, extera_utils, ui/*)
-            └── frozen stdlib + marshal-снапшот, батчинг событий
+            └── packaged stdlib / PEP 730 frameworks, bundled wheels, батчинг событий
 ```
 
 Принципы:
@@ -38,14 +38,17 @@ Telegram-iOS 13.1.1 (Swift/ObjC, Bazel)
 | # | Что | Статус | Критерий готовности |
 |---|---|---|---|
 | 0a | Репозиторий + манифест-генератор + корпус | **готово** | `python -m tools.compat.generate_manifest` зелёный, отчёт читается |
-| 0b | CI: сборка стокового Telegram-iOS | в работе | workflow даёт unsigned IPA артефактом |
-| 1 | CPython 3.12 xcframework | — | приложение запускает `print("hello")` на устройстве |
-| 2 | Мост `_exteraless_bridge` + протокол | — | мок-мост на Linux проходит их pytest |
-| 3 | Virtual-Java слой + рантайм-манифест | — | их тесты SDK проходят headless |
-| 4 | PluginHost Swift + менеджер суб-интерпретаторов | — | плагин direct.plugin ставится и работает |
-| 5 | Extension points по частотам корпуса | — | top-хуки корпуса работают на устройстве |
-| 6 | UI менеджера плагинов (SwiftUI) | — | установка/включение/настройки/лог |
-| 7 | Отчёт совместимости в CI | — | % по корпусу, регрессии ловятся |
+| 0b | CI: сборка базового Telegram-iOS | **готово** | unsigned IPA: run `43584868441` |
+| 1 | CPython 3.12 xcframework | simulator **проверен**, device pending | run `43615992774`; подписанное приложение ещё требует запуска на iPhone |
+| 2 | Мост `_exteraless_bridge` + протокол | native dispatcher реализован | 169 native C-callbacks на Windows; новая iOS/Swift интеграция ожидает CI |
+| 3 | Virtual-Java слой + SDK loader | реализован | strict fixture SDK tests; сквозной native plugin probe подготовлен |
+| 4 | PluginHost Swift + менеджер суб-интерпретаторов | интегрирован, CI pending | Bazel/runtime/lifecycle, сохранение и загрузка плагинов |
+| 5 | Extension points по частотам корпуса | первые врезки реализованы | send CANCEL/MODIFY; RPC/updates пока observational |
+| 6 | UI менеджера плагинов (Display/UIKit) | реализован, визуальная приёмка pending | импорт/включение/настройки/permissions/лог; требуется запись кадров |
+| 7 | Отчёт совместимости в CI | частично | fixture/native suites; поведение внешнего корпуса на устройстве ещё не измерено |
+
+Контракты текущей большой волны: [wave-1-contract.md](wave-1-contract.md).
+Проверенные результаты и границы доказательства: [python-runtime.md](python-runtime.md).
 
 ## Ключевые решения
 

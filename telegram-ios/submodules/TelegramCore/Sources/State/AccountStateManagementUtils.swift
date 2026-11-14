@@ -1,4 +1,5 @@
 import Foundation
+import PluginHooks
 import Postbox
 import SwiftSignalKit
 internal import TelegramApi
@@ -706,6 +707,17 @@ func finalStateWithUpdateGroups(accountPeerId: PeerId, postbox: Postbox, network
 }
 
 func finalStateWithDifference(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, difference: Api.updates.Difference, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?) -> Signal<AccountFinalState, NoError> {
+    if PluginHookRouter.hasSubscribers(.updates) {
+        let accountRecordId = network.accountRecordId
+        PluginHookRouter.observe(.updates, makeEvent: {
+            let buffer = Buffer()
+            difference.serialize(buffer, true)
+            return .updates(PluginUpdateObservation(
+                accountRecordId: accountRecordId, name: difference.description,
+                source: .difference, stage: .beforeDifferenceApplication, serializedTLBytes: buffer.makeData()
+            ))
+        })
+    }
     var updatedState = state
     
     var messages: [Api.Message] = []
@@ -915,6 +927,23 @@ private func sortedUpdates(_ updates: [Api.Update]) -> [Api.Update] {
 }
 
 private func finalStateWithUpdates(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, updates: [Api.Update], shouldPoll: Bool, missingUpdates: Bool, shouldResetChannels: Bool, updatesDate: Int32?, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?) -> Signal<AccountFinalState, NoError> {
+    // Shared by accepted live updates and getDifference.otherUpdates. Observe once here, after
+    // continuity filtering and before interpretation; never change pts, filter entries or wait.
+    if PluginHookRouter.hasSubscribers(.update) {
+        let accountRecordId = network.accountRecordId
+        let batchCount = updates.count
+        for (index, update) in updates.enumerated() {
+            PluginHookRouter.observe(.update, makeEvent: {
+                let buffer = Buffer()
+                update.serialize(buffer, true)
+                return .update(PluginUpdateObservation(
+                    accountRecordId: accountRecordId, name: update.description,
+                    source: .acceptedUpdateBatch, stage: .beforeUpdateApplication,
+                    serializedTLBytes: buffer.makeData(), batchIndex: index, batchCount: batchCount
+                ))
+            })
+        }
+    }
     return network.currentGlobalTime
     |> take(1)
     |> mapToSignal { serverTime -> Signal<AccountFinalState, NoError> in

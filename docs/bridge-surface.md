@@ -1,6 +1,24 @@
 # Поверхность моста: контракт сервисов Swift
 
-Ранжирование снято с корпуса этого прогона. Сборщик и генератор манифеста отработали по одному разу, симуляция рантайма не запускалась. Swift здесь не реализуется: документ только сопоставляет вызовы плагинов с уже существующими заглушками `PluginMessagesService`, `PluginSettingsService` и `PluginUIService`.
+## Реализация интеграционной волны 14.11.2026
+
+`BridgeServices.swift` различает все операции Backend и передаёт реальные
+эффекты в `TelegramPluginServices.swift`. Native transport — `NativeBridgeBinding`;
+pluginId закреплён в C-state интерпретатора. Поддержаны theme/scale/locale snapshots,
+account index ↔ record ID, Context/File handles, clipboard/browser, native settings,
+ограниченный log и plain-text send через TelegramCore. Неизвестный member даёт
+именованную ошибку. Host handles отрицательные и проверяются по владельцу/типу.
+
+`exteraless.ios.Runtime` предоставляет get/set/removeSetting, каталоги,
+log/version, hasPermission/isUnsafeMode и completeCallback. Точные аргументы:
+[`python/exteraless_runtime/README.md`](../python/exteraless_runtime/README.md).
+Очередь callbacks и C ownership: [bridge-callback-lifetime.md](bridge-callback-lifetime.md).
+Native send/request/update границы: [wave-1-hooks.md](wave-1-hooks.md).
+
+Реальный C dispatcher проверен на двух OWN_GIL workers Windows/CPython 3.12.10
+(169 callbacks). Компиляция новой Swift/Telegram интеграции и итоговая IPA
+ещё ожидают CI. Ранжирование и сопоставление ниже — исходный анализ корпуса,
+по которому выбирались первые нативные операции; процента device-паритета он не даёт.
 
 ## Корпус
 

@@ -1,0 +1,21 @@
+__id__ = "ios_failure_probe"
+__name__ = "Local failing fixture"
+
+from base_plugin import BasePlugin
+from android_utils import run_on_ui_thread
+
+
+class FailurePlugin(BasePlugin):
+    def __init__(self):
+        if self.get_setting("failure_stage", "load") == "constructor":
+            raise ValueError("fixture constructor failure")
+
+    def on_plugin_load(self):
+        self.set_setting("attempted", True)
+        run_on_ui_thread(lambda: self.log("must be released"))
+        stage = self.get_setting("failure_stage", "load")
+        if stage == "exit":
+            raise SystemExit(7)
+        if stage == "api":
+            self.hook_method(None)
+        raise ValueError("fixture load failure")

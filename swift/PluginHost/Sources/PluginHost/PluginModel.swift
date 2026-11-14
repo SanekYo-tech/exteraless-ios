@@ -225,10 +225,14 @@ public final class PermissionsModel: @unchecked Sendable {
     private let log: (@Sendable (String) -> Void)?
 
     /// unsafe-режим (PluginsConstants.KEY_UNSAFE_MODE): всё разрешено.
-    public var unsafeMode: Bool
+    private var storedUnsafeMode: Bool
+    public var unsafeMode: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return storedUnsafeMode }
+        set { lock.lock(); storedUnsafeMode = newValue; lock.unlock() }
+    }
 
     public init(unsafeMode: Bool = false, log: (@Sendable (String) -> Void)? = nil) {
-        self.unsafeMode = unsafeMode
+        self.storedUnsafeMode = unsafeMode
         self.log = log
     }
 

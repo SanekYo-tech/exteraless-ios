@@ -274,6 +274,15 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
         interaction.openSettings(.language)
     }))
+
+    if ExteralessPluginEntry.isAvailable {
+        items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: ExteralessPluginLocalization.text("Plugins.Title", fallback: "Plugins"), icon: exteralessPluginsSettingsIcon, action: {
+            guard let parent = interaction.getController(), let controller = ExteralessPluginEntry.makeController(context: context) else {
+                return
+            }
+            parent.push(controller)
+        }))
+    }
     
     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
@@ -360,6 +369,15 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     }
     return result
 }
+
+private let exteralessPluginsSettingsIcon: UIImage = {
+    return UIGraphicsImageRenderer(size: CGSize(width: 30.0, height: 30.0)).image { _ in
+        UIColor(rgb: 0xAF52DE).setFill()
+        UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: 30.0, height: 30.0), cornerRadius: 8.0).fill()
+        let image = UIImage(systemName: "puzzlepiece.extension.fill") ?? UIImage(systemName: "puzzlepiece.fill") ?? UIImage(systemName: "shippingbox.fill")
+        image?.withTintColor(.white, renderingMode: .alwaysOriginal).draw(in: CGRect(x: 5.0, y: 5.0, width: 20.0, height: 20.0))
+    }
+}()
 
 func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isMyProfile: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
     guard let data = data else {

@@ -1,0 +1,36 @@
+load("@build_bazel_rules_apple//apple:resources.bzl", "apple_resource_group")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "ios_arm64",
+    values = {"cpu": "ios_arm64"},
+)
+
+config_setting(
+    name = "ios_sim_arm64",
+    values = {"cpu": "ios_sim_arm64"},
+)
+
+exports_files(["python/bridge/_exteraless_bridge.c"])
+
+# This directory is generated before Bazel analysis. All of its files become
+# ordinary action inputs; no archive is amended after ios_application bundles it.
+apple_resource_group(
+    name = "PythonAssets",
+    structured_resources = glob(["resources/python/**"], allow_empty = False),
+    strip_structured_resources_prefixes = ["resources"],
+)
+
+apple_resource_group(
+    name = "RuntimeResources",
+    resources = [
+        ":PythonAssets",
+        "//support:RuntimeResources",
+    ],
+)
+
+alias(
+    name = "RuntimeFrameworks",
+    actual = "//support:RuntimeFrameworks",
+)

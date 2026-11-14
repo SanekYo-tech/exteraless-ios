@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    name: Telegram-iOS (exteraless base)
+    name: Telegram-iOS + embedded Python
     runs-on: xcode-27
     timeout-minutes: 360
 
@@ -24,16 +24,20 @@ jobs:
       SOURCE_DIR: /Users/Shared/telegram-ios
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
       BAZEL_DISK_CACHE: /Users/runner/Library/Caches/exteraless-bazel-disk
+      PYTHON_SUPPORT_CACHE: /Users/runner/Library/Caches/exteraless-python-support
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 1
           submodules: recursive
 
       - name: Test unsigned build plumbing
         run: python3 -m unittest discover -s tools/ci/tests -v
+
+      - name: Test runtime packaging (no plugins or simulators)
+        run: python3 -m unittest discover -s tools/runtime/tests -p test_telegram_packaging.py -v
 
       - name: Select Xcode
         run: |
@@ -86,10 +90,40 @@ jobs:
           # invalid after relocation; the build copy needs source, not Git data.
           rsync -a --exclude='.git' "$GITHUB_WORKSPACE/telegram-ios/" "$SOURCE_DIR/"
 
+      - name: Restore pinned Python support archive
+        id: python-support-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.PYTHON_SUPPORT_CACHE }}
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json') }}
+
+      - name: Prepare runtime Bazel inputs
+        run: |
+          set -euo pipefail
+          # Includes root Swift/C sources outside the relocated Telegram tree.
+          # The preparer verifies SHA-256 even on a cache hit, generates the
+          # declaration manifest from repository sources, and stages both arm64
+          # platforms. Bazel owns framework thinning and final IPA bundling.
+          python3 "$GITHUB_WORKSPACE/tools/runtime/prepare_telegram_runtime.py" \
+            --source-root "$GITHUB_WORKSPACE" \
+            --telegram-root "$SOURCE_DIR" \
+            --cache "$PYTHON_SUPPORT_CACHE" \
+            --dependency-cache "$PYTHON_SUPPORT_CACHE/wheels" \
+            --report "$SOURCE_DIR/build/diagnostics/runtime-staging.json"
+
+      - name: Save verified Python support archive
+        if: steps.python-support-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.PYTHON_SUPPORT_CACHE }}
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json') }}
+
       - name: Restore Bazel cache
         id: bazel-cache
         continue-on-error: true
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.BAZEL_DISK_CACHE }}
           key: bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -110,11 +144,12 @@ jobs:
             build \
             --configurationPath="build-system/exteraless-configuration.json" \
             --unsigned \
+            --continueOnError \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER" \
             --outputBuildArtifactsPath="$SOURCE_DIR/build/artifacts"
 
-      - name: Verify unsigned IPA and collect entitlement templates
+      - name: Verify unsigned IPA, runtime embedding and entitlement templates
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
@@ -123,6 +158,10 @@ jobs:
             --configuration build-system/exteraless-configuration.json \
             --version "$APP_VERSION" --build-number "$BUILD_NUMBER" \
             --report build/artifacts/build-manifest.json
+          python3 build-system/Make/RuntimePackaging.py \
+            --ipa build/artifacts/Telegram.ipa \
+            --staging-manifest build-input/exteraless/runtime-staging.json \
+            --report build/artifacts/runtime-manifest.json
           python3 - <<'PY'
           from pathlib import Path
           import shutil
@@ -134,30 +173,36 @@ jobs:
           for path in files:
               shutil.copy2(path, target / path.name)
           shutil.copy2('bazel-bin/Telegram/Telegram_dossier.zip', 'build/artifacts/Telegram_dossier.zip')
+          shutil.copy2('build-input/exteraless/runtime-staging.json', 'build/artifacts/runtime-staging.json')
           PY
-          echo "Unsigned IPA + six extensions. Sign locally with your compatible profiles." >> "$GITHUB_STEP_SUMMARY"
+          echo "Unsigned IPA + six extensions; CPython 3.12.16, 55 runtime frameworks and resource/rpath verification passed. Sign locally with your compatible profiles." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: exteraless-ios-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
           path: |
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.ipa
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.DSYMs.zip
             ${{ env.SOURCE_DIR }}/build/artifacts/build-manifest.json
+            ${{ env.SOURCE_DIR }}/build/artifacts/runtime-manifest.json
+            ${{ env.SOURCE_DIR }}/build/artifacts/runtime-staging.json
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram_dossier.zip
             ${{ env.SOURCE_DIR }}/build/artifacts/signing-entitlements/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload unsigned preflight diagnostics
+      - name: Upload unsigned/runtime preflight diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unsigned-preflight-${{ github.run_id }}
           # Full aquery dumps may contain generated configuration values.
           # Publish only the structural report, not file-write contents.
-          path: ${{ env.SOURCE_DIR }}/build/diagnostics/unsigned-preflight.json
+          path: |
+            ${{ env.SOURCE_DIR }}/build/diagnostics/unsigned-preflight.json
+            ${{ env.SOURCE_DIR }}/build/diagnostics/runtime-preflight.json
+            ${{ env.SOURCE_DIR }}/build/diagnostics/runtime-staging.json
           if-no-files-found: ignore
           retention-days: 7
 
@@ -166,7 +211,7 @@ jobs:
       - name: Save Bazel action cache
         if: ${{ !cancelled() && steps.bazel-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.BAZEL_DISK_CACHE }}
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

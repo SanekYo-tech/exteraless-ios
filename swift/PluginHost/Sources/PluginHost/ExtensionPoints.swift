@@ -69,6 +69,14 @@ public enum ExtensionPointKind: Int, CaseIterable, Codable, Hashable, Sendable {
                "rawValue должен совпадать с позицией в allCases")
         return rawValue
     }
+
+    var requiredPermission: PluginPermission {
+        switch self {
+        case .appEvent, .createSettings: return .ui
+        case .sendMessage: return .messagesSend
+        case .preRequest, .postRequest, .update, .updates: return .messagesRead
+        }
+    }
 }
 
 /// Атомарные счётчики подписчиков по каждой точке входа.
@@ -199,8 +207,19 @@ public enum HookStrategy: String, Codable, CaseIterable, Hashable, Sendable {
 public enum PluginEventResult: Equatable, Sendable {
     case none
     case strategy(HookStrategy)
+    case sendMessage(PluginSendMessageResult)
     case settingsJSON(String)
     case string(String)
+}
+
+/// A send decision must carry the replacement as well as its strategy.
+public struct PluginSendMessageResult: Equatable, Sendable {
+    public var strategy: HookStrategy
+    public var paramsJSON: String?
+    public init(strategy: HookStrategy = .default, paramsJSON: String? = nil) {
+        self.strategy = strategy
+        self.paramsJSON = paramsJSON
+    }
 }
 
 /// Ключ коалесценга апдейтов (аккаунт + имя контейнера/апдейта).
@@ -326,11 +345,15 @@ public final class PluginEventBus: @unchecked Sendable {
 
     /// Исходящее сообщение: ждёт стратегию хуков (DEFAULT/CANCEL/MODIFY/...).
     public func preSendMessage(_ payload: SendMessagePayload) async throws -> HookStrategy {
-        guard subscribers.hasSubscribers(.sendMessage) else { return .default }
+        try await preSendMessageResult(payload).strategy
+    }
+
+    public func preSendMessageResult(_ payload: SendMessagePayload) async throws -> PluginSendMessageResult {
+        guard subscribers.hasSubscribers(.sendMessage) else { return PluginSendMessageResult() }
         switch try await queue.submitAwaiting(.sendMessage(payload)) {
-        case .strategy(let strategy): return strategy
-        case .none: return .default
-        default: return .default
+        case .sendMessage(let result): return result
+        case .strategy(let strategy): return PluginSendMessageResult(strategy: strategy)
+        default: return PluginSendMessageResult()
         }
     }
 

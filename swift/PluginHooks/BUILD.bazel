@@ -1,0 +1,23 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+
+objc_library(
+    name = "CPluginHookShims",
+    module_name = "CPluginHookShims",
+    enable_modules = True,
+    srcs = ["Sources/CPluginHookShims/PluginHookGate.c"],
+    hdrs = ["Sources/CPluginHookShims/include/PluginHookGate.h"],
+    includes = ["Sources/CPluginHookShims/include"],
+    copts = ["-std=c11"],
+)
+
+# One copy lives in TelegramCoreFramework; its computed export list exposes the
+# handlers used by TelegramUI. This module has no CPython or UI dependencies.
+swift_library(
+    name = "PluginHooks",
+    module_name = "PluginHooks",
+    srcs = glob(["Sources/PluginHooks/**/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [":CPluginHookShims"],
+    visibility = ["//visibility:public"],
+)

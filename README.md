@@ -16,6 +16,10 @@ exteraless), поверх — Python-рантайм и портированна�
 | `third_party/corpus-sources/` | клоны репозиториев плагинов (в git не входят, см. ниже) |
 | `third_party/corpus/` | собранный корпус плагинов (генерируется) |
 | `build/compat/` | манифест и отчёты совместимости (генерируется) |
+| `python/runtime/` | pinned CPython, C engine/ABI и native probes |
+| `python/exteraless_runtime/` | адаптер настоящего SDK loader для iOS |
+| `swift/PluginHost/` | lifecycle, bridge services, permissions и callbacks |
+| `swift/PluginHooks/` | лёгкие send/request/update точки расширения TelegramCore |
 
 ## Манифест совместимости (этап 0)
 
@@ -58,9 +62,20 @@ iOS-расширениями для последующей самостояте�
 проверяется граф упаковки; сертификаты и профили в CI не нужны.
 Проверки и артефакты: [docs/ci-unsigned.md](docs/ci-unsigned.md).
 
+Перед локальным Make.py для runtime-интеграции:
+
+```bash
+python3 tools/runtime/prepare_telegram_runtime.py --telegram-root telegram-ios
+```
+
+Подготовка создаёт декларированные Bazel inputs: pinned framework/stdlib,
+SDK/manifest и восемь pure-Python wheels. Повторить после изменения исходников;
+staging проверяет fingerprints. Полный контракт —
+[telegram-ios/build-system/exteraless/README.md](telegram-ios/build-system/exteraless/README.md).
+
 Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
 Проверенный CPython runtime + native engine: [runtime build 10](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774).
-Подробности и следующий этап интеграции — [docs/python-runtime.md](docs/python-runtime.md).
+Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
 
 ## Статус этапов
 
@@ -68,10 +83,10 @@ iOS-расширениями для последующей самостояте�
 - [x] 0b. CI: unsigned Telegram-iOS 13.1.1 + проверенный артефакт
 - [x] 1. CPython 3.12.16 xcframework + реальные iOS-simulator probes
 - [x] Нативный CPythonEngine и Swift-адаптер (component validation)
-- [ ] 2. Мост `_exteraless_bridge`
-- [ ] 3. Virtual-Java слой
-- [ ] 4. Встройка PluginHost в клиент Telegram
-- [ ] 5. Extension points
-- [ ] 6. UI менеджера плагинов
+- [ ] 2. Native C↔Swift dispatcher — реализован, интеграционный CI pending
+- [ ] 3. Virtual-Java и SDK loader — реализованы, сквозной native probe подготовлен
+- [ ] 4. Встройка PluginHost в клиент Telegram — Bazel/lifecycle подключены, IPA pending
+- [ ] 5. Extension points — send и RPC/update observations врезаны, CI pending
+- [ ] 6. UI менеджера плагинов — Display/UIKit реализация, компиляция и кадры pending
 
 Подробный план: `docs/PLAN.md`.

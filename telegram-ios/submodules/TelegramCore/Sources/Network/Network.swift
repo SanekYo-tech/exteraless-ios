@@ -1,4 +1,5 @@
 import Foundation
+import PluginHooks
 import WebProxyTransport
 import Postbox
 internal import TelegramApi
@@ -749,7 +750,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 useExperimentalFeatures = false
             }
             
-            let network = Network(queue: queue, datacenterId: datacenterId, context: context, engine: engine, switchingEngine: switchingEngine, engineFactory: arguments.networkEngineFactory, rustEngineDisabled: rustEngineDisabled, rustEngineWaitsForWebProxy: rustEngineWaitsForWebProxy, mainSession: mainSession, mainSessionDelegate: mainSessionDelegate, telemetry: telemetry, _connectionStatus: connectionStatus, basePath: basePath, appDataDisposable: appDataDisposable, encryptionProvider: arguments.encryptionProvider, useRequestTimeoutTimers: useRequestTimeoutTimers, useBetaFeatures: arguments.useBetaFeatures, useExperimentalFeatures: useExperimentalFeatures, baseTcpConnectionInterfaceFactory: baseTcpConnectionInterfaceFactory, isAppExtension: isAppExtension, initialWebProxyActive: initialActiveServer?.isWebProxy == true)
+            let network = Network(accountRecordId: accountId.int64, queue: queue, datacenterId: datacenterId, context: context, engine: engine, switchingEngine: switchingEngine, engineFactory: arguments.networkEngineFactory, rustEngineDisabled: rustEngineDisabled, rustEngineWaitsForWebProxy: rustEngineWaitsForWebProxy, mainSession: mainSession, mainSessionDelegate: mainSessionDelegate, telemetry: telemetry, _connectionStatus: connectionStatus, basePath: basePath, appDataDisposable: appDataDisposable, encryptionProvider: arguments.encryptionProvider, useRequestTimeoutTimers: useRequestTimeoutTimers, useBetaFeatures: arguments.useBetaFeatures, useExperimentalFeatures: useExperimentalFeatures, baseTcpConnectionInterfaceFactory: baseTcpConnectionInterfaceFactory, isAppExtension: isAppExtension, initialWebProxyActive: initialActiveServer?.isWebProxy == true)
             
             if let data = appConfiguration.data, let notifyInterval = data["upload_premium_speedup_notify_period"] as? Double {
                 network.updateNetworkSpeedLimitedEventNotifyInterval(value: notifyInterval)
@@ -904,6 +905,8 @@ private final class NetworkSpeedLimitedEventState {
 }
 
 public final class Network: NSObject {
+    /// AccountRecordId.int64, propagated from initializedNetwork without an account-index conversion.
+    let accountRecordId: Int64
     public let encryptionProvider: EncryptionProvider
     
     private let queue: Queue
@@ -995,7 +998,8 @@ public final class Network: NSObject {
         return self.engine.kind
     }
     
-    fileprivate init(queue: Queue, datacenterId: Int, context: MTContext, engine: NetworkEngine, switchingEngine: SwitchingNetworkEngine?, engineFactory: NetworkEngineFactory?, rustEngineDisabled: Bool, rustEngineWaitsForWebProxy: Bool, mainSession: NetworkEngineSession, mainSessionDelegate: NetworkMainSessionDelegate, telemetry: NetworkTelemetry?, _connectionStatus: Promise<ConnectionStatus>, basePath: String, appDataDisposable: Disposable, encryptionProvider: EncryptionProvider, useRequestTimeoutTimers: Bool, useBetaFeatures: Bool, useExperimentalFeatures: Bool, baseTcpConnectionInterfaceFactory: ((MTTcpConnectionInterfaceDelegate, DispatchQueue) -> MTTcpConnectionInterface)?, isAppExtension: Bool, initialWebProxyActive: Bool) {
+    fileprivate init(accountRecordId: Int64, queue: Queue, datacenterId: Int, context: MTContext, engine: NetworkEngine, switchingEngine: SwitchingNetworkEngine?, engineFactory: NetworkEngineFactory?, rustEngineDisabled: Bool, rustEngineWaitsForWebProxy: Bool, mainSession: NetworkEngineSession, mainSessionDelegate: NetworkMainSessionDelegate, telemetry: NetworkTelemetry?, _connectionStatus: Promise<ConnectionStatus>, basePath: String, appDataDisposable: Disposable, encryptionProvider: EncryptionProvider, useRequestTimeoutTimers: Bool, useBetaFeatures: Bool, useExperimentalFeatures: Bool, baseTcpConnectionInterfaceFactory: ((MTTcpConnectionInterfaceDelegate, DispatchQueue) -> MTTcpConnectionInterface)?, isAppExtension: Bool, initialWebProxyActive: Bool) {
+        self.accountRecordId = accountRecordId
         self.encryptionProvider = encryptionProvider
         
         self.queue = queue
@@ -1286,6 +1290,10 @@ public final class Network: NSObject {
     }
     
     func addUpdateSink(_ sink: NetworkEngineUpdateSink) {
+        // Assign before publishing the sink to the network session. It stays immutable thereafter.
+        if let sink = sink as? UpdateMessageService {
+            sink.pluginHookAccountRecordId = self.accountRecordId
+        }
         self.mainSession.addUpdateSink(sink)
     }
     
@@ -1373,13 +1381,21 @@ public final class Network: NSObject {
     
     func requestWithAdditionalInfo<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), info: NetworkRequestAdditionalInfo, tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<NetworkRequestResult<T>, MTRpcError> {
         let requestService = self.requestService
+        let accountRecordId = self.accountRecordId
+        let datacenterId = self.datacenterId
         return Signal { [requestService] subscriber in
+            let hasPluginRequestSubscribers = PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest)
+            let requestPayload = data.1.makeData()
+            let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: true) : nil
             let request = NetworkEngineRequest(
-                payload: data.1.makeData(),
+                payload: requestPayload,
                 metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag),
                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
                 parse: { response in
                     if let result = data.2.parse(Buffer(data: response)) {
+                        if PluginHookRouter.hasSubscribers(.postRequest), pluginHookMetadata != nil {
+                            return PluginHookBoxedResponse(result, serializedTLBytes: response)
+                        }
                         return BoxedMessage(result)
                     }
                     return nil
@@ -1401,13 +1417,17 @@ public final class Network: NSObject {
                     switch result {
                     case let .success(response):
                         if let result = (response.result as! BoxedMessage).body as? T {
+                            pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: nil)
                             subscriber.putNext(.result(result))
                             subscriber.putCompletion()
                         }
                         else {
-                            subscriber.putError(MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR"))
+                            let error = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
+                            pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: error)
+                            subscriber.putError(error)
                         }
                     case let .failure(failure):
+                        pluginObserveRequestCompletion(pluginHookMetadata, response: nil, info: failure.info, error: failure.error)
                         subscriber.putError(failure.error)
                     }
                 }
@@ -1419,13 +1439,21 @@ public final class Network: NSObject {
     
     func request<T>(_ data: (FunctionDescription, Buffer, DeserializeFunctionResponse<T>), tag: NetworkRequestDependencyTag? = nil, automaticFloodWait: Bool = true, onFloodWaitError: ((String) -> Void)? = nil) -> Signal<T, MTRpcError> {
         let requestService = self.requestService
+        let accountRecordId = self.accountRecordId
+        let datacenterId = self.datacenterId
         return Signal { [requestService] subscriber in
+            let hasPluginRequestSubscribers = PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest)
+            let requestPayload = data.1.makeData()
+            let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: false) : nil
             let request = NetworkEngineRequest(
-                payload: data.1.makeData(),
+                payload: requestPayload,
                 metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag),
                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
                 parse: { response in
                     if let result = data.2.parse(Buffer(data: response)) {
+                        if PluginHookRouter.hasSubscribers(.postRequest), pluginHookMetadata != nil {
+                            return PluginHookBoxedResponse(result, serializedTLBytes: response)
+                        }
                         return BoxedMessage(result)
                     }
                     return nil
@@ -1439,13 +1467,17 @@ public final class Network: NSObject {
                     switch result {
                     case let .success(response):
                         if let result = (response.result as! BoxedMessage).body as? T {
+                            pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: nil)
                             subscriber.putNext(result)
                             subscriber.putCompletion()
                         }
                         else {
-                            subscriber.putError(MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR"))
+                            let error = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
+                            pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: error)
+                            subscriber.putError(error)
                         }
                     case let .failure(failure):
+                        pluginObserveRequestCompletion(pluginHookMetadata, response: nil, info: failure.info, error: failure.error)
                         subscriber.putError(failure.error)
                     }
                 }
@@ -1475,6 +1507,57 @@ public final class Network: NSObject {
             return state.markNotifyTimestamp()
         }
     }
+}
+
+/// Created only behind the post-request gate. The original response Data is immutable/CoW;
+/// retaining it supports primitive/vector results as well as boxed TL objects without re-parsing.
+private final class PluginHookBoxedResponse: BoxedMessage {
+    let serializedTLBytes: Data
+
+    init(_ body: Any, serializedTLBytes: Data) {
+        self.serializedTLBytes = serializedTLBytes
+        super.init(body)
+    }
+}
+
+private func pluginObserveRequestSubmission(accountRecordId: Int64, datacenterId: Int, description: FunctionDescription, payload: Data, automaticFloodWait: Bool, usesAdditionalInfo: Bool) -> PluginRequestMetadata? {
+    guard PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest) else {
+        return nil
+    }
+    let metadata = PluginRequestMetadata(accountRecordId: accountRecordId, requestId: UUID().uuidString, requestName: description.name, datacenterId: datacenterId, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: usesAdditionalInfo)
+    if PluginHookRouter.hasSubscribers(.preRequest) {
+        PluginHookRouter.observe(.preRequest, makeEvent: {
+            return .preRequest(PluginRequestObservation(phase: .beforeSubmission, metadata: metadata, serializedTLBytes: payload, tlBytesEncoding: .requestBody))
+        })
+    }
+    return metadata
+}
+
+private func pluginObserveRequestCompletion(_ metadata: PluginRequestMetadata?, response: BoxedMessage?, info: NetworkEngineResponseInfo, error: MTRpcError?) {
+    guard PluginHookRouter.hasSubscribers(.postRequest), let metadata = metadata else {
+        return
+    }
+    PluginHookRouter.observe(.postRequest, makeEvent: {
+        var bytes: Data?
+        var encoding: PluginTLBytesEncoding = .unavailable
+        if let response = response as? PluginHookBoxedResponse {
+            bytes = response.serializedTLBytes
+            encoding = .responseBody
+        } else if let value = response?.body as? TLObjectBacked {
+            // A subscriber may have appeared between parsing and completion. Serialize only here,
+            // on the observation queue, and only when this is an actual boxed TL object.
+            let buffer = Buffer()
+            value.serialize(buffer, true)
+            bytes = buffer.makeData()
+            encoding = .boxedTL
+        }
+        return .postRequest(PluginRequestObservation(
+            phase: .completed, metadata: metadata, serializedTLBytes: bytes, tlBytesEncoding: encoding,
+            responseTypeName: response.map { String(reflecting: type(of: $0.body)) },
+            response: PluginRPCResponseMetadata(timestamp: info.timestamp, duration: info.duration, networkType: info.networkType),
+            error: error.map { PluginRPCError(code: $0.errorCode, message: $0.errorDescription ?? "") }
+        ))
+    })
 }
 
 func networkRequestErrorPolicy(automaticFloodWait: Bool, onFloodWaitError: ((String) -> Void)?, failOnServerErrors: Bool) -> (NetworkEngineErrorContext) -> Bool {

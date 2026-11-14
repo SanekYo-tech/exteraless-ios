@@ -34,6 +34,14 @@ bazel_dep(name = "rules_cc", version = "0.2.20")
 bazel_dep(name = "rules_rust", version = "0.74.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
+# Generated from the pinned support archive and this checkout before analysis:
+# python3 ../tools/runtime/prepare_telegram_runtime.py --telegram-root .
+bazel_dep(name = "exteraless", version = "0.1.0")
+local_path_override(
+    module_name = "exteraless",
+    path = "./build-input/exteraless",
+)
+
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2024",

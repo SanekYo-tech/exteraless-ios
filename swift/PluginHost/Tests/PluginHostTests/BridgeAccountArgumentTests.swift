@@ -4,23 +4,31 @@ import XCTest
 
 final class BridgeAccountArgumentTests: XCTestCase {
     private final class Messages: PluginMessagesService {
+        let receivedAccounts = Recorder<Int32>()
         func selectedAccount() -> Int32 { 0 }
-        func instanceHandle(fqcn: String, account: Int32) -> Int64 { Int64(account) + 1000 }
+        func instanceHandle(fqcn: String, account: Int32) -> Int64 {
+            receivedAccounts.append(account)
+            return Int64(account) + 1000
+        }
     }
 
-    private func call(account: Int64) throws -> [String: Any] {
-        let service = BridgeServices(messages: Messages())
+    private func call(account: Int64, messages: Messages = Messages()) throws -> [String: Any] {
+        let service = BridgeServices(messages: messages)
         let json = """
         {"op":"call","fqcn":"org.telegram.messenger.MessagesController","member":"getInstance","args":[\(account)]}
         """
         return try XCTUnwrap(JSONSerialization.jsonObject(with:
-            Data(service.dispatchJSON(json, pluginId: nil).utf8)) as? [String: Any])
+            Data(service.dispatchJSON(json, pluginId: "account_test").utf8)) as? [String: Any])
     }
 
     func testAccountIsPassedAsInt32() throws {
-        let result = try call(account: 7)
+        let messages = Messages()
+        let result = try call(account: 7, messages: messages)
         XCTAssertEqual(result["ok"] as? Bool, true)
-        XCTAssertEqual((result["value"] as? NSNumber)?.int64Value, 1007)
+        XCTAssertEqual(messages.receivedAccounts.values, [7])
+        let tag = try XCTUnwrap(result["value"] as? [String: Any])
+        XCTAssertLessThan(try XCTUnwrap(tag["__handle__"] as? NSNumber).int64Value, 0)
+        XCTAssertEqual(tag["__fqcn__"] as? String, "org.telegram.messenger.MessagesController")
     }
 
     func testOutOfRangeAccountIsRejectedInsteadOfTrappingOrWrapping() throws {

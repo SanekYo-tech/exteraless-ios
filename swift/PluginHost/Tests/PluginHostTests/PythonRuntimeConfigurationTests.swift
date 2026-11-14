@@ -22,6 +22,7 @@ final class PythonRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.compatibilityDirectories, [
             root + "/python",
             root + "/python/sdk",
+            root + "/python/vendor",
             configuration.pluginRootDirectory,
         ])
         XCTAssertFalse(configuration.pluginRootDirectory.isEmpty)
@@ -111,7 +112,7 @@ final class PythonRuntimeConfigurationTests: XCTestCase {
         XCTAssertEqual(try stringArgument("service", in: script), service)
         XCTAssertEqual(try stringArgument("manifest_path", in: script), manifest)
         let pluginLiteral = try literal(
-            in: script, prefix: "# этап 5: загрузка плагина ", suffix: " через SDK-лоадер.")
+            in: script, prefix: "_exteraless_bridge.xt_set_plugin_id(", suffix: ")")
         XCTAssertEqual(try JSONDecoder().decode(String.self, from: Data(pluginLiteral.utf8)), pluginID)
 
         // Валидного JSON недостаточно: Python оставляет \/ как обратный слеш + /,

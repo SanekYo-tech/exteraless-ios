@@ -49,7 +49,7 @@ def test_explicit_interpreter_ids_do_not_share_handles():
         # тот же числовой id в другой таблице — не тот объект
         assert xt_resolve_handle(hid) is None
         assert xt_release_handle(hid) is False
-        release = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int64)(
+        release = ctypes.PYFUNCTYPE(ctypes.c_int, ctypes.c_int64)(
             xt_builtin_ptr("release_handle"))
         assert release(hid) == 0
         other = object()

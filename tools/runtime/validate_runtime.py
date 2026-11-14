@@ -89,7 +89,7 @@ def run_probe_command(command, output, kind):
             'pid': process.pid, 'command': command,
         }, indent=2), encoding='utf-8')
         try:
-            return process.wait(timeout=90)
+            return process.wait(timeout=30 if kind == 'bridge' else 90)
         except subprocess.TimeoutExpired:
             try:
                 subprocess.run(['sample', str(process.pid), '1', '-file',
@@ -121,7 +121,7 @@ def build_target(framework, output, target, lock):
     objects = []
     bridge_sources = [ROOT / 'python/bridge/_exteraless_bridge.c', native / 'register_bridge.c',
                       native / 'engine.c', native / 'cpython312_compat.c']
-    probe_sources = [native / 'smoke/runtime_probe.c', native / 'smoke/engine_probe.c']
+    probe_sources = [native / 'smoke/runtime_probe.c', native / 'smoke/engine_probe.c', native / 'smoke/bridge_callback_probe.c']
     for source in bridge_sources + probe_sources:
         obj = folder / (source.stem + '.o')
         run('xcrun', '--sdk', spec['sdk'], 'clang', *common, *includes,
@@ -147,6 +147,8 @@ def build_target(framework, output, target, lock):
         'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait'],
     }))
     manifest = stage_application(framework, app, target, lock, BUNDLE_ID)
+    shutil.copytree(ROOT / 'python/virtualjava', app / 'python/virtualjava',
+                    ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'tests', '.pytest_cache'))
     if target == 'simulator':
         # The simulator uses ad-hoc signatures only; no Apple signing identity.
         for item in sorted((app / 'Frameworks').glob('*.framework')):
@@ -219,6 +221,7 @@ def simulator_probe(app, output, simulator_device='iPhone 17'):
         for kind, option, report_name in [
             ('runtime', '--headless-report', 'simulator-smoke.json'),
             ('engine', '--engine-report', 'simulator-engine-smoke.json'),
+            ('bridge', '--bridge-report', 'simulator-bridge-smoke.json'),
         ]:
             report_path = output / (kind + '-native-report.json')
             report_path.unlink(missing_ok=True)
@@ -230,6 +233,8 @@ def simulator_probe(app, output, simulator_device='iPhone 17'):
                 raise RuntimeError('Simulator {} checks did not pass: {}'.format(kind, report))
             if kind == 'engine' and (report.get('native_workers') != 2 or report.get('finalized') is not True):
                 raise RuntimeError('Native engine did not complete both workers and finalization')
+            if kind == 'bridge' and (report.get('native_dispatcher') is not True or report.get('finalized') is not True):
+                raise RuntimeError('Native bridge callback probe did not finish')
             report['execution'] = 'simctl spawn --standalone'
             report['application_installation_verified'] = False
             (output / report_name).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
@@ -270,6 +275,7 @@ def source_fingerprint():
                if path.suffix in {'.c', '.h', '.m', '.modulemap'}]
     sources += [ROOT / 'python/bridge/_exteraless_bridge.c', ROOT / 'python/runtime/support-lock.json',
                 ROOT / 'tools/runtime/support.py', Path(__file__).resolve()]
+    sources += list((ROOT / 'python/virtualjava').glob('*.py'))
     return {path.relative_to(ROOT).as_posix(): digest(path) for path in sorted(sources)}
 
 
@@ -326,11 +332,12 @@ def main():
         report = json.loads((args.output / 'runtime-compile-manifest.json').read_text(encoding='utf-8'))
         if report.get('source_fingerprint') != source_fingerprint():
             raise ValueError('Native probe sources changed since the build')
-    for name in ('runtime-manifest.json', 'simulator-smoke.json', 'simulator-engine-smoke.json'):
+    for name in ('runtime-manifest.json', 'simulator-smoke.json', 'simulator-engine-smoke.json', 'simulator-bridge-smoke.json'):
         (args.output / name).unlink(missing_ok=True)
     simulator = args.output / 'simulator' / (EXECUTABLE + '.app')
     report['smoke'] = simulator_probe(simulator, args.output, args.simulator_device)
     report['native_engine'] = json.loads((args.output / 'simulator-engine-smoke.json').read_text(encoding='utf-8'))
+    report['native_bridge'] = json.loads((args.output / 'simulator-bridge-smoke.json').read_text(encoding='utf-8'))
     report['simulator_execution_verified'] = True
     (args.output / 'runtime-manifest.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print('Runtime validation complete: device compiled; simulator ran CPython + built-in bridge')

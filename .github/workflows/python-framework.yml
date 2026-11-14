@@ -29,21 +29,49 @@ jobs:
             python
             tools/runtime
             tools/ci
+            tools/compat
+            telegram-ios/build-system/Make
             swift/PluginHost
+            swift/PluginHooks
 
       - name: Set up build Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
+      - name: Install fixture test dependencies
+        run: python -m pip install pytest
+
       - name: Test runtime packaging
         run: python -m unittest discover -s tools/runtime/tests -v
 
+      - name: Test SDK adapter and dependency bundle
+        run: python -B -m pytest tools/runtime/tests/test_dependency_bundle.py tools/compat/tests/test_ios_runtime.py -q
+
       - name: Test Swift runtime bootstrap
-        run: swift test --package-path swift/PluginHost --jobs 2 --filter 'PythonRuntimeConfigurationTests|BridgeAccountArgumentTests|PluginEventQueueTests|SubinterpreterLifecycleTests'
+        run: swift test --package-path swift/PluginHost --jobs 2
+
+      - name: Test lightweight Core hook routing
+        run: swift test --package-path swift/PluginHooks --jobs 2
 
       - name: Compile and run Swift adapter with native CPython
         run: python tools/runtime/check_swift_embedding.py --output "$RUNNER_TEMP/python-swift"
+
+      - name: Cache pure Python wheels
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/python-wheel-cache
+          key: python-pure-dependencies-${{ hashFiles('python/runtime/dependency-lock.json') }}
+
+      - name: Stage pinned pure Python dependencies
+        run: |
+          python tools/runtime/vendor_dependencies.py \
+            --cache "$RUNNER_TEMP/python-wheel-cache" \
+            --output "$GITHUB_WORKSPACE/python/vendor" \
+            --report "$RUNNER_TEMP/python-dependencies.json"
+
+      - name: Run real SDK plugin through Swift and C bridge
+        run: python tools/runtime/check_swift_plugin_embedding.py --output "$RUNNER_TEMP/python-plugin"
 
       - name: Cache pinned support archive
         uses: actions/cache@v4
@@ -98,7 +126,10 @@ jobs:
           cp "$RUNNER_TEMP/python-native/runtime-manifest.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/simulator-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/simulator-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-native/simulator-bridge-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-swift/swift-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-plugin-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-dependencies.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonBridge.xcframework.tar.gz" "$RUNNER_TEMP/runtime-artifacts/"
           echo 'CPython and the native bridge ran on the simulator. Device code compiled; device installation remains unverified.' >> "$GITHUB_STEP_SUMMARY"
@@ -124,5 +155,7 @@ jobs:
             ${{ runner.temp }}/python-native/*.crash
             ${{ runner.temp }}/python-swift/*.json
             ${{ runner.temp }}/python-swift/*.log
+            ${{ runner.temp }}/python-plugin/*.json
+            ${{ runner.temp }}/python-plugin/*.log
           if-no-files-found: ignore
           retention-days: 7

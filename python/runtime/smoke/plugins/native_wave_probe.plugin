@@ -1,0 +1,59 @@
+__id__ = "nativeWaveProbe"
+__name__ = "Native Wave Probe"
+__version__ = "1.0"
+__description__ = "Bounded integration fixture; no network or user account effects"
+__permissions__ = ["ui", "messages.send", "network"]
+__requirements__ = ["requests>=2.34.2,<3", "cachetools>=8,<9"]
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from ui.settings import Header, Input, Switch, Text
+
+
+class NativeWaveProbe(BasePlugin):
+    def on_plugin_load(self):
+        import cachetools
+        import certifi
+        import requests
+        from pathlib import Path
+
+        # Import the installed wheels in the actual interpreter. No HTTP/DNS
+        # operation is performed; the TLS bundle is treated as local package data.
+        self.set_setting("provided_dependencies", {
+            "requests": requests.__version__,
+            "cachetools": cachetools.__version__,
+            "requests_from_vendor": "/vendor/requests/" in Path(requests.__file__).as_posix(),
+            "certifi_from_vendor": "/vendor/certifi/" in Path(certifi.where()).as_posix(),
+        })
+        self.set_setting("loads", self.get_setting("loads", 0) + 1)
+        self.add_on_send_message_hook()
+        self.log("native fixture loaded")
+
+    def on_plugin_unload(self):
+        self.set_setting("unloads", self.get_setting("unloads", 0) + 1)
+
+    def on_app_event(self, event_type):
+        self.set_setting("last_event", event_type)
+
+    def clicked(self, *_):
+        self.set_setting("clicks", self.get_setting("clicks", 0) + 1)
+
+    def create_settings(self):
+        return [
+            Header("Native bridge"),
+            Switch("cancel", "Cancel fixture sends", False),
+            Input("prefix", "Prefix", "native:"),
+            Text("Click counter", on_click=self.clicked),
+            Text("state=" + str({
+                "loads": self.get_setting("loads", 0),
+                "unloads": self.get_setting("unloads", 0),
+                "clicks": self.get_setting("clicks", 0),
+                "event": self.get_setting("last_event", "none"),
+            })),
+        ]
+
+    def on_send_message_hook(self, account, params):
+        if self.get_setting("cancel", False):
+            return HookResult(strategy=HookStrategy.CANCEL)
+        replacement = dict(params)
+        replacement["text"] = self.get_setting("prefix", "native:") + replacement.get("text", "")
+        return HookResult(strategy=HookStrategy.MODIFY, params=replacement)

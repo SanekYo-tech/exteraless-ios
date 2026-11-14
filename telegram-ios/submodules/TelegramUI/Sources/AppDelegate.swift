@@ -1411,6 +1411,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
             self.crashReportPromptDisposable.set(nil)
             self.contextValue = context
+            // This signal is delivered on main. Publish the account snapshot in
+            // the same order as contextValue, before asynchronous host startup.
+            MainActor.assumeIsolated {
+                if let context = context {
+                    ExteralessPluginRuntime.shared.update(context: context.context)
+                } else {
+                    ExteralessPluginRuntime.shared.clearContext()
+                }
+            }
             if let context = context {
                 setupLegacyComponents(context: context.context)
                 let isReady = context.isReady.get()
@@ -2042,6 +2051,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleWillResignActive() {
+        MainActor.assumeIsolated {
+            ExteralessPluginRuntime.shared.emitAppEvent("app_pause")
+        }
         self.isActiveValue = false
         self.isActivePromise.set(false)
         self.clearNotificationsManager?.commitNow()
@@ -2148,6 +2160,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleDidBecomeActive() {
+        MainActor.assumeIsolated {
+            ExteralessPluginRuntime.shared.emitAppEvent("app_resume")
+        }
         self.isInForegroundValue = true
         self.isInForegroundPromise.set(true)
         self.isActiveValue = true
@@ -2177,6 +2192,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
+        Task { @MainActor in
+            await ExteralessPluginRuntime.shared.terminate()
+        }
         Logger.shared.log("App \(self.episodeId)", "terminating")
     }
     

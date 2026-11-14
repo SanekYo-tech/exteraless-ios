@@ -1,4 +1,5 @@
 import Foundation
+import PluginHooks
 import Postbox
 import SwiftSignalKit
 internal import TelegramApi
@@ -6,6 +7,8 @@ import MtProtoKit
 
 class UpdateMessageService: NSObject, NetworkEngineUpdateSink {
     var peerId: PeerId!
+    // Bound by Network.addUpdateSink before the sink is published to a session.
+    var pluginHookAccountRecordId: Int64?
     let pipe: ValuePipe<[UpdateGroup]> = ValuePipe()
     
     override init() {
@@ -32,6 +35,16 @@ class UpdateMessageService: NSObject, NetworkEngineUpdateSink {
     }
     
     func addUpdates(_ updates: Api.Updates) {
+        if PluginHookRouter.hasSubscribers(.updates), let accountRecordId = self.pluginHookAccountRecordId {
+            PluginHookRouter.observe(.updates, makeEvent: {
+                let buffer = Buffer()
+                updates.serialize(buffer, true)
+                return .updates(PluginUpdateObservation(
+                    accountRecordId: accountRecordId, name: updates.description,
+                    source: .incomingContainer, stage: .beforeGrouping, serializedTLBytes: buffer.makeData()
+                ))
+            })
+        }
         switch updates {
             case let .updates(updatesData):
                 let (updates, users, chats, date, seq) = (updatesData.updates, updatesData.users, updatesData.chats, updatesData.date, updatesData.seq)

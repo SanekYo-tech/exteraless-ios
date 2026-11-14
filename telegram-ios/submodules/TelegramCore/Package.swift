@@ -29,6 +29,7 @@ let package = Package(
         .package(name: "EncryptionProvider", path: "../EncryptionProvider"),
         .package(name: "Emoji", path: "../Emoji"),
         .package(name: "MediaPreuploadRegistry", path: "../MediaPreuploadRegistry"),
+        .package(name: "PluginHooks", path: "../../../swift/PluginHooks"),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -48,7 +49,8 @@ let package = Package(
                            .product(name: "FlatBuffers", package: "FlatBuffers", condition: nil),
                            .product(name: "FlatSerialization", package: "FlatSerialization", condition: nil),
                            .product(name: "EncryptionProvider", package: "EncryptionProvider", condition: nil),
-                           .product(name: "MediaPreuploadRegistry", package: "MediaPreuploadRegistry", condition: nil)],
+                            .product(name: "MediaPreuploadRegistry", package: "MediaPreuploadRegistry", condition: nil),
+                            .product(name: "PluginHooks", package: "PluginHooks", condition: nil)],
             path: "Sources",
             swiftSettings: [.unsafeFlags(["-warnings-as-errors"])]),
         .testTarget(

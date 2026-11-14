@@ -1,0 +1,24 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+
+objc_library(
+    name = "CPluginHostShims",
+    module_name = "CPluginHostShims",
+    enable_modules = True,
+    srcs = ["Sources/CPluginHostShims/ph_atomic.c"],
+    hdrs = ["Sources/CPluginHostShims/include/ph_atomic.h"],
+    includes = ["Sources/CPluginHostShims/include"],
+    copts = ["-std=c11"],
+)
+
+swift_library(
+    name = "PluginHost",
+    module_name = "PluginHost",
+    srcs = glob(["Sources/PluginHost/**/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":CPluginHostShims",
+        "//python/runtime:CExteralessPythonBridge",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,104 @@
+__id__ = "ios_runtime_probe"
+__name__ = "Local iOS runtime probe"
+__version__ = "1.2"
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_hook_account
+from android_utils import run_on_ui_thread
+from file_utils import _current_plugin_id, get_plugin_dir, get_files_dir
+from ui.settings import Header, Switch, Input, Text, Divider
+import plugin_settings
+
+
+class RuntimePlugin(BasePlugin):
+    def context(self, phase):
+        assert _current_plugin_id() == self.id
+        self.events.append((phase, _current_plugin_id(), get_hook_account()))
+
+    def on_plugin_load(self):
+        self.events = []
+        self.context("load")
+        self.log("load:" + self.id)
+        self.directory = get_plugin_dir()
+        self.files = get_files_dir()
+        self.set_setting("loads", self.get_setting("loads", 0) + 1)
+        self.add_hook("TL_echo")
+        self.add_hook("TL_update", match_substring=True)
+        self.add_on_send_message_hook()
+        run_on_ui_thread(self.native_callback, delay=5)
+
+    def on_plugin_unload(self):
+        self.context("unload")
+        self.set_setting("unloads", self.get_setting("unloads", 0) + 1)
+        if self.get_setting("fail_unload", False):
+            raise RuntimeError("fixture unload failure")
+
+    def native_callback(self):
+        self.context("native")
+        self.set_setting("native_seen", self.id)
+        return {"plugin": self.id, "account": get_hook_account()}
+
+    def echo(self, value):
+        self.context("echo")
+        return value
+
+    def create_settings(self):
+        self.context("settings")
+        if self.get_setting("fail_settings", False):
+            raise ValueError("fixture settings failure")
+        if self.get_setting("empty_settings", False):
+            return None
+        return [Header("Probe"),
+                Switch("enabled", "Enabled", True, on_change=self.changed),
+                Input("prefix", "Prefix", "iOS", on_change=self.input_changed),
+                Text("Tap", on_click=self.clicked, on_long_click=self.long_clicked),
+                Divider("Local fixture")]
+
+    def changed(self, value):
+        self.context("change")
+        assert self.get_setting("enabled") == value
+        self.set_setting("changed_enabled", value)
+
+    def input_changed(self):
+        self.context("input")
+        self.set_setting("changed_prefix", plugin_settings.get_setting(self.id, "prefix"))
+
+    def clicked(self):
+        self.context("click")
+        self.set_setting("clicks", self.get_setting("clicks", 0) + 1)
+
+    def long_clicked(self, view):
+        self.context("long_click")
+        assert view is None
+
+    def on_app_event(self, event_type):
+        self.context(event_type)
+        self.set_setting("app_event", event_type)
+
+    def on_send_message_hook(self, account, params):
+        self.context("send")
+        assert self.client.account == account == get_hook_account()
+        if params.message == "/throw":
+            raise ValueError("fixture hook failure")
+        if params.message == "/cancel":
+            return HookResult(HookStrategy.CANCEL)
+        if params.message == "/default" or not self.get_setting("enabled", True):
+            return None
+        final = params.message == "/final"
+        params.message = self.get_setting("prefix", "iOS") + ": " + params.message
+        return HookResult(HookStrategy.MODIFY_FINAL if final else HookStrategy.MODIFY, params=params)
+
+    def pre_request_hook(self, request_name, account, request):
+        self.context("pre")
+        request.visited = account
+        return HookResult(HookStrategy.MODIFY, request=request)
+
+    def post_request_hook(self, request_name, account, response, error):
+        self.context("post")
+        return HookResult(HookStrategy.CANCEL) if error else None
+
+    def on_update_hook(self, update_name, account, update):
+        self.context("update")
+
+    def on_updates_hook(self, container_name, account, updates):
+        self.context("updates")

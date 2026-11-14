@@ -18,6 +18,7 @@ import TartBuild
 import GenerateProfiles
 import PostboxImportCheck
 from UnsignedBuild import prepare_unsigned_rules, validate_unsigned_actions
+from RuntimePackaging import load_staging_manifest, validate_runtime_actions
 
 
 class ResolvedCodesigningData:
@@ -49,6 +50,7 @@ class BazelCommandLine:
         self.enable_sandbox = False
         self.disable_provisioning_profiles = False
         self.unsigned = False
+        self.runtime_manifest = None
         self.profile_swift = False
         self.embed_watch_app = False
         self.watch_api_id = None
@@ -357,6 +359,8 @@ class BazelCommandLine:
             with open(graph_path, 'w', encoding='utf-8') as graph_file:
                 subprocess.run(query_arguments, stdout=graph_file, check=True)
             validate_unsigned_actions(graph_path)
+            if self.runtime_manifest is not None:
+                validate_runtime_actions(graph_path, self.runtime_manifest)
 
         print('TelegramBuild: running')
         print(subprocess.list2cmdline(combined_arguments))
@@ -705,6 +709,9 @@ def build(bazel, arguments):
     bazel_command_line.set_profile_swift(arguments.profileSwift)
 
     bazel_command_line.set_split_swiftmodules(arguments.enableParallelSwiftmoduleGeneration)
+
+    if arguments.target in (None, 'Telegram/Telegram', '//Telegram:Telegram'):
+        bazel_command_line.runtime_manifest = load_staging_manifest(os.getcwd())
 
     bazel_command_line.invoke_build()
 

@@ -1,0 +1,44 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+
+# A static library built from this checkout, not the diagnostic XCFramework.
+# Keep CPython's private headers out of the Swift Clang module. cc_library does
+# not generate a Swift module unless explicitly opted in by an interop hint.
+cc_library(
+    name = "_CPythonRuntimeImplementation",
+    srcs = [
+        "//:python/bridge/_exteraless_bridge.c",
+        "cpython312_compat.c",
+        "cpython312_compat.h",
+        "engine.c",
+        "register_bridge.c",
+    ] + glob(["include/*.h"], allow_empty = False),
+    includes = ["include"],
+    linkstatic = True,
+    copts = [
+        "-std=c11",
+        "-Werror=implicit-function-declaration",
+    ],
+    deps = [
+        "//support:PythonHeaders",
+    ],
+)
+
+# rules_swift at the pinned revision rejects objc_library.module_map. Let its
+# aspect generate this module from ONLY the public, Python-independent C ABI.
+objc_library(
+    name = "CExteralessPythonBridge",
+    module_name = "CExteralessPythonBridge",
+    enable_modules = True,
+    hdrs = glob(["include/*.h"], allow_empty = False),
+    includes = ["include"],
+    # Keep the dynamic framework on the ObjC edge. cc_library runfiles are
+    # otherwise treated as resources by rules_apple, and Python has no .dylib
+    # suffix for that aspect's dylib filter. Its embedding uses the framework
+    # import provider instead, never a second copy through C/C++ runfiles.
+    deps = [
+        ":_CPythonRuntimeImplementation",
+        "//support:Python",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -192,7 +192,7 @@ jobs:
 
   # Linux, без Apple SDK. Тулчейн — релиз swift.org под Ubuntu 24.04, не macOS.
   swift-tests:
-    name: swift test (PluginHost, Linux)
+    name: swift test (PluginHost + PluginHooks, Linux)
     needs: changes
     if: needs.changes.outputs.swift == 'true'
     runs-on: ubuntu-24.04
@@ -258,4 +258,8 @@ jobs:
 
       - name: Test PluginHost
         working-directory: swift/PluginHost
-        run: swift test
+        run: swift test --jobs 2
+
+      - name: Test PluginHooks
+        working-directory: swift/PluginHooks
+        run: swift test --jobs 2

@@ -1,5 +1,40 @@
 # Встроенный CPython: проверяемая поставка для iOS
 
+## Интеграционная волна — 14.11.2026
+
+В текущем дереве runtime подключён к Bazel-графу Telegram: `PluginHost`,
+отдельный `PluginHooks`, static C-мост, dynamic Python.framework и 54 native
+extension frameworks. Main-app lifecycle соединён с нативными Telegram services,
+SDK loader и менеджером плагинов. Компиляция этой интеграции на Mac и итоговая
+Telegram IPA ещё ожидают CI; подтверждённая runtime-веха ниже относится к базе.
+
+- `python/exteraless_runtime/` исполняет настоящий SDK loader: AST metadata,
+  load/unload, event dispatch, JSON settings, callbacks на owner worker.
+- `NativeBridgeBinding` маршрутизирует C-вызовы в Swift `BridgeServices`;
+  pluginId берётся из per-interpreter state. Windows/CPython 3.12.10 probe
+  прошёл **169 C-callbacks / два OWN_GIL workers** с debug allocator.
+- Pending callbacks ограничены 256 на плагин / 1024 глобально, а неуспешный
+  native call откатывает вновь экспортированные C handles. Контракт:
+  [bridge-callback-lifetime.md](bridge-callback-lifetime.md).
+- Восемь SHA-256-pinned pure-Python wheels поставляются в `python/vendor`;
+  версии и зависимости — `python/runtime/dependency-lock.json`. Сборщик
+  проверяет архивы без исполнения их кода, SDK проверяет bundled requirements.
+- `tools/runtime/check_swift_plugin_embedding.py` проверяет сквозной путь
+  Swift → CPython → SDK → C → Swift на собственном коротком fixture-плагине.
+  Telegram/UIKit services в этом headless probe представлены явными fixtures.
+- Карта event hooks: [wave-1-hooks.md](wave-1-hooks.md). Send поддерживает
+  CANCEL и изменение plain-text/flags; RPC/update hooks передают observations.
+- Экран менеджера и настроек: `TelegramUI/Sources/Exteraless/`; критерии
+  визуальной приёмки — [wave-1-visual.md](wave-1-visual.md), запись ещё требуется.
+
+Перед локальным Make.py нужно подготовить декларированные Bazel inputs:
+
+```sh
+python3 tools/runtime/prepare_telegram_runtime.py --telegram-root telegram-ios
+```
+
+CI делает это автоматически. Source/inventory guard отклоняет устаревший staging.
+
 ## Подтверждённая веха — 14.11.2026
 
 **[Run 43615992774](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774)
@@ -29,7 +64,7 @@ support manifest и исполняемый runtime согласованно со
 Unsigned Telegram-iOS 13.1.1 успешно собран и проверен в
 [43584868441](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441),
 commit `f85868c5`, artifact `exteraless-ios-13.1.1-21`.
-Это пока базовый клиент: Python/PluginHost ещё не включены в его Bazel-граф.
+Этот опубликованный артефакт — базовый клиент без Python/PluginHost.
 
 ## Выбор runtime
 
@@ -98,8 +133,10 @@ App.app/
   python-stdlib/lib/python3.12/
     encodings/ ...
     lib-dynload/_ssl.cpython-312-iphoneos.fwork
-  python/virtualjava/             # следующий этап встройки клиента
+  python/virtualjava/
   python/sdk/
+  python/exteraless_runtime/
+  python/vendor/                 # pure-Python wheels и их .dist-info
   python/compat-manifest.json
 ```
 

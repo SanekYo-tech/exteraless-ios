@@ -1,0 +1,64 @@
+# Template installed as @exteraless//support:BUILD.bazel by the preparer.
+load("@build_bazel_rules_apple//apple:apple.bzl", "apple_dynamic_framework_import")
+load("@build_bazel_rules_apple//apple:resources.bzl", "apple_resource_group")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load(":extensions.bzl", "EXTENSION_MODULES")
+
+package(default_visibility = ["//visibility:public"])
+
+UNSUPPORTED_PLATFORM = "CPython support-lock.json supports only iOS arm64 and iOS simulator arm64."
+
+apple_dynamic_framework_import(
+    name = "Python",
+    framework_imports = select({
+        "//:ios_arm64": glob(["device/app/Frameworks/Python.framework/**"], allow_empty = False),
+        "//:ios_sim_arm64": glob(["simulator/app/Frameworks/Python.framework/**"], allow_empty = False),
+    }, no_match_error = UNSUPPORTED_PLATFORM),
+)
+
+# Both the public and internal headers come from the very same archive/slice
+# as Python.framework (3.12.16). None of these are resources or Swift modules.
+cc_library(
+    name = "PythonHeaders",
+    linkstatic = True,
+    hdrs = select({
+        "//:ios_arm64": glob(["device/Headers/**/*.h"], allow_empty = False),
+        "//:ios_sim_arm64": glob(["simulator/Headers/**/*.h"], allow_empty = False),
+    }, no_match_error = UNSUPPORTED_PLATFORM),
+    includes = select({
+        "//:ios_arm64": ["device/Headers"],
+        "//:ios_sim_arm64": ["simulator/Headers"],
+    }, no_match_error = UNSUPPORTED_PLATFORM),
+    visibility = ["//python/runtime:__pkg__"],
+)
+
+[
+    apple_dynamic_framework_import(
+        name = "Extension_" + module,
+        framework_imports = select({
+            "//:ios_arm64": glob(["device/app/Frameworks/{}.framework/**".format(module)], allow_empty = False),
+            "//:ios_sim_arm64": glob(["simulator/app/Frameworks/{}.framework/**".format(module)], allow_empty = False),
+        }, no_match_error = UNSUPPORTED_PLATFORM),
+        # CPython dlopens these using the .fwork markers. They must not appear
+        # as -framework arguments on the app/framework/extension link lines.
+        bundle_only = True,
+    )
+    for module in EXTENSION_MODULES
+]
+
+objc_library(
+    name = "RuntimeFrameworks",
+    deps = [":Python"] + [":Extension_" + module for module in EXTENSION_MODULES],
+)
+
+# Attach only to ios_application.resources: TelegramUIFramework is shared with
+# extensions, whose bundles must not contain another stdlib or SDK copy.
+apple_resource_group(
+    name = "RuntimeResources",
+    structured_resources = select({
+        "//:ios_arm64": glob(["device/app/python-stdlib/**"], allow_empty = False),
+        "//:ios_sim_arm64": glob(["simulator/app/python-stdlib/**"], allow_empty = False),
+    }, no_match_error = UNSUPPORTED_PLATFORM),
+    strip_structured_resources_prefixes = ["device/app", "simulator/app"],
+)

@@ -81,6 +81,7 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
             compatibilityDirectories: [
                 resourcePath + "/python",
                 resourcePath + "/python/sdk",
+                resourcePath + "/python/vendor",
                 support + "/plugins",
             ],
             pluginRootDirectory: support + "/plugins",
@@ -94,12 +95,19 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
 
 /// Загрузочный скрипт каждого суб-интерпретатора: пути + virtualjava + мост.
 public extension PythonRuntimeConfiguration {
+    /// Metadata inspection imports only the platform entry module. The module's
+    /// metadata_json path is AST-only and does not configure or execute a plugin.
+    func metadataBootstrapScript() -> String {
+        let paths = compatibilityDirectories.filter { !$0.isEmpty }
+            .map(Self.pythonStringLiteral).joined(separator: ", ")
+        return "import sys\nsys.path[:0] = [\(paths)]\nimport exteraless_runtime as _exteraless_runtime\n"
+    }
     /// Скрипт бутстрапа. `_exteraless_bridge` регистрируется C-shim как built-in
     /// до инициализации CPython. xt_bind связывает классы текущего интерпретатора,
     /// BridgeBackend реализует протокол из python/virtualjava/backend.py.
     /// Ошибки импорта/инициализации передаются вызывающему коду.
-    /// TODO(этап 5): загрузка плагина через extera_utils/plugin_loader.py SDK
-    /// и регистрация хуков (после бутстрапа, отдельным скриптом диспатча).
+    /// Пользовательский файл загружается отдельным вызовом load_json после
+    /// регистрации handle, чтобы watchdog мог ограничить on_plugin_load.
     func bootstrapScript(interpreterPluginId: String) -> String {
         var seenPaths = Set<String>()
         let paths = (compatibilityDirectories + [pluginRootDirectory])
@@ -111,13 +119,19 @@ public extension PythonRuntimeConfiguration {
         import sys
         sys.path[:0] = [\(paths)]
         import _exteraless_bridge
+        _exteraless_bridge.xt_set_plugin_id(\(Self.pythonStringLiteral(interpreterPluginId)))
         import virtualjava
         _exteraless_bridge.xt_bind(virtualjava.JavaInstance, virtualjava.JavaMemberError)
         virtualjava.install(_exteraless_bridge.BridgeBackend(
             service=\(Self.pythonStringLiteral(service)),
             manifest_path=\(manifest),
         ))
-        # этап 5: загрузка плагина \(Self.pythonStringLiteral(interpreterPluginId)) через SDK-лоадер.
+        import exteraless_runtime as _exteraless_runtime
+        _exteraless_runtime.configure(
+            \(Self.pythonStringLiteral(interpreterPluginId)),
+            \(Self.pythonStringLiteral(pluginRootDirectory)),
+            \(Self.pythonStringLiteral(URL(fileURLWithPath: pluginRootDirectory).deletingLastPathComponent().appendingPathComponent("settings").path)),
+        )
         """
     }
 

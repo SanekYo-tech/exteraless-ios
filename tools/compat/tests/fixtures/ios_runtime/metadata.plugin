@@ -1,0 +1,17 @@
+__id__ = "ios_metadata_probe"
+__name__ = "Metadata without execution"
+__description__ = "A local AST-only fixture"
+__author__ = "runtime unit tests"
+
+from base_plugin import BasePlugin
+
+
+class MetadataPlugin(BasePlugin):
+    pass
+
+
+def dynamic_version():
+    raise RuntimeError("metadata fixture was executed")
+
+
+__version__ = dynamic_version()

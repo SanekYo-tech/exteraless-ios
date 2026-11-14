@@ -3,15 +3,16 @@
 Пакет собирает вместе C-extension и классы virtualjava:
 
 * ``BridgeBackend`` — реализация протокола ``python.virtualjava.backend.Backend``,
-  маршрутизирующая вызовы в реестр нативных колбэков (на iOS их регистрирует
-  Swift через ``xt_register_service``, на Windows — встроенный mock через
-  ``xt_install_mock_service`` или ctypes-колбэки из тестов);
+  маршрутизирующая вызовы в native dispatcher ``NativeBridgeBinding`` на iOS;
+  явные legacy-сервисы ``xt_register_service`` сохранены для desktop-тестов;
 * handle-таблица (``xt_register_handle`` / ``xt_resolve_handle``) —
   JavaInstance и произвольные объекты ходят аргументами и результатами
   по int64-id, сохраняя identity. Таблица своя у каждого интерпретатора;
   ``xt_set_interpreter_id`` выбирает ещё одну таблицу внутри текущего.
-  Swift освобождает слот через ``xt_builtin_ptr("release_handle")``
-  (``xt_host_release_handle`` сам берёт GIL);
+  release выполняется на owner worker с удержанным GIL, включая
+  ``xt_builtin_ptr("release_handle")``. Он не присоединяет чужой поток;
+* ``xt_set_plugin_id`` закрепляет владельца интерпретатора;
+  ``xt_call_host`` передаёт JSON-envelope в тот же native dispatcher;
 * ``bytes`` и неконечные float (``inf``/``-inf``/``nan``) идут по JSON
   тегами ``{"__bytes__": "<base64>"}`` и
   ``{"__float__": "inf"|"-inf"|"nan"}`` — см. комментарий в
@@ -57,6 +58,8 @@ xt_release_handle = _bridge.xt_release_handle
 xt_handle_count = _bridge.xt_handle_count
 xt_clear_handles = _bridge.xt_clear_handles
 xt_set_interpreter_id = _bridge.xt_set_interpreter_id
+xt_set_plugin_id = _bridge.xt_set_plugin_id
+xt_call_host = _bridge.xt_call_host
 
 __all__ = [
     "BridgeBackend",
@@ -65,4 +68,5 @@ __all__ = [
     "xt_mock_log", "xt_mock_log_clear",
     "xt_register_handle", "xt_resolve_handle", "xt_release_handle",
     "xt_handle_count", "xt_clear_handles", "xt_set_interpreter_id",
+    "xt_set_plugin_id", "xt_call_host",
 ]

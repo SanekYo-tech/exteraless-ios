@@ -14,6 +14,7 @@ final class FakeEngine: CPythonEngine, @unchecked Sendable {
     var delay: TimeInterval = 0
     var failCreation = false
     var footprintKB = 0
+    var scriptResponse: (@Sendable (String) -> String)?
     private var nextRef: Int64 = 0
 
     var apiVersion: String { "fake" }
@@ -43,7 +44,7 @@ final class FakeEngine: CPythonEngine, @unchecked Sendable {
         if delay > 0 { Thread.sleep(forTimeInterval: delay) }
         lock.lock(); defer { lock.unlock() }
         recorded.append(source)
-        return "DEFAULT"
+        return scriptResponse?(source) ?? "DEFAULT"
     }
 
     func interpreterFootprintKB(_ reference: InterpRef) -> Int { footprintKB }
@@ -441,6 +442,14 @@ final class PluginWatchdogTests: XCTestCase {
 final class PluginHostTests: XCTestCase {
     func testInstallLoadAndDispatch() async throws {
         let engine = FakeEngine()
+        engine.scriptResponse = { source in
+            if source.hasPrefix("_exteraless_runtime.load_json(") {
+                return """
+                {"metadata":{"id":"tester"},"handles":{"app_event":true,"pre_request":false,"post_request":false,"update":false,"updates":false,"send_message":false},"has_settings":false}
+                """
+            }
+            return "null"
+        }
         let directory = tempDirectory("host")
         let configuration = PluginHost.Configuration(
             runtime: PythonRuntimeConfiguration(
@@ -464,11 +473,11 @@ final class PluginHostTests: XCTestCase {
 
         host.events.emitAppEvent("app_start")
         let dispatched = await waitUntil {
-            engine.scripts.contains { $0.contains("__exteraless_dispatch__") }
+            engine.scripts.contains { $0.contains("_exteraless_runtime.dispatch_json") }
         }
         XCTAssertTrue(dispatched, "событие должно дойти до интерпретатора")
         XCTAssertTrue(engine.scripts.contains {
-            $0.contains("\"on_app_event\"") && $0.contains("\"app_start\"")
+            $0.contains("\"on_app_event\"") && $0.contains("app_start")
         })
 
         try await host.setPluginEnabled(id: "tester", false)

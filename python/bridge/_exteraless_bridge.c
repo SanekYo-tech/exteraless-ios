@@ -1,9 +1,25 @@
 /* _exteraless_bridge.c — C-мост virtual-java для iOS-порта exteraless (этап 2).
  *
  * Назначение: BridgeBackend — реализация протокола python.virtualjava.backend.Backend,
- * маршрутизирующая вызовы прокси в нативные (Swift/C) сервисы через реестр
- * колбэков. На iOS реестр наполняет Swift (один раз при старте), на Windows —
- * встроенный C-mock (xt_install_mock_service) и/или ctypes-колбэки из тестов.
+ * маршрутизирующая вызовы прокси в нативные (Swift/C) сервисы. На iOS
+ * NativeBridgeBinding устанавливает процессный JSON dispatcher через
+ * EXLPythonBridgeInstallDispatcher (EXLPythonBridge.h). Явные записи реестра
+ * xt_register_service имеют приоритет и сохраняются для desktop-тестов.
+ * Production-хост mock не устанавливает.
+ *
+ * xt_set_plugin_id(str) один раз связывает pluginId с interpreter state
+ * (повтор того же ID допустим, смена владельца запрещена). xt_call_host(dict)
+ * и все семь операций Backend используют тот же native transport. pluginId
+ * в запросе заменяется ID из state. Ответ {ok:true,value:...} разворачивается
+ * в raw значение/теги; {ok:false,error:{kind,message}} — JavaMemberError.
+ * Необходимая привязка классов — xt_bind, как и для legacy-сервисов ниже.
+ * Native marshal транзакционен: ошибочный вызов освобождает только новые
+ * positive handles, не опубликованные успешным вызовом. Вложенный успешный
+ * вызов может принять даже handle, созданный внешним marshal; его rollback
+ * не удаляет. Явный xt_register_handle / legacy marshal сохраняет ручное
+ * владение. IDs никогда не переиспользуются, в том числе после rollback.
+ * Смена test-realm и xt_clear_handles запрещены пока native-вызов активен;
+ * pluginId остаётся immutable на интерпретатор, realm не является pluginId.
  *
  * ============================ МАРШАЛЛИНГ ============================
  *   Python -> сервис (json_args / json_value, UTF-8 JSON):
@@ -13,7 +29,7 @@
  *     bytes                    — тег {"__bytes__": "<base64>"} (ровно один ключ);
  *     float inf/-inf/nan       — тег {"__float__": "inf"|"-inf"|"nan"};
  *     JavaInstance и прочие объекты — маркер {"__handle__": <int64 id>,
- *                                "__fqcn": <str|null>}; объект кладётся в
+ *                                "__fqcn__": <str|null>}; объект кладётся в
  *                                handle-таблицу (id генерируется мостом, > 0);
  *     int за пределами int64   — ошибка (задокументированное ограничение).
  *   Сервис -> Python (json_result, UTF-8 JSON):
@@ -25,9 +41,9 @@
  *     {"__handle__": id}              — объект из handle-таблицы ЭТОГО
  *                                        интерпретатора: тот же id => ТОТ ЖЕ
  *                                        объект (identity);
- *     {"__handle__": id, "__fqcn": F} — неизвестный id => JavaInstance(F,
+ *     {"__handle__": id, "__fqcn__": F} — неизвестный id => JavaInstance(F,
  *                                        backend) регистрируется под id
- *                                        (хост создаёт объекты; Swift должен
+ *                                        (хост создаёт объекты; Swift обязан
  *                                        использовать id < 0, чтобы не
  *                                        пересекаться с мостом);
  *     {"__error__": "msg"}            — JavaMemberError(msg) (на любом уровне);
@@ -36,8 +52,8 @@
  *   Infinity/NaN. Обе стороны моста (marshal и unmarshal) понимают теги;
  *   хост, который возвращает JSON как есть, получает исходное значение.
  *
- * ====================== РЕЕСТР СЕРВИСОВ (Swift-сторона) ======================
- *   Реестр C-указателей общий на процесс и защищён PyMutex (суб-интерпретаторы
+ * ====================== LEGACY РЕЕСТР СЕРВИСОВ (тесты) =======================
+ *   Реестр C-указателей общий на процесс и защищён native mutex (интерпретаторы
  *   могут идти параллельно). Имя сервиса = "<prefix>.<op>", op из:
  *     construct | call | call_instance | get | get_instance | set | set_instance
  *   BridgeBackend(service="java") ищет "java.call" и т.д. Регистрация:
@@ -48,14 +64,14 @@
  *   ОСВОБОЖДЕНИЕ HANDLE ХОСТОМ (Swift -> мост, не операция Backend):
  *     int xt_host_release_handle(int64_t handle);
  *     Адрес: xt_builtin_ptr("release_handle").
- *     GIL можно не держать: функция берёт его через PyGILState_Ensure.
- *     Поток без thread state привяжется к главному интерпретатору, поэтому
- *     Swift зовёт её с потока, у которого уже есть thread state нужного
- *     интерпретатора (колбэк моста или тот же поток, что держит GIL).
+ *     Только с УЖЕ удержанным GIL и attached state владельца: функция НЕ
+ *     приобретает GIL и НЕ переключает интерпретатор. Без attached state
+ *     возвращает -2 без Python-исключения. ctypes: PYFUNCTYPE/PyDLL, а не
+ *     CFUNCTYPE/CDLL. Swift планирует release на worker владельца по pluginId.
  *     Возврат: 1 — слот освобождён, 0 — такого id нет, -1 — ошибка
  *     (при -1 выставлено Python-исключение).
- *     Чужой интерпретатор / чужой xt_set_interpreter_id этот id не видит
- *     и не освобождает.
+ *     Числовые id могут совпасть у разных владельцев: функция действует
+ *     ТОЛЬКО в текущем интерпретаторе/realm, не ищет владельца по id.
  *
  *   СИГНАТУРЫ КОЛБЭКОВ (все вызываются С УДЕРЖАННЫМ GIL — см. ниже):
  *
@@ -84,25 +100,29 @@
  *   Контракт памяти: при rc == 0 колбэк кладёт в *json_result malloc()-указатель
  *   на NUL-terminated UTF-8 JSON (или NULL — «нет значения» => None); мост
  *   копирует и освобождает его через free(). При rc != 0 результат
- *   игнорируется (если был выделен — колбэк обязан освободить сам) и мост
+ *   игнорируется и тоже освобождается мостом, если не NULL; мост
  *   поднимает JavaMemberError. Внутри результата допустим {"__error__": ...} —
  *   тогда JavaMemberError с текстом от хоста. Пустая строка результата => None.
  *
- *   Адрес для xt_register_service Swift получает как @convention(c)-указатель
- *   (Int(bitPattern:)), Python-тесты — ctypes.cast(cb, ctypes.c_void_p).value
+ *   Python-тесты передают ctypes.cast(cb, ctypes.c_void_p).value
  *   или xt_builtin_ptr(op).
+ *   ctypes Python callbacks — только desktop main-interpreter tests: их
+ *   trampoline может неявно брать main GIL. В OWN_GIL dispatcher используются
+ *   реальные C/Swift функции, не ctypes callbacks. Жизнью legacy-указателей
+ *   управляет регистрирующий код; native context имеет отдельный drain/refcount.
  *
  * ============================== GIL ===========================================
- *   Все колбэки вызываются из методов BridgeBackend (Python C-API) С
+ *   Все колбэки вызываются из BridgeBackend / xt_call_host (Python C-API) С
  *   УДЕРЖАННЫМ GIL: колбэки могут свободно использовать CPython C-API (так
  *   поступает встроенный mock). Мост НЕ отпускает GIL на время колбэка; если
  *   колбэку нужно длинное нативное вычисление, он сам отпускает GIL
- *   (PyGILState_Release / Py_BEGIN_ALLOW_THREADS) и обязан вернуть его перед
+ *   (PyEval_SaveThread / PyEval_RestoreThread) и обязан вернуть его перед
  *   возвратом управления. Контракт ошибок: вернуться без pending-исключения
  *   (rc == 0 и чистый error indicator, либо rc != 0; мусорное исключение мост
  *   считает сбоем вызова). Handle-таблица мутируется только под GIL своего
- *   интерпретатора. Реестр сервисов — под PyMutex (GIL на время ожидания
- *   замка может быть отпущен, поэтому имена копируются в стек до захвата).
+ *   интерпретатора. Реестры под коротким native mutex: под замком нет
+ *   Python/Swift-вызовов. Reverse calls — через worker владельца; никаких
+ *   PyGILState_Ensure и синхронных ожиданий main/Python из dispatcher.
  *
  * ======================= СУБ-ИНТЕРПРЕТАТОРЫ (PEP 684) ========================
  *   m_size = sizeof(xt_state). У каждого интерпретатора свой module state:
@@ -122,30 +142,25 @@
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include "../runtime/include/EXLPythonBridge.h"
 
 /* The pointer-only process registry is shared by independent GILs. The
- * 3.12 fallback must be initialized before any interpreter can race on it;
+ * native lock must be initialized before any interpreter can race on it;
  * a lazily allocated PyThread lock is not safe with per-interpreter GILs.
- * Registry critical sections never invoke host callbacks. */
-#if PY_VERSION_HEX >= 0x030D0000
-typedef PyMutex xt_mutex_t;
-#  define XT_MUTEX_INIT {0}
-static inline void xt_mutex_lock(xt_mutex_t *m) { PyMutex_Lock(m); }
-static inline void xt_mutex_unlock(xt_mutex_t *m) { PyMutex_Unlock(m); }
-#else
-#  ifdef _WIN32
-#    include <windows.h>
+ * It also works before Python initialization. Registry critical sections
+ * never invoke Python or host callbacks. */
+#ifdef _WIN32
+#  include <windows.h>
 typedef SRWLOCK xt_mutex_t;
-#    define XT_MUTEX_INIT SRWLOCK_INIT
+#  define XT_MUTEX_INIT SRWLOCK_INIT
 static inline void xt_mutex_lock(xt_mutex_t *m) { AcquireSRWLockExclusive(m); }
 static inline void xt_mutex_unlock(xt_mutex_t *m) { ReleaseSRWLockExclusive(m); }
-#  else
-#    include <pthread.h>
+#else
+#  include <pthread.h>
 typedef pthread_mutex_t xt_mutex_t;
-#    define XT_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+#  define XT_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
 static inline void xt_mutex_lock(xt_mutex_t *m) { pthread_mutex_lock(m); }
 static inline void xt_mutex_unlock(xt_mutex_t *m) { pthread_mutex_unlock(m); }
-#  endif
 #endif
 
 #include <stdarg.h>
@@ -207,6 +222,128 @@ static xt_mutex_t g_reg_mu = XT_MUTEX_INIT;
 static ServiceEntry g_services[XT_MAX_SERVICES];
 static int g_n_services = 0;
 
+/* Native registrations contain no Python objects. A detached registration
+ * is destroyed only when all snapshots taken under g_reg_mu have returned. */
+typedef struct {
+    EXLPythonBridgeDispatcher dispatch;
+    void *context;
+    EXLPythonBridgeContextRelease release_context;
+    size_t active_calls;
+    int detached;
+} NativeDispatcher;
+
+static NativeDispatcher *g_dispatcher = NULL;
+
+int EXLPythonBridgeBufferCopy(EXLPythonBridgeBuffer *output,
+                            const char *bytes, size_t count)
+{
+    char *copy;
+    if (output == NULL || output->bytes != NULL || count == SIZE_MAX ||
+        (bytes == NULL && count != 0))
+        return -1;
+    output->count = 0;
+    copy = (char *)malloc(count + 1);
+    if (copy == NULL)
+        return -1;
+    if (count != 0)
+        memcpy(copy, bytes, count);
+    copy[count] = '\0';
+    output->bytes = copy;
+    output->count = count;
+    return 0;
+}
+
+void EXLPythonBridgeBufferFree(EXLPythonBridgeBuffer *buffer)
+{
+    if (buffer != NULL) {
+        free(buffer->bytes);
+        buffer->bytes = NULL;
+        buffer->count = 0;
+    }
+}
+
+static void native_dispatcher_destroy(NativeDispatcher *entry)
+{
+    if (entry->release_context != NULL)
+        entry->release_context(entry->context);
+    free(entry);
+}
+
+int EXLPythonBridgeInstallDispatcher(EXLPythonBridgeDispatcher dispatcher,
+                                     void *context,
+                                     EXLPythonBridgeContextRelease release_context)
+{
+    NativeDispatcher *entry;
+    if (dispatcher == NULL)
+        return -1;
+    entry = (NativeDispatcher *)calloc(1, sizeof(*entry));
+    if (entry == NULL)
+        return -3;
+    entry->dispatch = dispatcher;
+    entry->context = context;
+    entry->release_context = release_context;
+    xt_mutex_lock(&g_reg_mu);
+    if (g_dispatcher != NULL) {
+        xt_mutex_unlock(&g_reg_mu);
+        free(entry); /* Failed installation never takes context ownership. */
+        return -2;
+    }
+    g_dispatcher = entry;
+    xt_mutex_unlock(&g_reg_mu);
+    return 0;
+}
+
+int EXLPythonBridgeUninstallDispatcher(EXLPythonBridgeDispatcher dispatcher,
+                                       void *context)
+{
+    NativeDispatcher *entry;
+    int dispose;
+    xt_mutex_lock(&g_reg_mu);
+    entry = g_dispatcher;
+    if (entry == NULL || entry->dispatch != dispatcher || entry->context != context) {
+        xt_mutex_unlock(&g_reg_mu);
+        return -1;
+    }
+    g_dispatcher = NULL;
+    entry->detached = 1;
+    dispose = entry->active_calls == 0;
+    xt_mutex_unlock(&g_reg_mu);
+    if (dispose)
+        native_dispatcher_destroy(entry);
+    return 0;
+}
+
+static int native_dispatcher_available(void)
+{
+    int available;
+    xt_mutex_lock(&g_reg_mu);
+    available = g_dispatcher != NULL;
+    xt_mutex_unlock(&g_reg_mu);
+    return available;
+}
+
+static NativeDispatcher *native_dispatcher_acquire(void)
+{
+    NativeDispatcher *entry;
+    xt_mutex_lock(&g_reg_mu);
+    entry = g_dispatcher;
+    if (entry != NULL)
+        entry->active_calls++;
+    xt_mutex_unlock(&g_reg_mu);
+    return entry;
+}
+
+static void native_dispatcher_release(NativeDispatcher *entry)
+{
+    int dispose;
+    xt_mutex_lock(&g_reg_mu);
+    entry->active_calls--;
+    dispose = entry->detached && entry->active_calls == 0;
+    xt_mutex_unlock(&g_reg_mu);
+    if (dispose)
+        native_dispatcher_destroy(entry);
+}
+
 typedef struct xt_state xt_state;
 
 /* Капсула в словаре интерпретатора. Не держит ссылку на модуль. */
@@ -219,6 +356,9 @@ typedef struct xt_anchor {
 typedef struct {
     int64_t id;
     PyObject *obj;   /* NULL = пусто */
+    /* 0 = published/explicitly retained. >0 = claims of native calls which
+     * have not yet succeeded. The last failed claimant removes the slot. */
+    size_t native_claims;
 } HandleSlot;
 
 typedef struct {
@@ -238,13 +378,27 @@ typedef struct {
     int64_t next_handle;   /* мост раздаёт положительные id, старт с 1 */
 } HandleRealm;
 
+/* IDs, not slot pointers: insertion/removal can move open-addressed clusters.
+ * No global transaction stack: reentrant calls (or another GIL-owning Python
+ * thread during a callback's SaveThread) have independent ledgers. */
+typedef struct {
+    HandleRealm *realm;
+    int64_t *ids;
+    size_t count;
+    size_t capacity;
+    int64_t small_ids[8];
+} NativeHandleTxn;
+
 struct xt_state {
     HandleRealm realms[XT_MAX_REALMS];
     int64_t active_key;
+    size_t native_transactions; /* GIL-protected, pins the active test-realm. */
     xt_anchor *anchor;
 
     PyObject *JavaInstance;
     PyObject *JavaMemberError;
+    PyObject *backend_type;
+    PyObject *plugin_id;
     PyObject *json_dumps;
     PyObject *json_loads;
     PyObject *dumps_kw;
@@ -581,7 +735,7 @@ static int ht_grow(HandleRealm *realm)
     return 0;
 }
 
-static PyObject *ht_resolve(HandleRealm *realm, int64_t id)
+static HandleSlot *ht_find_slot(HandleRealm *realm, int64_t id)
 {
     size_t j;
     if (realm->handle_cap == 0)
@@ -591,10 +745,16 @@ static PyObject *ht_resolve(HandleRealm *realm, int64_t id)
         if (realm->handles[j].obj == NULL)
             return NULL;
         if (realm->handles[j].id == id)
-            return realm->handles[j].obj;
+            return &realm->handles[j];
         j = (j + 1) & (realm->handle_cap - 1);
     }
     return NULL;
+}
+
+static PyObject *ht_resolve(HandleRealm *realm, int64_t id)
+{
+    HandleSlot *slot = ht_find_slot(realm, id);
+    return slot != NULL ? slot->obj : NULL;
 }
 
 static int64_t ht_reverse_lookup(HandleRealm *realm, PyObject *obj)
@@ -621,18 +781,21 @@ static int64_t ht_insert(HandleRealm *realm, PyObject *obj)
     size_t r;
     if (existing != 0)
         return existing;
+    if (realm->next_handle <= 0 || realm->next_handle == INT64_MAX) {
+        PyErr_SetString(PyExc_OverflowError, "bridge: positive handle space exhausted");
+        return 0;
+    }
     if (realm->handle_cap == 0 || realm->handle_used * 4 >= realm->handle_cap * 3) {
         if (ht_grow(realm) < 0)
             return 0;
     }
     id = realm->next_handle++;
-    if (id == 0)
-        id = realm->next_handle++;
     j = ht_hash_i64(id) & (realm->handle_cap - 1);
     while (realm->handles[j].obj != NULL)
         j = (j + 1) & (realm->handle_cap - 1);
     realm->handles[j].id = id;
     realm->handles[j].obj = Py_NewRef(obj);
+    realm->handles[j].native_claims = 0;
     realm->handle_used++;
 
     r = ht_hash_ptr((void *)obj) & (realm->rev_cap - 1);
@@ -661,6 +824,7 @@ static int ht_insert_with_id(HandleRealm *realm, PyObject *obj, int64_t id)
         j = (j + 1) & (realm->handle_cap - 1);
     realm->handles[j].id = id;
     realm->handles[j].obj = Py_NewRef(obj);
+    realm->handles[j].native_claims = 0;
     realm->handle_used++;
 
     if (ht_reverse_lookup(realm, obj) == 0) {
@@ -733,19 +897,18 @@ static int ht_remove(HandleRealm *realm, int64_t id)
         return 0;
     obj = realm->handles[j].obj;
     realm->handles[j].obj = NULL;
+    realm->handles[j].native_claims = 0;
     realm->handle_used--;
     k = (j + 1) & (realm->handle_cap - 1);
     while (realm->handles[k].obj != NULL) {
-        int64_t kid = realm->handles[k].id;
-        PyObject *kobj = realm->handles[k].obj;
+        HandleSlot moved = realm->handles[k];
         size_t m;
         realm->handles[k].obj = NULL;
         realm->handle_used--;
-        m = ht_hash_i64(kid) & (realm->handle_cap - 1);
+        m = ht_hash_i64(moved.id) & (realm->handle_cap - 1);
         while (realm->handles[m].obj != NULL)
             m = (m + 1) & (realm->handle_cap - 1);
-        realm->handles[m].id = kid;
-        realm->handles[m].obj = kobj;
+        realm->handles[m] = moved;
         realm->handle_used++;
         k = (k + 1) & (realm->handle_cap - 1);
     }
@@ -757,9 +920,15 @@ static int ht_remove(HandleRealm *realm, int64_t id)
 static int64_t realm_insert(xt_state *st, PyObject *obj)
 {
     HandleRealm *realm = realm_current(st);
+    int64_t id;
     if (realm == NULL)
         return 0;
-    return ht_insert(realm, obj);
+    id = ht_insert(realm, obj);
+    /* Explicit registration and legacy marshal retain their historical
+     * ownership, even when called from a reentrant native argument getter. */
+    if (id > 0)
+        ht_find_slot(realm, id)->native_claims = 0;
+    return id;
 }
 
 static PyObject *realm_resolve(xt_state *st, int64_t id)
@@ -768,6 +937,104 @@ static PyObject *realm_resolve(xt_state *st, int64_t id)
     if (realm == NULL)
         return NULL;
     return ht_resolve(realm, id);
+}
+
+static int native_tx_begin(xt_state *st, NativeHandleTxn *tx)
+{
+    tx->realm = realm_current(st);
+    if (tx->realm == NULL)
+        return -1;
+    tx->ids = tx->small_ids;
+    tx->count = 0;
+    tx->capacity = sizeof(tx->small_ids) / sizeof(tx->small_ids[0]);
+    st->native_transactions++;
+    return 0;
+}
+
+static int native_tx_reserve(NativeHandleTxn *tx)
+{
+    size_t capacity;
+    int64_t *ids;
+    if (tx->count < tx->capacity)
+        return 0;
+    if (tx->capacity > SIZE_MAX / (2 * sizeof(*ids))) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    capacity = tx->capacity * 2;
+    if (tx->ids == tx->small_ids) {
+        ids = (int64_t *)malloc(capacity * sizeof(*ids));
+        if (ids != NULL)
+            memcpy(ids, tx->ids, tx->count * sizeof(*ids));
+    }
+    else
+        ids = (int64_t *)realloc(tx->ids, capacity * sizeof(*ids));
+    if (ids == NULL) {
+        PyErr_NoMemory();
+        return -1;
+    }
+    tx->ids = ids;
+    tx->capacity = capacity;
+    return 0;
+}
+
+/* Claim an existing provisional ID, including an explicitly supplied JSON
+ * handle tag. Already-published positive and all negative IDs need no claim. */
+static int native_tx_claim(NativeHandleTxn *tx, int64_t id)
+{
+    HandleSlot *slot;
+    if (id <= 0)
+        return 0;
+    slot = ht_find_slot(tx->realm, id);
+    if (slot == NULL || slot->native_claims == 0)
+        return 0;
+    if (slot->native_claims == SIZE_MAX || native_tx_reserve(tx) < 0) {
+        if (!PyErr_Occurred())
+            PyErr_NoMemory();
+        return -1;
+    }
+    slot->native_claims++;
+    tx->ids[tx->count++] = id;
+    return 0;
+}
+
+static int64_t marshal_handle(xt_state *st, PyObject *obj, NativeHandleTxn *tx)
+{
+    int64_t id;
+    if (tx == NULL)
+        return realm_insert(st, obj);
+    id = ht_reverse_lookup(tx->realm, obj);
+    if (id != 0)
+        return native_tx_claim(tx, id) < 0 ? 0 : id;
+    /* Reserve before inserting: an OOM must not leave an untracked handle. */
+    if (native_tx_reserve(tx) < 0)
+        return 0;
+    id = ht_insert(tx->realm, obj);
+    if (id == 0)
+        return 0;
+    ht_find_slot(tx->realm, id)->native_claims = 1;
+    tx->ids[tx->count++] = id;
+    return id;
+}
+
+static void native_tx_finish(xt_state *st, NativeHandleTxn *tx, int success)
+{
+    PyObject *exception = PyErr_GetRaisedException();
+    for (size_t i = 0; i < tx->count; i++) {
+        HandleSlot *slot = ht_find_slot(tx->realm, tx->ids[i]);
+        if (slot == NULL || slot->native_claims == 0)
+            continue; /* Explicitly released, or accepted by another call. */
+        if (success)
+            slot->native_claims = 0; /* Publish, including ancestor-created IDs. */
+        else if (--slot->native_claims == 0)
+            ht_remove(tx->realm, tx->ids[i]);
+        /* ht_remove may move a cluster, grow the table via __del__, or run a
+         * nested native call. The next iteration always looks up its own ID. */
+    }
+    if (tx->ids != tx->small_ids)
+        free(tx->ids);
+    st->native_transactions--;
+    PyErr_SetRaisedException(exception); /* Preserve the original error object. */
 }
 
 /* =========================================================================
@@ -1188,7 +1455,19 @@ done:
     return -1;
 }
 
-static PyObject *marshal_value(xt_state *st, PyObject *v)
+static PyObject *marshal_value_inner(xt_state *st, PyObject *v, NativeHandleTxn *tx);
+
+static PyObject *marshal_value(xt_state *st, PyObject *v, NativeHandleTxn *tx)
+{
+    PyObject *out;
+    if (Py_EnterRecursiveCall(" while marshalling a bridge value"))
+        return NULL;
+    out = marshal_value_inner(st, v, tx);
+    Py_LeaveRecursiveCall();
+    return out;
+}
+
+static PyObject *marshal_value_inner(xt_state *st, PyObject *v, NativeHandleTxn *tx)
 {
     if (v == Py_None || PyBool_Check(v) || PyUnicode_Check(v))
         return Py_NewRef(v);
@@ -1235,7 +1514,7 @@ static PyObject *marshal_value(xt_state *st, PyObject *v)
             return NULL;
         }
         while ((item = PyIter_Next(iter)) != NULL) {
-            PyObject *marshalled = marshal_value(st, item);
+            PyObject *marshalled = marshal_value(st, item, tx);
             Py_DECREF(item);
             if (marshalled == NULL) {
                 Py_DECREF(iter);
@@ -1267,7 +1546,7 @@ static PyObject *marshal_value(xt_state *st, PyObject *v)
                 Py_DECREF(out);
                 return NULL;
             }
-            marshalled = marshal_value(st, val);
+            marshalled = marshal_value(st, val, tx);
             if (marshalled == NULL || PyDict_SetItem(out, k, marshalled) < 0) {
                 Py_XDECREF(marshalled);
                 Py_DECREF(k);
@@ -1277,10 +1556,32 @@ static PyObject *marshal_value(xt_state *st, PyObject *v)
             Py_DECREF(k);
             Py_DECREF(marshalled);
         }
+        {
+            PyObject *id_obj = PyDict_GetItemString(out, "__handle__");
+            if (id_obj != NULL && PyLong_Check(id_obj)) {
+                long long id = PyLong_AsLongLong(id_obj);
+                if ((id == -1 && PyErr_Occurred()) ||
+                    (tx != NULL && native_tx_claim(tx, id) < 0)) {
+                    Py_DECREF(out);
+                    return NULL;
+                }
+                if (tx == NULL && id > 0 && st->native_transactions != 0) {
+                    HandleRealm *realm = realm_current(st);
+                    HandleSlot *slot;
+                    if (realm == NULL) {
+                        Py_DECREF(out);
+                        return NULL;
+                    }
+                    slot = ht_find_slot(realm, id);
+                    if (slot != NULL)
+                        slot->native_claims = 0; /* Explicit legacy tag escape. */
+                }
+            }
+        }
         return out;
     }
     {
-        int64_t id = realm_insert(st, v);
+        int64_t id = marshal_handle(st, v, tx);
         PyObject *fqcn;
         PyObject *marker;
         PyObject *id_obj;
@@ -1308,7 +1609,8 @@ static PyObject *marshal_value(xt_state *st, PyObject *v)
     }
 }
 
-static char *marshal_payload(xt_state *st, PyObject *args, PyObject *kwargs)
+static char *marshal_payload(xt_state *st, PyObject *args, PyObject *kwargs,
+                              NativeHandleTxn *tx)
 {
     PyObject *arglist;
     PyObject *kwdict;
@@ -1329,7 +1631,7 @@ static char *marshal_payload(xt_state *st, PyObject *args, PyObject *kwargs)
         if (iter == NULL)
             goto fail;
         while ((item = PyIter_Next(iter)) != NULL) {
-            PyObject *marshalled = marshal_value(st, item);
+            PyObject *marshalled = marshal_value(st, item, tx);
             int appended;
             Py_DECREF(item);
             appended = marshalled != NULL && PyList_Append(arglist, marshalled) == 0;
@@ -1350,7 +1652,7 @@ static char *marshal_payload(xt_state *st, PyObject *args, PyObject *kwargs)
         while (PyDict_Next(kwargs, &pos, &key, &val)) {
             PyObject *k = PyUnicode_Check(key) ? Py_NewRef(key)
                                                : PyObject_Str(key);
-            PyObject *marshalled = marshal_value(st, val);
+            PyObject *marshalled = marshal_value(st, val, tx);
             int stored = k != NULL && marshalled != NULL &&
                          PyDict_SetItem(kwdict, k, marshalled) == 0;
             Py_XDECREF(k);
@@ -1378,8 +1680,19 @@ fail:
     return NULL;
 }
 
+static PyObject *unmarshal_walk_inner(xt_state *st, BridgeBackendObject *backend,
+                                      PyObject *v);
+
 static PyObject *unmarshal_walk(xt_state *st, BridgeBackendObject *backend,
-                                PyObject *v);
+                                PyObject *v)
+{
+    PyObject *out;
+    if (Py_EnterRecursiveCall(" while unmarshalling a bridge value"))
+        return NULL;
+    out = unmarshal_walk_inner(st, backend, v);
+    Py_LeaveRecursiveCall();
+    return out;
+}
 
 static PyObject *unmarshal_dict(xt_state *st, BridgeBackendObject *backend,
                                 PyObject *dict)
@@ -1416,10 +1729,22 @@ static PyObject *unmarshal_dict(xt_state *st, BridgeBackendObject *backend,
         existing = ht_resolve(realm, (int64_t)id);
         if (existing != NULL)
             return Py_NewRef(existing);
+        if (id >= 0) {
+            bridge_error(st, "bridge: dangling handle %lld (new host handles must be negative)", id);
+            return NULL;
+        }
         fqcn = PyDict_GetItemString(dict, "__fqcn__");
         if (fqcn != NULL && PyUnicode_Check(fqcn) && st->JavaInstance != NULL) {
-            PyObject *inst = PyObject_CallFunctionObjArgs(
-                st->JavaInstance, fqcn, (PyObject *)backend, NULL);
+            /* xt_call_host has no explicit backend. Create one only when a
+             * new host object needs it, so its methods use the same transport. */
+            PyObject *owner_backend = backend != NULL ? Py_NewRef((PyObject *)backend)
+                : PyObject_CallNoArgs(st->backend_type);
+            PyObject *inst;
+            if (owner_backend == NULL)
+                return NULL;
+            inst = PyObject_CallFunctionObjArgs(
+                st->JavaInstance, fqcn, owner_backend, NULL);
+            Py_DECREF(owner_backend);
             if (inst == NULL)
                 return NULL;
             if (ht_insert_with_id(realm, inst, (int64_t)id) < 0) {
@@ -1451,8 +1776,8 @@ static PyObject *unmarshal_dict(xt_state *st, BridgeBackendObject *backend,
     }
 }
 
-static PyObject *unmarshal_walk(xt_state *st, BridgeBackendObject *backend,
-                                PyObject *v)
+static PyObject *unmarshal_walk_inner(xt_state *st, BridgeBackendObject *backend,
+                                      PyObject *v)
 {
     if (PyDict_Check(v))
         return unmarshal_dict(st, backend, v);
@@ -1509,6 +1834,197 @@ static PyObject *unmarshal_result(xt_state *st, BridgeBackendObject *backend,
     return out;
 }
 
+/* =========================================================================
+ * native transport: request envelope -> BridgeServices -> value/tags/error
+ * ========================================================================= */
+
+static PyObject *native_response_error(xt_state *st, const char *problem)
+{
+    PyObject *exception;
+    PyObject *message;
+    if (PyErr_ExceptionMatches(PyExc_MemoryError))
+        return NULL;
+    exception = PyErr_GetRaisedException();
+    message = exception != NULL ? PyObject_Str(exception) : NULL;
+    Py_XDECREF(exception);
+    if (message != NULL) {
+        bridge_error(st, "%s: %U", problem, message);
+        Py_DECREF(message);
+    }
+    else {
+        PyErr_Clear();
+        bridge_error(st, "%s", problem);
+    }
+    return NULL;
+}
+
+static PyObject *native_decode_response(xt_state *st, BridgeBackendObject *backend,
+                                         const EXLPythonBridgeBuffer *response)
+{
+    PyObject *text;
+    PyObject *envelope;
+    PyObject *ok;
+    PyObject *value;
+    PyObject *out = NULL;
+    if (response->bytes == NULL || response->count == 0 ||
+        response->count > (size_t)PY_SSIZE_T_MAX) {
+        bridge_error(st, "bridge: native dispatcher returned an empty or invalid response buffer");
+        return NULL;
+    }
+    /* Decode strictly as UTF-8 and use count, never strlen/autodetected UTF-16. */
+    text = PyUnicode_DecodeUTF8(response->bytes, (Py_ssize_t)response->count, "strict");
+    if (text == NULL)
+        return native_response_error(st, "bridge: native response is not UTF-8");
+    envelope = PyObject_CallOneArg(st->json_loads, text);
+    Py_DECREF(text);
+    if (envelope == NULL)
+        return native_response_error(st, "bridge: native response is not JSON");
+    if (!PyDict_Check(envelope)) {
+        bridge_error(st, "bridge: native response must be an {ok,value/error} object");
+        goto done;
+    }
+    ok = PyDict_GetItemString(envelope, "ok");
+    if (ok == Py_False) {
+        PyObject *error = PyDict_GetItemString(envelope, "error");
+        PyObject *message = error != NULL && PyDict_Check(error)
+            ? PyDict_GetItemString(error, "message") : NULL;
+        PyObject *kind = error != NULL && PyDict_Check(error)
+            ? PyDict_GetItemString(error, "kind") : NULL;
+        if (message == NULL || !PyUnicode_Check(message))
+            bridge_error(st, "bridge: native error response requires error.message");
+        else if (kind != NULL && PyUnicode_Check(kind))
+            bridge_error(st, "bridge host error [%U]: %U", kind, message);
+        else
+            bridge_error(st, "bridge host error: %U", message);
+        goto done;
+    }
+    if (ok != Py_True) {
+        bridge_error(st, "bridge: native response requires a boolean ok");
+        goto done;
+    }
+    value = PyDict_GetItemString(envelope, "value");
+    if (value == NULL) {
+        bridge_error(st, "bridge: native success response requires value");
+        goto done;
+    }
+    out = unmarshal_walk(st, backend, value);
+    if (out == NULL &&
+        !PyErr_ExceptionMatches(st->JavaMemberError != NULL ? st->JavaMemberError : PyExc_RuntimeError))
+        native_response_error(st, "bridge: invalid native response value");
+done:
+    Py_DECREF(envelope);
+    return out;
+}
+
+/* request is already marshalled; this function owns the identity injection.
+ * All Python references here belong to, and stay in, the current interpreter. */
+static PyObject *native_dispatch_request(xt_state *st, BridgeBackendObject *backend,
+                                          PyObject *request)
+{
+    PyObject *owned_request = NULL;
+    PyObject *text = NULL;
+    PyObject *plugin_id = NULL;
+    PyObject *out = NULL;
+    const char *request_bytes;
+    const char *plugin_bytes;
+    Py_ssize_t request_count, plugin_count;
+    EXLPythonBridgeBuffer response = {0};
+    NativeDispatcher *entry;
+    int rc;
+    if (st->plugin_id == NULL) {
+        bridge_error(st, "bridge: native plugin ID is not set; call xt_set_plugin_id first");
+        return NULL;
+    }
+    plugin_id = Py_NewRef(st->plugin_id);
+    owned_request = PyDict_Copy(request);
+    if (owned_request == NULL || PyDict_SetItemString(owned_request, "pluginId", plugin_id) < 0)
+        goto done;
+    text = json_dumps_obj(st, owned_request);
+    if (text == NULL)
+        goto done;
+    request_bytes = PyUnicode_AsUTF8AndSize(text, &request_count);
+    plugin_bytes = PyUnicode_AsUTF8AndSize(plugin_id, &plugin_count);
+    if (request_bytes == NULL || plugin_bytes == NULL)
+        goto done;
+    entry = native_dispatcher_acquire();
+    if (entry == NULL) {
+        bridge_error(st, "bridge: no native dispatcher installed");
+        goto done;
+    }
+    /* The caller's GIL remains held. No registry lock crosses this call. */
+    rc = entry->dispatch(entry->context, request_bytes, (size_t)request_count,
+                         plugin_bytes, (size_t)plugin_count, &response);
+    native_dispatcher_release(entry);
+    if (PyErr_Occurred()) {
+        PyErr_Clear();
+        bridge_error(st, "bridge: native dispatcher left a pending exception (rc=%d)", rc);
+    }
+    else if (rc != 0)
+        bridge_error(st, "bridge: native dispatcher failed (rc=%d)", rc);
+    else
+        out = native_decode_response(st, backend, &response);
+done:
+    EXLPythonBridgeBufferFree(&response);
+    Py_XDECREF(plugin_id);
+    Py_XDECREF(text);
+    Py_XDECREF(owned_request);
+    return out;
+}
+
+/* Reuse the legacy marshal payload so both transports have identical tags,
+ * positional/keyword arguments, and handle identity. payload stays borrowed. */
+static PyObject *bb_native_operation(xt_state *st, BridgeBackendObject *self, int op,
+                                     PyObject *fqcn, PyObject *member,
+                                     int64_t handle, const char *payload)
+{
+    PyObject *request = NULL;
+    PyObject *data = NULL;
+    PyObject *operation = NULL;
+    PyObject *instance = NULL;
+    PyObject *out = NULL;
+    if (!PyUnicode_Check(fqcn)) {
+        PyErr_SetString(PyExc_TypeError, "bridge: instance fqcn must be str");
+        return NULL;
+    }
+    if (payload != NULL) {
+        data = json_loads_cstr(st, payload, (Py_ssize_t)strlen(payload));
+        if (data == NULL)
+            goto done;
+    }
+    if (op == OP_CONSTRUCT || op == OP_CALL || op == OP_CALL_INSTANCE)
+        request = PyDict_Copy(data);
+    else {
+        request = PyDict_New();
+        if (request != NULL && (op == OP_SET || op == OP_SET_INSTANCE) &&
+            PyDict_SetItemString(request, "value", data) < 0)
+            goto done;
+    }
+    if (request == NULL)
+        goto done;
+    operation = PyUnicode_FromString(OP_SUFFIX[op]);
+    if (operation == NULL || PyDict_SetItemString(request, "op", operation) < 0 ||
+        PyDict_SetItemString(request, "fqcn", fqcn) < 0)
+        goto done;
+    if (member != NULL && PyDict_SetItemString(request, "member", member) < 0)
+        goto done;
+    if (handle != 0) {
+        instance = PyLong_FromLongLong(handle);
+        if (instance == NULL || PyDict_SetItemString(request, "instance", instance) < 0)
+            goto done;
+    }
+    out = native_dispatch_request(st, self, request);
+    if (out != NULL && (op == OP_SET || op == OP_SET_INSTANCE)) {
+        Py_DECREF(out);
+        out = Py_NewRef(Py_None);
+    }
+done:
+    Py_XDECREF(instance);
+    Py_XDECREF(operation);
+    Py_XDECREF(data);
+    Py_XDECREF(request);
+    return out;
+}
+
 static void *bb_resolve_op(BridgeBackendObject *self, int op)
 {
     PyObject *name = PyUnicode_FromFormat("%U.%s", self->service, OP_SUFFIX[op]);
@@ -1519,7 +2035,7 @@ static void *bb_resolve_op(BridgeBackendObject *self, int op)
     text = PyUnicode_AsUTF8(name);
     fn = text != NULL ? registry_find(text) : NULL;
     Py_DECREF(name);
-    if (fn == NULL) {
+    if (fn == NULL && !PyErr_Occurred() && !native_dispatcher_available()) {
         xt_state *st = state_of_backend((PyObject *)self);
         bridge_error(st, "no bridge service registered for '%U.%s'",
                      self->service, OP_SUFFIX[op]);
@@ -1540,6 +2056,52 @@ static PyObject *instance_fqcn(PyObject *instance)
     fqcn = PyObject_GetAttrString(tp, "__name__");
     Py_DECREF(tp);
     return fqcn;
+}
+
+/* Enter before any native argument/receiver marshalling can call Python.
+ * Fastcall arguments remain rooted by the caller while rollback runs. */
+static PyObject *bb_native_transaction(xt_state *st, BridgeBackendObject *self, int op,
+                                       PyObject *target, PyObject *member,
+                                       PyObject *args, PyObject *kwargs, PyObject *value)
+{
+    NativeHandleTxn tx;
+    PyObject *fqcn = NULL;
+    PyObject *marshalled = NULL;
+    PyObject *out = NULL;
+    char *payload = NULL;
+    int64_t handle = 0;
+    if (native_tx_begin(st, &tx) < 0)
+        return NULL;
+    if (op == OP_CALL_INSTANCE || op == OP_GET_INSTANCE || op == OP_SET_INSTANCE) {
+        handle = marshal_handle(st, target, &tx);
+        if (handle == 0)
+            goto done;
+        fqcn = instance_fqcn(target);
+    }
+    else
+        fqcn = Py_NewRef(target);
+    if (fqcn == NULL)
+        goto done;
+    if (op == OP_CONSTRUCT || op == OP_CALL || op == OP_CALL_INSTANCE) {
+        payload = marshal_payload(st, args, kwargs, &tx);
+        if (payload == NULL)
+            goto done;
+    }
+    else if (op == OP_SET || op == OP_SET_INSTANCE) {
+        marshalled = marshal_value(st, value, &tx);
+        if (marshalled == NULL)
+            goto done;
+        payload = json_dups_obj(st, marshalled);
+        if (payload == NULL)
+            goto done;
+    }
+    out = bb_native_operation(st, self, op, fqcn, member, handle, payload);
+done:
+    native_tx_finish(st, &tx, out != NULL);
+    free(payload);
+    Py_XDECREF(marshalled);
+    Py_XDECREF(fqcn);
+    return out;
 }
 
 static int bb_class_known(BridgeBackendObject *self, PyObject *fqcn)
@@ -1582,17 +2144,25 @@ static PyObject *bb_construct(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "construct: fqcn must be str");
         return NULL;
     }
-    known = bb_class_known(self, fqcn);
-    if (known < 0)
-        return NULL;
-    if (!known) {
-        bridge_error(st, "no class %R", fqcn);
-        return NULL;
+    fn = (xt_construct_fn)bb_resolve_op(self, OP_CONSTRUCT);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_CONSTRUCT, fqcn, NULL, args, NULL, NULL);
+    /* A native host decides which classes it implements, including runtime
+     * services absent from the compatibility manifest. Legacy tests keep the
+     * manifest gate. class_exists/member_kind remain manifest-based. */
+    if (fn != NULL) {
+        known = bb_class_known(self, fqcn);
+        if (known < 0)
+            return NULL;
+        if (!known) {
+            bridge_error(st, "no class %R", fqcn);
+            return NULL;
+        }
     }
-    payload = marshal_payload(st, args, NULL);
+    payload = marshal_payload(st, args, NULL, NULL);
     if (payload == NULL)
         return NULL;
-    fn = (xt_construct_fn)bb_resolve_op(self, OP_CONSTRUCT);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &tmp) : NULL;
     if (fn == NULL || fqcn_c == NULL) {
         free(payload);
@@ -1657,17 +2227,22 @@ static PyObject *bb_call(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "call: fqcn/member must be str");
         return NULL;
     }
-    known = bb_class_known(self, fqcn);
-    if (known < 0)
-        return NULL;
-    if (!known) {
-        bridge_error(st, "no class %R", fqcn);
-        return NULL;
+    fn = (xt_call_fn)bb_resolve_op(self, OP_CALL);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_CALL, fqcn, member, args, kwargs, NULL);
+    if (fn != NULL) {
+        known = bb_class_known(self, fqcn);
+        if (known < 0)
+            return NULL;
+        if (!known) {
+            bridge_error(st, "no class %R", fqcn);
+            return NULL;
+        }
     }
-    payload = marshal_payload(st, args, kwargs);
+    payload = marshal_payload(st, args, kwargs, NULL);
     if (payload == NULL)
         return NULL;
-    fn = (xt_call_fn)bb_resolve_op(self, OP_CALL);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -1732,18 +2307,21 @@ static PyObject *bb_call_instance(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "call_instance: member must be str");
         return NULL;
     }
+    fn = (xt_call_instance_fn)bb_resolve_op(self, OP_CALL_INSTANCE);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_CALL_INSTANCE, instance, member, args, kwargs, NULL);
     handle = realm_insert(st, instance);
     if (handle == 0)
         return NULL;
     fqcn = instance_fqcn(instance);
     if (fqcn == NULL)
         return NULL;
-    payload = marshal_payload(st, args, kwargs);
+    payload = marshal_payload(st, args, kwargs, NULL);
     if (payload == NULL) {
         Py_DECREF(fqcn);
         return NULL;
     }
-    fn = (xt_call_instance_fn)bb_resolve_op(self, OP_CALL_INSTANCE);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -1802,6 +2380,8 @@ static PyObject *bb_get(BridgeBackendObject *self,
         return NULL;
     }
     fn = (xt_get_fn)bb_resolve_op(self, OP_GET);
+    if (fn == NULL && !PyErr_Occurred())
+        return bb_native_transaction(st, self, OP_GET, fqcn, member, NULL, NULL, NULL);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -1857,13 +2437,16 @@ static PyObject *bb_get_instance(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "get_instance: member must be str");
         return NULL;
     }
+    fn = (xt_get_instance_fn)bb_resolve_op(self, OP_GET_INSTANCE);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_GET_INSTANCE, instance, member, NULL, NULL, NULL);
     handle = realm_insert(st, instance);
     if (handle == 0)
         return NULL;
     fqcn = instance_fqcn(instance);
     if (fqcn == NULL)
         return NULL;
-    fn = (xt_get_instance_fn)bb_resolve_op(self, OP_GET_INSTANCE);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -1922,14 +2505,17 @@ static PyObject *bb_set(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "set: fqcn/member must be str");
         return NULL;
     }
-    marshalled = marshal_value(st, value);
+    fn = (xt_set_fn)bb_resolve_op(self, OP_SET);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_SET, fqcn, member, NULL, NULL, value);
+    marshalled = marshal_value(st, value, NULL);
     if (marshalled == NULL)
         return NULL;
     payload = json_dups_obj(st, marshalled);
     Py_DECREF(marshalled);
     if (payload == NULL)
         return NULL;
-    fn = (xt_set_fn)bb_resolve_op(self, OP_SET);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -1989,13 +2575,17 @@ static PyObject *bb_set_instance(BridgeBackendObject *self,
         PyErr_SetString(PyExc_TypeError, "set_instance: member must be str");
         return NULL;
     }
+    fn = (xt_set_instance_fn)bb_resolve_op(self, OP_SET_INSTANCE);
+    if (fn == NULL)
+        return PyErr_Occurred() ? NULL : bb_native_transaction(
+            st, self, OP_SET_INSTANCE, instance, member, NULL, NULL, value);
     handle = realm_insert(st, instance);
     if (handle == 0)
         return NULL;
     fqcn = instance_fqcn(instance);
     if (fqcn == NULL)
         return NULL;
-    marshalled = marshal_value(st, value);
+    marshalled = marshal_value(st, value, NULL);
     if (marshalled == NULL) {
         Py_DECREF(fqcn);
         return NULL;
@@ -2006,7 +2596,6 @@ static PyObject *bb_set_instance(BridgeBackendObject *self,
         Py_DECREF(fqcn);
         return NULL;
     }
-    fn = (xt_set_instance_fn)bb_resolve_op(self, OP_SET_INSTANCE);
     fqcn_c = fn != NULL ? as_cutf8(fqcn, &t1) : NULL;
     member_c = fn != NULL ? as_cutf8(member, &t2) : NULL;
     if (fn == NULL || fqcn_c == NULL || member_c == NULL) {
@@ -2141,7 +2730,7 @@ static PyMethodDef bb_methods[] = {
 };
 
 static char bb_doc[] =
-    "C-реализация Backend: вызовы уходят в реестр сервисов "
+    "C-реализация Backend: native JSON dispatcher или явный сервис "
     "xt_register_service. Протокол — см. python/virtualjava/backend.py";
 
 static PyType_Slot bb_slots[] = {
@@ -2428,32 +3017,105 @@ static int mock_set_instance(int64_t handle, const char *fqcn,
     return 0;
 }
 
-/* Хост (Swift) освобождает handle текущего интерпретатора и активной таблицы.
- * GIL берётся здесь: ctypes и чужой поток приходят без него. См. шапку. */
+/* Owner-only: never attach an implicit/main interpreter. PyGILState_Check
+ * cannot validate ownership after subinterpreters disable its checks. An
+ * attached state is checked here; the caller must already hold its GIL. */
 int xt_host_release_handle(int64_t handle)
 {
-    PyGILState_STATE gs = PyGILState_Ensure();
+    PyThreadState *current;
     xt_state *st;
     HandleRealm *realm;
-    int rc;
+    if (!Py_IsInitialized())
+        return -2;
+#if PY_VERSION_HEX >= 0x030D0000
+    current = PyThreadState_GetUnchecked();
+#else
+    current = _PyThreadState_UncheckedGet();
+#endif
+    if (current == NULL)
+        return -2; /* No GIL/state: setting a Python exception is not safe. */
     st = xt_state_get();
-    if (st == NULL) {
-        PyGILState_Release(gs);
+    if (st == NULL)
         return -1;
-    }
     realm = realm_current(st);
-    if (realm == NULL) {
-        PyGILState_Release(gs);
+    if (realm == NULL)
         return -1;
-    }
-    rc = ht_remove(realm, handle);
-    PyGILState_Release(gs);
-    return rc;
+    return ht_remove(realm, handle);
 }
 
 /* =========================================================================
  * Python-видимое API модуля
  * ========================================================================= */
+
+static PyObject *py_xt_set_plugin_id(PyObject *self, PyObject *arg)
+{
+    xt_state *st = state_from_module(self);
+    const char *bytes;
+    Py_ssize_t count;
+    if (st == NULL)
+        return NULL;
+    if (!PyUnicode_Check(arg)) {
+        PyErr_SetString(PyExc_TypeError, "xt_set_plugin_id expects str");
+        return NULL;
+    }
+    bytes = PyUnicode_AsUTF8AndSize(arg, &count);
+    if (bytes == NULL)
+        return NULL;
+    if (count == 0 || memchr(bytes, 0, (size_t)count) != NULL) {
+        PyErr_SetString(PyExc_ValueError, "xt_set_plugin_id requires a nonempty ID without NUL");
+        return NULL;
+    }
+    if (st->plugin_id != NULL) {
+        if (PyUnicode_Compare(st->plugin_id, arg) != 0) {
+            if (!PyErr_Occurred())
+                PyErr_SetString(PyExc_RuntimeError, "bridge: plugin ID is already bound to this interpreter");
+            return NULL;
+        }
+    }
+    else {
+        st->plugin_id = PyUnicode_FromObject(arg);
+        if (st->plugin_id == NULL)
+            return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *py_xt_call_host(PyObject *self, PyObject *arg)
+{
+    xt_state *st = state_from_module(self);
+    NativeHandleTxn tx;
+    PyObject *request = NULL;
+    PyObject *marshalled = NULL;
+    PyObject *out = NULL;
+    if (st == NULL)
+        return NULL;
+    if (!PyDict_Check(arg)) {
+        PyErr_SetString(PyExc_TypeError, "xt_call_host expects a request dict");
+        return NULL;
+    }
+    if (st->plugin_id == NULL) {
+        bridge_error(st, "bridge: native plugin ID is not set; call xt_set_plugin_id first");
+        return NULL;
+    }
+    if (native_tx_begin(st, &tx) < 0)
+        return NULL;
+    request = PyDict_Copy(arg);
+    if (request == NULL)
+        goto done;
+    /* Do not even marshal the untrusted pluginId value; it may be any Python
+     * object. native_dispatch_request overwrites the marshalled key again. */
+    if (PyDict_SetItemString(request, "pluginId", st->plugin_id) < 0)
+        goto done;
+    marshalled = marshal_value(st, request, &tx);
+    if (marshalled == NULL)
+        goto done;
+    out = native_dispatch_request(st, NULL, marshalled);
+done:
+    native_tx_finish(st, &tx, out != NULL);
+    Py_XDECREF(marshalled);
+    Py_XDECREF(request);
+    return out;
+}
 
 static PyObject *py_xt_register_service(PyObject *self, PyObject *args)
 {
@@ -2639,6 +3301,10 @@ static PyObject *py_xt_clear_handles(PyObject *self, PyObject *noargs)
     (void)noargs;
     if (st == NULL)
         return NULL;
+    if (st->native_transactions != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "bridge: cannot clear handles during a native call");
+        return NULL;
+    }
     realm = realm_current(st);
     if (realm == NULL)
         return NULL;
@@ -2656,6 +3322,10 @@ static PyObject *py_xt_set_interpreter_id(PyObject *self, PyObject *arg)
     key = PyLong_AsLongLong(arg);
     if (key == -1 && PyErr_Occurred())
         return NULL;
+    if (st->native_transactions != 0 && key != st->active_key) {
+        PyErr_SetString(PyExc_RuntimeError, "bridge: cannot change handle realm during a native call");
+        return NULL;
+    }
     if (realm_create(st, key) == NULL)
         return NULL;
     prev = st->active_key;
@@ -2682,6 +3352,10 @@ static PyObject *py_xt_bind(PyObject *self, PyObject *args)
 }
 
 static PyMethodDef module_methods[] = {
+    {"xt_set_plugin_id", py_xt_set_plugin_id, METH_O,
+     "xt_set_plugin_id(str) -> None — bind an interpreter owner once; same ID is idempotent"},
+    {"xt_call_host", py_xt_call_host, METH_O,
+     "xt_call_host(dict) -> Any — native JSON dispatcher with authoritative interpreter pluginId"},
     {"xt_register_service", py_xt_register_service, METH_VARARGS,
      "xt_register_service(name, callback_ptr) — зарегистрировать C-колбэк "
      "(int-адрес) под именем '<prefix>.<op>'. Сигнатуры — см. шапку "
@@ -2702,7 +3376,7 @@ static PyMethodDef module_methods[] = {
     {"xt_mock_log_clear", py_xt_mock_log_clear, METH_NOARGS,
      "xt_mock_log_clear() — очистить журнал mock-сервиса"},
     {"xt_register_handle", py_xt_register_handle, METH_O,
-     "xt_register_handle(obj) -> int64 id (повторный вызов — тот же id)"},
+     "xt_register_handle(obj) -> int64 id (повторный вызов — тот же id); explicit retention, not rolled back"},
     {"xt_resolve_handle", py_xt_resolve_handle, METH_O,
      "xt_resolve_handle(id) -> obj | None (тот же объект по тому же id)"},
     {"xt_release_handle", py_xt_release_handle, METH_O,
@@ -2711,11 +3385,12 @@ static PyMethodDef module_methods[] = {
     {"xt_handle_count", py_xt_handle_count, METH_NOARGS,
      "xt_handle_count() -> int"},
     {"xt_clear_handles", py_xt_clear_handles, METH_NOARGS,
-     "xt_clear_handles() — сброс активной handle-таблицы (тесты)"},
+     "xt_clear_handles() — сброс активной handle-таблицы; запрещён внутри native call"},
     {"xt_set_interpreter_id", py_xt_set_interpreter_id, METH_O,
      "xt_set_interpreter_id(id) -> previous. Отдельная handle-таблица внутри "
      "этого интерпретатора. По умолчанию id = PyInterpreterState_GetID(). "
-     "Таблицы разных id и разных интерпретаторов не пересекаются."},
+     "Таблицы разных id и разных интерпретаторов не пересекаются. "
+     "Смена realm запрещена внутри native call; pluginId не меняется."},
     {"xt_bind", py_xt_bind, METH_VARARGS,
      "xt_bind(JavaInstance, JavaMemberError) — классы virtualjava; "
      "python.bridge вызывает автоматически при импорте пакета"},
@@ -2770,6 +3445,8 @@ static int module_traverse(PyObject *module, visitproc visit, void *arg)
         return 0;
     Py_VISIT(st->JavaInstance);
     Py_VISIT(st->JavaMemberError);
+    Py_VISIT(st->backend_type);
+    Py_VISIT(st->plugin_id);
     Py_VISIT(st->json_dumps);
     Py_VISIT(st->json_loads);
     Py_VISIT(st->dumps_kw);
@@ -2798,6 +3475,8 @@ static void state_release_objects(xt_state *st)
     }
     Py_CLEAR(st->JavaInstance);
     Py_CLEAR(st->JavaMemberError);
+    Py_CLEAR(st->backend_type);
+    Py_CLEAR(st->plugin_id);
     Py_CLEAR(st->json_dumps);
     Py_CLEAR(st->json_loads);
     Py_CLEAR(st->dumps_kw);
@@ -2873,6 +3552,7 @@ static int module_exec(PyObject *module)
         Py_DECREF(type);
         return -1;
     }
+    st->backend_type = Py_NewRef(type);
     Py_DECREF(type);
     if (PyModule_AddStringConstant(module, "__version__", "0.1.0") < 0)
         return -1;

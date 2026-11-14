@@ -1,4 +1,5 @@
 import Foundation
+import PluginHooks
 import Postbox
 internal import TelegramApi
 import SwiftSignalKit
@@ -728,6 +729,163 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
 }
 
 public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+    guard PluginHookRouter.hasSubscribers(.sendMessage) else {
+        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages)
+    }
+
+    // The entire asynchronous prefix finishes before media work or any Postbox transaction.
+    // Keep original indices so CANCEL still delivers one terminal result with the expected shape.
+    var prefix: Signal<[(Int, EnqueueMessage)], NoError> = .single([])
+    for (index, message) in messages.enumerated() {
+        prefix = prefix
+        |> mapToSignal { accepted -> Signal<[(Int, EnqueueMessage)], NoError> in
+            let decision = Signal<PluginSendResult, NoError> { subscriber in
+                guard PluginHookRouter.hasSubscribers(.sendMessage) else {
+                    subscriber.putNext(.keepOriginal)
+                    subscriber.putCompletion()
+                    return EmptyDisposable
+                }
+                let payload = pluginSendPayload(accountRecordId: account.id.int64, peerId: peerId, message: message, index: index, count: messages.count)
+                let cancellation = PluginHookRouter.interceptSend(payload, completion: { result in
+                    subscriber.putNext(result)
+                    subscriber.putCompletion()
+                })
+                return ActionDisposable {
+                    cancellation?.cancel()
+                }
+            }
+            return decision
+            |> map { result -> [(Int, EnqueueMessage)] in
+                switch result {
+                case .cancel:
+                    return accepted
+                case .keepOriginal:
+                    return accepted + [(index, message)]
+                case let .modify(patch), let .modifyFinal(patch):
+                    return accepted + [(index, pluginApplySendPatch(patch, to: message))]
+                }
+            }
+        }
+    }
+    return prefix
+    |> mapToSignal { accepted -> Signal<[MessageId?], NoError> in
+        if accepted.isEmpty {
+            return .single(Array<MessageId?>(repeating: nil, count: messages.count))
+        }
+        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: accepted.map { $0.1 })
+        |> map { ids -> [MessageId?] in
+            var result = Array<MessageId?>(repeating: nil, count: messages.count)
+            for i in 0 ..< min(ids.count, accepted.count) {
+                result[accepted[i].0] = ids[i]
+            }
+            return result
+        }
+    }
+}
+
+/// Enqueues an explicit plugin-origin native effect after BridgeServices has checked permissions.
+/// Bypasses every plugin's send-message hook to prevent recursive hook entry and duplicate hook
+/// effects when a plugin sends from its own send callback. Uses the normal media transformation,
+/// Postbox enqueue and outgoing-message pipeline.
+public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+    return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages)
+}
+
+private func pluginHookMessageId(_ id: MessageId) -> PluginHookMessageId {
+    return PluginHookMessageId(peerId: id.peerId.toInt64(), namespace: id.namespace, id: id.id)
+}
+
+private func pluginSendPayload(accountRecordId: Int64, peerId: PeerId, message: EnqueueMessage, index: Int, count: Int) -> PluginSendPayload {
+    var silent = false
+    var disableLinkPreviews = false
+    var hasTextEntities = false
+    var hasRichText = false
+    var hasOpaqueAttributes = false
+    var scheduleTime: Int32?
+    var scheduleRepeatPeriod: Int32?
+    for attribute in message.attributes {
+        if let attribute = attribute as? NotificationInfoMessageAttribute {
+            silent = silent || attribute.flags.contains(.muted)
+        } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute {
+            disableLinkPreviews = disableLinkPreviews || attribute.flags.contains(.disableLinkPreviews)
+        } else if let attribute = attribute as? TextEntitiesMessageAttribute {
+            hasTextEntities = hasTextEntities || !attribute.entities.isEmpty
+        } else if attribute is RichTextMessageAttribute {
+            hasRichText = true
+        } else if let attribute = attribute as? OutgoingScheduleInfoMessageAttribute {
+            scheduleTime = attribute.scheduleTime
+            scheduleRepeatPeriod = attribute.repeatPeriod
+        } else {
+            // Unknown attributes may contain text-dependent data. Preserve them and decline text edits.
+            hasOpaqueAttributes = true
+        }
+    }
+    let attributeTypes = message.attributes.map { String(describing: type(of: $0)) }
+    switch message {
+    case let .message(text, _, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, correlationId, _):
+        return PluginSendPayload(
+            accountRecordId: accountRecordId, peerId: peerId.toInt64(), messageIndex: index, messageCount: count,
+            text: text, silent: silent, disableLinkPreviews: disableLinkPreviews,
+            canModifyText: mediaReference == nil && inlineStickers.isEmpty && !hasTextEntities && !hasRichText && !hasOpaqueAttributes,
+            hasMedia: mediaReference != nil, hasTextEntities: hasTextEntities, hasInlineStickers: !inlineStickers.isEmpty,
+            hasRichText: hasRichText, attributeTypes: attributeTypes, threadId: threadId,
+            replyToMessageId: replyToMessageId.map { pluginHookMessageId($0.messageId) },
+            hasReplyQuote: replyToMessageId?.quote != nil, hasReplyInnerSubject: replyToMessageId?.innerSubject != nil,
+            hasReplyToStory: replyToStoryId != nil, localGroupingKey: localGroupingKey, correlationId: correlationId,
+            scheduleTime: scheduleTime, scheduleRepeatPeriod: scheduleRepeatPeriod
+        )
+    case let .forward(source, threadId, _, _, correlationId):
+        return PluginSendPayload(
+            accountRecordId: accountRecordId, peerId: peerId.toInt64(), messageIndex: index, messageCount: count,
+            kind: .forward, silent: silent, disableLinkPreviews: disableLinkPreviews,
+            hasTextEntities: hasTextEntities, hasRichText: hasRichText, attributeTypes: attributeTypes,
+            threadId: threadId, correlationId: correlationId, scheduleTime: scheduleTime,
+            scheduleRepeatPeriod: scheduleRepeatPeriod, forwardSource: pluginHookMessageId(source)
+        )
+    }
+}
+
+private func pluginApplySendPatch(_ patch: PluginSendMessagePatch, to message: EnqueueMessage) -> EnqueueMessage {
+    // The router validates even typed handler results against the immutable payload before delivery.
+    guard case let .message(text, attributes, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, correlationId, bubbleUpEmojiOrStickersets) = message else {
+        return message
+    }
+    var updatedAttributes: [MessageAttribute] = []
+    var foundNotificationInfo = false
+    var foundContentInfo = false
+    for attribute in attributes {
+        if let attribute = attribute as? NotificationInfoMessageAttribute, let silent = patch.silent {
+            foundNotificationInfo = true
+            var flags = attribute.flags
+            if silent {
+                flags.insert(.muted)
+            } else {
+                flags.remove(.muted)
+            }
+            updatedAttributes.append(NotificationInfoMessageAttribute(flags: flags))
+        } else if let attribute = attribute as? OutgoingContentInfoMessageAttribute, let disabled = patch.disableLinkPreviews {
+            foundContentInfo = true
+            var flags = attribute.flags
+            if disabled {
+                flags.insert(.disableLinkPreviews)
+            } else {
+                flags.remove(.disableLinkPreviews)
+            }
+            updatedAttributes.append(OutgoingContentInfoMessageAttribute(flags: flags))
+        } else {
+            updatedAttributes.append(attribute)
+        }
+    }
+    if let silent = patch.silent, !foundNotificationInfo {
+        updatedAttributes.append(NotificationInfoMessageAttribute(flags: silent ? [.muted] : []))
+    }
+    if let disabled = patch.disableLinkPreviews, !foundContentInfo {
+        updatedAttributes.append(OutgoingContentInfoMessageAttribute(flags: disabled ? [.disableLinkPreviews] : []))
+    }
+    return .message(text: patch.text ?? text, attributes: updatedAttributes, inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: localGroupingKey, correlationId: correlationId, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets)
+}
+
+private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)
