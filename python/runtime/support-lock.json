@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "python": "3.12",
+  "provider": "beeware/Python-Apple-support",
+  "release": "3.12-b13",
+  "archive": "Python-3.12-iOS-support.b13.tar.gz",
+  "url": "https://github.com/beeware/Python-Apple-support/releases/download/3.12-b13/Python-3.12-iOS-support.b13.tar.gz",
+  "sha256": "4eea2c76ad70f2df8c1767489315a16d72cd96ce5c086412ee2d154c3bd8e257",
+  "framework": "Python.xcframework",
+  "stdlib": "lib/python3.12",
+  "slices": {
+    "device": {
+      "library": "ios-arm64",
+      "architecture": "arm64",
+      "platform_id": 2,
+      "sdk": "iphoneos",
+      "target": "arm64-apple-ios15.0"
+    },
+    "simulator": {
+      "library": "ios-arm64_x86_64-simulator",
+      "architecture": "arm64",
+      "platform_id": 7,
+      "sdk": "iphonesimulator",
+      "target": "arm64-apple-ios15.0-simulator"
+    }
+  },
+  "required_extensions": ["_ssl", "_hashlib", "_sqlite3", "_socket", "_asyncio", "_ctypes", "_lzma", "_bz2", "zlib", "math", "select"]
+}

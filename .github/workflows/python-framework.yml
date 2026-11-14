@@ -1,134 +1,93 @@
 name: Python Framework
 
-# Этап 1: CPython 3.12 для iOS на базе BeeWare Python-Apple-support (ветка 3.12)
-# + патч: --with-experimental-isolated-subinterpreters (PEP 684) — изоляция
-# плагинов суб-интерпретаторами на стороне PluginHost.
-#
-# Ручной запуск: только когда меняем сборку фреймворка. Артефакт
-# Python.xcframework кладётся в Actions, PluginHost врезает его в приложение.
-
+# Manual milestone: validate pinned upstream CPython, compile our bridge for
+# device + simulator, and execute a bounded native simulator embedding probe.
+# PEP 684 is part of CPython 3.12; no invented configure switch is required.
 on:
   workflow_dispatch:
-    inputs:
-      targets:
-        description: "Целевые платформы (BeeWare Makefile syntax)"
-        required: false
-        default: "iphonesimulator.arm64 iphoneos.arm64"
 
 concurrency:
-  group: python-framework
+  group: python-framework-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: CPython 3.12 (iOS, isolated subinterpreters)
-    runs-on: macos-26
-    timeout-minutes: 120
-
+  validate:
+    name: CPython 3.12 + native bridge (iOS)
+    runs-on: xcode-27
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            python
+            tools/runtime
+            swift/PluginHost
 
-      - name: Clone BeeWare Python-Apple-support (3.12 branch)
+      - name: Set up build Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test runtime packaging
+        run: python -m unittest discover -s tools/runtime/tests -v
+
+      - name: Test Swift runtime bootstrap
+        run: swift test --package-path swift/PluginHost --jobs 2 --filter PythonRuntimeConfigurationTests
+
+      - name: Cache pinned support archive
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/python-support-cache
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json') }}
+
+      - name: Fetch and verify CPython support
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch 3.12 \
-            https://github.com/beeware/Python-Apple-support \
-            "$RUNNER_TEMP/Python-Apple-support"
+          python tools/runtime/support.py fetch \
+            --cache "$RUNNER_TEMP/python-support-cache" \
+            --extract "$RUNNER_TEMP/python-support" \
+            --report "$RUNNER_TEMP/python-support-manifest.json"
 
-      - name: Patch configure for isolated subinterpreters (PEP 684)
+      - name: Compile and run native runtime probes
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/Python-Apple-support"
-          # Вставляем флаг после --with-system-libmpdec в конфигурации таргетов.
-          python3 - <<'EOF'
-          path = "Makefile"
-          with open(path) as fh:
-              text = fh.read()
-          marker = "--with-system-libmpdec \\\n"
-          assert text.count(marker) == 1, f"marker count: {text.count(marker)}"
-          text = text.replace(
-              marker,
-              marker + "\t\t\t--with-experimental-isolated-subinterpreters \\\n")
-          with open(path, "w") as fh:
-              fh.write(text)
-          print("configure patched: isolated subinterpreters enabled")
-          EOF
+          python tools/runtime/validate_runtime.py \
+            --support "$RUNNER_TEMP/python-support" \
+            --output "$RUNNER_TEMP/python-native"
 
-      - name: Select Xcode
+      - name: Package framework and smoke artifacts
         run: |
           set -euo pipefail
-          XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
-          echo "Using $XCODE_APP"
-          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
-          xcodebuild -version
+          mkdir -p "$RUNNER_TEMP/runtime-artifacts"
+          cp "$RUNNER_TEMP"/python-support-cache/*.tar.gz "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-support-manifest.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-native/runtime-manifest.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-native/simulator-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
+          tar -czf "$RUNNER_TEMP/runtime-artifacts/ExteralessPythonBridge.xcframework.tar.gz" \
+            -C "$RUNNER_TEMP/python-native" ExteralessPythonBridge.xcframework
+          echo 'CPython and the native bridge ran on the simulator. Device code compiled; device installation remains unverified.' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build Python for iOS
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/Python-Apple-support"
-          make iOS TARGETS-iOS="${{ inputs.targets }}"
-
-      - name: Verify built modules
-        run: |
-          set -euo pipefail
-          SUPPORT="$RUNNER_TEMP/Python-Apple-support/support/3.12/iOS"
-          ls -la "$SUPPORT"
-          echo "--- lib-dynload (device slice) ---"
-          DEVICE_LIB="$SUPPORT/Python.xcframework/ios-arm64/Python.framework"
-          find "$SUPPORT" -name "lib-dynload" -type d | head -5
-          DYNLOAD="$(find "$SUPPORT" -path "*ios-arm64*" -name "lib-dynload" -type d | head -1)"
-          if [ -z "$DYNLOAD" ]; then
-            DYNLOAD="$(find "$SUPPORT" -name "lib-dynload" -type d | head -1)"
-          fi
-          echo "dynload: $DYNLOAD"
-          ls "$DYNLOAD" | head -60
-          REQUIRED="_ssl.cpython-312-darwin.so _hashlib.cpython-312-darwin.so _asyncio.cpython-312-darwin.so _socket.cpython-312-darwin.so"
-          MISSING=""
-          for mod in $REQUIRED; do
-            if ! ls "$DYNLOAD" | grep -q "${mod%.so}" 2>/dev/null; then
-              # имена суффиксов могут отличаться (darwin/ios) — ищем по префиксу
-              NAME="${mod%%.cpython*}"
-              if ! ls "$DYNLOAD" | grep -q "^$NAME" ; then
-                MISSING="$MISSING $NAME"
-              fi
-            fi
-          done
-          if [ -n "$MISSING" ]; then
-            echo "ОТСУТСТВУЮТ МОДУЛИ:$MISSING" >&2
-            exit 1
-          fi
-          echo "все обязательные модули на месте"
-
-      - name: Verify subinterpreter build flag
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/Python-Apple-support"
-          # sys.isolated_interpreters появился бы только в новых версиях;
-          # для 3.12 проверяем, что флаг попал в config.log.
-          grep -l "isolated-subinterpreters" *.config.log */*.config.log 2>/dev/null \
-            || find . -name "*.config.log" -exec grep -l "isolated" {} \; \
-            || { echo "флаг isolated-subinterpreters не виден в логах configure" >&2; exit 1; }
-
-      - name: Package artifact
-        run: |
-          set -euo pipefail
-          SUPPORT="$RUNNER_TEMP/Python-Apple-support/support/3.12/iOS"
-          STAGE="$RUNNER_TEMP/python-framework"
-          rm -rf "$STAGE"
-          mkdir -p "$STAGE"
-          cp -R "$SUPPORT/Python.xcframework" "$STAGE/"
-          # Стандартная библиотека лежит рядом с xcframework (lib/python3.12).
-          cp -R "$SUPPORT/Python.xcframework/lib" "$STAGE/stdlib" 2>/dev/null || true
-          du -sh "$STAGE"
-
-      - name: Upload Python.xcframework
+      - name: Upload validated runtime
         uses: actions/upload-artifact@v4
         with:
-          name: Python-3.12-ios-xcframework
-          path: ${{ runner.temp }}/python-framework/
+          name: Python-3.12-ios-runtime-${{ github.run_number }}
+          path: ${{ runner.temp }}/runtime-artifacts/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload probe diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-probe-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/python-support-manifest.json
+            ${{ runner.temp }}/python-native/*smoke*.json
+          if-no-files-found: ignore
+          retention-days: 7

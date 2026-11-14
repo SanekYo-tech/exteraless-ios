@@ -58,10 +58,13 @@ iOS-расширениями для последующей самостояте�
 проверяется граф упаковки; сертификаты и профили в CI не нужны.
 Проверки и артефакты: [docs/ci-unsigned.md](docs/ci-unsigned.md).
 
+Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
+Текущий следующий этап — [CPython runtime и native embedding probe](docs/python-runtime.md).
+
 ## Статус этапов
 
 - [x] 0a. Репозиторий + манифест-генератор + корпус
-- [ ] 0b. CI: сборка стокового Telegram-iOS
+- [x] 0b. CI: unsigned Telegram-iOS 13.1.1 + проверенный артефакт
 - [ ] 1. CPython 3.12 xcframework
 - [ ] 2. Мост `_exteraless_bridge`
 - [ ] 3. Virtual-Java слой

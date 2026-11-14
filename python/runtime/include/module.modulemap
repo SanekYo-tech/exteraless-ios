@@ -1,0 +1,4 @@
+module CExteralessPythonBridge {
+    header "EXLPythonBridge.h"
+    export *
+}

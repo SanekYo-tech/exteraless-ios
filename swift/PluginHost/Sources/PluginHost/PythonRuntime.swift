@@ -3,26 +3,22 @@ import Foundation
 /// Управление жизненным циклом CPython уровня процесса.
 ///
 /// Всё общение с CPython идёт через протокол `CPythonEngine` — семантические
-/// операции, каждая с точным перечнем настоящего C-API 3.12, который должен
-/// вызывать реализация. Пакет НЕ линкуется с CPython напрямую (иначе Linux-CI
-/// и разработка без Python.xcframework невозможны). Реализация движка для
-/// Bazel-сборки — `CPythonXCFrameworkEngine` (этап 5, macOS, ~150 строк,
-/// см. README «Интеграция»): файл со `import Python` (modulemap на заголовки
-/// Python.xcframework), реализующий этот протокол.
+/// операции с контрактом C-API 3.12 для будущего нативного C-shim. Пакет
+/// не линкуется с CPython напрямую; движок для BeeWare Python.framework
+/// ещё предстоит реализовать и подключить в сборке приложения.
 
 // MARK: - Конфигурация
 
-/// Пути и параметры встройки CPython (этап 1: BeeWare+патч, Python.xcframework).
+/// Пути и параметры встройки BeeWare CPython 3.12.
 public struct PythonRuntimeConfiguration: Hashable, Sendable {
     /// Имя программы (argv[0] интерпретатора; видно в диагностиках CPython).
     public var programName: String
-    /// Домашний каталог встроенного Python.framework (PyConfig.home).
-    /// TODO(мак): сверить фактический layout этапа 1 —
-    /// Python.xcframework/ios-arm64/Python.framework -> bundle.
+    /// Python home (PyConfig.home), обычно App.app/python-stdlib.
+    /// Историческое имя поля: это не каталог бинарника Python.framework.
     public var frameworkHome: String?
     /// Каталоги stdlib в бандле (PyConfig.module_search_paths).
     public var stdlibDirectories: [String]
-    /// Каталоги совместимости: python/virtualjava, python/sdk, корень плагинов
+    /// Корни импорта: python (родитель virtualjava), python/sdk, корень плагинов
     /// (добавляются в sys.path каждого суб-интерпретатора).
     public var compatibilityDirectories: [String]
     /// Каталог установленных плагинов (filesDir/plugins, файл .watchdog сторожа).
@@ -32,6 +28,12 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
     public var writeBytecode: Bool
     /// Не ставить сигнальные хендлеры CPython (PyConfig.install_signal_handlers = 0).
     public var installSignalHandlers: Bool
+    /// Путь к манифесту для BridgeBackend(manifest_path=...). nil использует
+    /// default C-моста (окружение/путь модуля); standard(bundle:) задаёт явно.
+    public var manifestPath: String?
+    /// Префикс зарегистрированных нативных сервисов (<service>.call и т.д.).
+    /// Неизвестный сервис отказывает при обращении; mock не устанавливается.
+    public var service: String
 
     public init(programName: String = "exteraless",
                 frameworkHome: String? = nil,
@@ -39,7 +41,9 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
                 compatibilityDirectories: [String] = [],
                 pluginRootDirectory: String = "",
                 writeBytecode: Bool = false,
-                installSignalHandlers: Bool = false) {
+                installSignalHandlers: Bool = false,
+                manifestPath: String? = nil,
+                service: String = "java") {
         self.programName = programName
         self.frameworkHome = frameworkHome
         self.stdlibDirectories = stdlibDirectories
@@ -47,62 +51,75 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
         self.pluginRootDirectory = pluginRootDirectory
         self.writeBytecode = writeBytecode
         self.installSignalHandlers = installSignalHandlers
+        self.manifestPath = manifestPath
+        self.service = service
     }
 
-    /// Типовая конфигурация для приложения: ресурсы лежат в главном бандле
-    /// рядом с Python.framework (этапы 1–2 кладут туда stdlib/virtualjava/sdk).
-    /// TODO(мак): сверить реальные пути бандла со скриптами сборки этапа 1.
+    /// Фиксированный layout приложения: App.app/Frameworks/Python.framework
+    /// содержит рантайм; python-stdlib — Python home, python — пакеты и манифест.
+    /// lib-dynload содержит .fwork-маркеры расширений; их Mach-O лежат в отдельно
+    /// подписываемых Frameworks. Пути задаются независимо от наличия ресурсов:
+    /// проверка упаковки/загрузка — ответственность сборки и нативного движка.
     public static func standard(bundle: Bundle = .main) -> PythonRuntimeConfiguration {
         let resourcePath = bundle.resourceURL?.path ?? bundle.bundlePath
-        let framework = resourcePath + "/Python.framework"
-        var stdlib = [String]()
-        let candidates = [
-            framework + "/Resources/lib/python3.12",
-            framework + "/Versions/A/Resources/lib/python3.12",
-            resourcePath + "/python-stdlib/lib/python3.12",
-        ]
-        for candidate in candidates where FileManager.default.fileExists(atPath: candidate) {
-            stdlib.append(candidate)
-            break
-        }
+        let pythonHome = resourcePath + "/python-stdlib"
+        let stdlib = pythonHome + "/lib/python3.12"
         let support = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("exteraless").path ?? (resourcePath + "/exteraless")
         return PythonRuntimeConfiguration(
             programName: "exteraless",
-            frameworkHome: framework,
-            stdlibDirectories: stdlib,
+            frameworkHome: pythonHome,
+            stdlibDirectories: [stdlib, stdlib + "/lib-dynload"],
             compatibilityDirectories: [
-                resourcePath + "/python/virtualjava",
+                resourcePath + "/python",
                 resourcePath + "/python/sdk",
                 support + "/plugins",
             ],
             pluginRootDirectory: support + "/plugins",
             writeBytecode: false,
-            installSignalHandlers: false)
+            installSignalHandlers: false,
+            manifestPath: resourcePath + "/python/compat-manifest.json",
+            service: "java")
     }
 }
 
 /// Загрузочный скрипт каждого суб-интерпретатора: пути + virtualjava + мост.
 public extension PythonRuntimeConfiguration {
-    /// Скрипт бутстрапа. `_exteraless_bridge` — C-extension этапа 2,
-    /// реализующий Backend-протокол из python/virtualjava/backend.py.
-    /// TODO(этап 2): имя фабрики бэкенда фиксирует C-слой моста.
+    /// Скрипт бутстрапа. `_exteraless_bridge` регистрируется C-shim как built-in
+    /// до инициализации CPython. xt_bind связывает классы текущего интерпретатора,
+    /// BridgeBackend реализует протокол из python/virtualjava/backend.py.
+    /// Ошибки импорта/инициализации передаются вызывающему коду.
     /// TODO(этап 5): загрузка плагина через extera_utils/plugin_loader.py SDK
     /// и регистрация хуков (после бутстрапа, отдельным скриптом диспатча).
     func bootstrapScript(interpreterPluginId: String) -> String {
+        var seenPaths = Set<String>()
         let paths = (compatibilityDirectories + [pluginRootDirectory])
-            .map { "\"" + $0.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+            .filter { !$0.isEmpty && seenPaths.insert($0).inserted }
+            .map(Self.pythonStringLiteral)
             .joined(separator: ", ")
+        let manifest = manifestPath.map(Self.pythonStringLiteral) ?? "None"
         return """
         import sys
         sys.path[:0] = [\(paths)]
-        import _exteraless_bridge  # этап 2: Backend-протокол (python/virtualjava/backend.py)
+        import _exteraless_bridge
         import virtualjava
-        virtualjava.install(_exteraless_bridge.backend())
-        # этап 5: загрузка плагина '\(interpreterPluginId)' через SDK-лоадер.
+        _exteraless_bridge.xt_bind(virtualjava.JavaInstance, virtualjava.JavaMemberError)
+        virtualjava.install(_exteraless_bridge.BridgeBackend(
+            service=\(Self.pythonStringLiteral(service)),
+            manifest_path=\(manifest),
+        ))
+        # этап 5: загрузка плагина \(Self.pythonStringLiteral(interpreterPluginId)) через SDK-лоадер.
         """
+    }
+
+    private static func pythonStringLiteral(_ value: String) -> String {
+        let encoder = JSONEncoder()
+        // JSON экранирует кавычки, обратные слеши и управляющие символы.
+        // Python не декодирует JSON-escape \/, поэтому обычные / сохраняем.
+        encoder.outputFormatting = .withoutEscapingSlashes
+        // String имеет только допустимый Unicode и не может отказать в encode.
+        return String(decoding: try! encoder.encode(value), as: UTF8.self)
     }
 }
 
@@ -127,21 +144,23 @@ public protocol CPythonEngine: Sendable {
     ///
     /// C-API: `PyConfig config; PyConfig_InitPythonConfig(&config);`
     /// `PyConfig_SetString(&config, &config.program_name, ...)`,
-    /// `PyConfig_SetString(&config, &config.home, ...)`,
-    /// module_search_paths: `config.module_search_paths_set = 1` + элементы
-    /// через `PyConfig_SetString(&config, &config.module_search_paths, ...)`
-    /// (TODO(мак): проверить `PyConfig_SetStringList`/ручное заполнение поля
-    /// `config.module_search_paths`, см. Include/cpython/initconfig.h),
-    /// `config.install_signal_handlers = 0`, `config.write_bytecode`,
+    /// `PyConfig_SetString(&config, &config.home, ...)` при заданном frameworkHome.
+    /// Для явного списка stdlibDirectories: `config.module_search_paths_set = 1`
+    /// и `PyWideStringList_Append(&config.module_search_paths, ...)` для каждого
+    /// пути (Include/cpython/initconfig.h); проверять возвращённый PyStatus.
+    /// `config.install_signal_handlers` и `config.write_bytecode` из конфигурации,
     /// затем `status = Py_InitializeFromConfig(&config);`
     /// `PyConfig_Clear(&config)`; проверка `PyStatus_Exception(status)`.
+    /// До Py_InitializeFromConfig shim регистрирует built-in модуль через
+    /// `PyImport_AppendInittab("_exteraless_bridge", PyInit__exteraless_bridge)`
+    /// с проверкой кода возврата.
     /// После успеха — `PyEval_SaveThread()` (отдать GIL инициализирующему потоку).
     func initializeProcess(configuration: PythonRuntimeConfiguration) throws
 
-    /// Финализация процесса. НЕ вызывать, если есть брошенные (abandoned)
-    /// интерпретаторы: их потоки держат GIL своих интерпретаторов навсегда,
-    /// `Py_FinalizeEx()` зависнет. В этом случае процесс просто доживает до
-    /// teardown ОС — решение принимает PluginHost.shutdown.
+    /// Финализация процесса. Не вызывать при брошенных (abandoned) интерпретаторах:
+    /// их потоки могут продолжать выполнение или ждать нативный код, поэтому
+    /// `Py_FinalizeEx()` может зависнуть. Abandon не останавливает поток;
+    /// освобождение ресурсов тогда остаётся teardown процесса ОС.
     /// C-API: `Py_FinalizeEx()`.
     func finalizeProcess() throws
 
@@ -151,17 +170,19 @@ public protocol CPythonEngine: Sendable {
     ///
     /// C-API: заполнить `PyInterpreterConfig` полями из
     /// PythonInterpreterConfiguration, затем
-    /// `Py_NewInterpreterFromConfig(&tstate, &config)`;
+    /// `Py_NewInterpreterFromConfig(&tstate, &config)` из публичного
+    /// Include/cpython/pylifecycle.h (через Python.h, не Limited API);
     /// ошибка — `PyStatus_Exception(status)`.
+    /// PEP 684 входит в CPython 3.12: отдельный build-флаг isolated-subinterpreters
+    /// не требуется; собственный GIL выбирается в PyInterpreterConfig.
     /// TODO(мак): проверить требование удержания GIL основного интерпретатора
     /// при вызове (обсуждение python/cpython#111518).
     func createInterpreter(_ configuration: PythonInterpreterConfiguration) throws -> InterpRef
 
-    /// Уничтожить интерпретатор. Строго на потоке-владельце, из tstate
-    /// интерпретатора.
-    /// C-API: `PyThreadState_Swap(tstate); Py_EndInterpreter(tstate);`.
-    /// Гарантия: Py_EndInterpreter нельзя звать из чужого/зависшего потока —
-    /// зависшие интерпретаторы НЕ уничтожаются (политика abandon).
+    /// Согласованно завершить интерпретатор на потоке-владельце с его текущим
+    /// tstate и удержанным GIL. C-API: `Py_EndInterpreter(tstate)`.
+    /// Это не способ прервать зависший вызов: политика abandon прекращает
+    /// дальнейший диспатч, но не гарантирует остановку потока/освобождение памяти.
     func destroyInterpreter(_ reference: InterpRef) throws
 
     /// Выполнить исходник в интерпретаторе, вернуть repr результата последнего
@@ -172,10 +193,11 @@ public protocol CPythonEngine: Sendable {
     /// `PyErr_Fetch`, `PyErr_NormalizeException`, текст в ошибку Swift.
     func runScript(_ reference: InterpRef, _ source: String) throws -> String
 
-    /// Приблизительный RSS интерпретатора, КБ. Точного per-interpreter RSS в
-    /// CPython 3.12 нет (куча процесса общая); реализация возвращает дельту
-    /// RSS процесса с момента создания интерпретатора — upper bound для
-    /// сторожа. TODO(мак/этап 5): сверить доступные счётчики.
+    /// Диагностическая оценка памяти, КБ; семантику счётчика определяет движок.
+    /// CPython 3.12 не предоставляет per-interpreter RSS: куча процесса общая.
+    /// RSS процесса и его дельту нельзя приписать одному плагину или считать
+    /// верхней границей его памяти. Этот показатель не обеспечивает RSS-лимит
+    /// на плагин; возможное использование сторожем — только эвристика.
     func interpreterFootprintKB(_ reference: InterpRef) -> Int
 }
 
@@ -239,7 +261,7 @@ public actor PythonRuntime {
     }
 
     /// Остановить. `canFinalizeProcess == false` (есть abandoned) — не звать
-    /// Py_FinalizeEx: зависшие интерпретаторы держат свои GIL вечно.
+    /// Py_FinalizeEx: незавершённые вызовы делают финализацию небезопасной.
     public func shutdown(canFinalizeProcess: Bool) {
         guard state == .running else { return }
         if canFinalizeProcess {

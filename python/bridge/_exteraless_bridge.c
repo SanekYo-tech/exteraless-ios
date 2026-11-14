@@ -123,24 +123,29 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-/* Python 3.12 не имеет PyMutex (появился в 3.13). Фолбэк — обычный
- * lock из pthread-слоя CPython; инициализация ленивая, чтобы не
- * зависеть от порядка инициализации модуля. */
+/* The pointer-only process registry is shared by independent GILs. The
+ * 3.12 fallback must be initialized before any interpreter can race on it;
+ * a lazily allocated PyThread lock is not safe with per-interpreter GILs.
+ * Registry critical sections never invoke host callbacks. */
 #if PY_VERSION_HEX >= 0x030D0000
 typedef PyMutex xt_mutex_t;
 #  define XT_MUTEX_INIT {0}
 static inline void xt_mutex_lock(xt_mutex_t *m) { PyMutex_Lock(m); }
 static inline void xt_mutex_unlock(xt_mutex_t *m) { PyMutex_Unlock(m); }
 #else
-typedef PyThread_type_lock xt_mutex_t;
-#  define XT_MUTEX_INIT NULL
-static inline void xt_mutex_lock(xt_mutex_t *m) {
-    if (*m == NULL) { *m = PyThread_allocate_lock(); }
-    if (*m != NULL) { PyThread_acquire_lock(*m, WAIT_LOCK); }
-}
-static inline void xt_mutex_unlock(xt_mutex_t *m) {
-    if (*m != NULL) { PyThread_release_lock(*m); }
-}
+#  ifdef _WIN32
+#    include <windows.h>
+typedef SRWLOCK xt_mutex_t;
+#    define XT_MUTEX_INIT SRWLOCK_INIT
+static inline void xt_mutex_lock(xt_mutex_t *m) { AcquireSRWLockExclusive(m); }
+static inline void xt_mutex_unlock(xt_mutex_t *m) { ReleaseSRWLockExclusive(m); }
+#  else
+#    include <pthread.h>
+typedef pthread_mutex_t xt_mutex_t;
+#    define XT_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+static inline void xt_mutex_lock(xt_mutex_t *m) { pthread_mutex_lock(m); }
+static inline void xt_mutex_unlock(xt_mutex_t *m) { pthread_mutex_unlock(m); }
+#  endif
 #endif
 
 #include <stdarg.h>
@@ -2876,8 +2881,10 @@ static int module_exec(PyObject *module)
 
 static PyModuleDef_Slot module_slots[] = {
     {Py_mod_exec, module_exec},
-#if PY_VERSION_HEX >= 0x030D0000
+#if PY_VERSION_HEX >= 0x030C0000
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
+#endif
+#if PY_VERSION_HEX >= 0x030D0000
     {Py_mod_gil, Py_MOD_GIL_USED},
 #endif
     {0, NULL}
