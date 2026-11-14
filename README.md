@@ -53,7 +53,10 @@ python -m tools.compat.generate_manifest
 `TELEGRAM_APP_ID` / `TELEGRAM_APP_HASH`.
 
 Workflow: `.github/workflows/ios-build.yml` — macOS-раннер, Bazel,
-unsigned IPA артефактом.
+только ручной запуск. `Make.py build --unsigned` собирает IPA с шестью
+iOS-расширениями для последующей самостоятельной подписи. Перед компиляцией
+проверяется граф упаковки; сертификаты и профили в CI не нужны.
+Проверки и артефакты: [docs/ci-unsigned.md](docs/ci-unsigned.md).
 
 ## Статус этапов
 

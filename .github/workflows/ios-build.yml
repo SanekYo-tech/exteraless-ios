@@ -23,6 +23,7 @@ jobs:
     env:
       SOURCE_DIR: /Users/Shared/telegram-ios
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+      BAZEL_DISK_CACHE: /Users/runner/Library/Caches/exteraless-bazel-disk
 
     steps:
       - name: Checkout
@@ -31,6 +32,9 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
+      - name: Test unsigned build plumbing
+        run: python3 -m unittest discover -s tools/ci/tests -v
+
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -38,8 +42,9 @@ jobs:
           XCODE_VERSION="$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')"
           XCODE_APP="$(ls -d /Applications/Xcode_${XCODE_VERSION}.app 2>/dev/null || true)"
           if [ -z "$XCODE_APP" ]; then
-            echo "Xcode $XCODE_VERSION не найден, берём новейший установленный"
-            XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+            echo "::error::Pinned Xcode $XCODE_VERSION is missing from this runner"
+            ls -d /Applications/Xcode*.app
+            exit 1
           fi
           echo "Using $XCODE_APP"
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"
@@ -76,55 +81,20 @@ jobs:
           set -euo pipefail
           sudo mkdir -p /Users/Shared
           rm -rf "$SOURCE_DIR"
-          cp -R "$GITHUB_WORKSPACE/telegram-ios" "$SOURCE_DIR"
+          mkdir -p "$SOURCE_DIR"
+          # .git files inside submodules point back into the checkout. They are
+          # invalid after relocation; the build copy needs source, not Git data.
+          rsync -a --exclude='.git' "$GITHUB_WORKSPACE/telegram-ios/" "$SOURCE_DIR/"
 
       - name: Restore Bazel cache
-        uses: actions/cache@v4
+        id: bazel-cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
         with:
-          path: /private/var/tmp/_bazel_containerhost
-          key: bazel-ios-${{ github.sha }}
+          path: ${{ env.BAZEL_DISK_CACHE }}
+          key: bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            bazel-ios-
-
-      - name: Generate fresh fake signing cert and profiles
-        run: |
-          set -euo pipefail
-          cd "$SOURCE_DIR/build-system/fake-codesigning/certs"
-          # В репо лежит p12 без рабочего приватного ключа (публичная часть
-          # AppStore-серта Telegram). Генерим свежую self-signed пару;
-          # EKU codeSigning обязателен — security find-identity отбирает
-          # identity по нему. Пароль p12 — secret: empty-pass p12 от
-          # OpenSSL 3 не проходит MAC-проверку security import.
-          openssl req -x509 -newkey rsa:2048 -days 3650 -nodes \
-            -keyout self.key -out self.cer \
-            -subj "/CN=Telegram Fake Signing/O=Telegram/C=US" \
-            -addext "extendedKeyUsage=codeSigning"
-          openssl pkcs12 -export -out SelfSigned.p12 \
-            -inkey self.key -in self.cer -passout pass:secret -legacy
-          cp self.cer Public.cer
-          rm -f self.key self.cer
-          cd "$SOURCE_DIR"
-          # Переподписываем профили свежим сертом (DeveloperCertificates
-          # заменяется, ExpirationDate продлевается до 2030) — иначе
-          # openssl/plisttool валятся на истёкших и чужих подписях.
-          mkdir -p build-input/regen-profiles
-          python3 - <<'EOF'
-          import sys
-          sys.path.insert(0, 'build-system/Make')
-          import GenerateProfiles
-          GenerateProfiles.generate_provisioning_profiles(
-              source_path='build-system/fake-codesigning/profiles',
-              destination_path='build-input/regen-profiles',
-              certs_path='build-system/fake-codesigning/certs')
-          EOF
-          cp -f build-input/regen-profiles/*.mobileprovision \
-            build-system/fake-codesigning/profiles/
-
-      - name: Import fake codesigning
-        run: |
-          set -euo pipefail
-          cd "$SOURCE_DIR"
-          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+            bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-
 
       - name: Build
         run: |
@@ -136,37 +106,36 @@ jobs:
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$BAZEL_DISK_CACHE" \
             build \
             --configurationPath="build-system/exteraless-configuration.json" \
-            --codesigningInformationPath=build-system/fake-codesigning \
+            --unsigned \
             --configuration=release_arm64 \
-            --buildNumber="$BUILD_NUMBER"
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath="$SOURCE_DIR/build/artifacts"
 
-      - name: Collect artifacts
+      - name: Verify unsigned IPA and collect entitlement templates
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
-          OUTPUT_PATH="build/artifacts"
-          rm -rf "$OUTPUT_PATH"
-          mkdir -p "$OUTPUT_PATH"
-          found=0
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" "$OUTPUT_PATH/"
-            found=1
-          done
-          if [ "$found" = "0" ]; then
-            echo "IPA не найдена" >&2
-            find bazel-out -name "*.ipa" 2>/dev/null | head -20 >&2
-            exit 1
-          fi
-          mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            [ -e "$f" ] && cp -R "$f" build/DSYMs/ || true
-          done
-          if compgen -G "build/DSYMs/*" > /dev/null; then
-            zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
-          fi
-          ls -lh "$OUTPUT_PATH"
+          python3 "$GITHUB_WORKSPACE/tools/ci/verify_unsigned_ipa.py" \
+            build/artifacts/Telegram.ipa \
+            --configuration build-system/exteraless-configuration.json \
+            --version "$APP_VERSION" --build-number "$BUILD_NUMBER" \
+            --report build/artifacts/build-manifest.json
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          target = Path('build/artifacts/signing-entitlements')
+          target.mkdir(parents=True, exist_ok=True)
+          files = list(Path('bazel-bin/Telegram').glob('*.entitlements'))
+          if not files:
+              raise SystemExit('No generated entitlement templates to hand off for signing')
+          for path in files:
+              shutil.copy2(path, target / path.name)
+          shutil.copy2('bazel-bin/Telegram/Telegram_dossier.zip', 'build/artifacts/Telegram_dossier.zip')
+          PY
+          echo "Unsigned IPA + six extensions. Sign locally with your compatible profiles." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -175,5 +144,29 @@ jobs:
           path: |
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.ipa
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram.DSYMs.zip
+            ${{ env.SOURCE_DIR }}/build/artifacts/build-manifest.json
+            ${{ env.SOURCE_DIR }}/build/artifacts/Telegram_dossier.zip
+            ${{ env.SOURCE_DIR }}/build/artifacts/signing-entitlements/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload unsigned preflight diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-preflight-${{ github.run_id }}
+          # Full aquery dumps may contain generated configuration values.
+          # Publish only the structural report, not file-write contents.
+          path: ${{ env.SOURCE_DIR }}/build/diagnostics/unsigned-preflight.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Cache successful individual actions even when a later action fails.
+      # The old combined cache action only saved on an entirely green build.
+      - name: Save Bazel action cache
+        if: ${{ !cancelled() && steps.bazel-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.BAZEL_DISK_CACHE }}
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}

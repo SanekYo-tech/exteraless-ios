@@ -17,6 +17,7 @@ import RemoteBuild
 import TartBuild
 import GenerateProfiles
 import PostboxImportCheck
+from UnsignedBuild import prepare_unsigned_rules, validate_unsigned_actions
 
 
 class ResolvedCodesigningData:
@@ -47,6 +48,7 @@ class BazelCommandLine:
         self.show_actions = False
         self.enable_sandbox = False
         self.disable_provisioning_profiles = False
+        self.unsigned = False
         self.profile_swift = False
         self.embed_watch_app = False
         self.watch_api_id = None
@@ -141,6 +143,10 @@ class BazelCommandLine:
 
     def set_disable_provisioning_profiles(self):
         self.disable_provisioning_profiles = True
+
+    def set_unsigned(self):
+        self.unsigned = True
+        self.set_disable_provisioning_profiles()
 
     def set_profile_swift(self, value):
         self.profile_swift = value
@@ -275,10 +281,11 @@ class BazelCommandLine:
                 '--features=swift.split_derived_files_generation',
             ]
 
-        # codesign в sandbox-экшенах не находит identity из пользовательского
-        # keychain, если HOME не проброшен (экшены запускаются с env -):
-        # наследуем HOME из клиентского окружения.
-        combined_arguments += ['--action_env=HOME']
+        if self.unsigned:
+            combined_arguments += [
+                '--features=exteraless_unsigned_compilation',
+                '--features=disable_legacy_signing',
+            ]
 
         return combined_arguments
 
@@ -326,6 +333,30 @@ class BazelCommandLine:
         combined_arguments += self.configuration_args
         if self.profile_swift:
             combined_arguments += ['--config=swift_profile']
+
+        if self.unsigned:
+            # Dossiers carry the generated entitlement templates, including
+            # those for extensions. Request them explicitly: unsigned bundles
+            # no longer consume entitlements through a signing action.
+            combined_arguments += ['--output_groups=+dsyms,+dossier']
+            # Analyze the SAME device configuration before compiling anything.
+            # Signing must be disabled for the app and every extension, not only
+            # for the top-level target. Fail here rather than after a long build.
+            query_arguments = list(combined_arguments)
+            query_arguments[query_arguments.index('build')] = 'aquery'
+            target = self.custom_target or 'Telegram/Telegram'
+            query_arguments[query_arguments.index(target)] = 'deps(//Telegram:Telegram)'
+            query_arguments += [
+                '--nobuild', '--output=jsonproto', '--include_artifacts',
+                '--include_commandline', '--include_param_files',
+                '--include_file_write_contents',
+            ]
+            diagnostics = os.path.join(os.getcwd(), 'build', 'diagnostics')
+            os.makedirs(diagnostics, exist_ok=True)
+            graph_path = os.path.join(diagnostics, 'unsigned-actions.json')
+            with open(graph_path, 'w', encoding='utf-8') as graph_file:
+                subprocess.run(query_arguments, stdout=graph_file, check=True)
+            validate_unsigned_actions(graph_path)
 
         print('TelegramBuild: running')
         print(subprocess.list2cmdline(combined_arguments))
@@ -408,6 +439,14 @@ def clean(bazel, arguments):
 
 
 def resolve_codesigning(arguments, base_path, build_configuration, provisioning_profiles_path, additional_codesigning_output_path) -> ResolvedCodesigningData:
+    if getattr(arguments, 'unsigned', False):
+        # This is an entitlement request template for subsequent user signing,
+        # not a provisioning grant or an APNs delivery guarantee. No certificate
+        # or profile is opened, generated, imported, or embedded in this mode.
+        return ResolvedCodesigningData(
+            aps_environment='production',
+            use_xcode_managed_codesigning=False
+        )
     profile_source = None
     if arguments.gitCodesigningRepository is not None:
         password = os.getenv('TELEGRAM_CODESIGNING_GIT_PASSWORD')
@@ -610,6 +649,13 @@ def resolve_watch_provisioning_profile(arguments, base_path):
 
 
 def build(bazel, arguments):
+    if arguments.unsigned:
+        if arguments.embedWatchApp:
+            raise ValueError('--unsigned does not yet support the separate xcodebuild watch-app signing pipeline')
+        if arguments.target not in (None, 'Telegram/Telegram', '//Telegram:Telegram'):
+            raise ValueError('--unsigned currently validates the full Telegram/Telegram target')
+        prepare_unsigned_rules(os.getcwd())
+
     if PostboxImportCheck.run(os.getcwd()) != 0:
         sys.exit(1)
 
@@ -636,6 +682,8 @@ def build(bazel, arguments):
     )
 
     bazel_command_line.set_configuration(arguments.configuration)
+    if arguments.unsigned:
+        bazel_command_line.set_unsigned()
     if arguments.embedWatchApp:
         if arguments.configuration in ('debug_arm64', 'release_arm64'):
             if arguments.watchApiId is None or arguments.watchApiHash is None:
@@ -814,7 +862,7 @@ def add_vm_lock_arguments(current_parser):
     )
 
 
-def add_codesigning_common_arguments(current_parser: argparse.ArgumentParser):
+def add_codesigning_common_arguments(current_parser: argparse.ArgumentParser, allow_unsigned=False):
     configuration_group = current_parser.add_mutually_exclusive_group(required=True)
     configuration_group.add_argument(
         '--configurationPath',
@@ -848,6 +896,13 @@ def add_codesigning_common_arguments(current_parser: argparse.ArgumentParser):
             Let Xcode manage your certificates and provisioning profiles.
             ''',
     )
+    if allow_unsigned:
+        codesigning_group.add_argument(
+            '--unsigned',
+            action='store_true',
+            default=False,
+            help='Build an unsigned IPA for later signing, without certificates or provisioning profiles.'
+        )
 
     current_parser.add_argument(
         '--gitCodesigningType',
@@ -876,8 +931,8 @@ def add_codesigning_common_arguments(current_parser: argparse.ArgumentParser):
     )
 
 
-def add_project_and_build_common_arguments(current_parser: argparse.ArgumentParser):
-    add_codesigning_common_arguments(current_parser=current_parser)
+def add_project_and_build_common_arguments(current_parser: argparse.ArgumentParser, allow_unsigned=False):
+    add_codesigning_common_arguments(current_parser=current_parser, allow_unsigned=allow_unsigned)
 
 
 if __name__ == '__main__':
@@ -1029,7 +1084,7 @@ if __name__ == '__main__':
         help='Build number.',
         metavar='number'
     )
-    add_project_and_build_common_arguments(buildParser)
+    add_project_and_build_common_arguments(buildParser, allow_unsigned=True)
     buildParser.add_argument(
         '--configuration',
         choices=[
