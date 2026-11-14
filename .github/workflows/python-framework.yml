@@ -59,10 +59,32 @@ jobs:
             --extract "$RUNNER_TEMP/python-support" \
             --report "$RUNNER_TEMP/python-support-manifest.json"
 
-      - name: Compile and run native runtime probes
+      - name: Compile runtime and verify unsigned device probe
         run: |
           set -euo pipefail
           python tools/runtime/validate_runtime.py \
+            --phase build \
+            --support "$RUNNER_TEMP/python-support" \
+            --output "$RUNNER_TEMP/python-native" \
+            --simulator-device 'iPhone 17'
+
+      - name: Upload compiled device probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Python-3.12-device-probe-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/python-native/ExteralessPythonSmoke-unsigned.ipa
+            ${{ runner.temp }}/python-native/ExteralessPythonBridge.xcframework.tar.gz
+            ${{ runner.temp }}/python-native/runtime-compile-manifest.json
+            ${{ runner.temp }}/python-swift/swift-engine-smoke.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Run standalone iOS simulator probes
+        run: |
+          set -euo pipefail
+          python tools/runtime/validate_runtime.py \
+            --phase probe \
             --support "$RUNNER_TEMP/python-support" \
             --output "$RUNNER_TEMP/python-native" \
             --simulator-device 'iPhone 17'
@@ -78,8 +100,7 @@ jobs:
           cp "$RUNNER_TEMP/python-native/simulator-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-swift/swift-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
-          tar -czf "$RUNNER_TEMP/runtime-artifacts/ExteralessPythonBridge.xcframework.tar.gz" \
-            -C "$RUNNER_TEMP/python-native" ExteralessPythonBridge.xcframework
+          cp "$RUNNER_TEMP/python-native/ExteralessPythonBridge.xcframework.tar.gz" "$RUNNER_TEMP/runtime-artifacts/"
           echo 'CPython and the native bridge ran on the simulator. Device code compiled; device installation remains unverified.' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload validated runtime

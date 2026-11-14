@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/runtime'))
-from validate_runtime import main, select_simulator
+from validate_runtime import main, select_simulator, source_fingerprint
 
 
 PREFIX = 'com.apple.CoreSimulator.SimRuntime.iOS-'
@@ -61,10 +61,13 @@ class SimulatorSelectionTests(unittest.TestCase):
             with self.subTest(options=options), tempfile.TemporaryDirectory(prefix='runtime-selection-') as folder:
                 root = Path(folder)
                 output = root / 'output'
-                argv = ['validate_runtime.py', '--support', str(root / 'support'), '--output', str(output), *options]
+                output.mkdir()
+                (output / 'runtime-compile-manifest.json').write_text(json.dumps({
+                    'source_fingerprint': source_fingerprint(),
+                }), encoding='utf-8')
+                argv = ['validate_runtime.py', '--phase', 'probe', '--support', str(root / 'support'), '--output', str(output), *options]
                 # Exercise CLI -> probe -> selector, stopping at the clone command.
                 with (patch.object(sys, 'argv', argv), patch.object(sys, 'platform', 'darwin'),
-                      patch('validate_runtime.build_target', return_value=(root / 'Probe.app', root / 'bridge.a', {})),
                       patch('validate_runtime.run', side_effect=[
                           Mock(stdout='27.1'), Mock(stdout=json.dumps({'devices': devices})),
                           RuntimeError('clone boundary reached'),

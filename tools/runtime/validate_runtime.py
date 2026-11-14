@@ -6,13 +6,16 @@ iOS device and simulator. Does not build Telegram or execute any plugins.
 
 import argparse
 import json
+import os
 from pathlib import Path
 import plistlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
+import tarfile
 import zipfile
 
 from support import ROOT, digest, read_lock, stage_application
@@ -61,20 +64,12 @@ def collect_probe_diagnostics(udid, output, report_path, error):
     (output / 'probe-failure.json').write_text(json.dumps({'error': str(error)}, indent=2), encoding='utf-8')
     if report_path is not None and report_path.is_file():
         shutil.copyfile(report_path, output / 'failed-probe-report.json')
-    try:
-        with (output / 'simulator.log').open('w', encoding='utf-8') as log:
-            subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show', '--last', '5m',
-                            '--style', 'compact', '--predicate',
-                            'process == "ExteralessPythonSmoke" OR eventMessage CONTAINS[c] "ExteralessPythonSmoke"'],
-                           stdout=log, stderr=subprocess.STDOUT, timeout=45, check=False)
-    except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
-        print('Could not finish simulator log capture:', diagnostic_error)
     # If simctl itself cannot spawn anything, diagnostics inside the device
     # cannot work either. Read the host services independently of that channel.
     try:
         with (output / 'core-simulator-host.log').open('w', encoding='utf-8') as log:
             subprocess.run(['log', 'show', '--last', '4m', '--style', 'compact',
-                            '--predicate', 'process == "CoreSimulatorService" OR process == "simdiskimaged"'],
+                            '--predicate', 'process CONTAINS[c] "CoreSimulator" OR process == "simdiskimaged"'],
                            stdout=log, stderr=subprocess.STDOUT, timeout=20, check=False)
     except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
         print('Could not finish host simulator log capture:', diagnostic_error)
@@ -84,6 +79,32 @@ def collect_probe_diagnostics(udid, output, report_path, error):
         for crash in list(folder.glob(EXECUTABLE + '*'))[:5]:
             if crash.is_file() and crash.stat().st_size < 4 * 1024 * 1024:
                 shutil.copy2(crash, output / crash.name)
+
+
+def run_probe_command(command, output, kind):
+    """Run one owned process group; retain a launcher sample before timeout cleanup."""
+    with (output / (kind + '-console.log')).open('w', encoding='utf-8') as log:
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        (output / (kind + '-launcher.json')).write_text(json.dumps({
+            'pid': process.pid, 'command': command,
+        }, indent=2), encoding='utf-8')
+        try:
+            return process.wait(timeout=90)
+        except subprocess.TimeoutExpired:
+            try:
+                subprocess.run(['sample', str(process.pid), '1', '-file',
+                                str(output / (kind + '-launcher-sample.log'))],
+                               stdout=log, stderr=subprocess.STDOUT, timeout=4, check=False)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            finally:
+                if process.poll() is None:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+                    except (ProcessLookupError, subprocess.TimeoutExpired):
+                        pass
+            raise
 
 
 def build_target(framework, output, target, lock):
@@ -108,10 +129,11 @@ def build_target(framework, output, target, lock):
         objects.append(obj)
     library = folder / 'libExteralessPythonBridge.a'
     run('xcrun', 'libtool', '-static', '-o', library, *objects[:len(bridge_sources)])
+    entry_flags = ['-DEXL_SIMULATOR_COMPONENT=1'] if target == 'simulator' else ['-framework', 'UIKit']
     run('xcrun', '--sdk', spec['sdk'], 'clang', *common, *includes, '-fobjc-arc',
         native / 'smoke/main.m', *objects[len(bridge_sources):], library,
         '-F', framework / spec['library'], '-framework', 'Python',
-        '-framework', 'Foundation', '-framework', 'UIKit',
+        '-framework', 'Foundation', *entry_flags,
         '-Wl,-rpath,@executable_path/Frameworks', '-o', app / EXECUTABLE)
     (app / 'Info.plist').write_bytes(plistlib.dumps({
         'CFBundleIdentifier': BUNDLE_ID, 'CFBundleExecutable': EXECUTABLE,
@@ -120,6 +142,8 @@ def build_target(framework, output, target, lock):
         'MinimumOSVersion': '15.0', 'UIDeviceFamily': [1, 2],
         'CFBundleSupportedPlatforms': ['iPhoneSimulator' if target == 'simulator' else 'iPhoneOS'],
         'LSRequiresIPhoneOS': True, 'UILaunchScreen': {},
+        'CFBundleDisplayName': 'Python Runtime Check',
+        'UIFileSharingEnabled': True, 'LSSupportsOpeningDocumentsInPlace': True,
         'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait'],
     }))
     manifest = stage_application(framework, app, target, lock, BUNDLE_ID)
@@ -183,34 +207,30 @@ def simulator_probe(app, output, simulator_device='iPhone 17'):
         'sdk_version': sdk_version, 'requested_device': simulator_device,
         'runtime': runtime, 'device_type': template['deviceTypeIdentifier'],
         'template': template['name'], 'probe_udid': udid,
-        'execution': 'simctl spawn (component probe, not an installation test)',
+        'execution': 'simctl spawn --standalone (Foundation CLI, no UIKit lifecycle)',
         'app_bytes': sum(path.stat().st_size for path in app.rglob('*') if path.is_file()),
         'app_files': sum(1 for path in app.rglob('*') if path.is_file()),
     }, indent=2), encoding='utf-8')
     report_path = None
     try:
-        run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=360)
-        # Fail at the infrastructure boundary if even a system process cannot
-        # launch. Its output is retained independently of the Python probe.
-        with (output / 'simulator-health.log').open('w', encoding='utf-8') as log:
-            subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'launchctl', 'version'],
-                           stdout=log, stderr=subprocess.STDOUT, timeout=30, check=True)
+        # LLVM's native simulator runner uses this direct mode as well. It
+        # avoids booting SpringBoard/launchd_sim for a command-line C probe.
         reports = {}
         for kind, option, report_name in [
             ('runtime', '--headless-report', 'simulator-smoke.json'),
             ('engine', '--engine-report', 'simulator-engine-smoke.json'),
         ]:
             report_path = output / (kind + '-native-report.json')
-            command = ['xcrun', 'simctl', 'spawn', udid, str(app / EXECUTABLE), option, str(report_path)]
-            print('Running simulator {} probe'.format(kind), flush=True)
-            with (output / (kind + '-console.log')).open('w', encoding='utf-8') as log:
-                launched = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=90)
+            report_path.unlink(missing_ok=True)
+            command = ['xcrun', 'simctl', 'spawn', '--standalone', udid, str(app / EXECUTABLE), option, str(report_path)]
+            print('Running standalone simulator {} probe'.format(kind), flush=True)
+            exit_status = run_probe_command(command, output, kind)
             report = completed_report(report_path)
-            if launched.returncode != 0 or report.get('native_exit_status') != 0 or report.get('ok') is not True or report.get('own_gil_interpreters') != 2 or report.get('platform') != 'ios':
+            if exit_status != 0 or report.get('native_exit_status') != 0 or report.get('ok') is not True or report.get('own_gil_interpreters') != 2 or report.get('platform') != 'ios':
                 raise RuntimeError('Simulator {} checks did not pass: {}'.format(kind, report))
             if kind == 'engine' and (report.get('native_workers') != 2 or report.get('finalized') is not True):
                 raise RuntimeError('Native engine did not complete both workers and finalization')
-            report['execution'] = 'simctl spawn'
+            report['execution'] = 'simctl spawn --standalone'
             report['application_installation_verified'] = False
             (output / report_name).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
             reports[kind] = report
@@ -219,11 +239,10 @@ def simulator_probe(app, output, simulator_device='iPhone 17'):
         collect_probe_diagnostics(udid, output, report_path, error)
         raise
     finally:
-        for operation in ('shutdown', 'delete'):
-            try:
-                subprocess.run(['xcrun', 'simctl', operation, udid], check=False, timeout=60)
-            except (OSError, subprocess.TimeoutExpired) as error:
-                print('Simulator cleanup:', error)
+        try:
+            subprocess.run(['xcrun', 'simctl', 'delete', udid], check=False, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print('Simulator cleanup:', error)
 
 
 def verify_probe_ipa(path):
@@ -246,42 +265,73 @@ def verify_probe_ipa(path):
     return binaries
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--support', type=Path, required=True)
-    parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--simulator-device', default='iPhone 17',
-                        help='Exact simulator model name (default: iPhone 17); no model fallback')
-    args = parser.parse_args()
-    if sys.platform != 'darwin':
-        parser.error('Apple SDK validation requires the macOS runner')
-    if args.output.exists() and any(args.output.iterdir()):
-        parser.error('Output must be empty to avoid reusing stale smoke results')
-    args.output.mkdir(parents=True, exist_ok=True)
-    lock = read_lock()
-    framework = args.support / lock['framework']
-    device, device_lib, device_manifest = build_target(framework, args.output, 'device', lock)
-    simulator, sim_lib, sim_manifest = build_target(framework, args.output, 'simulator', lock)
-    runtime_report = simulator_probe(simulator, args.output, args.simulator_device)
+def source_fingerprint():
+    sources = [path for path in (ROOT / 'python/runtime').rglob('*')
+               if path.suffix in {'.c', '.h', '.m', '.modulemap'}]
+    sources += [ROOT / 'python/bridge/_exteraless_bridge.c', ROOT / 'python/runtime/support-lock.json',
+                ROOT / 'tools/runtime/support.py', Path(__file__).resolve()]
+    return {path.relative_to(ROOT).as_posix(): digest(path) for path in sorted(sources)}
+
+
+def compile_runtime(support, output, lock):
+    framework = support / lock['framework']
+    device, device_lib, device_manifest = build_target(framework, output, 'device', lock)
+    _, sim_lib, sim_manifest = build_target(framework, output, 'simulator', lock)
     run('xcodebuild', '-create-xcframework',
         '-library', device_lib, '-headers', ROOT / 'python/runtime/include',
         '-library', sim_lib, '-headers', ROOT / 'python/runtime/include',
-        '-output', args.output / 'ExteralessPythonBridge.xcframework')
-    ipa = args.output / 'ExteralessPythonSmoke-unsigned.ipa'
+        '-output', output / 'ExteralessPythonBridge.xcframework')
+    with tarfile.open(output / 'ExteralessPythonBridge.xcframework.tar.gz', 'w:gz') as archive:
+        archive.add(output / 'ExteralessPythonBridge.xcframework', arcname='ExteralessPythonBridge.xcframework')
+    ipa = output / 'ExteralessPythonSmoke-unsigned.ipa'
     with zipfile.ZipFile(ipa, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(device.rglob('*')):
             if path.is_file():
                 archive.write(path, 'Payload/' + device.name + '/' + path.relative_to(device).as_posix())
     report = {
+        'source_fingerprint': source_fingerprint(),
         'support': {'release': lock['release'], 'sha256': lock['sha256']},
         'xcode': run('xcodebuild', '-version', capture=True).stdout.strip(),
         'bridge_source_sha256': digest(ROOT / 'python/bridge/_exteraless_bridge.c'),
         'engine_source_sha256': digest(ROOT / 'python/runtime/engine.c'),
-        'device': device_manifest, 'simulator': sim_manifest, 'smoke': runtime_report,
-        'native_engine': json.loads((args.output / 'simulator-engine-smoke.json').read_text(encoding='utf-8')),
+        'device': device_manifest, 'simulator': sim_manifest,
         'device_ipa_sha256': digest(ipa), 'device_installation_verified': False,
+        'simulator_execution_verified': False,
         'device_binaries': verify_probe_ipa(ipa),
     }
+    (output / 'runtime-compile-manifest.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    print('Device IPA and bridge XCFramework compiled and verified; simulator execution is a separate step')
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--support', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--phase', choices=['all', 'build', 'probe'], default='all')
+    parser.add_argument('--simulator-device', default='iPhone 17',
+                        help='Exact simulator model name (default: iPhone 17); no model fallback')
+    args = parser.parse_args()
+    if sys.platform != 'darwin':
+        parser.error('Apple SDK validation requires the macOS runner')
+    lock = read_lock()
+    if args.phase in {'all', 'build'}:
+        if args.output.exists() and any(args.output.iterdir()):
+            parser.error('Build output must be empty to avoid stale artifacts')
+        args.output.mkdir(parents=True, exist_ok=True)
+        report = compile_runtime(args.support, args.output, lock)
+        if args.phase == 'build':
+            return
+    else:
+        report = json.loads((args.output / 'runtime-compile-manifest.json').read_text(encoding='utf-8'))
+        if report.get('source_fingerprint') != source_fingerprint():
+            raise ValueError('Native probe sources changed since the build')
+    for name in ('runtime-manifest.json', 'simulator-smoke.json', 'simulator-engine-smoke.json'):
+        (args.output / name).unlink(missing_ok=True)
+    simulator = args.output / 'simulator' / (EXECUTABLE + '.app')
+    report['smoke'] = simulator_probe(simulator, args.output, args.simulator_device)
+    report['native_engine'] = json.loads((args.output / 'simulator-engine-smoke.json').read_text(encoding='utf-8'))
+    report['simulator_execution_verified'] = True
     (args.output / 'runtime-manifest.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print('Runtime validation complete: device compiled; simulator ran CPython + built-in bridge')
 

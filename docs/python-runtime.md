@@ -30,7 +30,7 @@ PEP 684 входит в CPython 3.12. Отдельного configure-флага
   установка stdlib и PEP 730 `.fwork` / `.origin` связей в app bundle.
 - `tools/runtime/validate_runtime.py`: сборка device + simulator probe
   средствами Xcode; отдельный clone предсозданного симулятора и прямое
-  исполнение iOS-simulator бинарника через `simctl spawn`, проверка отчёта,
+  исполнение iOS-simulator бинарника через `simctl spawn --standalone`, проверка отчёта,
   очистка clone. UIKit/установка через SpringBoard не входят в этот probe.
 - `python/runtime/register_bridge.c`, `include/EXLPythonBridge.h`: регистрация
   `_exteraless_bridge` как built-in через `PyImport_AppendInittab`, до старта Python.
@@ -140,7 +140,13 @@ handles/loaded/subscriber gate. При ещё выполняющемся bootstr
 ## Запуск и доказательства
 
 Workflow `.github/workflows/python-framework.yml` — только вручную.
-Он не собирает Telegram. На выходе после успешного simulator probe:
+После `--phase build` сразу публикуется `Python-3.12-device-probe-<number>`:
+проверенная unsigned диагностическая IPA, static bridge XCFramework,
+`runtime-compile-manifest.json` и результат host Swift-probe. В compile manifest
+исполнение на симуляторе и установка на устройстве явно помечены непроверенными.
+
+Затем `--phase probe` проверяет fingerprint исходников и запускает simulator
+процессы. Только после их успеха публикуется полный validated runtime:
 
 - исходный проверенный support archive;
 - `ExteralessPythonBridge.xcframework.tar.gz` — наш static C bridge;
@@ -153,6 +159,11 @@ Device probe содержит и низкоуровневую проверку r
 Mach-O и отсутствие developer signing в диагностической IPA проверяются тем же
 парсером, что и в основной Telegram IPA.
 
+Диагностическая IPA устанавливается после самостоятельной подписи пользователя.
+Приложение **Python Runtime Check** запускает C-engine probe и показывает результат.
+Его `Documents/runtime-smoke.json` доступен через Files/File Sharing; он содержит
+результаты native workers и завершения. Это диагностическое приложение, не Telegram.
+
 Локально уже выполнен native probe на CPython **3.12.10 / Windows**:
 `ok: true`, два OWN_GIL интерпретатора, built-in bridge, SSL и SQLite.
 Новый C-engine probe также прошёл на Windows: два собственных native потока,
@@ -163,7 +174,7 @@ Mach-O и отсутствие developer signing в диагностическо
 Unicode/NUL, восстановление после исключений, cleanup bootstrap и finalize.
 Это не результат на iOS. Проверка iOS считается выполненной только по
 успеху workflow и его `simulator-smoke.json`; device installation — отдельно.
-В отчёте явно стоит `execution: simctl spawn` и
+В отчёте явно стоит `execution: simctl spawn --standalone` и
 `application_installation_verified: false`. Это реальный iOS-simulator
 процесс с тем же бандлом и C-probe, но не проверка sandbox/жизненного цикла
 установленного приложения. Установка в `43601656327` зависла в `simctl install`
@@ -190,9 +201,13 @@ Runtime ID с hardware suffix исключаются. При отсутстви�
 Это проверяется локальной регрессией; успешный CI run с исправлением ещё
 не подтверждён.
 
-Перед Python выполняется контрольный `launchctl version` с timeout 30 секунд;
-inventory, версия SDK, запрошенная модель, выбранное устройство и вывод
-контрольного процесса сохраняются в диагностике.
+Run `43613723001` на macOS 26 / Xcode 26.6 снова завис в системном `launchctl`
+до Python. Host-лог содержит разрывы XPC после отмены клиентов, но не устанавливает
+причину зависания. Поэтому CLI-проверка теперь использует standalone-режим,
+как [нативный runner LLVM](https://github.com/llvm/llvm-project/blob/main/compiler-rt/test/sanitizer_common/ios_commands/iossim_run.py).
+Simulator-бинарник линкует Foundation без UIKit; запуск SpringBoard не требуется.
+При timeout сохраняется sample только своего launcher-процесса и завершается
+его собственная process group. Повторные попытки автоматически не запускаются.
 
 ```powershell
 $env:PYTHONUTF8 = '1'

@@ -1,4 +1,7 @@
+#import <Foundation/Foundation.h>
+#ifndef EXL_SIMULATOR_COMPONENT
 #import <UIKit/UIKit.h>
+#endif
 #import "runtime_probe.h"
 #import "engine_probe.h"
 #include <stdlib.h>
@@ -32,6 +35,7 @@ static int RunProbe(NSString *report, BOOL engine) {
     return status;
 }
 
+#ifndef EXL_SIMULATOR_COMPONENT
 @interface EXLProbeDelegate : UIResponder <UIApplicationDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -54,9 +58,10 @@ static int RunProbe(NSString *report, BOOL engine) {
 
     NSString *documents = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
     NSString *report = [documents stringByAppendingPathComponent:@"runtime-smoke.json"];
-    // All interpreter creation/destruction stays on this one native thread.
+    // Process initialization/finalization stay on this callback's native thread;
+    // the engine probe creates and joins its own interpreter worker threads.
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        int status = RunProbe(report, NO);
+        int status = RunProbe(report, YES);
         dispatch_async(dispatch_get_main_queue(), ^{
             label.text = status == 0 ? @"CPython 3.12 + native bridge: OK" : [NSString stringWithFormat:@"Runtime probe failed (%d)", status];
             NSLog(@"Runtime probe status=%d report=%@", status, report);
@@ -68,19 +73,25 @@ static int RunProbe(NSString *report, BOOL engine) {
     return YES;
 }
 @end
+#endif
 
 int main(int argc, char **argv) {
     @autoreleasepool {
         fprintf(stderr, "EXL_PROBE_MAIN_ENTERED\n");
         fflush(stderr);
-        // The component CI probe runs the SAME iOS-simulator binary directly,
-        // without SpringBoard/installd or a UIKit application lifecycle.
+        // Both CLI modes execute the native probes. Simulator builds use a
+        // Foundation-only entry point; the device artifact has a UIKit display.
         if (argc == 3 && strcmp(argv[1], "--headless-report") == 0) {
             return RunProbe([NSString stringWithUTF8String:argv[2]], NO);
         }
         if (argc == 3 && strcmp(argv[1], "--engine-report") == 0) {
             return RunProbe([NSString stringWithUTF8String:argv[2]], YES);
         }
+#ifdef EXL_SIMULATOR_COMPONENT
+        fputs("usage: ExteralessPythonSmoke --headless-report|--engine-report report.json\n", stderr);
+        return 2;
+#else
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(EXLProbeDelegate.class));
+#endif
     }
 }
