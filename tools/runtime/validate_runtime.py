@@ -24,8 +24,13 @@ EXECUTABLE = 'ExteralessPythonSmoke'
 def run(*args, timeout=180, capture=False):
     if not capture:
         print('Runtime step:', ' '.join(str(arg) for arg in args), flush=True)
-    return subprocess.run([str(arg) for arg in args], check=True, timeout=timeout,
-                          text=True, stdout=subprocess.PIPE if capture else None)
+    start = time.monotonic()
+    try:
+        return subprocess.run([str(arg) for arg in args], check=True, timeout=timeout,
+                              text=True, stdout=subprocess.PIPE if capture else None)
+    finally:
+        if not capture:
+            print('Runtime step elapsed: {:.1f}s'.format(time.monotonic() - start), flush=True)
 
 
 def completed_report(path, timeout=10):
@@ -117,29 +122,37 @@ def simulator_probe(app, output):
         if '.iOS-' not in runtime:
             continue
         for item in entries:
-            if item.get('isAvailable') and item.get('deviceTypeIdentifier') and item['name'].startswith('iPhone'):
-                candidate = (runtime, item['deviceTypeIdentifier'])
+            if item.get('isAvailable') and item.get('deviceTypeIdentifier') and item['name'].startswith('iPhone') and item.get('state') == 'Shutdown':
+                candidate = (runtime, item)
                 break
         if candidate:
             break
     if candidate is None:
         raise RuntimeError('No installed iPhone simulator runtime is available on this runner')
-    runtime, device_type = candidate
-    udid = run('xcrun', 'simctl', 'create', 'Exteraless Python Probe', device_type, runtime, capture=True).stdout.strip()
+    runtime, template = candidate
+    # Clone the runner's pre-created device data instead of creating another
+    # fully cold device. The original simulator is never booted or modified.
+    udid = run('xcrun', 'simctl', 'clone', template['udid'], 'Exteraless Python Probe', capture=True).stdout.strip()
+    (output / 'simulator-environment.json').write_text(json.dumps({
+        'runtime': runtime, 'device_type': template['deviceTypeIdentifier'],
+        'template': template['name'], 'probe_udid': udid,
+        'execution': 'simctl spawn (component probe, not an installation test)',
+        'app_bytes': sum(path.stat().st_size for path in app.rglob('*') if path.is_file()),
+        'app_files': sum(1 for path in app.rglob('*') if path.is_file()),
+    }, indent=2), encoding='utf-8')
     report_path = None
     try:
-        run('xcrun', 'simctl', 'boot', udid)
-        run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=240)
-        run('xcrun', 'simctl', 'install', udid, app)
-        container = Path(run('xcrun', 'simctl', 'get_app_container', udid, BUNDLE_ID, 'data', capture=True).stdout.strip())
-        report_path = container / 'Documents/runtime-smoke.json'
-        command = ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', udid, BUNDLE_ID, '--ci-exit']
-        print('Launching probe; output goes to probe-console.log', flush=True)
+        run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=360)
+        report_path = output / 'native-report.json'
+        command = ['xcrun', 'simctl', 'spawn', udid, str(app / EXECUTABLE), '--headless-report', str(report_path)]
+        print('Running simulator component probe; output goes to probe-console.log', flush=True)
         with (output / 'probe-console.log').open('w', encoding='utf-8') as log:
             launched = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=90)
         report = completed_report(report_path)
         if launched.returncode != 0 or report.get('native_exit_status') != 0 or report.get('ok') is not True or report.get('own_gil_interpreters') != 2 or report.get('platform') != 'ios':
             raise RuntimeError('Simulator embedding checks did not pass: {}'.format(report))
+        report['execution'] = 'simctl spawn'
+        report['application_installation_verified'] = False
         (output / 'simulator-smoke.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         return report
     except Exception as error:

@@ -134,16 +134,21 @@ final class PluginEventQueueTests: XCTestCase {
         }
         let handled = Recorder<PluginEvent>()
         await queue.start(handler: { event in handled.append(event); return .none })
-        let done = await waitUntil { await queue.stats.dispatched == 1 }
+        // dispatched растёт до запуска async-обработчика — это не барьер доставки.
+        // Ждём запись обработчика; точное число входов проверяем отдельно.
+        let done = await waitUntil { handled.count > 0 }
         XCTAssertTrue(done, "100 апдейтов должны стать одним диспатчем")
-        XCTAssertEqual(handled.count, 1)
-        guard case .coalescedUpdates(let key, let items)? = handled.values.first else {
-            return XCTFail("ожидали coalescedUpdates, получили \(handled.values)")
+        let events = handled.values
+        XCTAssertEqual(events.count, 1)
+        guard case .coalescedUpdates(let key, let items)? = events.first else {
+            return XCTFail("ожидали coalescedUpdates, получили \(events)")
         }
         XCTAssertEqual(key.container, "u:TL_updateNewMessage")
         XCTAssertEqual(items.count, 100)
-        let enqueued = await queue.stats.enqueued
-        XCTAssertEqual(enqueued, 100)
+        let stats = await queue.stats
+        XCTAssertEqual(stats.dispatched, 1)
+        XCTAssertEqual(stats.coalescedIntoBatches, 100)
+        XCTAssertEqual(stats.enqueued, 100)
     }
 
     func testPriorityOrderSettingsBeforeUpdates() async throws {

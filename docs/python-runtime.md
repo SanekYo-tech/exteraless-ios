@@ -29,8 +29,9 @@ PEP 684 входит в CPython 3.12. Отдельного configure-флага
 - `tools/runtime/support.py`: поблочная загрузка, SHA-256, проверка slices,
   установка stdlib и PEP 730 `.fwork` / `.origin` связей в app bundle.
 - `tools/runtime/validate_runtime.py`: сборка device + simulator probe
-  средствами Xcode; запуск свежего отдельного симулятора, проверка отчёта,
-  очистка созданного симулятора.
+  средствами Xcode; отдельный clone предсозданного симулятора и прямое
+  исполнение iOS-simulator бинарника через `simctl spawn`, проверка отчёта,
+  очистка clone. UIKit/установка через SpringBoard не входят в этот probe.
 - `python/runtime/register_bridge.c`, `include/EXLPythonBridge.h`: регистрация
   `_exteraless_bridge` как built-in через `PyImport_AppendInittab`, до старта Python.
 - `python/runtime/smoke/runtime_probe.c`: реальный C API-тест initialization,
@@ -67,6 +68,13 @@ App.app/
 сертификатов Apple. Device probe упаковывается unsigned для самостоятельной
 подписи пользователем. Это отдельный диагностический app ID, не Telegram.
 
+В app bundle исключаются CPython `test/` (27 МБ, около 1600 файлов), native
+test/demo extensions и build-only Headers/Modules фреймворка. `unittest` и
+рабочие stdlib extensions сохраняются. Исходный support archive не меняется.
+Упаковка проверена на самом закреплённом архиве: 54 extension frameworks,
+1020 файлов ресурсов, около 33 МиБ для device (до добавления smoke executable).
+Все 67 исходных device Mach-O проверены: iOS ARM64, без подписи.
+
 Swift `PythonRuntimeConfiguration` теперь использует `python-stdlib` как
 home, родительский `python/` как import root и реальный C API bootstrap:
 `xt_bind(...)` + `BridgeBackend(service=..., manifest_path=...)`.
@@ -86,6 +94,11 @@ Workflow `.github/workflows/python-framework.yml` — только вручну�
 `ok: true`, два OWN_GIL интерпретатора, built-in bridge, SSL и SQLite.
 Это не результат на iOS. Проверка iOS считается выполненной только по
 успеху workflow и его `simulator-smoke.json`; device installation — отдельно.
+В отчёте явно стоит `execution: simctl spawn` и
+`application_installation_verified: false`. Это реальный iOS-simulator
+процесс с тем же бандлом и C-probe, но не проверка sandbox/жизненного цикла
+установленного приложения. Установка в `43601656327` зависла в `simctl install`
+до запуска Python; эту проверку не подменяем успешным compile.
 
 ```powershell
 $env:PYTHONUTF8 = '1'

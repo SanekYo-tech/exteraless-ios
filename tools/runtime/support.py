@@ -18,6 +18,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCK_PATH = ROOT / 'python/runtime/support-lock.json'
+TEST_EXTENSIONS = {'_ctypes_test', '_xxtestfuzz', 'xxlimited', 'xxlimited_35', 'xxsubtype'}
 
 
 def digest(path):
@@ -116,8 +117,21 @@ def stage_application(framework, app, target, lock, bundle_id):
     if destination.exists() or home.exists():
         raise ValueError('Python is already staged in {}'.format(app))
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source / 'Python.framework', destination, symlinks=True)
-    shutil.copytree(framework / 'lib', home / 'lib', symlinks=True)
+    shutil.copytree(source / 'Python.framework', destination, symlinks=True,
+                    ignore=shutil.ignore_patterns('Headers', 'Modules', '_CodeSignature'))
+    python_info_path = destination / 'Info.plist'
+    if python_info_path.is_file():
+        python_info = plistlib.loads(python_info_path.read_bytes())
+        python_info['CFBundleSupportedPlatforms'] = ['iPhoneSimulator' if target == 'simulator' else 'iPhoneOS']
+        python_info_path.write_bytes(plistlib.dumps(python_info))
+
+    def stdlib_ignores(directory, names):
+        ignored = {'__pycache__'}
+        if Path(directory).name == 'python3.12':
+            ignored.add('test')  # CPython's own ~27 MiB test suite, not unittest.
+        return ignored.intersection(names)
+
+    shutil.copytree(framework / 'lib', home / 'lib', symlinks=True, ignore=stdlib_ignores)
     specific = source / ('lib-' + spec['architecture'])
     shutil.copytree(specific, home / 'lib', dirs_exist_ok=True, symlinks=True)
     dynload = home / 'lib/python3.12/lib-dynload'
@@ -125,6 +139,9 @@ def stage_application(framework, app, target, lock, bundle_id):
     template = plistlib.loads((framework / 'build/iOS-dylib-Info-template.plist').read_bytes())
     for extension in sorted(dynload.glob('*.so')):
         name = extension.name.split('.')[0]
+        if name.startswith('_test') or name in TEST_EXTENSIONS:
+            extension.unlink()
+            continue
         module_framework = app / 'Frameworks' / (name + '.framework')
         if module_framework.exists():
             raise ValueError('Duplicate extension framework: ' + name)
