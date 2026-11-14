@@ -86,10 +86,9 @@ public struct InterpreterCallContext: Sendable {
 /// Потокобезопасный одноразовый резюм: результат может прийти раньше await
 /// (воркер успел) — тогда awaitValue возвращает сразу.
 ///
-/// `CheckedContinuation` и `any Error` не Sendable. `resume` контрактно
-/// безопасен с любого потока; NSLock сериализует запись. `nonisolated(unsafe)`
-/// только гасит диагностику Swift 6, лок не убирает. Наружу уходит
-/// `any Error & Sendable` (`PluginHostError` / `DispatchTimeoutError`).
+/// `CheckedContinuation` допускает resume с любого потока. NSLock защищает
+/// однократную запись результата и передачу продолжения вызывающему.
+/// Ошибки на входе ограничены `any Error & Sendable`.
 final class OneShotResult<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     nonisolated(unsafe) private var result: Result<T, any Error>?
@@ -121,9 +120,7 @@ final class OneShotResult<T: Sendable>: @unchecked Sendable {
                     "OneShotResult: двойной await"))
             } else {
                 isAwaited = true
-                // Континуация убегает в другое поле и резюмится с воркера.
-                nonisolated(unsafe) let escaped = cont
-                continuation = escaped
+                continuation = cont
             }
         }
     }
@@ -357,7 +354,7 @@ public actor SubinterpreterManager {
     /// Мягко уничтожить интерпретатор (вызывается только для .ready):
     /// Py_EndInterpreter исполняется на потоке-владельце, затем поток выходит.
     public func destroy(_ handle: InterpreterHandle) async {
-        guard var managed = interpreters[handle.id] else { return }
+        guard let managed = interpreters[handle.id] else { return }
         guard case .ready = managed.state else { return }
         let done = OneShotResult<Bool>()
         _ = managed.mailbox.submit { context in
@@ -374,7 +371,7 @@ public actor SubinterpreterManager {
         _ = try? await done.awaitValue()
     }
 
-    /// Приблизительный RSS интерпретатора, КБ (upper bound, см. CPythonEngine).
+    /// Диагностическая оценка памяти движка, КБ; не per-plugin RSS (см. CPythonEngine).
     public func footprintKB(_ handle: InterpreterHandle) -> Int {
         guard let managed = interpreters[handle.id] else { return 0 }
         return engine.interpreterFootprintKB(managed.reference)

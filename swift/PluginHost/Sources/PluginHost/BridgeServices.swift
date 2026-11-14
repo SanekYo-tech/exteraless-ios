@@ -234,7 +234,10 @@ public final class BridgeServices: @unchecked Sendable {
             }
             // getInstance(...): MessagesController/LocaleController/FileLoader и др.
             if member == "getInstance", let messages {
-                let handle = messages.instanceHandle(fqcn: fqcn, account: int(arguments, at: 0))
+                guard let account = Int32(exactly: int(arguments, at: 0)) else {
+                    throw BridgeFailure.malformed("account does not fit Int32")
+                }
+                let handle = messages.instanceHandle(fqcn: fqcn, account: account)
                 registerInstance(handle: handle, fqcn: fqcn, pluginId: pluginId)
                 return handle
             }

@@ -37,7 +37,7 @@ jobs:
         run: python -m unittest discover -s tools/runtime/tests -v
 
       - name: Test Swift runtime bootstrap
-        run: swift test --package-path swift/PluginHost --jobs 2 --filter PythonRuntimeConfigurationTests
+        run: swift test --package-path swift/PluginHost --jobs 2 --filter 'PythonRuntimeConfigurationTests|BridgeAccountArgumentTests'
 
       - name: Cache pinned support archive
         uses: actions/cache@v4
