@@ -91,6 +91,7 @@ jobs:
             ${{ runner.temp }}/python-native/*smoke*.json
             ${{ runner.temp }}/python-native/probe-failure.json
             ${{ runner.temp }}/python-native/simulator-environment.json
+            ${{ runner.temp }}/python-native/simulator-inventory.json
             ${{ runner.temp }}/python-native/*.log
             ${{ runner.temp }}/python-native/*.ips
             ${{ runner.temp }}/python-native/*.crash

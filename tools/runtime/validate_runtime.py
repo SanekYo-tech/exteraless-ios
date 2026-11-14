@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -115,25 +116,56 @@ def build_target(framework, output, target, lock):
     return app, library, manifest
 
 
-def simulator_probe(app, output):
-    devices = json.loads(run('xcrun', 'simctl', 'list', 'devices', 'available', '-j', capture=True).stdout)['devices']
-    candidate = None
-    for runtime, entries in sorted(devices.items(), reverse=True):
-        if '.iOS-' not in runtime:
+def select_simulator(devices, sdk_version):
+    """Use a generic iOS runtime supported by the selected Xcode SDK.
+
+    A reverse string sort selected iOS-27-2-iPhone19-4 (iPhone Duo) with
+    Xcode 27.1. That device never started our process. Hardware-specific
+    runtime variants and runtimes newer than the active SDK are excluded.
+    """
+    if not re.fullmatch(r'\d+(?:\.\d+){0,2}', sdk_version):
+        raise ValueError('Unrecognized simulator SDK version: ' + sdk_version)
+
+    def version(parts):
+        return tuple(int(part) for part in parts) + (0,) * (3 - len(parts))
+
+    sdk = version(sdk_version.split('.'))
+    candidates = []
+    for runtime, entries in devices.items():
+        match = re.fullmatch(r'com\.apple\.CoreSimulator\.SimRuntime\.iOS-(\d+(?:-\d+){0,2})', runtime)
+        if not match:
             continue
-        for item in entries:
-            if item.get('isAvailable') and item.get('deviceTypeIdentifier') and item['name'].startswith('iPhone') and item.get('state') == 'Shutdown':
-                candidate = (runtime, item)
-                break
-        if candidate:
-            break
-    if candidate is None:
-        raise RuntimeError('No installed iPhone simulator runtime is available on this runner')
-    runtime, template = candidate
+        release = version(match[1].split('-'))
+        if not (15, 0, 0) <= release <= sdk:
+            continue
+        phones = [item for item in entries
+                  if item.get('isAvailable') and item.get('deviceTypeIdentifier')
+                  and item.get('name', '').startswith('iPhone ')
+                  and item.get('state') == 'Shutdown']
+        if phones:
+            # Prefer the ordinary numbered model over Pro/Max/Air variants.
+            phones.sort(key=lambda item: (not bool(re.fullmatch(r'iPhone \d+', item['name'])), item['name']))
+            candidates.append((release, runtime, phones[0]))
+    if not candidates:
+        raise RuntimeError('No generic iPhone runtime compatible with SDK {}; available: {}'.format(
+            sdk_version, ', '.join(sorted(devices))))
+    _, runtime, template = max(candidates, key=lambda item: item[0])
+    return runtime, template
+
+
+def simulator_probe(app, output):
+    sdk_version = run('xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version', capture=True).stdout.strip()
+    devices = json.loads(run('xcrun', 'simctl', 'list', 'devices', 'available', '-j', capture=True).stdout)['devices']
+    (output / 'simulator-inventory.json').write_text(json.dumps({
+        'sdk_version': sdk_version, 'devices': devices,
+    }, indent=2), encoding='utf-8')
+    runtime, template = select_simulator(devices, sdk_version)
+    print('Selected simulator: {} / {} (SDK {})'.format(runtime, template['name'], sdk_version), flush=True)
     # Clone the runner's pre-created device data instead of creating another
     # fully cold device. The original simulator is never booted or modified.
     udid = run('xcrun', 'simctl', 'clone', template['udid'], 'Exteraless Python Probe', capture=True).stdout.strip()
     (output / 'simulator-environment.json').write_text(json.dumps({
+        'sdk_version': sdk_version,
         'runtime': runtime, 'device_type': template['deviceTypeIdentifier'],
         'template': template['name'], 'probe_udid': udid,
         'execution': 'simctl spawn (component probe, not an installation test)',
@@ -143,6 +175,11 @@ def simulator_probe(app, output):
     report_path = None
     try:
         run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=360)
+        # Fail at the infrastructure boundary if even a system process cannot
+        # launch. Its output is retained independently of the Python probe.
+        with (output / 'simulator-health.log').open('w', encoding='utf-8') as log:
+            subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'launchctl', 'version'],
+                           stdout=log, stderr=subprocess.STDOUT, timeout=30, check=True)
         report_path = output / 'native-report.json'
         command = ['xcrun', 'simctl', 'spawn', udid, str(app / EXECUTABLE), '--headless-report', str(report_path)]
         print('Running simulator component probe; output goes to probe-console.log', flush=True)

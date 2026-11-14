@@ -100,6 +100,14 @@ Workflow `.github/workflows/python-framework.yml` — только вручну�
 установленного приложения. Установка в `43601656327` зависла в `simctl install`
 до запуска Python; эту проверку не подменяем успешным compile.
 
+Run `43604638215` выявил ошибку выбора симулятора: строковая сортировка
+взяла hardware-specific `iOS-27-2-iPhone19-4` при активном SDK 27.1.
+Запуск процесса, сбор логов и остановка этого симулятора зависали; отметка
+входа в `main` не появилась. Теперь выбирается обычный runtime с численно
+максимальной версией не выше активного SDK (в том runner image: iOS 27.0,
+iPhone 17). Перед Python проверяется `launchctl version`; inventory,
+версия SDK, выбранное устройство и вывод сохраняются в диагностике.
+
 ```powershell
 $env:PYTHONUTF8 = '1'
 python -m unittest discover -s tools/runtime/tests -v
