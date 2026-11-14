@@ -74,7 +74,8 @@ staging проверяет fingerprints. Полный контракт —
 [telegram-ios/build-system/exteraless/README.md](telegram-ios/build-system/exteraless/README.md).
 
 Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
-Проверенный CPython runtime + native engine: [runtime build 10](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774).
+CPython runtime, C callbacks и настоящий Swift/SDK plugin probe:
+[runtime build 12](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229).
 Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
 
 ## Статус этапов
@@ -83,8 +84,8 @@ staging проверяет fingerprints. Полный контракт —
 - [x] 0b. CI: unsigned Telegram-iOS 13.1.1 + проверенный артефакт
 - [x] 1. CPython 3.12.16 xcframework + реальные iOS-simulator probes
 - [x] Нативный CPythonEngine и Swift-адаптер (component validation)
-- [ ] 2. Native C↔Swift dispatcher — реализован, интеграционный CI pending
-- [ ] 3. Virtual-Java и SDK loader — реализованы, сквозной native probe подготовлен
+- [x] 2. Native C↔Swift dispatcher — реальные host/iOS component probes
+- [x] 3. SDK loader и базовый virtual-java путь — собственный native fixture прошёл
 - [ ] 4. Встройка PluginHost в клиент Telegram — Bazel/lifecycle подключены, IPA pending
 - [ ] 5. Extension points — send и RPC/update observations врезаны, CI pending
 - [ ] 6. UI менеджера плагинов — Display/UIKit реализация, компиляция и кадры pending

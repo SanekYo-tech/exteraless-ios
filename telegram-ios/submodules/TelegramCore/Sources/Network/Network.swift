@@ -1422,7 +1422,7 @@ public final class Network: NSObject {
                             subscriber.putCompletion()
                         }
                         else {
-                            let error = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
+                            let error: MTRpcError = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
                             pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: error)
                             subscriber.putError(error)
                         }
@@ -1472,7 +1472,7 @@ public final class Network: NSObject {
                             subscriber.putCompletion()
                         }
                         else {
-                            let error = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
+                            let error: MTRpcError = MTRpcError(errorCode: 500, errorDescription: "TL_VERIFICATION_ERROR")
                             pluginObserveRequestCompletion(pluginHookMetadata, response: response.result as? BoxedMessage, info: response.info, error: error)
                             subscriber.putError(error)
                         }

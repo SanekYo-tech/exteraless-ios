@@ -40,8 +40,8 @@ Telegram-iOS 13.1.1 (Swift/ObjC, Bazel)
 | 0a | Репозиторий + манифест-генератор + корпус | **готово** | `python -m tools.compat.generate_manifest` зелёный, отчёт читается |
 | 0b | CI: сборка базового Telegram-iOS | **готово** | unsigned IPA: run `43584868441` |
 | 1 | CPython 3.12 xcframework | simulator **проверен**, device pending | run `43615992774`; подписанное приложение ещё требует запуска на iPhone |
-| 2 | Мост `_exteraless_bridge` + протокол | native dispatcher реализован | 169 native C-callbacks на Windows; новая iOS/Swift интеграция ожидает CI |
-| 3 | Virtual-Java слой + SDK loader | реализован | strict fixture SDK tests; сквозной native plugin probe подготовлен |
+| 2 | Мост `_exteraless_bridge` + протокол | **component gate пройден** | 169 C-callbacks на iOS; Swift↔C с настоящим CPython |
+| 3 | Virtual-Java слой + SDK loader | **собственный native fixture пройден** | `43633853229`: load/reload/settings/events, provided deps, MODIFY/CANCEL |
 | 4 | PluginHost Swift + менеджер суб-интерпретаторов | интегрирован, CI pending | Bazel/runtime/lifecycle, сохранение и загрузка плагинов |
 | 5 | Extension points по частотам корпуса | первые врезки реализованы | send CANCEL/MODIFY; RPC/updates пока observational |
 | 6 | UI менеджера плагинов (Display/UIKit) | реализован, визуальная приёмка pending | импорт/включение/настройки/permissions/лог; требуется запись кадров |

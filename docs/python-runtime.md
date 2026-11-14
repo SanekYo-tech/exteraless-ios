@@ -2,25 +2,35 @@
 
 ## Интеграционная волна — 14.11.2026
 
-Commit `36e3aba2` опубликован. **[Compat 43629521052](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43629521052)
-прошёл**: 243 pytest / 20 skipped, 79 PluginHost и 16 PluginHooks Swift tests.
-**[Component 43629521505](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43629521505)**
-подтвердил те же Swift suites на macOS, компиляцию `NativeBridgeBinding` и
-работу адаптера с реальным CPython 3.12.10. Сквозной SDK executable также
-скомпилирован и запущен: AST/disabled install проходят, затем импорт bundled
-`cachetools` ошибочно требует `files` в SDK audit. Причина воспроизведена и
-локально исправлена через явные runtime paths: `_audit_paths.py` учитывает frozen
-`os` без `__file__`. 12 SDK tests и 33 dependency tests проходят; следующий native
-CI подтверждает этот fix. Cleanup/finalize после исходной ошибки прошли. Диагностики:
-`build/artifacts/python-runtime-43629521505/`; fingerprints 70 source files
-сверены с git commit, generated dependency seal также совпал.
+**[Component 43633853229](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229)
+на `38d335fa` полностью прошёл за 2 мин 44 с.**
+
+- Настоящий Swift → CPython → SDK → C → Swift plugin probe выполнился на macOS
+  за **2,358 с**: AST, load/unload/reload, settings Unicode/NUL, callbacks,
+  app event, MODIFY/CANCEL, permissions, persistence и finalize.
+- Плагин импортировал настоящие bundled requests/cachetools; C-мок не установлен.
+  В этом probe Telegram/UIKit providers заменены явными Foundation fixtures.
+- iOS simulator: CPython **3.12.16**, SSL/SQLite/компрессия, два OWN_GIL workers,
+  **169 native C callbacks**, rollback/reentry/изоляция и завершение прошли.
+- [Compat 43633810023](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633810023):
+  **246 pytest / 20 skipped, 79 PluginHost + 16 PluginHooks Swift tests**.
+- Артефакты `Python-3.12-device-probe-12` и `Python-3.12-ios-runtime-12` опубликованы.
+  Локально сверены SHA-256 диагностической IPA, **56 unsigned iOS ARM64 Mach-O**
+  и **22 git source fingerprints**. Копии: `build/artifacts/python-runtime-43633853229/`.
+
+Предыдущий run `43629521505` выявил SDK audit bug: frozen `os` без `__file__`
+приводил к кешированию пустых runtime paths. `_audit_paths.py` исправляет это до
+исполнения плагина; regression включает настоящие библиотеки и проверки доступа.
+Подробности: [`AUDIT_PATHS.md`](../python/exteraless_runtime/AUDIT_PATHS.md).
 
 В текущем дереве runtime подключён к Bazel-графу Telegram: `PluginHost`,
 отдельный `PluginHooks`, static C-мост, dynamic Python.framework и 54 native
 extension frameworks. Main-app lifecycle соединён с нативными Telegram services,
-SDK loader и менеджером плагинов. Core Swift и native adapter на Mac уже прошли;
-сквозной SDK gate и итоговая Telegram IPA ожидают повторной native проверки.
-Подтверждённая iOS runtime-веха ниже относится к базе.
+SDK loader и менеджером плагинов. Сквозной SDK gate прошёл. Первая полная попытка
+[43634378027](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43634378027)
+подтвердила Bazel/unsigned preflight всех 55 frameworks, затем выявила два optional
+`MTRpcError` в Network hook insertion. Типы исправлены перед повтором с action cache.
+UIKit lifecycle, визуальная приёмка и физическая установка ещё требуют проверки.
 
 - `python/exteraless_runtime/` исполняет настоящий SDK loader: AST metadata,
   load/unload, event dispatch, JSON settings, callbacks на owner worker.
@@ -49,7 +59,7 @@ python3 tools/runtime/prepare_telegram_runtime.py --telegram-root telegram-ios
 
 CI делает это автоматически. Source/inventory guard отклоняет устаревший staging.
 
-## Подтверждённая веха — 14.11.2026
+## Предыдущая runtime-веха — 14.11.2026
 
 **[Run 43615992774](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43615992774)
 на `013fc301` полностью прошёл за 2 мин 15 с.**

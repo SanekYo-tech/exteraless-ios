@@ -125,6 +125,8 @@ jobs:
             ${{ runner.temp }}/python-native/ExteralessPythonBridge.xcframework.tar.gz
             ${{ runner.temp }}/python-native/runtime-compile-manifest.json
             ${{ runner.temp }}/python-swift/swift-engine-smoke.json
+            ${{ runner.temp }}/python-plugin/swift-plugin-smoke.json
+            ${{ runner.temp }}/python-plugin/build-inputs.json
           if-no-files-found: error
           retention-days: 30
 
@@ -149,6 +151,7 @@ jobs:
           cp "$RUNNER_TEMP/python-native/simulator-bridge-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-swift/swift-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-plugin-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/build-inputs.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-dependencies.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonBridge.xcframework.tar.gz" "$RUNNER_TEMP/runtime-artifacts/"
