@@ -26,11 +26,24 @@
 В текущем дереве runtime подключён к Bazel-графу Telegram: `PluginHost`,
 отдельный `PluginHooks`, static C-мост, dynamic Python.framework и 54 native
 extension frameworks. Main-app lifecycle соединён с нативными Telegram services,
-SDK loader и менеджером плагинов. Сквозной SDK gate прошёл. Первая полная попытка
+SDK loader и менеджером плагинов. **Полная unsigned Telegram IPA проверена:**
+[43635233046](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046),
+commit `68bb1adf`, artifact `exteraless-ios-13.1.1-23` (14131805640).
+Скачанная IPA независимо перепроверена валидаторами именно этого git commit:
+**67 iOS ARM64 Mach-O, 55 runtime frameworks, 1071 ресурс, шесть extensions**;
+rpath chains и sealed dependencies совпали. Размер **88 440 189 байт**, SHA-256:
+`e0be1839d30c4182f5f3105a43e8f02902d53afff60f29b677601d8f01e6d6fa`.
+Файл: `build/artifacts/telegram-43635233046/Telegram.ipa`, рядом
+`local-verification.json`, manifests, entitlement templates и DSYM.
+
+Первая полная попытка
 [43634378027](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43634378027)
 подтвердила Bazel/unsigned preflight всех 55 frameworks, затем выявила два optional
 `MTRpcError` в Network hook insertion. Типы исправлены перед повтором с action cache.
 UIKit lifecycle, визуальная приёмка и физическая установка ещё требуют проверки.
+
+Следующая полная client/SDK волна и независимое ревью описаны в
+[wave-2-contract.md](wave-2-contract.md). Её незакоммиченный код не входит в build 23.
 
 - `python/exteraless_runtime/` исполняет настоящий SDK loader: AST metadata,
   load/unload, event dispatch, JSON settings, callbacks на owner worker.

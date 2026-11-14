@@ -74,6 +74,10 @@ staging проверяет fingerprints. Полный контракт —
 [telegram-ios/build-system/exteraless/README.md](telegram-ios/build-system/exteraless/README.md).
 
 Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
+**Telegram с встроенным Python/PluginHost:**
+[build 23](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046),
+commit `68bb1adf`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046/artifacts/14131805640).
+Проверены 67 ARM64 Mach-O, 55 runtime frameworks, 1071 Python-ресурс и шесть extensions.
 CPython runtime, C callbacks и настоящий Swift/SDK plugin probe:
 [runtime build 12](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229).
 Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
@@ -86,8 +90,9 @@ CPython runtime, C callbacks и настоящий Swift/SDK plugin probe:
 - [x] Нативный CPythonEngine и Swift-адаптер (component validation)
 - [x] 2. Native C↔Swift dispatcher — реальные host/iOS component probes
 - [x] 3. SDK loader и базовый virtual-java путь — собственный native fixture прошёл
-- [ ] 4. Встройка PluginHost в клиент Telegram — Bazel/lifecycle подключены, IPA pending
-- [ ] 5. Extension points — send и RPC/update observations врезаны, CI pending
-- [ ] 6. UI менеджера плагинов — Display/UIKit реализация, компиляция и кадры pending
+- [x] 4. Встройка PluginHost в Telegram — полная unsigned IPA build 23 проверена
+- [x] 5. Первые extension points — send и RPC/update observations врезаны и скомпилированы
+- [ ] 6. UI менеджера плагинов — скомпилирован в IPA, проверка по кадрам на устройстве pending
+- [ ] Полный client/SDK parity — идёт большая реализационная волна и последующее независимое ревью
 
 Подробный план: `docs/PLAN.md`.

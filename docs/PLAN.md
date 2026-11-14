@@ -42,13 +42,16 @@ Telegram-iOS 13.1.1 (Swift/ObjC, Bazel)
 | 1 | CPython 3.12 xcframework | simulator **проверен**, device pending | run `43615992774`; подписанное приложение ещё требует запуска на iPhone |
 | 2 | Мост `_exteraless_bridge` + протокол | **component gate пройден** | 169 C-callbacks на iOS; Swift↔C с настоящим CPython |
 | 3 | Virtual-Java слой + SDK loader | **собственный native fixture пройден** | `43633853229`: load/reload/settings/events, provided deps, MODIFY/CANCEL |
-| 4 | PluginHost Swift + менеджер суб-интерпретаторов | интегрирован, CI pending | Bazel/runtime/lifecycle, сохранение и загрузка плагинов |
-| 5 | Extension points по частотам корпуса | первые врезки реализованы | send CANCEL/MODIFY; RPC/updates пока observational |
-| 6 | UI менеджера плагинов (Display/UIKit) | реализован, визуальная приёмка pending | импорт/включение/настройки/permissions/лог; требуется запись кадров |
+| 4 | PluginHost Swift + менеджер суб-интерпретаторов | **IPA build 23 проверена** | `43635233046`, `68bb1adf`, runtime в основном bundle |
+| 5 | Extension points по частотам корпуса | первые врезки скомпилированы в клиенте | send CANCEL/MODIFY; RPC/updates пока observational |
+| 6 | UI менеджера плагинов (Display/UIKit) | скомпилирован, визуальная приёмка pending | импорт/включение/настройки/permissions/лог; требуется запись кадров |
 | 7 | Отчёт совместимости в CI | частично | fixture/native suites; поведение внешнего корпуса на устройстве ещё не измерено |
 
 Контракты текущей большой волны: [wave-1-contract.md](wave-1-contract.md).
 Проверенные результаты и границы доказательства: [python-runtime.md](python-runtime.md).
+Полная client/SDK реализационная волна с независимым последующим ревью:
+[wave-2-contract.md](wave-2-contract.md). Инвентаризация пересматривается по Java
+**и Kotlin**; прежние 159 shim-полей не являются полным списком native функций.
 
 ## Ключевые решения
 
