@@ -1,4 +1,5 @@
 module CExteralessPythonBridge {
     header "EXLPythonBridge.h"
+    header "EXLPythonEngine.h"
     export *
 }

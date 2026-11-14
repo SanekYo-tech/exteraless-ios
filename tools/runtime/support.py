@@ -87,6 +87,9 @@ def inspect_archive(path, lock):
             match = re.search(r'#define\s+PY_VERSION\s+"([^"]+)"', header)
             if not match or not match[1].startswith('3.12.'):
                 raise ValueError('Python headers have an unexpected version')
+            for private_header in ('pycore_interp.h', 'pycore_gil.h', 'pycore_condvar.h', 'pycore_atomic.h'):
+                if base + '/Python.framework/Headers/internal/' + private_header not in names:
+                    raise ValueError('Missing pinned runtime compatibility header: ' + private_header)
             dyn = base + '/lib-' + spec['architecture'] + '/python3.12/lib-dynload/'
             modules = {PurePosixPath(name).name.split('.')[0] for name in names if name.startswith(dyn) and name.endswith('.so')}
             missing = set(lock['required_extensions']) - modules

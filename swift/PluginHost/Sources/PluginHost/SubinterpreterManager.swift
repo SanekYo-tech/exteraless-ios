@@ -17,7 +17,7 @@ import Foundation
 // MARK: - Политика PEP 684
 
 /// Настройки суб-интерпретатора — Swift-отражение C-структуры
-/// `PyInterpreterConfig` (Include/internal/pycore_interp.h, Python 3.12).
+/// `PyInterpreterConfig` (публичный Include/cpython/pylifecycle.h, Python 3.12).
 public struct PythonInterpreterConfiguration: Hashable, Sendable {
     /// C-поле `use_main_obmalloc` = 0: свой обмаллокатор на интерпретатор.
     public var useMainObmalloc: Bool = false
@@ -236,7 +236,13 @@ public actor SubinterpreterManager {
 
     private enum State {
         case ready
+        case destroying
         case abandoned
+    }
+
+    private enum SpawnOutcome: Sendable {
+        case ready(InterpRef)
+        case bootstrapFailed(InterpRef, PluginHostError, cleanupFailed: Bool)
     }
 
     private struct Managed {
@@ -251,6 +257,8 @@ public actor SubinterpreterManager {
     private var limits: PythonInterpreterLimits
     private var interpreters: [Int64: Managed] = [:]
     private var nextInterpreterId: Int64 = 1
+    private var pendingCreations = 0
+    private var stopping = false
     public private(set) var stats = Stats()
 
     public init(engine: any CPythonEngine, limits: PythonInterpreterLimits = PythonInterpreterLimits()) {
@@ -264,6 +272,8 @@ public actor SubinterpreterManager {
     }
     /// Есть ли брошенные интерпретаторы (решает, финализировать ли процесс).
     public var hasAbandoned: Bool { abandonedCount > 0 }
+    /// Только после завершения всех созданий/выгрузок и при пустом пуле.
+    public var canFinalizeProcess: Bool { pendingCreations == 0 && interpreters.isEmpty }
 
     /// Создать интерпретатор плагина и выполнить бутстрап (virtualjava + мост).
     public func createInterpreter(
@@ -271,14 +281,17 @@ public actor SubinterpreterManager {
         bootstrapScript: String,
         configuration: PythonInterpreterConfiguration = PythonInterpreterConfiguration()
     ) async throws -> InterpreterHandle {
-        guard interpreters.count < limits.maxInterpreters else {
+        guard !stopping else { throw PluginHostError.notRunning }
+        guard interpreters.count + pendingCreations < limits.maxInterpreters else {
             throw PluginHostError.interpreterLimitReached(limits.maxInterpreters)
         }
+        pendingCreations += 1
+        defer { pendingCreations -= 1 }
         let id = nextInterpreterId
         nextInterpreterId += 1
         let handle = InterpreterHandle(id: id, pluginId: pluginId)
         let mailbox = InterpreterMailbox()
-        let spawnReply = OneShotResult<InterpRef>()
+        let spawnReply = OneShotResult<SpawnOutcome>()
 
         mailbox.start(
             name: "plugin-\(id)-\(pluginId)",
@@ -286,8 +299,23 @@ public actor SubinterpreterManager {
                 // Создание и бутстрап — на потоке-владельце: tstate от
                 // Py_NewInterpreterFromConfig привязан к этому потоку.
                 let reference = try engine.createInterpreter(configuration)
-                _ = try engine.runScript(reference, bootstrapScript)
-                spawnReply.succeed(reference)
+                do {
+                    _ = try engine.runScript(reference, bootstrapScript)
+                } catch {
+                    let bootstrapError = bridgePluginError(error)
+                    var cleanupFailed = false
+                    do {
+                        try engine.destroyInterpreter(reference)
+                    } catch {
+                        cleanupFailed = true
+                    }
+                    // Сначала передаём бухгалтерии результат cleanup; последующий
+                    // onSpawnFailure не заменит уже завершённый OneShotResult.
+                    spawnReply.succeed(.bootstrapFailed(reference, bootstrapError,
+                                                        cleanupFailed: cleanupFailed))
+                    throw bootstrapError
+                }
+                spawnReply.succeed(.ready(reference))
                 return InterpreterCallContext(engine: engine, reference: reference, pluginId: pluginId)
             },
             onSpawnFailure: { error in
@@ -295,19 +323,38 @@ public actor SubinterpreterManager {
             })
 
         // Ждём завершения бутстрапа (включая время Py_NewInterpreterFromConfig).
-        let reference = try await spawnReply.awaitValue()
-
-        interpreters[id] = Managed(
-            handle: handle, mailbox: mailbox, state: .ready,
-            reference: reference, pendingReplies: [])
+        let outcome = try await spawnReply.awaitValue()
         stats.created += 1
-        return handle
+        switch outcome {
+        case let .ready(reference):
+            interpreters[id] = Managed(
+                handle: handle, mailbox: mailbox, state: .ready,
+                reference: reference, pendingReplies: [])
+            if stopping {
+                // destroyAll не ждёт bootstrap. Поздний ref освобождается
+                // через тот же mailbox на владельце; handle наружу не выходит.
+                await destroy(handle)
+                throw PluginHostError.notRunning
+            }
+            return handle
+        case let .bootstrapFailed(reference, error, cleanupFailed):
+            if cleanupFailed {
+                interpreters[id] = Managed(
+                    handle: handle, mailbox: mailbox, state: .abandoned,
+                    reference: reference, pendingReplies: [])
+                stats.abandoned += 1
+            } else {
+                stats.destroyed += 1
+            }
+            throw error
+        }
     }
 
     /// Выполнить скрипт в интерпретаторе. Таймаут — на стороне очереди
     /// (PluginEventQueue.withDispatchTimeout); здесь только отказ для
     /// брошенных интерпретаторов.
     public func invoke(_ handle: InterpreterHandle, script: String) async throws -> String {
+        guard !stopping else { throw PluginHostError.notRunning }
         guard var managed = interpreters[handle.id] else {
             throw PluginHostError.pluginNotFound(handle.pluginId)
         }
@@ -354,10 +401,12 @@ public actor SubinterpreterManager {
     /// Мягко уничтожить интерпретатор (вызывается только для .ready):
     /// Py_EndInterpreter исполняется на потоке-владельце, затем поток выходит.
     public func destroy(_ handle: InterpreterHandle) async {
-        guard let managed = interpreters[handle.id] else { return }
+        guard var managed = interpreters[handle.id] else { return }
         guard case .ready = managed.state else { return }
+        managed.state = .destroying
+        interpreters[handle.id] = managed
         let done = OneShotResult<Bool>()
-        _ = managed.mailbox.submit { context in
+        let accepted = managed.mailbox.submit { context in
             do {
                 try context.engine.destroyInterpreter(context.reference)
                 done.succeed(true)
@@ -366,9 +415,20 @@ public actor SubinterpreterManager {
             }
         }
         managed.mailbox.poison()
-        interpreters[handle.id] = nil
-        stats.destroyed += 1
-        _ = try? await done.awaitValue()
+        if !accepted { done.fail(PluginHostError.pluginNotResponding(handle.pluginId)) }
+        do {
+            _ = try await done.awaitValue()
+            interpreters[handle.id] = nil
+            stats.destroyed += 1
+        } catch {
+            // Native state мог остаться живым. Он всё ещё занимает место в
+            // пуле и запрещает финализацию процесса даже после выхода воркера.
+            if var current = interpreters[handle.id] {
+                current.state = .abandoned
+                interpreters[handle.id] = current
+                stats.abandoned += 1
+            }
+        }
     }
 
     /// Диагностическая оценка памяти движка, КБ; не per-plugin RSS (см. CPythonEngine).
@@ -394,8 +454,10 @@ public actor SubinterpreterManager {
         return false
     }
 
-    /// Разрушить всё (стоп движка).
+    /// Терминальный стоп: закрыть приём до снимка/await. Pending bootstrap
+    /// не ждём — createInterpreter сам уберёт его поздний результат.
     public func destroyAll() async {
+        stopping = true
         let all = interpreters.values.map(\.handle)
         for handle in all {
             await destroy(handle)

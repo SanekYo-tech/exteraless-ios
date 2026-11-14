@@ -19,6 +19,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--python', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--probe', choices=['runtime', 'engine'], default='runtime')
+    parser.add_argument('--debug-memory', action='store_true', help='Enable CPython allocator diagnostics in the engine')
+    parser.add_argument('--fault-injection', action='store_true', help='Test both GIL rollback states on simulated creation failure')
     args = parser.parse_args()
     if sys.platform != 'win32':
         parser.error('This local driver uses MSVC; Apple probes are built by validate_runtime.sh')
@@ -30,20 +33,29 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     native = ROOT / 'python/runtime'
     compiler = new_compiler(compiler='msvc')
-    compiler.define_macro('EXL_RUNTIME_PROBE_MAIN', '1')
+    compiler.define_macro('EXL_{}_PROBE_MAIN'.format(args.probe.upper()), '1')
+    if args.debug_memory:
+        compiler.define_macro('EXL_ENGINE_DEBUG_MEMORY', '1')
+    if args.fault_injection:
+        if args.probe != 'engine':
+            parser.error('--fault-injection requires --probe engine')
+        compiler.define_macro('EXL_ENGINE_FAULT_INJECTION', '1')
+    sources = [ROOT / 'python/bridge/_exteraless_bridge.c', native / 'register_bridge.c']
+    if args.probe == 'engine':
+        sources.extend([native / 'engine.c', native / 'cpython312_compat.c'])
+    sources.append(native / ('smoke/{}_probe.c'.format(args.probe)))
     objects = compiler.compile(
-        [str(ROOT / 'python/bridge/_exteraless_bridge.c'),
-         str(native / 'register_bridge.c'), str(native / 'smoke/runtime_probe.c')],
+        [str(source) for source in sources],
         output_dir=str(args.output / 'obj'),
         include_dirs=[config['include'], str(native / 'include'), str(native / 'smoke')],
         extra_postargs=['/std:c11', '/O2', '/utf-8'],
     )
-    executable = args.output / 'runtime-probe.exe'
+    executable = args.output / '{}-probe.exe'.format(args.probe)
     compiler.link_executable(objects, str(executable), libraries=['python312'],
                              library_dirs=[str(Path(config['home']) / 'libs')])
     env = dict(os.environ, PYTHONUTF8='1')
     env['PATH'] = config['home'] + os.pathsep + env.get('PATH', '')
-    report = args.output / 'runtime-smoke.json'
+    report = args.output / '{}-smoke.json'.format(args.probe)
     result = subprocess.run([str(executable), str(report), config['home']], env=env, timeout=30)
     if result.returncode != 0:
         raise SystemExit('Native embedding probe failed with exit code {}'.format(result.returncode))

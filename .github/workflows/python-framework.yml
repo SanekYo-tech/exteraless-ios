@@ -26,6 +26,7 @@ jobs:
           sparse-checkout: |
             python
             tools/runtime
+            tools/ci
             swift/PluginHost
 
       - name: Set up build Python
@@ -37,7 +38,10 @@ jobs:
         run: python -m unittest discover -s tools/runtime/tests -v
 
       - name: Test Swift runtime bootstrap
-        run: swift test --package-path swift/PluginHost --jobs 2 --filter 'PythonRuntimeConfigurationTests|BridgeAccountArgumentTests|PluginEventQueueTests'
+        run: swift test --package-path swift/PluginHost --jobs 2 --filter 'PythonRuntimeConfigurationTests|BridgeAccountArgumentTests|PluginEventQueueTests|SubinterpreterLifecycleTests'
+
+      - name: Compile and run Swift adapter with native CPython
+        run: python tools/runtime/check_swift_embedding.py --output "$RUNNER_TEMP/python-swift"
 
       - name: Cache pinned support archive
         uses: actions/cache@v4
@@ -58,7 +62,8 @@ jobs:
           set -euo pipefail
           python tools/runtime/validate_runtime.py \
             --support "$RUNNER_TEMP/python-support" \
-            --output "$RUNNER_TEMP/python-native"
+            --output "$RUNNER_TEMP/python-native" \
+            --simulator-device 'iPhone 17'
 
       - name: Package framework and smoke artifacts
         run: |
@@ -68,6 +73,8 @@ jobs:
           cp "$RUNNER_TEMP/python-support-manifest.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/runtime-manifest.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/simulator-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-native/simulator-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-swift/swift-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
           tar -czf "$RUNNER_TEMP/runtime-artifacts/ExteralessPythonBridge.xcframework.tar.gz" \
             -C "$RUNNER_TEMP/python-native" ExteralessPythonBridge.xcframework
@@ -88,12 +95,11 @@ jobs:
           name: python-probe-diagnostics-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/python-support-manifest.json
-            ${{ runner.temp }}/python-native/*smoke*.json
-            ${{ runner.temp }}/python-native/probe-failure.json
-            ${{ runner.temp }}/python-native/simulator-environment.json
-            ${{ runner.temp }}/python-native/simulator-inventory.json
+            ${{ runner.temp }}/python-native/*.json
             ${{ runner.temp }}/python-native/*.log
             ${{ runner.temp }}/python-native/*.ips
             ${{ runner.temp }}/python-native/*.crash
+            ${{ runner.temp }}/python-swift/*.json
+            ${{ runner.temp }}/python-swift/*.log
           if-no-files-found: ignore
           retention-days: 7

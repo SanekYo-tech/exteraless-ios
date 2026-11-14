@@ -34,12 +34,28 @@ PEP 684 входит в CPython 3.12. Отдельного configure-флага
   очистка clone. UIKit/установка через SpringBoard не входят в этот probe.
 - `python/runtime/register_bridge.c`, `include/EXLPythonBridge.h`: регистрация
   `_exteraless_bridge` как built-in через `PyImport_AppendInittab`, до старта Python.
+- `python/runtime/engine.c`, `include/EXLPythonEngine.h`: нативный жизненный цикл
+  процесса/интерпретаторов, временный main tstate на воркере, переключение GIL,
+  непрозрачные ID, выполнение исходника и возврат UTF-8/ошибок через собственный C ABI.
+- `python/runtime/cpython312_compat.c`: узкий слой для особенностей CPython 3.12;
+  использует internal headers той же сборки. Версии заголовков и библиотеки
+  проверяются до инициализации. Эти детали не экспортируются в Swift.
+- `swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift`: адаптер
+  протокола `CPythonEngine`; initialize/finalize на одном выделенном `Thread`,
+  create/run/destroy на потоках `SubinterpreterManager`.
 - `python/runtime/smoke/runtime_probe.c`: реальный C API-тест initialization,
   SSL/hash/SQLite/compression, import встроенного моста, два одновременно живых
   OWN_GIL интерпретатора, раздельные handles, завершение интерпретаторов/process.
 - `python/runtime/smoke/main.m`: отдельное диагностическое iOS-приложение.
 - `tools/runtime/check_host_embedding.py`: MSVC-сборка того же C-probe на
   Windows с Python 3.12; один короткоживущий процесс, timeout 30 секунд.
+- `python/runtime/smoke/engine_probe.c`: два настоящих worker-потока, параллельный
+  bootstrap, отдельные handles/globals, восстановление после исключений/SystemExit,
+  Unicode/NUL, отказ чужому потоку и преждевременной финализации.
+- `tools/runtime/check_swift_embedding.py` + `smoke/swift_engine_probe.swift`:
+  сборка адаптера с настоящим host CPython на macOS, затем проверка через Swift
+  `PythonRuntime` / `SubinterpreterManager`. Обычные SwiftPM-тесты не линкуют Python;
+  этот отдельный probe проверяет и код внутри `canImport(CExteralessPythonBridge)`.
 - `tools/runtime/tests/`: небольшие проверки упаковки, без исполнения плагинов.
 
 В C-мосте исправлены два препятствия для 3.12 OWN_GIL: слот
@@ -80,6 +96,47 @@ home, родительский `python/` как import root и реальный 
 `xt_bind(...)` + `BridgeBackend(service=..., manifest_path=...)`.
 Неизвестный host service отказывает; mock автоматически не устанавливается.
 
+## Контракт нативного движка
+
+Процесс CPython принадлежит одному движку. Повторная инициализация, в том числе
+после finalize, запрещена. Пока существуют живые/создаваемые интерпретаторы,
+финализация отказывает. ID интерпретатора не является указателем; чужой поток,
+удалённый ID и повторный вход проверяются до обращения к Python.
+
+`runScript` компилирует expression либо statement suite, затем исполняет код
+**один раз**. Для expression строка возвращается без дополнительного repr,
+прочие значения — через repr; statement suite возвращает `None`. Ошибка
+выполнения `SyntaxError` не является поводом выполнить код заново. `SystemExit`
+возвращается как ошибка Swift. Результаты копируются по длине, сохраняя NUL.
+
+`_datetime` в закреплённом CPython 3.12 остаётся legacy C-модулем с общими
+статическими типами. Параллельный cold-import через sqlite3 в двух Windows
+OWN_GIL воркерах воспроизвёл `0xC0000374`; ранний import `_datetime` под main GIL
+устранил этот сбой в трёх отдельных контрольных процессах. Проверки совместимости
+C-расширений в суб-интерпретаторах остаются включёнными.
+
+Ранний error path `Py_NewInterpreterFromConfig` в 3.12 может вернуть main tstate
+без main GIL. Compatibility helper проверяет `locked` и `last_holder` вместе
+под mutex самого GIL и восстанавливает владение перед cleanup. Оба состояния
+GIL проверены fault injection в отдельном короткоживущем C-процессе с allocator
+diagnostics; тестовые точки инъекции не входят в production XCFramework.
+
+Удаление интерпретатора с дополнительными Python tstate отказывает вместо
+`Py_FatalError("not the last thread")`. При нормальном удалении предварительно
+закрывается создание новых потоков из finalizer/atexit. Нативный probe проверяет
+живой `_thread`, отказ destroy, кооперативное завершение через sentinel и успешный
+повторный destroy — без предположений о задержке потока.
+
+В `SubinterpreterManager` неуспешный bootstrap освобождает интерпретатор на его
+воркере. Если native cleanup отказывает, слот остаётся abandoned и учитывается
+в лимите. Создания резервируют место до первого await; выполняющееся destroy
+не исчезает из учёта до подтверждённого результата. `canFinalizeProcess`
+требует пустого пула и отсутствия незавершённых созданий.
+Остановка терминальна: закрывает приём до первого await. Поздно завершившееся
+создание очищается на своём worker; `HostState` под lock не публикует late
+handles/loaded/subscriber gate. При ещё выполняющемся bootstrap остановка
+не ожидает его бесконечно и пропускает финализацию процесса.
+
 ## Запуск и доказательства
 
 Workflow `.github/workflows/python-framework.yml` — только вручную.
@@ -88,10 +145,19 @@ Workflow `.github/workflows/python-framework.yml` — только вручну�
 - исходный проверенный support archive;
 - `ExteralessPythonBridge.xcframework.tar.gz` — наш static C bridge;
 - `ExteralessPythonSmoke-unsigned.ipa`;
-- `runtime-manifest.json`, `simulator-smoke.json`, manifest support package.
+- `runtime-manifest.json`, `simulator-smoke.json`, `simulator-engine-smoke.json`,
+  `swift-engine-smoke.json` (macOS host), manifest support package.
+
+Device probe содержит и низкоуровневую проверку runtime, и C-engine probe.
+На симуляторе это два последовательных свежих процесса в одном устройстве.
+Mach-O и отсутствие developer signing в диагностической IPA проверяются тем же
+парсером, что и в основной Telegram IPA.
 
 Локально уже выполнен native probe на CPython **3.12.10 / Windows**:
 `ok: true`, два OWN_GIL интерпретатора, built-in bridge, SSL и SQLite.
+Новый C-engine probe также прошёл на Windows: два собственных native потока,
+изоляция данных, исключения и нормальное завершение. Swift-адаптер ещё требует
+успешной компиляции/исполнения отдельным CI probe.
 Это не результат на iOS. Проверка iOS считается выполненной только по
 успеху workflow и его `simulator-smoke.json`; device installation — отдельно.
 В отчёте явно стоит `execution: simctl spawn` и
@@ -103,10 +169,27 @@ Workflow `.github/workflows/python-framework.yml` — только вручну�
 Run `43604638215` выявил ошибку выбора симулятора: строковая сортировка
 взяла hardware-specific `iOS-27-2-iPhone19-4` при активном SDK 27.1.
 Запуск процесса, сбор логов и остановка этого симулятора зависали; отметка
-входа в `main` не появилась. Теперь выбирается обычный runtime с численно
-максимальной версией не выше активного SDK (в том runner image: iOS 27.0,
-iPhone 17). Перед Python проверяется `launchctl version`; inventory,
-версия SDK, выбранное устройство и вывод сохраняются в диагностике.
+входа в `main` не появилась. Одной фильтрации hardware suffix оказалось
+недостаточно: inventory из run `43605905475` содержит только iPhone Duo
+даже под generic ID `iOS-27-1`. Поэтому прежний селектор снова выбрал Duo.
+Контрольный `simctl spawn ... launchctl version` достиг timeout 30 секунд
+с пустым выводом. Это произошло **до запуска Python**, а не по его timeout
+90 секунд; `log show`, `shutdown` и `delete` также зависали до timeout.
+
+Теперь модель задаётся точным именем через `--simulator-device` (по умолчанию
+`iPhone 17`); workflow передаёт `--simulator-device 'iPhone 17'` явно.
+Среди available устройств в состоянии `Shutdown` выбирается именно эта
+модель на generic iOS runtime с численно максимальной версией не выше SDK.
+Runtime ID с hardware suffix исключаются. При отсутствии нужной модели
+выбор завершается ошибкой с её именем, SDK и списком runtimes, без подмены
+другим устройством. На сохранённом inventory при SDK 27.1 это даёт
+`iOS-27-0` / `iPhone 17`: generic 27.1 содержит только Duo, а 27.2 новее SDK.
+Это проверяется локальной регрессией; успешный CI run с исправлением ещё
+не подтверждён.
+
+Перед Python выполняется контрольный `launchctl version` с timeout 30 секунд;
+inventory, версия SDK, запрошенная модель, выбранное устройство и вывод
+контрольного процесса сохраняются в диагностике.
 
 ```powershell
 $env:PYTHONUTF8 = '1'
@@ -114,11 +197,18 @@ python -m unittest discover -s tools/runtime/tests -v
 python tools/runtime/check_host_embedding.py `
   --python C:\Users\sasha\AppData\Local\Programs\Python\Python312\python.exe `
   --output C:\Users\sasha\AppData\Local\Temp\opencode\exteraless-runtime-host-probe
+python tools/runtime/check_host_embedding.py --probe engine `
+  --python C:\Users\sasha\AppData\Local\Programs\Python\Python312\python.exe `
+  --output C:\Users\sasha\AppData\Local\Temp\opencode\exteraless-native-engine-probe
+python tools/runtime/check_host_embedding.py --probe engine --fault-injection --debug-memory `
+  --python C:\Users\sasha\AppData\Local\Programs\Python\Python312\python.exe `
+  --output C:\Users\sasha\AppData\Local\Temp\opencode\exteraless-engine-fault-probe
 ```
 
 ## Следующее после успешного probe
 
-1. Реальный `CPythonEngine` для Swift (сейчас остаётся Unbound/protocol).
+1. Подтвердить новые native/Swift probes по CI; C-core уже проверен на Windows,
+   адаптер написан, в app Bazel-граф пока не включён.
 2. Привязка native callbacks, их thread/GIL ownership и освобождение handles
    на правильном интерпретаторе; probe не проверяет foreign-thread callbacks.
 3. Врезка runtime, bridge, stdlib/SDK и ресурсов в успешный Bazel-граф клиента.

@@ -119,21 +119,71 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Внутреннее состояние (lock-защищённое)
 
     private final class HostState: @unchecked Sendable {
-        let lock = NSLock()
+        private let lock = NSLock()
         private var plugins: [Plugin] = []
         private var handles: [String: InterpreterHandle] = [:]
         private var inflight: Set<String> = []
-        var isRunning = false
+        private var running = false
+        private var stopping = false
+
+        var isRunning: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return running
+        }
+
+        var isStopping: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return stopping
+        }
+
+        func shouldStart() throws -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping else { throw PluginHostError.notRunning }
+            return !running
+        }
+
+        func markRunning() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping else { return false }
+            running = true
+            return true
+        }
+
+        func beginStopping() {
+            lock.lock(); defer { lock.unlock() }
+            stopping = true
+            running = false
+            handles.removeAll()
+            for index in plugins.indices { plugins[index].loaded = false }
+        }
 
         func pluginList() -> [Plugin] { lock.lock(); defer { lock.unlock() }; return plugins }
         func plugin(id: String) -> Plugin? { pluginList().first { $0.id == id } }
 
-        func upsert(_ plugin: Plugin) {
+        @discardableResult
+        func upsert(_ plugin: Plugin) -> Plugin {
             lock.lock(); defer { lock.unlock() }
+            var plugin = plugin
+            if stopping { plugin.loaded = false }
             if let index = plugins.firstIndex(where: { $0.id == plugin.id }) {
                 plugins[index] = plugin
             } else {
                 plugins.append(plugin)
+            }
+            return plugin
+        }
+
+        func recomputeGate(_ gate: SubscriberGate) {
+            // Снимок и публикация под тем же lock, что beginStopping:
+            // старый снимок loaded-плагинов не откроет gate после stop.
+            lock.lock(); defer { lock.unlock() }
+            gate.reset()
+            guard !stopping else { return }
+            for plugin in plugins
+            where plugin.isEnabled && plugin.loaded && !plugin.notResponding {
+                for kind in ExtensionPointKind.allCases where plugin.handles(kind) {
+                    gate.add(kind, 1)
+                }
             }
         }
 
@@ -148,9 +198,11 @@ public final class PluginHost: @unchecked Sendable {
             return handles[id]
         }
 
-        func setHandle(_ handle: InterpreterHandle) {
+        func setHandle(_ handle: InterpreterHandle) -> Bool {
             lock.lock(); defer { lock.unlock() }
+            guard !stopping else { return false }
             handles[handle.pluginId] = handle
+            return true
         }
 
         func removeHandle(for id: String) {
@@ -247,8 +299,9 @@ public final class PluginHost: @unchecked Sendable {
     /// Поднять движок: CPython → сторож → очередь → плагины.
     /// safeMode (PluginsConstants.KEY_SAFE_MODE): рантайм стартует без плагинов.
     public func start(safeMode: Bool = false) async throws {
-        guard !state.isRunning else { return }
+        guard try state.shouldStart() else { return }
         try await runtime.initialize(configuration.runtime)
+        try await checkStartStillAllowed()
         try? FileManager.default.createDirectory(
             atPath: configuration.runtime.pluginRootDirectory,
             withIntermediateDirectories: true)
@@ -265,6 +318,7 @@ public final class PluginHost: @unchecked Sendable {
                 guard let self else { return [] }
                 return await self.interpreters.footprintSnapshot()
             })
+        try await checkStartStillAllowed()
 
         await queue.start(
             handler: { [weak self] event in
@@ -275,10 +329,13 @@ public final class PluginHost: @unchecked Sendable {
                 await self?.handleBatchTimeout(event)
             },
             limits: configuration.queue)
+        try await checkStartStillAllowed()
 
         if !safeMode {
             // Атрибуция падения прошлого процесса: выключить виновника ДО загрузки.
-            if let crashed = await watchdog.recoverAfterCrash(),
+            let crashed = await watchdog.recoverAfterCrash()
+            try await checkStartStillAllowed()
+            if let crashed,
                var plugin = state.plugin(id: crashed) {
                 plugin.enabled = false
                 plugin.loadError = "plugin crashed the app"
@@ -287,22 +344,35 @@ public final class PluginHost: @unchecked Sendable {
             }
             for plugin in state.pluginList() where plugin.isEnabled {
                 await loadPlugin(plugin)
+                try await checkStartStillAllowed()
             }
         }
-        state.isRunning = true
+        guard state.markRunning() else {
+            await stop()
+            throw PluginHostError.notRunning
+        }
         notifyReload()
     }
 
+    private func checkStartStillAllowed() async throws {
+        guard !state.isStopping else {
+            // start сервиса мог попасть в его actor уже после stop сервиса.
+            // Повторный cleanup закрывает и этот порядок выполнения.
+            await stop()
+            throw PluginHostError.notRunning
+        }
+    }
+
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
-    /// Финализация CPython пропускается, если есть брошенные интерпретаторы.
+    /// Терминальная операция. При pending/abandoned CPython не финализируется.
     public func stop() async {
+        state.beginStopping()
+        gate.reset()
         await queue.stop()
         await watchdog.stop()
         await interpreters.destroyAll()
-        let hasAbandoned = await interpreters.hasAbandoned
-        await runtime.shutdown(canFinalizeProcess: !hasAbandoned)
-        gate.reset()
-        state.isRunning = false
+        let canFinalize = await interpreters.canFinalizeProcess
+        await runtime.shutdown(canFinalizeProcess: canFinalize)
         notifyReload()
     }
 
@@ -322,7 +392,7 @@ public final class PluginHost: @unchecked Sendable {
         try FileManager.default.copyItem(at: sourceURL, to: target)
         var plugin = metadata
         plugin.path = target.path
-        state.upsert(plugin)
+        plugin = state.upsert(plugin)
         persistPlugins()
         if plugin.enabled {
             await loadPlugin(plugin)
@@ -386,14 +456,19 @@ public final class PluginHost: @unchecked Sendable {
     @discardableResult
     private func loadPlugin(_ plugin: Plugin) async -> Plugin {
         var plugin = plugin
-        // Загрузка — рискованная операция: маркер сторожа немедленно
-        // (notePluginEnter(id, risky=true) в PluginsWatchdog.java).
-        await watchdog.noteRiskyOperation(plugin.id)
         do {
+            guard !state.isStopping else { throw PluginHostError.notRunning }
+            // Загрузка — рискованная операция: маркер сторожа немедленно
+            // (notePluginEnter(id, risky=true) в PluginsWatchdog.java).
+            await watchdog.noteRiskyOperation(plugin.id)
+            guard !state.isStopping else { throw PluginHostError.notRunning }
             let handle = try await interpreters.createInterpreter(
                 for: plugin.id,
                 bootstrapScript: configuration.runtime.bootstrapScript(interpreterPluginId: plugin.id))
-            state.setHandle(handle)
+            guard state.setHandle(handle) else {
+                await interpreters.destroy(handle)
+                throw PluginHostError.notRunning
+            }
             plugin.loaded = true
             plugin.loadError = nil
             plugin.notResponding = false
@@ -405,7 +480,8 @@ public final class PluginHost: @unchecked Sendable {
             notifyFailure(plugin.id, plugin.loadError ?? "load error")
         }
         await watchdog.scheduleMarkerClear()
-        state.upsert(plugin)
+        if state.isStopping { await watchdog.stop() }
+        plugin = state.upsert(plugin)
         persistPlugins()
         recomputeGate()
         return plugin
@@ -499,13 +575,7 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Гейт и уведомления
 
     private func recomputeGate() {
-        gate.reset()
-        for plugin in state.pluginList()
-        where plugin.isEnabled && plugin.loaded && !plugin.notResponding {
-            for kind in ExtensionPointKind.allCases where plugin.handles(kind) {
-                gate.add(kind, 1)
-            }
-        }
+        state.recomputeGate(gate)
     }
 
     private func applyNotResponding(_ pluginId: String, _ isNotResponding: Bool) {

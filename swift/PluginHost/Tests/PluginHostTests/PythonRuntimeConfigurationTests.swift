@@ -12,6 +12,9 @@ final class PythonRuntimeConfigurationTests: XCTestCase {
 
         let configuration = PythonRuntimeConfiguration.standard(bundle: bundle)
         XCTAssertEqual(configuration.frameworkHome, root + "/python-stdlib")
+        let executableURL = try XCTUnwrap(bundle.executableURL)
+        XCTAssertEqual(executableURL.path, root + "/Bootstrap")
+        XCTAssertEqual(configuration.executablePath, executableURL.path)
         XCTAssertEqual(configuration.stdlibDirectories, [
             root + "/python-stdlib/lib/python3.12",
             root + "/python-stdlib/lib/python3.12/lib-dynload",
@@ -43,6 +46,7 @@ final class PythonRuntimeConfigurationTests: XCTestCase {
         let configuration = PythonRuntimeConfiguration()
         XCTAssertEqual(configuration.service, "java")
         XCTAssertNil(configuration.manifestPath)
+        XCTAssertNil(configuration.executablePath)
 
         let script = configuration.bootstrapScript(interpreterPluginId: "test")
         XCTAssertEqual(try bootstrapPaths(script), [])
@@ -152,9 +156,11 @@ final class PythonRuntimeConfigurationTests: XCTestCase {
             "CFBundleIdentifier": "test.exteraless.bootstrap",
             "CFBundleName": "Bootstrap",
             "CFBundlePackageType": "APPL",
+            "CFBundleExecutable": "Bootstrap",
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try data.write(to: appURL.appendingPathComponent("Info.plist"))
+        try Data().write(to: appURL.appendingPathComponent("Bootstrap"))
         return (try XCTUnwrap(Bundle(url: appURL)), appURL)
     }
 }

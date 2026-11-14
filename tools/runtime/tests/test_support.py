@@ -34,6 +34,8 @@ class SupportTests(unittest.TestCase):
             self.write(folder / 'Python.framework/Python', b'framework fixture')
             self.write(folder / 'Python.framework/Info.plist', plistlib.dumps({'CFBundleSupportedPlatforms': ['iPhoneOS']}))
             self.write(folder / 'Python.framework/Headers/patchlevel.h', b'#define PY_VERSION "3.12.16"\n')
+            for private_header in ('pycore_interp.h', 'pycore_gil.h', 'pycore_condvar.h', 'pycore_atomic.h'):
+                self.write(folder / ('Python.framework/Headers/internal/' + private_header), b'/* header fixture */')
             for module in self.lock['required_extensions']:
                 self.write(folder / ('lib-arm64/python3.12/lib-dynload/' + module + '.cpython-312-iphoneos.so'), b'extension fixture')
             self.write(folder / 'lib-arm64/python3.12/lib-dynload/_ssl.xcprivacy', b'privacy fixture')

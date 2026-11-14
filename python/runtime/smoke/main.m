@@ -1,10 +1,11 @@
 #import <UIKit/UIKit.h>
 #import "runtime_probe.h"
+#import "engine_probe.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-static int RunProbe(NSString *report) {
+static int RunProbe(NSString *report, BOOL engine) {
     NSString *resources = NSBundle.mainBundle.resourcePath;
     NSString *home = [resources stringByAppendingPathComponent:@"python-stdlib"];
     NSString *stdlib = [home stringByAppendingPathComponent:@"lib/python3.12"];
@@ -15,7 +16,10 @@ static int RunProbe(NSString *report) {
         return 16;
     }
     fprintf(stderr, "EXL_PROBE_RESOURCES %s\n", resources.UTF8String);
-    int status = EXLRunRuntimeProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, report.UTF8String);
+    const char *executable = NSBundle.mainBundle.executablePath.UTF8String;
+    int status = engine
+        ? EXLRunEngineProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String)
+        : EXLRunRuntimeProbe(home.UTF8String, stdlib.UTF8String, dynload.UTF8String, executable, report.UTF8String);
     NSData *previous = [NSData dataWithContentsOfFile:report];
     NSMutableDictionary *result = previous ? [[NSJSONSerialization JSONObjectWithData:previous options:0 error:nil] mutableCopy] : nil;
     if (![result isKindOfClass:NSMutableDictionary.class]) result = [NSMutableDictionary dictionary];
@@ -52,7 +56,7 @@ static int RunProbe(NSString *report) {
     NSString *report = [documents stringByAppendingPathComponent:@"runtime-smoke.json"];
     // All interpreter creation/destruction stays on this one native thread.
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        int status = RunProbe(report);
+        int status = RunProbe(report, NO);
         dispatch_async(dispatch_get_main_queue(), ^{
             label.text = status == 0 ? @"CPython 3.12 + native bridge: OK" : [NSString stringWithFormat:@"Runtime probe failed (%d)", status];
             NSLog(@"Runtime probe status=%d report=%@", status, report);
@@ -72,7 +76,10 @@ int main(int argc, char **argv) {
         // The component CI probe runs the SAME iOS-simulator binary directly,
         // without SpringBoard/installd or a UIKit application lifecycle.
         if (argc == 3 && strcmp(argv[1], "--headless-report") == 0) {
-            return RunProbe([NSString stringWithUTF8String:argv[2]]);
+            return RunProbe([NSString stringWithUTF8String:argv[2]], NO);
+        }
+        if (argc == 3 && strcmp(argv[1], "--engine-report") == 0) {
+            return RunProbe([NSString stringWithUTF8String:argv[2]], YES);
         }
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(EXLProbeDelegate.class));
     }

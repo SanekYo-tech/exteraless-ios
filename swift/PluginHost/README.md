@@ -26,12 +26,12 @@ swift/PluginHost/
 
 ## Статус
 
-Код написан на Windows-машине **без компиляции** (Swift здесь не собирается —
-по плану сборка на macOS/CI). Синтаксис/сендабельность выверены вручную;
-рискованные места помечены `TODO(мак)` и `TODO(этап 5)`. Все обращения к
-CPython идут через протокол `CPythonEngine` — модуль собирается и тестируется
-**вообще без Python** (это же даёт Linux-CI «на каждый пуш» по принципу 5
-архитектуры).
+Swift-модуль скомпилирован на macOS и Linux; Compat run `43604630628`
+подтвердил оба job (pytest и Swift). Обычные SwiftPM-тесты используют `FakeEngine`.
+Реальный адаптер `CPythonXCFrameworkEngine` и C-core `python/runtime/engine.c`
+добавлены отдельно: C-core проверен на Windows/CPython 3.12.10, сборка и выполнение
+Swift с настоящим CPython проверяются отдельным native probe. Подробности и
+границы проверки: [python-runtime.md](../../docs/python-runtime.md).
 
 ## Разработка и тесты (бесплатно, без macOS)
 
@@ -90,35 +90,21 @@ swift_library(
 TODO(мак): выбрать вариант по тому, как telegram-ios в 13.1.1 подключает
 локальные модули (у него есть и WORKSPACE, и MODULE.bazel — сверить).
 
-### 2. CPython (этап 1: Python.xcframework) и движок
+### 2. CPython и движок
 
-Python.xcframework (BeeWare+патч, CPython 3.12, собран этапом 1) кладём в
-`telegram-ios/third-party/python/`:
+BeeWare `3.12-b13` закреплён по SHA-256 в `python/runtime/support-lock.json`.
+`Python.framework` — **динамический** фреймворк; ему требуется соответствующий
+dynamic framework import и embedding в `App.app/Frameworks`, а не static import.
+Статическим является наш `ExteralessPythonBridge.xcframework`: C-мост, его
+built-in регистрация и `engine.c`. Публичный module map `CExteralessPythonBridge`
+экспортирует собственный C ABI без заголовков CPython в Swift.
 
-```python
-# third-party/python/BUILD.bazel
-apple_static_framework_import(
-    name = "PythonFramework",
-    framework_imports = glob(["Python.xcframework/ios-arm64/Python.framework/**"]),
-)
-```
-
-Движок — ОДИН файл на macOS (этап 5, ~150 строк), реализующий `CPythonEngine`:
-
-```swift
-// CPythonXCFrameworkEngine.swift
-import Python   // modulemap на Python.xcframework/Headers/Python.h
-import PluginHost
-
-public struct CPythonXCFrameworkEngine: CPythonEngine { ... }
-```
-
-(modulemap: `module Python { header "Python.h" export * }` + `cc_import`/`objc_library`
-к `libpython3.12.a` из фреймворка; TODO(мак): сверить с артефактом этапа 1.)
-Все настоящие C-вызовы перечислены в doc-комментариях `CPythonEngine`
-(PyConfig_InitPythonConfig/Py_InitializeFromConfig, Py_NewInterpreterFromConfig
-с PyInterpreterConfig(gil: OWN_GIL), PyRun_String/PyObject_Repr, Py_EndInterpreter,
-Py_FinalizeEx) — реализация механическая.
+`CPythonXCFrameworkEngine.swift` уже реализует протокол. Он компилируется при
+наличии C-модуля, использует фиксированный control Thread для initialize/finalize
+и потоки менеджера для интерпретаторов. Сам C-core отвечает за GIL/tstate,
+проверку владельца и живых интерпретаторов, однократное выполнение исходника,
+передачу исключений и освобождение буферов. Bazel-врезка этих компонентов в
+Telegram остаётся следующим шагом после native probe.
 
 ### 3. Ресурсы Python и мост этапа 2
 
@@ -126,14 +112,16 @@ Py_FinalizeEx) — реализация механическая.
 (кладут её сборочные скрипты этапов 1–2):
 
 ```
-PluginHostResources.bundle/
-├── Python.framework/…               # этап 1
+App.app/
+├── Frameworks/Python.framework/…    # динамический runtime
+├── Frameworks/_ssl.framework/…      # и остальные stdlib extensions
 ├── python-stdlib/lib/python3.12/…   # stdlib (без test-suite, ~10 МБ)
 ├── python/virtualjava/…             # копия python/virtualjava из этого репо
 └── python/sdk/…                     # копия python/sdk из этого репо
 ```
 
-`PythonRuntimeConfiguration.standard(bundle:)` читает ровно эту структуру.
+`PythonRuntimeConfiguration.standard(bundle: .main)` использует эту структуру;
+`sys.executable` явно указывает на executable приложения для .fwork-loader.
 Плагины живут в `Application Support/exteraless/plugins` (туда же пишет стор
 `plugins.json`/`grants.json`/`.watchdog`).
 
@@ -142,7 +130,7 @@ C-мост этапа 2 (`_exteraless_bridge`) получает Swift-колбэ
 ```swift
 let host = try PluginHost(
     engine: CPythonXCFrameworkEngine(),
-    configuration: .standard(bundle: pluginResourcesBundle))
+    configuration: .standard(bundle: .main))
 try await host.start()
 // C-слой зовёт host.bridge.dispatchJSON(json, pluginId:) синхронно
 // с потока интерпретатора — это и есть Backend-протокол (python/virtualjava/backend.py).
@@ -183,15 +171,14 @@ host.events.emitUpdate(name: updateName, account: account, updateJSON: json)
   плагин помечается `notResponding`, в гейт не входит;
 - два страйка маркера `plugins/.watchdog` при смертях процесса → плагин
   выключается на старте (`PluginWatchdog.recoverAfterCrash`);
-- RSS-лимит на плагин — по приближённому footprint (TODO(мак): per-interpreter
-  RSS в CPython 3.12 нет, меряем дельтой RSS процесса);
+- per-interpreter RSS в CPython 3.12 недоступен; движок возвращает 0 («неизвестно»).
+  Общую память процесса и её дельту нельзя выдавать за память отдельного плагина;
 - если есть брошенные интерпретаторы — при остановке движка НЕ вызываем
   `Py_FinalizeEx` (зависнет на вечных GIL).
 
 ## Что осталось этапу 5 (macOS)
 
-1. `CPythonXCFrameworkEngine` (см. выше) + проверка всех `TODO(мак)` в
-   doc-комментариях `CPythonEngine`.
+1. Подтверждение native/Swift probes нового движка в CI и включение в Bazel-граф.
 2. C-мост этапа 2: модуль `_exteraless_bridge` (Backend-протокол) +
    JSON-обёртка `host.bridge.dispatchJSON` + регистрация инстанс-таблицы.
 3. Реальные Swift-сервисы моста (`PluginMessagesService`/`PluginSettingsService`/

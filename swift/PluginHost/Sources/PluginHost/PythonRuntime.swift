@@ -3,20 +3,21 @@ import Foundation
 /// Управление жизненным циклом CPython уровня процесса.
 ///
 /// Всё общение с CPython идёт через протокол `CPythonEngine` — семантические
-/// операции с контрактом C-API 3.12 для будущего нативного C-shim. Пакет
-/// не линкуется с CPython напрямую; движок для BeeWare Python.framework
-/// ещё предстоит реализовать и подключить в сборке приложения.
+/// операции с контрактом C-API 3.12. `CPythonXCFrameworkEngine` адаптирует
+/// нативный C-shim при наличии CExteralessPythonBridge; обычная SwiftPM-сборка
+/// не требует CPython и использует инъекцию движка.
 
 // MARK: - Конфигурация
 
 /// Пути и параметры встройки BeeWare CPython 3.12.
 public struct PythonRuntimeConfiguration: Hashable, Sendable {
-    /// Имя программы (argv[0] интерпретатора; видно в диагностиках CPython).
+    /// Имя программы (PyConfig.program_name; видно в диагностиках CPython).
     public var programName: String
     /// Python home (PyConfig.home), обычно App.app/python-stdlib.
     /// Историческое имя поля: это не каталог бинарника Python.framework.
     public var frameworkHome: String?
     /// Каталоги stdlib в бандле (PyConfig.module_search_paths).
+    /// Пустой список оставляет вычисление путей из home движку CPython.
     public var stdlibDirectories: [String]
     /// Корни импорта: python (родитель virtualjava), python/sdk, корень плагинов
     /// (добавляются в sys.path каждого суб-интерпретатора).
@@ -34,6 +35,10 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
     /// Префикс зарегистрированных нативных сервисов (<service>.call и т.д.).
     /// Неизвестный сервис отказывает при обращении; mock не устанавливается.
     public var service: String
+    /// PyConfig.executable / sys.executable. На iOS .fwork-loader разрешает
+    /// относительные пути Frameworks от исполняемого файла приложения.
+    /// nil оставляет выбор CPython; standard(bundle:) задаёт executableURL.
+    public var executablePath: String?
 
     public init(programName: String = "exteraless",
                 frameworkHome: String? = nil,
@@ -43,7 +48,8 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
                 writeBytecode: Bool = false,
                 installSignalHandlers: Bool = false,
                 manifestPath: String? = nil,
-                service: String = "java") {
+                service: String = "java",
+                executablePath: String? = nil) {
         self.programName = programName
         self.frameworkHome = frameworkHome
         self.stdlibDirectories = stdlibDirectories
@@ -53,6 +59,7 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
         self.installSignalHandlers = installSignalHandlers
         self.manifestPath = manifestPath
         self.service = service
+        self.executablePath = executablePath
     }
 
     /// Фиксированный layout приложения: App.app/Frameworks/Python.framework
@@ -80,7 +87,8 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
             writeBytecode: false,
             installSignalHandlers: false,
             manifestPath: resourcePath + "/python/compat-manifest.json",
-            service: "java")
+            service: "java",
+            executablePath: bundle.executableURL?.path)
     }
 }
 
@@ -125,8 +133,8 @@ public extension PythonRuntimeConfiguration {
 
 // MARK: - Движок (контракт с CPython)
 
-/// Оpaque-ссылка на суб-интерпретатор. Значение определяет реализация движка
-/// (например, PyInterpreterState* как Int64).
+/// Opaque-ссылка на суб-интерпретатор. Нативный C-shim возвращает положительный
+/// process-local ID, а не адрес PyInterpreterState; значение нельзя разыменовать.
 public struct InterpRef: Hashable, Sendable {
     public let raw: Int64
     public init(raw: Int64) { self.raw = raw }
@@ -134,6 +142,8 @@ public struct InterpRef: Hashable, Sendable {
 
 /// Семантический контракт с CPython 3.12. Каждая операция документирована
 /// настоящими C-вызовами, которые обязана делать реализация.
+/// Вызывать из native-кода без удержания GIL/attached Python thread state.
+/// Нативный движок сам переключает tstate/GIL и возвращается detached.
 public protocol CPythonEngine: Sendable {
     /// Строка версии для диагностики (например "3.12.x").
     var apiVersion: String { get }
@@ -142,9 +152,11 @@ public protocol CPythonEngine: Sendable {
 
     /// Инициализация процесса.
     ///
-    /// C-API: `PyConfig config; PyConfig_InitPythonConfig(&config);`
-    /// `PyConfig_SetString(&config, &config.program_name, ...)`,
-    /// `PyConfig_SetString(&config, &config.home, ...)` при заданном frameworkHome.
+    /// C-API: `PyPreConfig_InitIsolatedConfig`, `utf8_mode = 1`, `Py_PreInitialize`;
+    /// затем `PyConfig config; PyConfig_InitIsolatedConfig(&config);`
+    /// `parse_argv = 0`, `site_import = 0`; окружение Python не используется.
+    /// UTF-8 через `PyConfig_SetBytesString`: program_name, home (frameworkHome)
+    /// и executable (executablePath), если соответствующие значения заданы.
     /// Для явного списка stdlibDirectories: `config.module_search_paths_set = 1`
     /// и `PyWideStringList_Append(&config.module_search_paths, ...)` для каждого
     /// пути (Include/cpython/initconfig.h); проверять возвращённый PyStatus.
@@ -154,14 +166,18 @@ public protocol CPythonEngine: Sendable {
     /// До Py_InitializeFromConfig shim регистрирует built-in модуль через
     /// `PyImport_AppendInittab("_exteraless_bridge", PyInit__exteraless_bridge)`
     /// с проверкой кода возврата.
-    /// После успеха — `PyEval_SaveThread()` (отдать GIL инициализирующему потоку).
+    /// После успеха — `PyEval_SaveThread()` (сохранить main tstate и отдать GIL).
+    /// Initialize/finalize обязаны исполняться на ОДНОМ настоящем native Thread;
+    /// actor/serial queue этого не гарантирует. Адаптер использует control Thread.
+    /// Процесс принадлежит движку эксклюзивно; повторная инициализация запрещена.
     func initializeProcess(configuration: PythonRuntimeConfiguration) throws
 
     /// Финализация процесса. Не вызывать при брошенных (abandoned) интерпретаторах:
     /// их потоки могут продолжать выполнение или ждать нативный код, поэтому
     /// `Py_FinalizeEx()` может зависнуть. Abandon не останавливает поток;
     /// освобождение ресурсов тогда остаётся teardown процесса ОС.
-    /// C-API: `Py_FinalizeEx()`.
+    /// C-API на том же control Thread: `PyEval_RestoreThread(main_tstate)`,
+    /// `Py_FinalizeEx()`. C-shim отказывает при живых/создаваемых интерпретаторах.
     func finalizeProcess() throws
 
     /// Создать суб-интерпретатор по политике PEP 684. Вызывать на потоке,
@@ -175,22 +191,26 @@ public protocol CPythonEngine: Sendable {
     /// ошибка — `PyStatus_Exception(status)`.
     /// PEP 684 входит в CPython 3.12: отдельный build-флаг isolated-subinterpreters
     /// не требуется; собственный GIL выбирается в PyInterpreterConfig.
-    /// TODO(мак): проверить требование удержания GIL основного интерпретатора
-    /// при вызове (обсуждение python/cpython#111518).
+    /// C-shim временно присоединяет к воркеру main-interpreter tstate, получает
+    /// main GIL для создания, затем удаляет временный tstate и возвращает
+    /// суб-интерпретатор с отпущенным GIL. PyGILState_Ensure здесь не применяется.
     func createInterpreter(_ configuration: PythonInterpreterConfiguration) throws -> InterpRef
 
-    /// Согласованно завершить интерпретатор на потоке-владельце с его текущим
-    /// tstate и удержанным GIL. C-API: `Py_EndInterpreter(tstate)`.
+    /// Согласованно завершить интерпретатор на потоке-владельце. C-shim сам
+    /// восстанавливает его tstate/GIL и вызывает `Py_EndInterpreter(tstate)`;
+    /// вызывающий native-код входит и выходит без GIL/attached tstate.
     /// Это не способ прервать зависший вызов: политика abandon прекращает
     /// дальнейший диспатч, но не гарантирует остановку потока/освобождение памяти.
     func destroyInterpreter(_ reference: InterpRef) throws
 
-    /// Выполнить исходник в интерпретаторе, вернуть repr результата последнего
-    /// выражения (v1: мост JSON-строками).
-    /// C-API: на потоке-владельце — `PyRun_SimpleString` не возвращает значения,
-    /// поэтому: `PyRun_String` с `Py_eval_input`/`Py_file_input`,
-    /// `PyObject_Repr` + `PyUnicode_AsUTF8`; ошибки — `PyErr_Occurred()`,
-    /// `PyErr_Fetch`, `PyErr_NormalizeException`, текст в ошибку Swift.
+    /// Выполнить исходник ровно один раз на потоке-владельце интерпретатора.
+    /// Одно expression: str возвращается как есть, прочие значения — через repr.
+    /// Statement suite возвращает "None", НЕ значение последней строки exec.
+    /// C-API: `Py_CompileString` сначала с `Py_eval_input`, при ошибке СИНТАКСИСА
+    /// компиляции — с `Py_file_input`; затем один `PyEval_EvalCode`.
+    /// `PyUnicode_AsUTF8AndSize` сохраняет UTF-8 и встроенный NUL в результате;
+    /// NUL в исходнике отвергается. Ошибки выполнения (включая SystemExit)
+    /// возвращаются как Swift runtimeFailure, без печати, повторного exec или exit.
     func runScript(_ reference: InterpRef, _ source: String) throws -> String
 
     /// Диагностическая оценка памяти, КБ; семантику счётчика определяет движок.
@@ -234,9 +254,9 @@ public struct UnboundCPythonEngine: CPythonEngine {
 
 // MARK: - Рантайм
 
-/// Актор, владеющий процессом CPython. Блокирующие C-вызывы здесь редки
-/// (инициализация/финализация), исполнение скриптов происходит на воркерных
-/// потоках суб-интерпретаторов (SubinterpreterManager), не в акторе.
+/// Актор, управляющий жизненным циклом CPython. Движок переносит блокирующие
+/// initialize/finalize на фиксированный control Thread; сам актор affinity
+/// не обеспечивает. Скрипты исполняются на воркерах SubinterpreterManager.
 public actor PythonRuntime {
     public enum State: Equatable, Sendable {
         case idle
@@ -265,8 +285,8 @@ public actor PythonRuntime {
     public func shutdown(canFinalizeProcess: Bool) {
         guard state == .running else { return }
         if canFinalizeProcess {
-            // Отказ финализации не откатывает состояние: процесс всё равно
-            // терминален, ошибка уже залогирована реализацией движка.
+            // Отказ финализации не откатывает терминальное состояние актора.
+            // Фактическое состояние процесса доступно через движок.
             try? engine.finalizeProcess()
         }
         state = .stopped

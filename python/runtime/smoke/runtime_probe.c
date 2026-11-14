@@ -51,7 +51,8 @@ static int create_isolated(PyThreadState **state) {
 }
 
 int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
-                      const char *dynload_path, const char *report_path) {
+                      const char *dynload_path, const char *executable_path,
+                      const char *report_path) {
     FILE *initial = fopen(report_path, "w");
     if (!initial) {
         fprintf(stderr, "EXL_PROBE_REPORT_OPEN_FAILED: %s (%s)\n", report_path, strerror(errno));
@@ -73,6 +74,10 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
     config.write_bytecode = 0;
     config.site_import = 0;
     config.parse_argv = 0;
+    if (executable_path) {
+        status = PyConfig_SetBytesString(&config, &config.executable, executable_path);
+        if (PyStatus_Exception(status)) { PyConfig_Clear(&config); return 4; }
+    }
     if (home) {
         status = PyConfig_SetBytesString(&config, &config.home, home);
         if (PyStatus_Exception(status)) { PyConfig_Clear(&config); return 4; }
@@ -165,6 +170,6 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
 #ifdef EXL_RUNTIME_PROBE_MAIN
 int main(int argc, char **argv) {
     if (argc < 2 || argc > 3) { fputs("usage: runtime-probe report.json [python-home]\n", stderr); return 2; }
-    return EXLRunRuntimeProbe(argc == 3 ? argv[2] : NULL, NULL, NULL, argv[1]);
+    return EXLRunRuntimeProbe(argc == 3 ? argv[2] : NULL, NULL, NULL, NULL, argv[1]);
 }
 #endif
