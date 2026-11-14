@@ -8,8 +8,10 @@ import argparse
 import json
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import sys
+import time
 import zipfile
 
 from support import ROOT, digest, read_lock, stage_application
@@ -20,8 +22,50 @@ EXECUTABLE = 'ExteralessPythonSmoke'
 
 
 def run(*args, timeout=180, capture=False):
+    if not capture:
+        print('Runtime step:', ' '.join(str(arg) for arg in args), flush=True)
     return subprocess.run([str(arg) for arg in args], check=True, timeout=timeout,
                           text=True, stdout=subprocess.PIPE if capture else None)
+
+
+def completed_report(path, timeout=10):
+    """Wait briefly for an atomic report, not just simctl accepting a launch.
+
+    Bounded to ten seconds in CI; a missing or partial report is never success.
+    The app writes native_completed only AFTER Py_FinalizeEx has returned.
+    """
+    deadline = time.monotonic() + timeout
+    latest = None
+    while True:
+        try:
+            latest = json.loads(Path(path).read_text(encoding='utf-8'))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+        if latest and latest.get('native_completed'):
+            return latest
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Probe produced no completed report; last phase: {}'.format(latest))
+        time.sleep(0.1)
+
+
+def collect_probe_diagnostics(udid, output, report_path, error):
+    (output / 'probe-failure.json').write_text(json.dumps({'error': str(error)}, indent=2), encoding='utf-8')
+    if report_path is not None and report_path.is_file():
+        shutil.copyfile(report_path, output / 'simulator-smoke.json')
+    try:
+        with (output / 'simulator.log').open('w', encoding='utf-8') as log:
+            subprocess.run(['xcrun', 'simctl', 'spawn', udid, 'log', 'show', '--last', '5m',
+                            '--style', 'compact', '--predicate',
+                            'process == "ExteralessPythonSmoke" OR eventMessage CONTAINS[c] "ExteralessPythonSmoke"'],
+                           stdout=log, stderr=subprocess.STDOUT, timeout=45, check=False)
+    except (OSError, subprocess.TimeoutExpired) as diagnostic_error:
+        print('Could not finish simulator log capture:', diagnostic_error)
+    folders = [Path.home() / 'Library/Logs/DiagnosticReports',
+               Path.home() / 'Library/Developer/CoreSimulator/Devices' / udid / 'data/Library/Logs/CrashReporter']
+    for folder in folders:
+        for crash in list(folder.glob(EXECUTABLE + '*'))[:5]:
+            if crash.is_file() and crash.stat().st_size < 4 * 1024 * 1024:
+                shutil.copy2(crash, output / crash.name)
 
 
 def build_target(framework, output, target, lock):
@@ -82,20 +126,31 @@ def simulator_probe(app, output):
         raise RuntimeError('No installed iPhone simulator runtime is available on this runner')
     runtime, device_type = candidate
     udid = run('xcrun', 'simctl', 'create', 'Exteraless Python Probe', device_type, runtime, capture=True).stdout.strip()
+    report_path = None
     try:
         run('xcrun', 'simctl', 'boot', udid)
         run('xcrun', 'simctl', 'bootstatus', udid, '-b', timeout=240)
         run('xcrun', 'simctl', 'install', udid, app)
-        run('xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', udid, BUNDLE_ID, '--ci-exit', timeout=90)
         container = Path(run('xcrun', 'simctl', 'get_app_container', udid, BUNDLE_ID, 'data', capture=True).stdout.strip())
-        report = json.loads((container / 'Documents/runtime-smoke.json').read_text(encoding='utf-8'))
-        if report.get('ok') is not True or report.get('own_gil_interpreters') != 2 or report.get('platform') != 'ios':
+        report_path = container / 'Documents/runtime-smoke.json'
+        command = ['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process', udid, BUNDLE_ID, '--ci-exit']
+        print('Launching probe; output goes to probe-console.log', flush=True)
+        with (output / 'probe-console.log').open('w', encoding='utf-8') as log:
+            launched = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=90)
+        report = completed_report(report_path)
+        if launched.returncode != 0 or report.get('native_exit_status') != 0 or report.get('ok') is not True or report.get('own_gil_interpreters') != 2 or report.get('platform') != 'ios':
             raise RuntimeError('Simulator embedding checks did not pass: {}'.format(report))
         (output / 'simulator-smoke.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         return report
+    except Exception as error:
+        collect_probe_diagnostics(udid, output, report_path, error)
+        raise
     finally:
-        subprocess.run(['xcrun', 'simctl', 'shutdown', udid], check=False, timeout=60)
-        subprocess.run(['xcrun', 'simctl', 'delete', udid], check=False, timeout=60)
+        for operation in ('shutdown', 'delete'):
+            try:
+                subprocess.run(['xcrun', 'simctl', operation, udid], check=False, timeout=60)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                print('Simulator cleanup:', error)
 
 
 def main():

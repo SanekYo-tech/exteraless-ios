@@ -1,5 +1,7 @@
 #include <Python.h>
 #include <stdio.h>
+#include <errno.h>
+#include <string.h>
 #include "EXLPythonBridge.h"
 #include "runtime_probe.h"
 
@@ -17,6 +19,17 @@ static int add_path(PyConfig *config, const char *path) {
 
 static int script(const char *source) {
     return PyRun_SimpleString(source);
+}
+
+static void phase(const char *path, const char *name) {
+    FILE *file = fopen(path, "w");
+    if (file) {
+        /* name is an internal ASCII literal, never plugin/user input. */
+        fprintf(file, "{\"ok\":false,\"phase\":\"%s\"}\n", name);
+        fclose(file);
+    }
+    fprintf(stderr, "EXL_PROBE_PHASE %s\n", name);
+    fflush(stderr);
 }
 
 static int create_isolated(PyThreadState **state) {
@@ -40,9 +53,13 @@ static int create_isolated(PyThreadState **state) {
 int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
                       const char *dynload_path, const char *report_path) {
     FILE *initial = fopen(report_path, "w");
-    if (!initial) return 1;
+    if (!initial) {
+        fprintf(stderr, "EXL_PROBE_REPORT_OPEN_FAILED: %s (%s)\n", report_path, strerror(errno));
+        return 1;
+    }
     fputs("{\"ok\":false,\"phase\":\"initializing\"}\n", initial);
     fclose(initial);
+    phase(report_path, "initializing");
     if (EXLRegisterPythonBridge() < 0) return 2;
 
     PyPreConfig pre;
@@ -78,6 +95,7 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
     PyObject *report = PyUnicode_DecodeFSDefault(report_path);
     if (!report || PyDict_SetItemString(globals, "_report_path", report) < 0) return 7;
     Py_DECREF(report);
+    phase(report_path, "stdlib");
     if (script(
         "import sys, json, ssl, hashlib, sqlite3, socket, asyncio, ctypes, lzma, bz2, zlib, math, select\n"
         "import _ssl, _hashlib, _sqlite3, _exteraless_bridge as bridge\n"
@@ -97,6 +115,7 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
     /* Two live OWN_GIL interpreters. Exchange only C thread-state pointers;
      * no PyObject reference or handle namespace is passed between them. */
     PyThreadState *first = NULL, *second = NULL;
+    phase(report_path, "first-interpreter");
     if (create_isolated(&first) < 0) return 9;
     if (script(
         "import _exteraless_bridge as bridge\n"
@@ -110,6 +129,7 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
     PyEval_SaveThread();
     PyEval_RestoreThread(main_state);
 
+    phase(report_path, "second-interpreter");
     if (create_isolated(&second) < 0) return 11;
     if (script(
         "import _exteraless_bridge as bridge\n"
@@ -129,6 +149,7 @@ int EXLRunRuntimeProbe(const char *home, const char *stdlib_path,
     ) < 0) return 13;
     Py_EndInterpreter(first);
     PyEval_RestoreThread(main_state);
+    phase(report_path, "main-interpreter-restored");
     if (script(
         "assert bridge.xt_resolve_handle(main_handle) is main_object\n"
         "assert bridge.xt_release_handle(main_handle)\n"

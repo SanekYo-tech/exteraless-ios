@@ -89,5 +89,9 @@ jobs:
           path: |
             ${{ runner.temp }}/python-support-manifest.json
             ${{ runner.temp }}/python-native/*smoke*.json
+            ${{ runner.temp }}/python-native/probe-failure.json
+            ${{ runner.temp }}/python-native/*.log
+            ${{ runner.temp }}/python-native/*.ips
+            ${{ runner.temp }}/python-native/*.crash
           if-no-files-found: ignore
           retention-days: 7
