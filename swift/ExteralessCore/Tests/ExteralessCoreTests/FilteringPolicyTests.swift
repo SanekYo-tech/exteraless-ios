@@ -148,6 +148,7 @@ final class FilteringPolicyTests: XCTestCase {
     func testZalgoThresholdLengthAndAttributedUTF16Preservation() {
         let marks = String(repeating: "\u{0301}", count: 4)
         let text = "😀A" + marks + "B\u{0308}C"
+        XCTAssertEqual(FilteringTextPolicy.displayedText(text, enabled: true), "😀ABC")
         let attribute = NSAttributedString.Key("fixture.link")
         let source = NSMutableAttributedString(string: text)
         source.addAttribute(attribute, value: "https://example.invalid/", range: NSRange(location: 7, length: 3))

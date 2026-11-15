@@ -31,20 +31,41 @@ public enum FilteringTextPolicy {
     }
 
     public static func displayedText(_ text: String, enabled: Bool) -> String {
-        let ranges = removedMarkRanges(in: text, enabled: enabled)
-        guard !ranges.isEmpty else { return text }
-        let result = NSMutableString(string: text)
-        for range in ranges.reversed() { result.deleteCharacters(in: range) }
-        return result as String
+        projection(text, enabled: enabled)?.text ?? text
     }
 
-    /// Delete from the final attributed display string, after entity formatting;
-    /// Foundation remaps link/spoiler/emoji spans, including astral UTF-16 offsets.
+    /// Project UTF-16 attributes after entity formatting. Mutating a String-backed
+    /// Foundation substring inside a combining cluster can consume the base letter
+    /// on some runtimes, so build the final text before assigning its attributes.
     public static func displayedText(_ text: NSAttributedString, enabled: Bool) -> NSAttributedString {
-        let ranges = removedMarkRanges(in: text.string, enabled: enabled)
-        guard !ranges.isEmpty else { return text }
-        let result = NSMutableAttributedString(attributedString: text)
-        for range in ranges.reversed() { result.deleteCharacters(in: range) }
+        guard let projection = projection(text.string, enabled: enabled) else { return text }
+        let result = NSMutableAttributedString(string: projection.text)
+        var outputOffset = 0
+        while outputOffset < projection.sourceOffsets.count {
+            var effectiveRange = NSRange()
+            let attributes = text.attributes(at: projection.sourceOffsets[outputOffset], effectiveRange: &effectiveRange)
+            var end = outputOffset + 1
+            while end < projection.sourceOffsets.count, projection.sourceOffsets[end] < NSMaxRange(effectiveRange) {
+                end += 1
+            }
+            result.setAttributes(attributes, range: NSRange(location: outputOffset, length: end - outputOffset))
+            outputOffset = end
+        }
         return result
+    }
+
+    private static func projection(_ text: String, enabled: Bool) -> (text: String, sourceOffsets: [Int])? {
+        let ranges = removedMarkRanges(in: text, enabled: enabled)
+        guard !ranges.isEmpty else { return nil }
+        var rangeIndex = 0
+        var units: [UInt16] = []
+        var sourceOffsets: [Int] = []
+        for (offset, unit) in text.utf16.enumerated() {
+            while rangeIndex < ranges.count, offset >= NSMaxRange(ranges[rangeIndex]) { rangeIndex += 1 }
+            if rangeIndex < ranges.count, offset >= ranges[rangeIndex].location { continue }
+            units.append(unit)
+            sourceOffsets.append(offset)
+        }
+        return (String(decoding: units, as: UTF16.self), sourceOffsets)
     }
 }
