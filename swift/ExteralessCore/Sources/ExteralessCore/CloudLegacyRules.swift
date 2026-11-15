@@ -60,10 +60,13 @@ enum CloudLegacyRules {
         booleans("general", "privacy", "botPrivacyAlwaysAsk botPrivacyEnabled contentCapture")
         booleans("general", "tools", "crashReports")
         func add(_ id: String, _ key: String, _ conversion: Conversion) { rules[id] = Rule(key: key, conversion: conversion) }
+        add("neko.typeface", CoreAppearanceFontFamilyPolicy.key, .boolean)
+        add("neko.tabletMode", "appearance.tabletMode", .options([0: 0, 1: 1, 2: 2]))
         booleans("chats", "chats", "hdrPhotos translateInSheet")
         booleans("nagram", "chats", "disableInAppBrowserGestures sendMp4DocumentAsVideo showSmallGIF")
         booleans("neko", "chats", "autoPauseVideo takeGIFasVideo")
         add("chats.bottomButton", "chats.bottomButton", .options([0: 0, 1: 1, 2: 2]))
+        add("etgbackup.ChatSwipeAction", ChatSwipePolicy.settingKey, .options([-1: -1, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5]))
         // Source value 1 is projected to preferOriginalQuality before conversion.
         add("nagram.defaultHlsVideoQuality", "chats.defaultHlsVideoQuality", .options([0: 0, 2: 2, 3: 3, 4: 4, 5: 5]))
         add("ai.temperature", "ai.temperature", .integer(0...20))

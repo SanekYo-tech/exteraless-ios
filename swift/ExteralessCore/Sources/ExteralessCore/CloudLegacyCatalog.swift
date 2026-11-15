@@ -131,6 +131,7 @@ enum CloudLegacyCatalog {
         add("utils", "nkmrcfg", "predictiveBackIntensity=OEPredictiveBackIntensity")
         add("cloudsettingshelper", "nekocloud", "autoSync=auto_sync includeApiKeys=include_api_keys localSyncedDate=updated_at")
         add("nekox", "nekox_config", "customApi=custom_api customAppHash=custom_app_hash customAppId=custom_app_id")
+        add("etgbackup", "mainconfig", "ChatSwipeAction")
         return result
     }()
 

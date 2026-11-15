@@ -45,7 +45,8 @@ public enum CloudLegacySettingsArchive {
         for section in sections.keys.sorted() {
             for (key, value) in (sections[section] ?? [:]).sorted(by: { $0.key < $1.key }) {
                 let ids = CloudLegacyCatalog.ids(section: section, key: key)
-                guard section == "nkmrcfg" || section == "aiConfig" else {
+                let isPortableChatSwipe = section == "mainconfig" && key == "ChatSwipeAction"
+                guard section == "nkmrcfg" || section == "aiConfig" || isPortableChatSwipe else {
                     report(section, key, ids, .skipped, reason: excludedSection(section, key: key))
                     continue
                 }
@@ -258,7 +259,7 @@ public enum CloudLegacySettingsArchive {
     }
 
     private static func excludedField(_ id: String) -> CloudLegacySkipReason {
-        if id.hasPrefix("glyph.") || id == "icons.useSystemIconShape" || id.contains("pushService") || ["neko.disableSystemAccount", "neko.cachePath", "neko.customSavePath", "neko.typeface", "nagram.notificationIcon"].contains(id) { return .androidSystem }
+        if id.hasPrefix("glyph.") || id == "icons.useSystemIconShape" || id.contains("pushService") || ["neko.disableSystemAccount", "neko.cachePath", "neko.customSavePath", "nagram.notificationIcon"].contains(id) { return .androidSystem }
         if id.hasPrefix("icons.") { return .requiresNativeResources }
         if ["ai.roles", "ai.history"].contains(id) || id.contains("Prompt") || id.hasSuffix("Data") || id.hasPrefix("localnamehelper.") { return .privateContent }
         if id == "dialog.customForumTabsEnable" { return .deviceOrAccountState }

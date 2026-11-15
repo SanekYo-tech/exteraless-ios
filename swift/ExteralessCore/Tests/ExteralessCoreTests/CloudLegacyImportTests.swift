@@ -274,6 +274,36 @@ final class CloudLegacyImportTests: XCTestCase, @unchecked Sendable {
         }
     }
 
+    func testNativeFontFamilyAndLayoutUseTypedPortableAdmissionWithoutCredentials() throws {
+        let secrets = CloudFixtureSecrets()
+        let settings = try target(secrets)
+        secrets.resetReads()
+        let preview = try inspect(["nkmrcfg": .object([
+            "TypefaceUseDefault": .bool(false), "TabletMode": .integer(2)
+        ])], settings: settings)
+        XCTAssertEqual(preview.publicInspection.settings, [
+            "appearance.useSystemFonts": .bool(false), "appearance.tabletMode": .integer(2)
+        ])
+        try CloudPublicRestoreProjection.validate(preview.publicInspection)
+        _ = try CloudLegacySettingsArchive.apply(preview, settings: settings, includeApiKeys: false, credentials: secrets)
+        XCTAssertFalse(settings.bool("appearance.useSystemFonts", default: true))
+        XCTAssertEqual(settings.integer("appearance.tabletMode"), 2)
+        XCTAssertTrue(settings.readSnapshot().storedKeys.isSuperset(of: ["appearance.useSystemFonts", "appearance.tabletMode"]))
+        XCTAssertTrue(secrets.readKeys().isEmpty)
+    }
+
+    func testMalformedFontAndLayoutValuesDoNotReplaceTheExistingSelection() throws {
+        let settings = try target()
+        try settings.applyPublic(["appearance.useSystemFonts": .bool(false), "appearance.tabletMode": .integer(1)])
+        let preview = try inspect(["nkmrcfg": .object([
+            "TypefaceUseDefault": .integer(1), "TabletMode": .integer(3)
+        ])], settings: settings)
+        XCTAssertEqual(preview.settingCount, 0)
+        XCTAssertEqual(preview.skipped.count, 2)
+        XCTAssertFalse(settings.bool("appearance.useSystemFonts", default: true))
+        XCTAssertEqual(settings.integer("appearance.tabletMode"), 1)
+    }
+
     func testChatLegacyHighestQualityBecomesExplicitAutoPlusOriginalQuality() throws {
         let settings = try target()
         try settings.applyPublic(["chats.defaultHlsVideoQuality": .integer(4), "chats.preferOriginalQuality": .bool(false)])
