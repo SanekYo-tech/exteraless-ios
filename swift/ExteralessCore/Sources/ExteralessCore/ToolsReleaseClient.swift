@@ -60,24 +60,25 @@ public final class ToolsReleaseClient: @unchecked Sendable {
         guard let checksum = asset.sha256 else {
             throw ToolsError.unavailable("GitHub did not publish a SHA-256 checksum for this IPA. Open the release page for its manual distribution instructions.")
         }
-        let folder = try ToolsFileSafety.checkedChild("update-" + UUID().uuidString, root: directory)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let partial = try ToolsFileSafety.checkedChild(asset.name + ".partial", root: folder)
-        let complete = try ToolsFileSafety.checkedChild(asset.name, root: folder)
+        let destination = try ToolsReleaseDestination(directory: directory, assetName: asset.name)
+        var publication: ToolsReleasePublication?
         do {
             let transfer = ToolsReleaseTransfer(configuration: configuration, maximumBytes: asset.size,
-                                                output: partial, expectedSize: asset.size, progress: progress, hooks: transferHooks)
+                                                output: destination, expectedSize: asset.size, progress: progress, hooks: transferHooks)
             let result = try await transfer.run(Self.request(asset.url, json: false))
+            publication = result.file
             try Task.checkCancellation()
             guard result.count == asset.size else { throw ToolsError.incompleteDownload }
             guard result.digest == checksum else { throw ToolsError.checksumMismatch }
             guard result.data.prefix(4) == Data([0x50, 0x4b, 0x03, 0x04]) else { throw ToolsError.invalidRelease }
             try Task.checkCancellation()
-            try FileManager.default.moveItem(at: partial, to: complete)
+            guard let publication else { throw ToolsError.incompleteDownload }
+            let complete = try publication.publish(as: asset.name)
             try Task.checkCancellation()
             return ToolsDownloadedUpdate(url: complete, sha256: result.digest, size: result.count)
         } catch {
-            try? FileManager.default.removeItem(at: folder)
+            publication?.discard()
+            destination.cleanup()
             throw error
         }
     }
@@ -144,10 +145,10 @@ public final class ToolsReleaseClient: @unchecked Sendable {
 /// A serial delegate streams into a private partial file (or bounded metadata
 /// memory). Cancellation works while waiting for headers as well as during data.
 private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    struct Result: Sendable { let data: Data; let count: Int64; let digest: String }
+    struct Result: Sendable { let data: Data; let count: Int64; let digest: String; let file: ToolsReleasePublication? }
     private let configuration: URLSessionConfiguration
     private let maximumBytes: Int64
-    private let output: URL?
+    private let output: ToolsReleaseDestination?
     private let expectedSize: Int64?
     private let progress: (@Sendable (Int64, Int64) -> Void)?
     // Recursive only so a progress callback can cancel its own task. The serial
@@ -170,7 +171,7 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
     private var createdOutput = false
     private var cleanupFailure: Error?
 
-    init(configuration: URLSessionConfiguration, maximumBytes: Int64, output: URL? = nil,
+    init(configuration: URLSessionConfiguration, maximumBytes: Int64, output: ToolsReleaseDestination? = nil,
          expectedSize: Int64? = nil, progress: (@Sendable (Int64, Int64) -> Void)? = nil,
          hooks: ToolsReleaseTransferHooks = .init()) {
         self.configuration = configuration
@@ -327,13 +328,22 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
             return
         }
         finished = true
+        var publication: ToolsReleasePublication?
         if let expectedSize, count != expectedSize, error == nil, failure == nil, !cancelled { failure = ToolsError.incompleteDownload }
         if !cancelled && failure == nil && error == nil {
-            do { try handle?.synchronize() } catch { failure = error }
+            do {
+                try handle?.synchronize()
+                if let handle { publication = try handle.seal(count: count, sha256: contentHash.hexDigest()) }
+            } catch { failure = error }
         }
         do { try handle?.close() } catch { if failure == nil { failure = error } }
         if cancelled || failure != nil || error != nil { removePartial() }
-        else { handle = nil }
+        else {
+            // The retained read/version capability now owns success publication;
+            // late delegate cancellation must not reclaim its file from the caller.
+            handle = nil
+            createdOutput = false
+        }
         let continuation = self.continuation
         self.continuation = nil
         let wasCancelled = cancelled
@@ -347,7 +357,7 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
         else if let failure { continuation?.resume(throwing: failure) }
         else if let error { continuation?.resume(throwing: error) }
         else if let expectedSize, count != expectedSize { continuation?.resume(throwing: ToolsError.incompleteDownload) }
-        else { continuation?.resume(returning: Result(data: data, count: count, digest: contentHash.hexDigest())) }
+        else { continuation?.resume(returning: Result(data: data, count: count, digest: contentHash.hexDigest(), file: publication)) }
     }
 
     private func removePartial() {
@@ -368,18 +378,69 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
 private final class ToolsReleaseOutput {
     #if canImport(Darwin) || canImport(Glibc)
     private let writer: ToolsWriteDescriptor
-    init(_ url: URL) throws {
-        writer = try ToolsWriteDescriptor(parent: ToolsDirectoryDescriptor.open(url.deletingLastPathComponent()), name: url.lastPathComponent)
+    private let destination: ToolsReleaseDestination
+    private var version: ToolsFileMetadata
+    init(_ destination: ToolsReleaseDestination) throws {
+        try destination.folder.verifyBinding()
+        let writer = try ToolsWriteDescriptor(parent: destination.folder.directory, name: destination.partialName)
+        self.writer = writer; self.destination = destination; self.version = try writer.version
+        destination.folder.remember(writer.name, version: version)
     }
-    func write(contentsOf data: Data) throws { try writer.write(data) }
-    func synchronize() throws { try writer.synchronize() }
+    func write(contentsOf data: Data) throws {
+        _ = try writer.readReceipt(expectedVersion: version)
+        try writer.write(data)
+        version = try writer.version
+        destination.folder.remember(writer.name, version: version)
+    }
+    func synchronize() throws {
+        _ = try writer.readReceipt(expectedVersion: version)
+        try writer.synchronize()
+        _ = try writer.readReceipt(expectedVersion: version)
+    }
+    func seal(count: Int64, sha256: String) throws -> ToolsReleasePublication {
+        try destination.folder.verifyBinding()
+        let input = try writer.readReceipt(expectedVersion: version, verifyParentBinding: false)
+        return try ToolsReleasePublication(ToolsVerifiedFileReceipt(input: input, count: count, sha256: sha256, owner: destination.folder))
+    }
     func close() throws { try writer.close() }
-    func remove() throws { try writer.discardChecked() }
+    func remove() throws { try destination.folder.removeFile(writer.name) }
     #else
-    init(_ url: URL) throws { throw ToolsError.unavailable("Descriptor-bound update downloads are unavailable on this platform.") }
+    init(_ destination: ToolsReleaseDestination) throws { throw ToolsError.unavailable("Descriptor-bound update downloads are unavailable on this platform.") }
     func write(contentsOf data: Data) throws { throw ToolsError.unsafePath }
     func synchronize() throws { throw ToolsError.unsafePath }
+    func seal(count: Int64, sha256: String) throws -> ToolsReleasePublication { throw ToolsError.unsafePath }
     func close() throws {}
     func remove() throws {}
+    #endif
+}
+
+private final class ToolsReleaseDestination: @unchecked Sendable {
+    let partialName: String
+    #if canImport(Darwin) || canImport(Glibc)
+    let folder: ToolsOwnedDirectory
+    init(directory: URL, assetName: String) throws {
+        partialName = assetName + ".partial"
+        let parent = try ToolsDirectoryDescriptor.open(directory, create: true)
+        folder = try ToolsOwnedDirectory.create(parent: parent, name: "update-" + UUID().uuidString)
+    }
+    func cleanup() { folder.cleanup() }
+    #else
+    init(directory: URL, assetName: String) throws {
+        partialName = assetName + ".partial"
+        throw ToolsError.unavailable("Descriptor-bound update downloads are unavailable on this platform.")
+    }
+    func cleanup() {}
+    #endif
+}
+
+private final class ToolsReleasePublication: @unchecked Sendable {
+    #if canImport(Darwin) || canImport(Glibc)
+    private let receipt: ToolsVerifiedFileReceipt
+    init(_ receipt: ToolsVerifiedFileReceipt) { self.receipt = receipt }
+    func publish(as name: String) throws -> URL { try receipt.publish(as: name) }
+    func discard() { receipt.discard() }
+    #else
+    func publish(as name: String) throws -> URL { throw ToolsError.unsafePath }
+    func discard() {}
     #endif
 }

@@ -97,6 +97,7 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         var phase: Phase
         var clientWrite: ClientWrite
         var pluginWrite: PluginWrite?
+        var scratch: [String: ToolsDirectoryOwnership]?
     }
     private struct LegacyJournal: Decodable {
         let version: Int
@@ -106,8 +107,10 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         let committed: Bool
     }
     private struct SwapReceipt {
-        let directory: ToolsFileIdentity
-        let files: [String: ToolsFileMetadata]
+        #if canImport(Darwin) || canImport(Glibc)
+        let live: ToolsDirectoryImage
+        let displaced: ToolsOwnedDirectory
+        #endif
     }
     private struct ReconciliationMarker: Codable {
         let version: Int
@@ -151,8 +154,10 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         let journalURL = try child("tools-settings-restore.json", parent)
         var originalFiles: [String: String]?
         var targetFiles: [String: String]?
-        var stageCreated = false
-        var backupCreated = false
+        let scratch = ToolsScratchRegistry()
+        #if canImport(Darwin) || canImport(Glibc)
+        var originalImage: ToolsDirectoryImage?
+        #endif
         let schemaFiles = Set(checked.payload.pluginSettings.map(\.path))
         // Preparation cannot modify either live settings store.
         do {
@@ -160,40 +165,48 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             let parentDescriptor = try ToolsDirectoryDescriptor.open(parent, create: true)
             if !checked.payload.pluginSettings.isEmpty {
                 try plugins.withSchemaAuthority(files: schemaFiles, use: .restore) {
-                _ = try parentDescriptor.child(root.lastPathComponent, create: true)
-                _ = try parentDescriptor.createNewDirectory(stage.lastPathComponent)
-                stageCreated = true
-                originalFiles = try copySettingsDirectory(root, to: stage)
-                for entry in checked.payload.pluginSettings {
-                    try plugins.validateSnapshot(file: entry.path, settingsSHA256: originalFiles?[entry.path])
-                    guard let allowed = plugins.exportableFields[entry.path], Set(entry.values.keys).isSubset(of: allowed) else {
-                        throw ToolsError.invalidArchive("The plugin's cached native schema does not allow these fields. Unknown fields are not imported.")
+                    _ = try parentDescriptor.child(root.lastPathComponent, create: true)
+                    let original = try ToolsDirectoryImage.capture(parent: parentDescriptor, name: root.lastPathComponent)
+                    originalImage = original
+                    originalFiles = original.manifest
+                    targetFiles = original.manifest
+                    let staged = try ToolsOwnedDirectory.create(parent: parentDescriptor, name: stage.lastPathComponent)
+                    scratch.directories[stage.lastPathComponent] = staged
+                    try original.copy(to: staged)
+                    for entry in checked.payload.pluginSettings {
+                        try plugins.validateSnapshot(file: entry.path, settingsSHA256: originalFiles?[entry.path])
+                        guard let allowed = plugins.exportableFields[entry.path], Set(entry.values.keys).isSubset(of: allowed) else {
+                            throw ToolsError.invalidArchive("The plugin's cached native schema does not allow these fields. Unknown fields are not imported.")
+                        }
+                        try plugins.schemas[entry.path]?.validate(entry.values)
+                        // Merge only the originally checked source bytes, never a fresh
+                        // unowned/tampered stage read that could have lost credentials.
+                        let previous = try original.bytes(for: entry.path).map(ToolsBackupArchive.decodeSettings) ?? [:]
+                        let bytes = try ToolsFileSafety.encode(ToolsBackupPolicy.merging(entry.values, into: previous))
+                        guard bytes.count <= ToolsBackupPolicy.maximumPluginFileBytes else { throw ToolsError.sizeLimit }
+                        try staged.write(bytes, name: entry.path)
+                        targetFiles?[entry.path] = ToolsSHA256.hex(bytes)
                     }
-                    try plugins.schemas[entry.path]?.validate(entry.values)
-                    let file = try child(entry.path, stage)
-                    let previous = fileManager.fileExists(atPath: file.path)
-                        ? try ToolsBackupArchive.decodeSettings(ToolsFileSafety.read(file, maximumBytes: ToolsBackupPolicy.maximumPluginFileBytes)) : [:]
-                    let bytes = try ToolsFileSafety.encode(ToolsBackupPolicy.merging(entry.values, into: previous))
-                    guard bytes.count <= ToolsBackupPolicy.maximumPluginFileBytes else { throw ToolsError.sizeLimit }
-                    try ToolsBackupJournalIO.write(bytes, to: file)
-                }
-                targetFiles = try directoryManifest(stage)
-                _ = try parentDescriptor.createNewDirectory(backup.lastPathComponent)
-                backupCreated = true
-                guard try copySettingsDirectory(root, to: backup) == originalFiles else { throw ToolsBackupWriteFailure.rejected("Plugin settings changed while preparing the backup.") }
+                    guard let targetFiles else { throw ToolsError.rollbackFailed }
+                    _ = try staged.image(expectedManifest: targetFiles)
+                    let saved = try ToolsOwnedDirectory.create(parent: parentDescriptor, name: backup.lastPathComponent)
+                    scratch.directories[backup.lastPathComponent] = saved
+                    try original.copy(to: saved)
+                    _ = try saved.image(expectedManifest: original.manifest)
+                    try original.verify(parent: parentDescriptor, name: root.lastPathComponent)
                 }
             }
             #else
             throw ToolsError.unavailable("Descriptor-bound settings restore is unavailable on this platform.")
             #endif
         } catch {
-            if stageCreated { try? fileManager.removeItem(at: stage) }
-            if backupCreated { try? fileManager.removeItem(at: backup) }
+            do { try cleanupPreparation(scratch, id: id, parent: parent) }
+            catch { throw ToolsError.rollbackFailed }
             throw error
         }
-        var journal = Journal(version: 3, transactionId: id, before: before, target: target,
+        var journal = Journal(version: 4, transactionId: id, before: before, target: target,
                               originalFiles: originalFiles, targetFiles: targetFiles, phase: .prepared,
-                              clientWrite: .notAttempted, pluginWrite: .notStarted)
+                              clientWrite: .notAttempted, pluginWrite: .notStarted, scratch: scratch.ownership)
         // These are invocation-local receipts, never reconstructed from hashes or
         // from a journal that might precede a completed rollback.
         var clientWrite = ClientWrite.notAttempted
@@ -210,16 +223,25 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             try fault(.afterPrepared)
             if let originalFiles {
                 try plugins.withSchemaAuthority(files: schemaFiles, use: .restore) {
-                guard try directoryManifest(root) == originalFiles else { throw ToolsBackupWriteFailure.rejected("Plugin settings changed before commit.") }
-                for file in schemaFiles { try plugins.validateSnapshot(file: file, settingsSHA256: originalFiles[file]) }
-                journal.pluginWrite = .swapAttempted
-                try writeJournal(journal, to: journalURL)
-                pluginWrite = .swapAttempted
-                swapReceipt = try replaceDirectory(root, with: stage)
-                pluginWrite = .confirmed
-                journal.pluginWrite = .confirmed
-                journal.phase = .pluginsApplied
-                try writeJournal(journal, to: journalURL)
+                    guard try directoryManifest(root) == originalFiles else { throw ToolsBackupWriteFailure.rejected("Plugin settings changed before commit.") }
+                    for file in schemaFiles { try plugins.validateSnapshot(file: file, settingsSHA256: originalFiles[file]) }
+                    journal.pluginWrite = .swapAttempted
+                    try writeJournal(journal, to: journalURL)
+                    pluginWrite = .swapAttempted
+                    #if canImport(Darwin) || canImport(Glibc)
+                    guard let originalImage, let staged = scratch.directories[stage.lastPathComponent], let targetFiles else { throw ToolsError.rollbackFailed }
+                    let receipt = try replaceDirectory(root, with: staged, current: originalImage,
+                        expectedCurrent: originalFiles, expectedReplacement: targetFiles)
+                    swapReceipt = receipt
+                    scratch.directories[stage.lastPathComponent] = receipt.displaced
+                    journal.scratch = scratch.ownership
+                    #else
+                    throw ToolsError.rollbackFailed
+                    #endif
+                    pluginWrite = .confirmed
+                    journal.pluginWrite = .confirmed
+                    journal.phase = .pluginsApplied
+                    try writeJournal(journal, to: journalURL)
                 }
             }
             try fault(.beforeClientCommit)
@@ -259,16 +281,23 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
                 try fault(.beforeRollback)
                 journal.phase = .rollingBack
                 try writeJournal(journal, to: journalURL)
-                try rollback(journal, clientWrite: clientWrite, pluginWrite: pluginWrite, receipt: swapReceipt,
-                             settings: settings, root: root, backup: backup)
+                try rollback(&journal, clientWrite: clientWrite, pluginWrite: pluginWrite, receipt: swapReceipt,
+                             settings: settings, root: root, scratch: scratch, journalURL: journalURL)
                 try fault(.beforeRollbackMarker)
                 journal.phase = .rolledBack
                 try writeJournal(journal, to: journalURL)
-                cleanup(journal, parent: parent)
-            } catch { throw ToolsError.rollbackFailed }
+                try cleanup(journal, parent: parent, scratch: scratch)
+            } catch {
+                if journal.phase != .rolledBack {
+                    journal.phase = .needsRecovery
+                    try? writeJournal(journal, to: journalURL)
+                }
+                throw ToolsError.rollbackFailed
+            }
             throw error
         }
-        cleanup(journal, parent: parent)
+        do { try cleanup(journal, parent: parent, scratch: scratch) }
+        catch { throw ToolsError.rollbackFailed }
         return .init(settings: checked.settingCount, pluginFiles: checked.pluginFileCount)
     }
 
@@ -307,25 +336,12 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             let evidence = try child(current.evidenceName, parent)
             let bytes = try ToolsFileSafety.read(active, maximumBytes: ToolsBackupPolicy.maximumPayloadBytes * 2)
             guard ToolsSHA256.hex(bytes) == current.journalSHA256 else { throw ToolsError.rollbackFailed }
-            #if canImport(Darwin) || canImport(Glibc)
-            let directory = try ToolsDirectoryDescriptor.open(parent)
-            if fileManager.fileExists(atPath: evidence.path) {
-                guard ToolsSHA256.hex(try ToolsFileSafety.read(evidence, maximumBytes: ToolsBackupPolicy.maximumPayloadBytes * 2)) == current.journalSHA256 else { throw ToolsError.rollbackFailed }
-            } else {
-                let output = try ToolsWriteDescriptor(parent: directory, name: "reconcile-\(UUID().uuidString).partial")
-                defer { output.discard() }
-                try output.write(bytes)
-                try output.synchronize()
-                guard try directory.publish(output.name, as: current.evidenceName, identity: output.identity) else { throw ToolsError.rollbackFailed }
-            }
-            #else
-            throw ToolsError.unavailable("Durable recovery reconciliation is unavailable on this platform.")
-            #endif
+            try saveEvidence(bytes, name: current.evidenceName, parent: parent)
             guard ToolsSHA256.hex(try ToolsFileSafety.read(active, maximumBytes: ToolsBackupPolicy.maximumPayloadBytes * 2)) == current.journalSHA256 else { throw ToolsError.rollbackFailed }
             let marker = ReconciliationMarker(version: 3, transactionId: current.transactionId, phase: "reconciled",
                                                evidenceName: current.evidenceName, journalSHA256: current.journalSHA256)
             try ToolsBackupJournalIO.write(ToolsFileSafety.encode(marker), to: active)
-            cleanupReconciledJournal(parent: parent)
+            try cleanupReconciledJournal(id: current.transactionId, parent: parent)
             return .init(transactionId: current.transactionId, evidenceURL: evidence)
         } catch { throw ToolsError.rollbackFailed }
     }
@@ -357,7 +373,7 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             before = nil; target = nil; originalFiles = nil
             classification = .legacyUncommitted
         } else {
-            guard header.version == 2 || header.version == 3 else { throw ToolsError.rollbackFailed }
+            guard (2...4).contains(header.version) else { throw ToolsError.rollbackFailed }
             let journal = try JSONDecoder().decode(Journal.self, from: bytes)
             try validateJournal(journal)
             if journal.phase == .committed || journal.phase == .rolledBack { return nil }
@@ -387,12 +403,9 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
               ToolsSHA256.hex(try ToolsFileSafety.read(child(marker.evidenceName, parent), maximumBytes: ToolsBackupPolicy.maximumPayloadBytes * 2)) == marker.journalSHA256 else { throw ToolsError.rollbackFailed }
     }
 
-    private func cleanupReconciledJournal(parent: URL) {
+    private func cleanupReconciledJournal(id: UUID, parent: URL) throws {
         // A durable marker can be retried; original/stage directories are deliberately retained.
-        do {
-            try fileManager.removeItem(at: child("tools-settings-restore.json", parent))
-            try ToolsBackupJournalIO.synchronizeDirectory(parent)
-        } catch { }
+        try retireJournal(id: id, phase: "reconciled", parent: parent, keepCleanupDebt: false)
     }
 
     private func recoverLocked(settings: ToolsBackupSettingsAccess, plugins: ToolsBackupPluginLocation) throws {
@@ -409,7 +422,7 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             if version == 3, header.phase == "reconciled" {
                 let marker = try JSONDecoder().decode(ReconciliationMarker.self, from: bytes)
                 try validateReconciliation(marker, parent: parent)
-                cleanupReconciledJournal(parent: parent)
+                try cleanupReconciledJournal(id: marker.transactionId, parent: parent)
                 return
             }
             if version == 1 {
@@ -417,10 +430,12 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
                 // An uncommitted v1 journal never recorded presence or the after
                 // image. Guessing either would overwrite native edits/defaults.
                 guard old.committed else { throw ToolsError.unavailable("Legacy recovery needs review: version 1 did not retain override presence or CAS state. Original files are retained.") }
-                cleanup(id: old.transactionId, parent: parent)
+                // Old journals contain no cleanup inode receipts. Keep any old
+                // plugin scratch as debt rather than acquiring it by UUID name.
+                try retireJournal(id: old.transactionId, phase: nil, parent: parent, keepCleanupDebt: old.includesPluginSettings)
                 return
             }
-            guard version == 2 || version == 3 else { throw ToolsError.invalidArchive("Unsupported recovery journal version.") }
+            guard (2...4).contains(version) else { throw ToolsError.invalidArchive("Unsupported recovery journal version.") }
             var journal = try JSONDecoder().decode(Journal.self, from: bytes)
             try validateJournal(journal)
             if journal.phase != .committed && journal.phase != .rolledBack {
@@ -428,12 +443,12 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
                 journal.phase = .rolledBack
                 try writeJournal(journal, to: file)
             }
-            cleanup(journal, parent: parent)
+            try cleanup(journal, parent: parent)
         } catch { throw ToolsError.rollbackFailed }
     }
 
-    private func rollback(_ journal: Journal, clientWrite: ClientWrite, pluginWrite: PluginWrite, receipt: SwapReceipt?,
-                          settings: ToolsBackupSettingsAccess, root: URL, backup: URL) throws {
+    private func rollback(_ journal: inout Journal, clientWrite: ClientWrite, pluginWrite: PluginWrite, receipt: SwapReceipt?,
+                          settings: ToolsBackupSettingsAccess, root: URL, scratch: ToolsScratchRegistry, journalURL: URL) throws {
         let snapshot = try settings.snapshot()
         let keys = Set(journal.before.values.keys)
         let definitions = Dictionary(uniqueKeysWithValues: snapshot.definitions.map { ($0.key, $0) })
@@ -442,15 +457,22 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
             if journal.before.storedKeys.contains(key), let value = journal.before.values[key] { try definition.validate(value) }
         }
         var restorePlugins = false
+        #if canImport(Darwin) || canImport(Glibc)
+        var backupImage: ToolsDirectoryImage?
+        #endif
         // Validate both stores before beginning rollback. In particular, a native
         // target written before our swap must never become our rollback candidate.
         if let original = journal.originalFiles, let target = journal.targetFiles {
             let current = try directoryManifest(root)
             if current != original {
-                guard pluginWrite == .confirmed, current == target, let receipt,
-                      try directoryIdentity(root) == receipt.directory,
-                      try directoryVersions(root) == receipt.files else { throw ToolsError.rollbackFailed }
-                guard try directoryManifest(backup) == original else { throw ToolsError.rollbackFailed }
+                guard pluginWrite == .confirmed, current == target, let receipt else { throw ToolsError.rollbackFailed }
+                #if canImport(Darwin) || canImport(Glibc)
+                try receipt.live.verify(parent: receipt.displaced.parent, name: root.lastPathComponent)
+                guard let backup = scratch.directories[backupName(journal.transactionId)] else { throw ToolsError.rollbackFailed }
+                backupImage = try backup.image(expectedManifest: original)
+                #else
+                throw ToolsError.rollbackFailed
+                #endif
                 restorePlugins = true
             }
         }
@@ -458,30 +480,40 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         if clientWrite == .applied && !keys.isEmpty {
             let alreadyBefore = try settings.readCurrent?().state(for: keys) == journal.before
             if !alreadyBefore {
-            do {
-                try settings.applyAtomically(journal.before.overrides, journal.before.resetting,
-                    journal.target.expectedSnapshot(definitions: snapshot.definitions, secretKeys: snapshot.secretKeys))
-            } catch let error as ToolsBackupWriteFailure {
-                guard case .rejected = error else { throw error }
-                // No second setter disguised as a confirmation. A cached snapshot
-                // is insufficient; absence of a fresh reader conservatively holds.
-                guard try settings.readCurrent?().state(for: keys) == journal.before else { throw ToolsError.rollbackFailed }
-            }
+                do {
+                    try settings.applyAtomically(journal.before.overrides, journal.before.resetting,
+                        journal.target.expectedSnapshot(definitions: snapshot.definitions, secretKeys: snapshot.secretKeys))
+                } catch let error as ToolsBackupWriteFailure {
+                    guard case .rejected = error else { throw error }
+                    // No second setter disguised as a confirmation. A cached snapshot
+                    // is insufficient; absence of a fresh reader conservatively holds.
+                    guard try settings.readCurrent?().state(for: keys) == journal.before else { throw ToolsError.rollbackFailed }
+                }
             }
             try fault(.afterClientRollback)
         }
         if restorePlugins, let receipt {
-                #if canImport(Darwin) || canImport(Glibc)
-                let replacement = try child("tools-settings-rollback-" + UUID().uuidString, root.deletingLastPathComponent())
-                _ = try ToolsDirectoryDescriptor.open(root.deletingLastPathComponent()).createNewDirectory(replacement.lastPathComponent)
-                defer { try? fileManager.removeItem(at: replacement) }
-                _ = try copySettingsDirectory(backup, to: replacement)
-                guard try directoryIdentity(root) == receipt.directory,
-                      try directoryVersions(root) == receipt.files else { throw ToolsError.rollbackFailed }
-                _ = try replaceDirectory(root, with: replacement)
-                #else
-                throw ToolsError.rollbackFailed
-                #endif
+            #if canImport(Darwin) || canImport(Glibc)
+            guard let backupImage, let original = journal.originalFiles, let target = journal.targetFiles,
+                  let backup = scratch.directories[backupName(journal.transactionId)] else { throw ToolsError.rollbackFailed }
+            // Recheck the SAME checked backup after the client rollback/fault
+            // boundary. Never adopt a fresh hash of a changed backup as original.
+            try backupImage.verify(parent: backup.parent, name: backup.name)
+            let replacement = try ToolsOwnedDirectory.create(parent: receipt.displaced.parent, name: rollbackName(journal.transactionId))
+            scratch.directories[replacement.name] = replacement
+            journal.scratch = scratch.ownership
+            try writeJournal(journal, to: journalURL)
+            try backupImage.copy(to: replacement)
+            _ = try replacement.image(expectedManifest: original)
+            journal.scratch = scratch.ownership
+            try writeJournal(journal, to: journalURL)
+            let restored = try replaceDirectory(root, with: replacement, current: receipt.live,
+                                                 expectedCurrent: target, expectedReplacement: original)
+            scratch.directories[replacement.name] = restored.displaced
+            journal.scratch = scratch.ownership
+            #else
+            throw ToolsError.rollbackFailed
+            #endif
         }
     }
 
@@ -501,6 +533,19 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         _ = try ToolsBackupSettingsState(values: journal.target.values, storedKeys: journal.target.storedKeys)
         guard Set(journal.before.values.keys) == Set(journal.target.values.keys),
               (journal.originalFiles == nil) == (journal.targetFiles == nil) else { throw ToolsError.rollbackFailed }
+        if journal.version == 4 { guard journal.scratch != nil else { throw ToolsError.rollbackFailed } }
+        if let scratch = journal.scratch {
+            let allowedNames: Set<String> = [stageName(journal.transactionId), backupName(journal.transactionId), rollbackName(journal.transactionId)]
+            guard Set(scratch.keys).isSubset(of: allowedNames), journal.originalFiles != nil || scratch.isEmpty else { throw ToolsError.rollbackFailed }
+            for owned in scratch.values {
+                guard owned.directory.kind == 0o040000, owned.files.count <= ToolsBackupPolicy.maximumPluginFiles else { throw ToolsError.rollbackFailed }
+                for (file, version) in owned.files {
+                    try ToolsBackupPolicy.validatePluginPath(file)
+                    guard version.identity.kind == 0o100000, version.size >= 0,
+                          version.size <= Int64(ToolsBackupPolicy.maximumPluginFileBytes) else { throw ToolsError.rollbackFailed }
+                }
+            }
+        }
         for files in [journal.originalFiles, journal.targetFiles].compactMap({ $0 }) {
             guard files.count <= ToolsBackupPolicy.maximumPluginFiles else { throw ToolsError.sizeLimit }
             for (path, hash) in files {
@@ -512,13 +557,6 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
 
     private func directoryManifest(_ directory: URL) throws -> [String: String] {
         try visitSettingsDirectory(directory) { _, bytes in ToolsSHA256.hex(bytes) }
-    }
-
-    @discardableResult private func copySettingsDirectory(_ source: URL, to destination: URL) throws -> [String: String] {
-        try visitSettingsDirectory(source) { name, bytes in
-            try ToolsBackupJournalIO.write(bytes, to: child(name, destination))
-            return ToolsSHA256.hex(bytes)
-        }
     }
 
     private func visitSettingsDirectory(_ directory: URL, file: (String, Data) throws -> String) throws -> [String: String] {
@@ -544,53 +582,38 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         #endif
     }
 
-    private func directoryIdentity(_ url: URL) throws -> ToolsFileIdentity {
-        #if canImport(Darwin) || canImport(Glibc)
-        return try ToolsDirectoryDescriptor.open(url).identity
-        #else
-        throw ToolsError.unsafePath
-        #endif
-    }
-
-    private func directoryVersions(_ url: URL) throws -> [String: ToolsFileMetadata] {
-        #if canImport(Darwin) || canImport(Glibc)
-        let directory = try ToolsDirectoryDescriptor.open(url)
-        var result: [String: ToolsFileMetadata] = [:]
-        for name in try directory.names(maximum: ToolsBackupPolicy.maximumPluginFiles) {
-            try ToolsBackupPolicy.validatePluginPath(name)
-            result[name] = ToolsFileMetadata(try directory.metadata(name))
-        }
-        try directory.verify()
-        return result
-        #else
-        throw ToolsError.unsafePath
-        #endif
-    }
-
-    private func replaceDirectory(_ root: URL, with replacement: URL) throws -> SwapReceipt {
+    #if canImport(Darwin) || canImport(Glibc)
+    private func replaceDirectory(_ root: URL, with replacement: ToolsOwnedDirectory, current: ToolsDirectoryImage,
+                                  expectedCurrent: [String: String], expectedReplacement: [String: String]) throws -> SwapReceipt {
         #if canImport(Darwin)
-        guard root.deletingLastPathComponent().standardizedFileURL == replacement.deletingLastPathComponent().standardizedFileURL else { throw ToolsError.unsafePath }
-        let parent = try ToolsDirectoryDescriptor.open(root.deletingLastPathComponent())
-        let before = try directoryIdentity(root)
-        let target = try directoryIdentity(replacement)
-        let files = try directoryVersions(replacement)
+        let parent = replacement.parent
+        guard ToolsFileSafety.canonicalFileURL(root.deletingLastPathComponent()).pathComponents == parent.url.pathComponents,
+              current.manifest == expectedCurrent else { throw ToolsError.rollbackFailed }
         do {
-            try parent.verify()
+            // The prepared manifest and recorded owned versions are requirements,
+            // not values sampled from whichever directory currently has this name.
+            let target = try replacement.image(expectedManifest: expectedReplacement)
+            try current.verify(parent: parent, name: root.lastPathComponent)
+            try target.verify(parent: parent, name: replacement.name)
             let result = root.lastPathComponent.withCString { live in
-                replacement.lastPathComponent.withCString { staged in
+                replacement.name.withCString { staged in
                     renameatx_np(parent.rawValue, live, parent.rawValue, staged, UInt32(RENAME_SWAP))
                 }
             }
-            guard result == 0, ToolsFileIdentity(try parent.metadata(root.lastPathComponent)) == target,
-                  ToolsFileIdentity(try parent.metadata(replacement.lastPathComponent)) == before,
-                  try directoryVersions(root) == files else { throw ToolsError.rollbackFailed }
+            guard result == 0 else { throw ToolsError.rollbackFailed }
+            // Rehash through the descriptors that supplied both checked images,
+            // now under their swapped bindings, before recording confirmation.
+            try target.verify(parent: parent, name: root.lastPathComponent)
+            try current.verify(parent: parent, name: replacement.name)
             try parent.synchronize()
-            return SwapReceipt(directory: target, files: files)
+            let displaced = try ToolsOwnedDirectory.displaced(current, parent: parent, name: replacement.name)
+            return SwapReceipt(live: target, displaced: displaced)
         } catch { throw ToolsBackupWriteFailure.durability("The plugin settings replacement could not be confirmed durable.") }
         #else
         throw ToolsBackupWriteFailure.rejected("Atomic plugin-directory exchange requires Darwin.")
         #endif
     }
+    #endif
 
     private func isDurabilityFailure(_ error: Error) -> Bool {
         if case .durability? = error as? ToolsBackupWriteFailure { return true }
@@ -604,21 +627,84 @@ public final class ToolsBackupRestorer: @unchecked Sendable {
         try ToolsBackupJournalIO.write(bytes, to: file)
     }
 
-    private func cleanup(_ journal: Journal, parent: URL) { cleanup(id: journal.transactionId, parent: parent) }
-    private func cleanup(id: UUID, parent: URL) {
-        do {
-            for name in [backupName(id), stageName(id)] {
-                let url = try child(name, parent)
-                if fileManager.fileExists(atPath: url.path) { try fileManager.removeItem(at: url) }
+    private func cleanup(_ journal: Journal, parent: URL, scratch: ToolsScratchRegistry? = nil) throws {
+        #if canImport(Darwin) || canImport(Glibc)
+        let parentDescriptor = try ToolsDirectoryDescriptor.open(parent)
+        var debt = journal.scratch == nil && journal.originalFiles != nil
+        for (name, ownership) in journal.scratch ?? [:] {
+            if let held = scratch?.directories[name], held.identity == ownership.directory {
+                if !held.cleanup() { debt = true }
+                continue
             }
-            try ToolsBackupJournalIO.synchronizeDirectory(parent)
-            let journal = try child("tools-settings-restore.json", parent)
-            if fileManager.fileExists(atPath: journal.path) { try fileManager.removeItem(at: journal) }
-            try ToolsBackupJournalIO.synchronizeDirectory(parent)
-        } catch { /* A terminal journal is safe to retry; do not roll back committed data for cleanup debt. */ }
+            do {
+                _ = try parentDescriptor.metadata(name)
+                let owned = try ToolsOwnedDirectory.reopen(parent: parentDescriptor, name: name, ownership: ownership)
+                if !owned.cleanup() { debt = true }
+            } catch let error as POSIXError where error.code == .ENOENT {
+                // Already removed: never search for another directory with similar bytes.
+            } catch { debt = true }
+        }
+        try retireJournal(id: journal.transactionId, phase: journal.phase.rawValue, parent: parent, keepCleanupDebt: debt)
+        #else
+        throw ToolsError.rollbackFailed
+        #endif
+    }
+
+    private func cleanupPreparation(_ scratch: ToolsScratchRegistry, id: UUID, parent: URL) throws {
+        #if canImport(Darwin) || canImport(Glibc)
+        var debt = false
+        for owned in scratch.directories.values { if !owned.cleanup() { debt = true } }
+        if debt {
+            struct Debt: Encodable { let version: Int; let transactionId: UUID; let scratch: [String: ToolsDirectoryOwnership] }
+            let bytes = try ToolsFileSafety.encode(Debt(version: 1, transactionId: id, scratch: scratch.ownership))
+            try saveEvidence(bytes, name: cleanupDebtName(id), parent: parent)
+        }
+        #endif
+    }
+
+    private func saveEvidence(_ bytes: Data, name: String, parent: URL) throws {
+        guard bytes.count <= ToolsBackupPolicy.maximumPayloadBytes * 2 else { throw ToolsError.sizeLimit }
+        #if canImport(Darwin) || canImport(Glibc)
+        let parent = try ToolsDirectoryDescriptor.open(parent)
+        let destination = try child(name, parent.url)
+        if fileManager.fileExists(atPath: destination.path) {
+            let read = try ToolsReadDescriptor(destination, maximumBytes: Int64(bytes.count), parent: parent)
+            guard try read.digest(maximumBytes: Int64(bytes.count)).sha256 == ToolsSHA256.hex(bytes) else { throw ToolsError.rollbackFailed }
+            return
+        }
+        let output = try ToolsWriteDescriptor(parent: parent, name: "evidence-\(UUID().uuidString).partial")
+        defer { output.discard() }
+        try output.write(bytes); try output.synchronize()
+        let receipt = try ToolsVerifiedFileReceipt(input: output.readReceipt(), count: Int64(bytes.count), sha256: ToolsSHA256.hex(bytes))
+        _ = try receipt.publish(as: name)
+        #else
+        throw ToolsError.rollbackFailed
+        #endif
+    }
+
+    private func retireJournal(id: UUID, phase: String?, parent: URL, keepCleanupDebt: Bool) throws {
+        #if canImport(Darwin) || canImport(Glibc)
+        let parentDescriptor = try ToolsDirectoryDescriptor.open(parent)
+        let name = "tools-settings-restore.json"
+        let file = try child(name, parent)
+        guard fileManager.fileExists(atPath: file.path) else { return }
+        let input = try ToolsReadDescriptor(file, maximumBytes: Int64(ToolsBackupPolicy.maximumPayloadBytes * 2), parent: parentDescriptor)
+        let bytes = try input.readAll(maximumBytes: ToolsBackupPolicy.maximumPayloadBytes * 2)
+        struct Header: Decodable { let transactionId: UUID; let phase: String?; let committed: Bool? }
+        let header = try JSONDecoder().decode(Header.self, from: bytes)
+        guard header.transactionId == id, phase.map({ header.phase == $0 }) ?? (header.committed == true) else { throw ToolsError.rollbackFailed }
+        if keepCleanupDebt { try saveEvidence(bytes, name: cleanupDebtName(id), parent: parent) }
+        try input.verify()
+        try parentDescriptor.removeOwnedVersion(name, version: input.version)
+        try parentDescriptor.synchronize()
+        #else
+        throw ToolsError.rollbackFailed
+        #endif
     }
 
     private func child(_ name: String, _ root: URL) throws -> URL { try ToolsFileSafety.checkedChild(name, root: root) }
     private func stageName(_ id: UUID) -> String { "tools-settings-stage-" + id.uuidString }
     private func backupName(_ id: UUID) -> String { "tools-settings-original-" + id.uuidString }
+    private func rollbackName(_ id: UUID) -> String { "tools-settings-rollback-" + id.uuidString }
+    private func cleanupDebtName(_ id: UUID) -> String { "tools-settings-cleanup-debt-" + id.uuidString + ".json" }
 }

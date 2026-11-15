@@ -178,6 +178,106 @@ final class ToolsReleaseTests: XCTestCase, @unchecked Sendable {
     }
     #endif
 
+    func testTBF04VerifiedBytesCannotBeReplacedBeforeFinalPublication() async throws {
+        for atomic in [true, false] {
+            let bytes = Data([0x50, 0x4b, 3, 4, 5, 6]), other = Data([0x50, 0x4b, 3, 4, 9, 9])
+            let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+            let root = try releaseDirectory(), changed = expectation(description: "Replace verified A with B")
+            let hooks = ToolsReleaseTransferHooks(afterCleanup: {
+                do {
+                    let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("update-") })
+                    try other.write(to: folder.appendingPathComponent("fixture-arm64.ipa.partial"), options: atomic ? .atomic : [])
+                } catch { XCTFail("Fixture replacement failed: \(error)") }
+                changed.fulfill()
+            })
+            ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: bytes))
+            do { _ = try await boundedDownload(client(hooks: hooks), release: release, directory: root); XCTFail("A receipt for A must not publish B") }
+            catch { XCTAssertTrue((error as? ToolsError) == .unsafePath || (error as? ToolsError) == .checksumMismatch) }
+            await fulfillment(of: [changed], timeout: 2)
+            let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("update-") })
+            XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("fixture-arm64.ipa.partial")), other)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("fixture-arm64.ipa").path))
+        }
+    }
+
+    func testTBF04ForeignFolderIsNotRecursivelyCleanedOnSuccessHandoffOrError() async throws {
+        for status in [200, 500] {
+            let bytes = Data([0x50, 0x4b, 3, 4, 5, 6])
+            let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+            let root = try releaseDirectory(), moved = root.appendingPathComponent("moved-owned")
+            let changed = expectation(description: "Replace owned update directory")
+            let hooks = ToolsReleaseTransferHooks(afterCleanup: {
+                do {
+                    let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("update-") })
+                    try FileManager.default.moveItem(at: folder, to: moved)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+                    try Data([9]).write(to: folder.appendingPathComponent("foreign.bin"))
+                } catch { XCTFail("Fixture folder replacement failed: \(error)") }
+                changed.fulfill()
+            })
+            ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(status: status, data: bytes))
+            do { _ = try await boundedDownload(client(hooks: hooks), release: release, directory: root); XCTFail("Expected rejection") }
+            catch { }
+            await fulfillment(of: [changed], timeout: 2)
+            let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first { $0.lastPathComponent.hasPrefix("update-") })
+            XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("foreign.bin")), Data([9]))
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: moved.path).isEmpty, "The held owner still cleans its own partial")
+        }
+    }
+
+    func testTBF04ReadyNameCollisionPreservesForeignBytesAndRemovesOurPartial() async throws {
+        let bytes = Data([0x50, 0x4b, 3, 4, 5, 6]), other = Data([9, 8, 7, 6, 5, 4])
+        let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+        let root = try releaseDirectory(), collided = expectation(description: "Foreign ready-name collision")
+        let hooks = ToolsReleaseTransferHooks(afterCleanup: {
+            do {
+                let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first)
+                try other.write(to: folder.appendingPathComponent("fixture-arm64.ipa"))
+            } catch { XCTFail("Fixture collision failed: \(error)") }
+            collided.fulfill()
+        })
+        ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: bytes))
+        do { _ = try await boundedDownload(client(hooks: hooks), release: release, directory: root); XCTFail("Expected exclusive publication failure") }
+        catch { XCTAssertEqual(error as? ToolsError, .unavailable("The destination already exists.")) }
+        await fulfillment(of: [collided], timeout: 2)
+        let folder = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).first)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["fixture-arm64.ipa"])
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("fixture-arm64.ipa")), other)
+    }
+
+    func testTBF04CancellationAtSuccessHandoffStillRemovesOwnedOutput() async throws {
+        let bytes = Data([0x50, 0x4b, 3, 4, 5, 6])
+        let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+        let root = try releaseDirectory(), cancellation = ToolsReleaseCancellation()
+        let handedOff = expectation(description: "Verified output handed to caller")
+        let hooks = ToolsReleaseTransferHooks(afterCleanup: { cancellation.cancel(); handedOff.fulfill() })
+        ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: bytes))
+        do {
+            _ = try await boundedDownload(client(hooks: hooks), release: release, directory: root, cancellation: cancellation)
+            XCTFail("Expected cancellation")
+        } catch { XCTAssertTrue(error is CancellationError) }
+        await fulfillment(of: [handedOff], timeout: 2)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    private func boundedDownload(_ client: ToolsReleaseClient, release: ToolsGitHubRelease, directory: URL,
+                                 cancellation: ToolsReleaseCancellation? = nil) async throws -> ToolsDownloadedUpdate {
+        let completed = expectation(description: "Offline transfer completes within 3 seconds")
+        let outcome = ToolsReleaseOutcome()
+        let task = Task {
+            do { outcome.store(.success(try await client.download(release, directory: directory) { _, _ in })) }
+            catch { outcome.store(.failure(error)) }
+            completed.fulfill()
+        }
+        cancellation?.install { task.cancel() }
+        await fulfillment(of: [completed], timeout: 3)
+        guard let result = outcome.read() else {
+            task.cancel()
+            throw ToolsError.unavailable("Offline transfer fixture exceeded its deadline.")
+        }
+        return try result.get()
+    }
+
     private func releaseDirectory() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("tools-release-cancel-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
@@ -205,6 +305,13 @@ private final class ToolsReleaseProgress: @unchecked Sendable {
     private var value: (Int64, Int64)?
     func append(_ done: Int64, _ total: Int64) { lock.lock(); value = (done, total); lock.unlock() }
     func last() -> (Int64, Int64)? { lock.lock(); defer { lock.unlock() }; return value }
+}
+
+private final class ToolsReleaseOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Result<ToolsDownloadedUpdate, Error>?
+    func store(_ value: Result<ToolsDownloadedUpdate, Error>) { lock.lock(); self.value = value; lock.unlock() }
+    func read() -> Result<ToolsDownloadedUpdate, Error>? { lock.lock(); defer { lock.unlock() }; return value }
 }
 
 /// URLProtocol itself explicitly disallows Sendable on FoundationNetworking.

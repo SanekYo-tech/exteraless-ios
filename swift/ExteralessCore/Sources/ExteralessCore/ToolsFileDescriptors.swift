@@ -26,13 +26,17 @@ struct ToolsFileIdentity: Codable, Equatable, Sendable {
     #endif
 }
 
-struct ToolsFileMetadata: Equatable, Sendable {
+struct ToolsFileMetadata: Codable, Equatable, Sendable {
     let identity: ToolsFileIdentity
     let size: Int64
     let modifiedSeconds: Int64
     let modifiedNanos: Int64
     let changedSeconds: Int64
     let changedNanos: Int64
+
+    func matchesContentVersion(_ other: ToolsFileMetadata) -> Bool {
+        identity == other.identity && size == other.size && modifiedSeconds == other.modifiedSeconds && modifiedNanos == other.modifiedNanos
+    }
 
     #if canImport(Darwin) || canImport(Glibc)
     init(_ value: stat) {
@@ -146,6 +150,10 @@ final class ToolsDirectoryDescriptor {
         }
     }
 
+    func verifyIdentity(_ expected: ToolsFileIdentity) throws {
+        guard try identity == expected else { throw ToolsError.unsafePath }
+    }
+
     func child(_ name: String, create: Bool) throws -> ToolsDirectoryDescriptor {
         guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.contains("\0") else { throw ToolsError.unsafePath }
         try verify()
@@ -168,8 +176,12 @@ final class ToolsDirectoryDescriptor {
         guard ToolsFileSafety.isComponent(name) else { throw ToolsError.unsafePath }
         try verify()
         guard name.withCString({ mkdirat(rawValue, $0, 0o700) }) == 0 else { throw toolsFileIOError() }
+        let created = ToolsFileIdentity(try metadata(name))
+        let directory = try child(name, create: false)
+        try directory.verifyIdentity(created)
+        guard try directory.names(maximum: 1).isEmpty else { throw ToolsError.unsafePath }
         try synchronize()
-        return try child(name, create: false)
+        return directory
     }
 
     /// Atomic replacement for the private journal/staged files, only under their
@@ -191,8 +203,8 @@ final class ToolsDirectoryDescriptor {
         return value
     }
 
-    func names(maximum: Int) throws -> [String] {
-        try verify()
+    func names(maximum: Int, verifyBinding: Bool = true) throws -> [String] {
+        if verifyBinding { try verify() }
         let duplicate = dup(rawValue)
         guard duplicate >= 0 else { throw toolsFileIOError() }
         guard let directory = fdopendir(duplicate) else {
@@ -216,12 +228,12 @@ final class ToolsDirectoryDescriptor {
             errno = 0
         }
         guard errno == 0 else { throw toolsFileIOError() }
-        try verify()
+        if verifyBinding { try verify() }
         return result.sorted()
     }
 
-    func synchronize() throws {
-        try verify()
+    func synchronize(verifyBinding: Bool = true) throws {
+        if verifyBinding { try verify() }
         guard fsync(rawValue) == 0 else { throw toolsFileIOError() }
     }
 
@@ -236,6 +248,43 @@ final class ToolsDirectoryDescriptor {
         catch let error as POSIXError where error.code == .ENOENT { return }
         guard ToolsFileIdentity(value) == identity else { throw ToolsError.unsafePath }
         guard name.withCString({ unlinkat(rawValue, $0, 0) }) == 0 else { throw toolsFileIOError() }
+    }
+
+    func removeOwnedVersion(_ name: String, version: ToolsFileMetadata) throws {
+        let current: stat
+        do { current = try metadata(name) }
+        catch let error as POSIXError where error.code == .ENOENT { return }
+        guard ToolsFileMetadata(current) == version else { throw ToolsError.unsafePath }
+        guard name.withCString({ unlinkat(rawValue, $0, 0) }) == 0 else { throw toolsFileIOError() }
+    }
+
+    /// No recursive removal. Callers first clean only recorded file versions from
+    /// the held directory; an unknown/replaced/nonempty directory is retained.
+    func removeEmptyDirectory(_ name: String, identity: ToolsFileIdentity) throws {
+        let current: stat
+        do { current = try metadata(name) }
+        catch let error as POSIXError where error.code == .ENOENT { return }
+        guard ToolsFileIdentity(current) == identity else { throw ToolsError.unsafePath }
+        guard name.withCString({ unlinkat(rawValue, $0, AT_REMOVEDIR) }) == 0 else { throw toolsFileIOError() }
+        guard fsync(rawValue) == 0 else { throw toolsFileIOError() }
+    }
+
+    /// Darwin moves, Glibc adds a link. The caller retains its fd/version receipt
+    /// and must verify the published inode before removing the original Glibc link.
+    func publishNoReplace(_ source: String, as target: String) throws -> Bool {
+        try verify()
+        guard ToolsFileSafety.isComponent(source), ToolsFileSafety.isComponent(target), source != target else { throw ToolsError.unsafePath }
+        let result: Int32
+        #if canImport(Darwin)
+        result = source.withCString { from in target.withCString { to in renameatx_np(rawValue, from, rawValue, to, UInt32(RENAME_EXCL)) } }
+        #else
+        result = source.withCString { from in target.withCString { to in linkat(rawValue, from, rawValue, to, 0) } }
+        #endif
+        if result != 0 {
+            if errno == EEXIST { return false }
+            throw toolsFileIOError()
+        }
+        return true
     }
 
     /// Atomic no-replace publication, including a racing creator of the same name.
@@ -274,11 +323,13 @@ final class ToolsReadDescriptor {
     let parent: ToolsDirectoryDescriptor
     let name: String
     private let initial: ToolsFileMetadata
+    private let verifyParentBinding: Bool
     let url: URL
     var size: Int64 { initial.size }
     var version: ToolsFileMetadata { initial }
 
-    init(_ url: URL, maximumBytes: Int64, hooks: ToolsFileOperationHooks = .init(), parent: ToolsDirectoryDescriptor? = nil) throws {
+    init(_ url: URL, maximumBytes: Int64, hooks: ToolsFileOperationHooks = .init(), parent: ToolsDirectoryDescriptor? = nil,
+         verifyParentBinding: Bool = true) throws {
         guard url.isFileURL, maximumBytes >= 0 else { throw ToolsError.unsafePath }
         let parent = try parent ?? ToolsDirectoryDescriptor.open(url.deletingLastPathComponent())
         let name = url.lastPathComponent
@@ -289,13 +340,58 @@ final class ToolsReadDescriptor {
         let descriptor = try ToolsOwnedDescriptor(name.withCString { openat(parent.rawValue, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK) })
         self.parent = parent; self.name = name; self.url = url
         self.initial = initial; self.descriptor = descriptor
+        self.verifyParentBinding = verifyParentBinding
+        try verify()
+    }
+
+    fileprivate init(duplicating descriptor: Int32, parent: ToolsDirectoryDescriptor, name: String,
+                     version: ToolsFileMetadata, verifyParentBinding: Bool = true) throws {
+        self.descriptor = try ToolsOwnedDescriptor(dup(descriptor))
+        self.parent = parent; self.name = name; self.url = parent.url.appendingPathComponent(name)
+        self.initial = version; self.verifyParentBinding = verifyParentBinding
         try verify()
     }
 
     func verify() throws {
-        try parent.verify()
+        if verifyParentBinding { try parent.verify() }
+        try verifyFile()
+    }
+
+    func verifyFile() throws {
         guard ToolsFileMetadata(try toolsDescriptorStat(descriptor.value)) == initial,
               ToolsFileMetadata(try parent.metadata(name)) == initial else { throw ToolsError.unsafePath }
+    }
+
+    func rewind() throws {
+        guard lseek(descriptor.value, 0, SEEK_SET) == 0 else { throw toolsFileIOError() }
+    }
+
+    /// Only after this operation's successful rename. ctime may change because of
+    /// rename/link; bytes are rehashed through this same inode before acceptance.
+    func reboundAfterPublication(as name: String, verifyParentBinding: Bool = true) throws -> ToolsReadDescriptor {
+        let version = ToolsFileMetadata(try toolsDescriptorStat(descriptor.value))
+        guard version.matchesContentVersion(initial) else { throw ToolsError.unsafePath }
+        return try ToolsReadDescriptor(duplicating: descriptor.value, parent: parent, name: name, version: version, verifyParentBinding: verifyParentBinding)
+    }
+
+    func digest(maximumBytes: Int64, checkCancellation: Bool = true) throws -> (count: Int64, sha256: String, prefix: Data) {
+        guard size >= 0, size <= maximumBytes else { throw ToolsError.sizeLimit }
+        try verify()
+        try rewind()
+        var hash = ToolsSHA256(), prefix = Data()
+        var count: Int64 = 0
+        while true {
+            if checkCancellation { try Task.checkCancellation() }
+            let chunk = try readChunk(65_536)
+            if chunk.isEmpty { break }
+            guard Int64(chunk.count) <= maximumBytes - count else { throw ToolsError.sizeLimit }
+            count += Int64(chunk.count)
+            hash.update(chunk)
+            if prefix.count < 4 { prefix.append(chunk.prefix(4 - prefix.count)) }
+        }
+        try verify()
+        guard count == size else { throw ToolsError.unsafePath }
+        return (count, hash.hexDigest(), prefix)
     }
 
     func readChunk(_ maximum: Int) throws -> Data {
@@ -334,10 +430,12 @@ final class ToolsWriteDescriptor {
     let parent: ToolsDirectoryDescriptor
     let name: String
     let identity: ToolsFileIdentity
+    var version: ToolsFileMetadata { get throws { ToolsFileMetadata(try toolsDescriptorStat(descriptor.value)) } }
 
     init(parent: ToolsDirectoryDescriptor, name: String) throws {
+        guard ToolsFileSafety.isComponent(name) else { throw ToolsError.unsafePath }
         try parent.verify()
-        let descriptor = try ToolsOwnedDescriptor(name.withCString { openat(parent.rawValue, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600) })
+        let descriptor = try ToolsOwnedDescriptor(name.withCString { openat(parent.rawValue, $0, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600) })
         let identity = ToolsFileIdentity(try toolsDescriptorStat(descriptor.value))
         guard identity.kind == UInt32(S_IFREG) else { throw ToolsError.unsafePath }
         self.parent = parent; self.name = name
@@ -363,6 +461,12 @@ final class ToolsWriteDescriptor {
     func synchronize() throws {
         guard fsync(descriptor.value) == 0 else { throw toolsFileIOError() }
         try parent.verify()
+    }
+
+    func readReceipt(at name: String? = nil, expectedVersion: ToolsFileMetadata? = nil,
+                     verifyParentBinding: Bool = true) throws -> ToolsReadDescriptor {
+        let version = try expectedVersion ?? self.version
+        return try ToolsReadDescriptor(duplicating: descriptor.value, parent: parent, name: name ?? self.name, version: version, verifyParentBinding: verifyParentBinding)
     }
 
     func discard() { parent.removeOwned(name, identity: identity) }

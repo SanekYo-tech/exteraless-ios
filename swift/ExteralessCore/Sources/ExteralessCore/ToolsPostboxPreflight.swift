@@ -1,7 +1,7 @@
 import Foundation
 
-/// Checks the real Postbox key/type/length grammar before a typed legacy Codable
-/// decode. It never constructs registered Postbox objects. Counts, signed lengths,
+/// Checks the real Postbox key/type/length grammar before the checked Tools wire
+/// reader. This is not authority to call unsafe generic Postbox decoders. Counts, signed lengths,
 /// nested object boundaries and total work are checked before advancing a cursor.
 public enum ToolsPostboxPreflight {
     public static func validate(_ data: Data, maximumBytes: Int, maximumFields: Int = 300_000) throws {
