@@ -20,6 +20,16 @@ NATIVE = ROOT / "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime"
 HOOKS = ROOT / "swift/PluginHooks/Sources/PluginHooks"
 APPROVED_TEMP = Path.home() / "AppData/Local/Temp/opencode"
 
+# Shared by the compiler invocation and the component input inventory.
+SOURCE_NAMES = (
+    NATIVE / "TLCodec.swift", NATIVE / "TLSchemaGenerated.swift",
+    NATIVE / "TLRequestRegistry.swift", NATIVE / "TLTransformCodec.swift",
+    NATIVE / "TLUpdatePolicy.swift", NATIVE / "TLEnqueueCommit.swift",
+    HOOKS / "PluginHookIngress.swift", HOOKS / "PluginHookPayloads.swift",
+    HOOKS / "PluginTLTransform.swift", HOOKS / "PluginTLSubmissionOrder.swift",
+    Path(__file__).with_name("NativeFixtures.swift"),
+)
+
 
 def main():
     compiler = shutil.which("swiftc")
@@ -30,12 +40,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="tl-native-fixtures-", dir=APPROVED_TEMP if APPROVED_TEMP.is_dir() else None) as temporary:
         executable = Path(temporary) / ("tl-fixtures.exe" if sys.platform == "win32" else "tl-fixtures")
         command = [compiler, "-swift-version", "6", "-parse-as-library",
-                   str(NATIVE / "TLCodec.swift"), str(NATIVE / "TLSchemaGenerated.swift"),
-                   str(NATIVE / "TLRequestRegistry.swift"), str(NATIVE / "TLTransformCodec.swift"), str(NATIVE / "TLUpdatePolicy.swift"),
-                   str(NATIVE / "TLEnqueueCommit.swift"),
-                   str(HOOKS / "PluginHookIngress.swift"), str(HOOKS / "PluginHookPayloads.swift"),
-                   str(HOOKS / "PluginTLTransform.swift"), str(HOOKS / "PluginTLSubmissionOrder.swift"),
-                   str(Path(__file__).with_name("NativeFixtures.swift")),
+                   *map(str, SOURCE_NAMES),
                    "-o", str(executable)]
         result = run_bounded(command, timeout=120)
         if result:

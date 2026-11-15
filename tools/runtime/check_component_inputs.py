@@ -19,6 +19,10 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = '.github/workflows/python-framework.yml'
 UI = 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI'
+TL_FIXTURE_RUNNER = 'tools/compat/tests/tl_bridge/run_native_fixtures.py'
+UI_FIXTURE_RUNNER = UI + '/Tests/run_fixture.py'
+UI_REMEDIATION_RUNNER = UI + '/Tests/run_remediation_fixture.py'
+JAVA_FIXTURE_RUNNER = 'tools/runtime/check_java_tl_codec.py'
 SKIP_DIRS = {'.git', '.build', '.pytest_cache', '__pycache__', 'build', 'dist'}
 
 
@@ -66,7 +70,28 @@ def module_at(name, path):
         sys.path[:] = previous
 
 
-def inventory():
+def fixture_compiler_inputs():
+    """Read the same declarations the fixture compilers actually consume."""
+    from check_java_tl_codec import COMPILE_SOURCES
+    result = {JAVA_FIXTURE_RUNNER: [ROOT / name for name in COMPILE_SOURCES]}
+    with module_at('component_tl_fixture_inputs', ROOT / TL_FIXTURE_RUNNER) as runner:
+        result[TL_FIXTURE_RUNNER] = list(runner.SOURCE_NAMES)
+    with module_at('component_ui_remediation_inputs', ROOT / UI_REMEDIATION_RUNNER) as runner:
+        result[UI_REMEDIATION_RUNNER] = [runner.UI / name for name in runner.SOURCES]
+    tree = ast.parse((ROOT / UI_FIXTURE_RUNNER).read_text(encoding='utf-8'))
+    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == 'sources' for target in node.targets)]
+    if len(assignments) != 1 or not isinstance(assignments[0].value, ast.ListComp):
+        raise ValueError('Review changed Foundation UI fixture source declaration')
+    result[UI_FIXTURE_RUNNER] = [ROOT / UI / name
+        for name in ast.literal_eval(assignments[0].value.generators[0].iter)]
+    for runner, sources in result.items():
+        if not sources or len(sources) != len(set(sources)):
+            raise ValueError('Empty/duplicate fixture compiler inputs: ' + runner)
+    return result
+
+
+def inventory(*, compiler_inputs=None, records=None):
     from check_java_tl_codec import source_fingerprint as java_inputs
     from check_swift_plugin_embedding import JAVA_COHORT_INPUTS, JAVA_RUNTIME_INPUTS
     from native_test_plan import Declarations, build_plan
@@ -76,7 +101,7 @@ def inventory():
     from tools.compat.sdk_config_manifest import CLIENT_ROOT, root_registration
 
     deadline = time.monotonic() + 30
-    files = {}
+    files = records if records is not None else {}
     def add(paths, consumer):
         for path in paths:
             if time.monotonic() >= deadline:
@@ -95,6 +120,9 @@ def inventory():
                 files[relative]['consumers'].append(consumer)
 
     add([WORKFLOW, 'tools/runtime/check_component_inputs.py'], 'component-preflight')
+    compiler_inputs = fixture_compiler_inputs() if compiler_inputs is None else compiler_inputs
+    for runner, sources in compiler_inputs.items():
+        add([runner, *sources], 'compiler:' + runner)
     add(['.gitmodules', 'telegram-ios/.gitmodules'], 'component-gitlink-bootstrap')
     add(source_inventory(ROOT), 'relocated-runtime-public-inputs')
     for directory in ('python/runtime', 'python/virtualjava', 'python/sdk', 'python/exteraless_runtime',
@@ -113,26 +141,20 @@ def inventory():
     add([CLIENT_ROOT.replace('ExteralessClientRuntime.swift', 'ClientSettingsBridgeExtension.swift')],
         'three-native-sdk-children/compiled-config-provider')
     add(java_inputs(ROOT), 'java-foundation-tl-codec')
-    with module_at('component_ui_fixture', ROOT / UI / 'Tests/run_remediation_fixture.py') as ui:
+    with module_at('component_ui_fixture', ROOT / UI_REMEDIATION_RUNNER) as ui:
         add(ui.source_inventory(), 'ui-remediation-23')
         receipt = json.loads((ROOT / ui.POSTIMAGE_MANIFEST).read_text(encoding='utf-8'))
         add(receipt['files'], 'ui-remediation-postimage')
         add((pin['path'] for pin in receipt['regions']), 'ui-remediation-postimage-region')
         postimage = ui.verify_postimage(ROOT)
         completion = ui.COMPLETION
-    contracts_driver = ROOT / UI / 'Tests/run_fixture.py'
-    assignments = [node for node in ast.walk(ast.parse(contracts_driver.read_text(encoding='utf-8')))
-                   if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'sources'
-                                                          for target in node.targets)]
-    if len(assignments) != 1 or not isinstance(assignments[0].value, ast.ListComp):
-        raise ValueError('Review changed Foundation UI fixture source declaration')
-    actual = {ROOT / UI / name for name in ast.literal_eval(assignments[0].value.generators[0].iter)}
+    actual = set(compiler_inputs[UI_FIXTURE_RUNNER])
     declarations = Declarations(ROOT / 'telegram-ios', source_checkout=True)
     package, _, group = declarations.rule('//submodules/TelegramUI:ExteralessNativeUIContractSources')
     declared = set(declarations.sources(group['srcs'], package)) | {ROOT / UI / 'Tests/PluginUIFixture.swift'}
     if actual != declared:
         raise ValueError('Foundation UI driver and declared source filegroup inputs differ')
-    add([contracts_driver, *actual], 'foundation-ui-contracts')
+    add([ROOT / UI_FIXTURE_RUNNER, *actual], 'foundation-ui-contracts')
     # The unit tests of the native planner read fixture declarations, not just
     # the helper's Python file. Keep this inventory separate from an IPA freeze;
     # no aggregate XCTest plan or method total is emitted here.
@@ -180,7 +202,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    result = {'status': 'not-checked', 'native_execution_verified': False,
+    if args.output.exists():
+        parser.error('--output must be a new receipt; existing inventories are not overwritten')
+    result = {'schema': 2, 'status': 'not-checked', 'native_execution_verified': False,
+              'compiler_input_contract': 'runner-declarations-v2', 'source_files': {},
               'scope': 'Python Framework component inputs; not an IPA source freeze',
               'generated_inputs': {
                   'python/vendor/exteraless-dependencies.json': 'vendor_dependencies.py step before SDK audit-path pytests and native children',
@@ -189,7 +214,10 @@ def main():
               }}
     try:
         cones = sparse_cones((ROOT / WORKFLOW).read_text(encoding='utf-8'))
-        files, details = inventory()
+        compiler_inputs = fixture_compiler_inputs()
+        result['fixture_compiler_inputs'] = {runner: [path.relative_to(ROOT).as_posix() for path in paths]
+                                             for runner, paths in compiler_inputs.items()}
+        files, details = inventory(compiler_inputs=compiler_inputs, records=result['source_files'])
         missing = []
         for name, record in files.items():
             record['sparse'] = covered_by(name, cones)
@@ -205,7 +233,8 @@ def main():
         raise
     finally:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+        with args.output.open('x', encoding='utf-8') as receipt:
+            receipt.write(json.dumps(result, indent=2, sort_keys=True) + '\n')
 
 
 if __name__ == '__main__':

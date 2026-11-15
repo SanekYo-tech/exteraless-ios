@@ -7,10 +7,13 @@ definition forms are recognized; a proposed inventory key is never a registratio
 import argparse
 import ast
 from collections import Counter
+import difflib
 import hashlib
+from itertools import islice
 import json
 from pathlib import Path
 import re
+import sys
 
 from . import feature_inventory as inventory
 
@@ -20,6 +23,7 @@ ANDROID = ROOT / "third_party/exteraless-android/TMessagesProj/src/main"
 CORE = ROOT / "swift/ExteralessCore/Sources/ExteralessCore"
 OUTPUT = ROOT / "python/exteraless_runtime/_config_manifest.py"
 RECEIPT = ROOT / "docs/wave-2/sdk-config-parity.json"
+INVENTORY_PATH = "docs/parity/client-features.json"
 CLIENT_ROOT = "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift"
 CONFIGS = ("AppearanceConfig", "ChatsConfig", "GeneralConfig", "OpenExteraConfig", "UtilsConfig",
            "IconPacksConfig", "PillStackConfig", "NekoConfig", "NaConfig")
@@ -81,6 +85,8 @@ COMPUTED = {
     "isProxyDisabledOn": ("proxy_condition", ["openextera.proxyDisableConditions"]),
     "setProxyDisabledOn": ("set_proxy_condition", ["openextera.proxyDisableConditions"]),
 }
+INVENTORY_API_FIELDS = ("id", "symbol", "file", "line", "type", "arity", "parameter_types", "behavior")
+DIAGNOSTIC_LIMIT = 6_000
 
 
 def digest(path):
@@ -90,8 +96,34 @@ def digest(path):
 def read(path, pins):
     if path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError(f"SDK Config input exceeds bound: {path}")
-    pins[path.relative_to(ROOT).as_posix()] = digest(path)
-    return path.read_text(encoding="utf-8-sig")
+    raw = path.read_bytes()
+    pins[path.relative_to(ROOT).as_posix()] = hashlib.sha256(raw).hexdigest()
+    return raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def inventory_contract(source):
+    """Only original Config inputs, not the aggregate inventory's derived claims.
+
+    The Compat workflow regenerates client-features.json before pytest. Its
+    native-target/UI/module/parity metadata is not consumed by this generator.
+    Canonicalize the consumed contract instead of pinning that mutable envelope.
+    Actual Java/Kotlin/Swift sources and domain receipts retain raw-byte pins.
+    """
+    configs = {name: {"file": source["configs"][name]["file"]} for name in (*CONFIGS, "ExteraConfig")}
+    files = {row["file"]: {"sha256": source["source_files"][row["file"]]["sha256"]} for row in configs.values()}
+    feature_ids = [row["id"] for row in source["features"]]
+    apis = [{key: row[key] for key in INVENTORY_API_FIELDS} for row in source["compatibility_apis"]]
+    if len(feature_ids) != len(set(feature_ids)) or len(apis) != len({row["id"] for row in apis}):
+        raise ValueError("duplicate original IDs in Config inventory contract")
+    return {"version": 1, "schema_version": source["schema_version"], "configs": configs,
+            "source_files": files, "feature_ids": sorted(feature_ids),
+            "compatibility_apis": sorted(apis, key=lambda row: (row["file"], row["line"], row["id"]))}
+
+
+def inventory_pin(contract):
+    canonical = json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n"
+    return {"path": INVENTORY_PATH, "hash_mode": "sdk-config-input-v1",
+            "contract_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
 
 
 def selected_declarations(text, members):
@@ -327,11 +359,15 @@ def api_route(api, body, symbols, compatibility):
 
 def build():
     pins = {}
-    source = json.loads(read(ROOT / "docs/parity/client-features.json", pins))
-    apis = source["compatibility_apis"]
+    # Keep the aggregate's raw hash out of SOURCES: it is rewritten by the prior
+    # CI inventory step. The explicitly scoped canonical pin below remains checked.
+    source = json.loads(read(ROOT / INVENTORY_PATH, {}))
+    contract = inventory_contract(source)
+    contract_pin = inventory_pin(contract)
+    apis = contract["compatibility_apis"]
     if len(apis) != 308 or Counter(a["behavior"] for a in apis) != {"mapped-alias": 220, "compat-storage": 44, "shim-utility-or-unresolved": 44}:
         raise ValueError("review the changed 308-ID Config inventory before regeneration")
-    features = {f["id"]: f for f in source["features"]}
+    features = set(contract["feature_ids"])
     fragments = {}
     for name in ("appearance", "chat", "privacy", "ai", "ai-visibility", "tools", "dialogs", "identity", "retention"):
         fragment = json.loads(read(ROOT / f"docs/wave-2/{name}-parity.json", pins))
@@ -343,10 +379,10 @@ def build():
     dispositions = json.loads(read(ROOT / "docs/wave-2/sdk-config-binding-dispositions.json", pins))
     parsed, bindings, classes, symbols = {}, {}, {}, {}
     for name in (*CONFIGS, "ExteraConfig"):
-        relative = source["configs"][name]["file"]
+        relative = contract["configs"][name]["file"]
         path = ANDROID / relative
         text = read(path, pins)
-        if digest(path) != source["source_files"][relative]["sha256"]:
+        if digest(path) != contract["source_files"][relative]["sha256"]:
             raise ValueError(f"pinned Android Config source changed: {relative}")
         config = inventory.parse_config(text, relative)
         parsed[name] = config
@@ -493,12 +529,12 @@ def build():
             "adaptation": {"sdk_route": route["route"], "canonical_keys": [t["key"] for t in targets if t["key"]], "note": reason}},
             "implementation": {"status": status, "ported": False, "evidence": evidence}})
 
-    manifest = {"SOURCES": dict(sorted(pins.items())), "ROOT_REGISTRATION": registered_root,
+    manifest = {"SOURCES": dict(sorted(pins.items())), "INVENTORY_CONTRACT": contract_pin, "ROOT_REGISTRATION": registered_root,
                 "BINDINGS": bindings, "CLASSES": classes,
                 "ENUMS": enum_values, "APIS": routes, "FIELD_ALIASES": aliases}
     receipt = {"schema_version": 2, "generator": "python -m tools.compat.sdk_config_manifest --write",
         "scope": "SDK API mirror only; not UI/client-effect parity or a new native execution pass",
-        "source_inventory": {"path": "docs/parity/client-features.json", "sha256": pins["docs/parity/client-features.json"]},
+        "source_inventory": contract_pin,
         "source_pins": dict(sorted(pins.items())), "source_classification_counts": dict(Counter(a["behavior"] for a in apis)),
         "implementation_counts": dict(Counter(r["implementation"]["status"] for r in records)),
         "root_registration": registered_root,
@@ -527,6 +563,95 @@ def render(manifest):
     return "\n".join(lines)
 
 
+def _artifact_values(text, python):
+    if len(text.encode("utf-8")) > 8 * 1024 * 1024:
+        raise ValueError("diagnostic parse size limit")
+    if not python: return json.loads(text)
+    tree = ast.parse(text)
+    return {node.targets[0].id: ast.literal_eval(node.value) for node in tree.body
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)}
+
+
+def _preview(value):
+    if value is None or type(value) in (bool, int): return value
+    if isinstance(value, str): return value if len(value) <= 120 else value[:117] + "..."
+    if isinstance(value, (dict, list, tuple)): return f"<{type(value).__name__}: {len(value)} entries>"
+    return repr(value)[:120]
+
+
+def _change(path, before, after, kind="value"):
+    return {"path": path[:240], "change": kind, "stored": _preview(before), "expected": _preview(after)}
+
+
+def _changes(before, after, path="", depth=0):
+    if depth > 16:
+        if before != after: yield _change(path, before, after, "depth limit")
+        return
+    if type(before) is not type(after):
+        yield _change(path, before, after, f"type {type(before).__name__} -> {type(after).__name__}")
+    elif isinstance(before, dict):
+        for key in sorted(before.keys() | after.keys()):
+            label = f"{path}[{key!r}]" if path else str(key)
+            if key not in before: yield _change(label, "<missing>", after[key], "added")
+            elif key not in after: yield _change(label, before[key], "<missing>", "removed")
+            else: yield from _changes(before[key], after[key], label, depth + 1)
+    elif isinstance(before, (list, tuple)):
+        if len(before) != len(after): yield _change(path, len(before), len(after), "length")
+        for index, (old, new) in enumerate(zip(before, after)):
+            yield from _changes(old, new, f"{path}[{index}]", depth + 1)
+    elif before != after:
+        yield _change(path, before, after)
+
+
+def _delta_json(delta):
+    while True:
+        text = json.dumps(delta, ensure_ascii=False, separators=(",", ":"))
+        if len(text.encode("utf-8")) <= DIAGNOSTIC_LIMIT // 2 or not delta["changes"]: return text
+        delta["changes"].pop()
+        delta["changes_truncated"] = True
+
+
+def stale_diagnostic(path, actual, expected):
+    try: label = path.relative_to(ROOT).as_posix()
+    except ValueError: label = path.as_posix()
+    lines = [f"SDK Config generated output is stale: {label}"]
+    delta = {"version": 1, "artifact": label, "python": sys.version.split()[0], "platform": sys.platform,
+             "hash_scope": "UTF-8 text with universal newlines", "changes": []}
+    for name, text in (("stored", actual), ("expected", expected)):
+        if text is None:
+            delta[name] = None
+        else:
+            raw = text.encode("utf-8")
+            delta[name] = {"bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+    if actual is None:
+        delta["missing"] = True
+        return "\n".join(lines + ["SDK_CONFIG_DELTA_JSON=" + _delta_json(delta)])
+    try:
+        before = _artifact_values(actual, path.suffix == ".py")
+        after = _artifact_values(expected, path.suffix == ".py")
+        keys = list(islice(_changes(before, after), 9))
+        delta["changes"] = keys[:8]
+        delta["changes_truncated"] = len(keys) > 8
+        delta["format_only"] = not keys
+    except (ValueError, SyntaxError, TypeError, RecursionError) as error:
+        delta["parse_error"] = type(error).__name__
+    old_lines, new_lines = actual.splitlines(), expected.splitlines()
+    first = next((i for i, pair in enumerate(zip(old_lines, new_lines)) if pair[0] != pair[1]), min(len(old_lines), len(new_lines)))
+    start = max(0, first - 1)
+    delta["first_differing_line"] = first + 1
+    lines.append("SDK_CONFIG_DELTA_JSON=" + _delta_json(delta))
+    if delta.get("format_only"): lines.append("Values match; serialized ordering/format differs.")
+    lines.append(f"Bounded diff near line {first + 1} (12-line window, 240 chars/line):")
+    diff = difflib.unified_diff(old_lines[start:start + 12], new_lines[start:start + 12],
+                                fromfile="stored/" + label, tofile="expected/" + label, n=1, lineterm="")
+    for line in islice(diff, 28): lines.append(line if len(line) <= 240 else line[:237] + "...")
+    result = "\n".join(lines)
+    raw = result.encode("utf-8")
+    if len(raw) > DIAGNOSTIC_LIMIT:
+        result = raw[:DIAGNOSTIC_LIMIT - 40].decode("utf-8", errors="ignore") + "\n... diagnostic truncated"
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -538,10 +663,13 @@ def main():
     for path, content in outputs.items():
         if options.write:
             path.write_text(content, encoding="utf-8", newline="\n")
-        elif not path.is_file() or path.read_text(encoding="utf-8") != content:
-            raise SystemExit(f"SDK Config generated output is stale: {path.relative_to(ROOT)}")
+        else:
+            actual = path.read_text(encoding="utf-8") if path.is_file() else None
+            if actual != content: raise SystemExit(stale_diagnostic(path, actual, content))
     print(json.dumps({"apis": len(receipt["compatibility_apis"]), "bindings": len(manifest["BINDINGS"]),
-                      "implementation": receipt["implementation_counts"]}))
+                      "implementation": receipt["implementation_counts"],
+                      "inventory_hash_mode": receipt["source_inventory"]["hash_mode"],
+                      "inventory_raw_sha256": digest(ROOT / INVENTORY_PATH)}))
 
 
 if __name__ == "__main__":

@@ -1,17 +1,16 @@
 """Generated SDK Config metadata. Regenerate with tools.compat.sdk_config_manifest."""
 
 SOURCES = {
-    'docs/parity/client-features.json': '8fa5e3e5e40e29160ab2db033bd2fe413ef5dbee72162abfa16039aa685f0423',
     'docs/wave-2/ai-parity.json': 'b60bf991781b65f1956254e8f658db1cb9e6682e2beadb5c68bf720ecca2d98e',
     'docs/wave-2/ai-visibility-parity.json': 'b791dee27760f3f0bbb740f93a15d8caff3d2d2722b89d970e759ce3ca7bbda1',
-    'docs/wave-2/appearance-parity.json': '5ec07e4502e4fe87794578047caca7fab930207ca64adc8132f023cdf725a57d',
+    'docs/wave-2/appearance-parity.json': 'abb015196cc64f555fa8437aac03ae7df028528740ddd12be65f5fe89ebeeec9',
     'docs/wave-2/chat-parity.json': '4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f',
     'docs/wave-2/dialogs-parity.json': '03b3d10d72265c7a18baded766bae8522c8e398d20a9043518e037dc402d0b86',
     'docs/wave-2/identity-parity.json': '252d41e095f979724de5f2e38973a7af09d2dc9540507a5925cee3ed31283a80',
     'docs/wave-2/privacy-parity.json': 'e683a2539dd703f0101b01942571c8cce298af4d7ae0fe26e6bb548d756bd96e',
     'docs/wave-2/retention-parity.json': 'e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a',
     'docs/wave-2/sdk-config-binding-dispositions.json': '0904b733cff80fb4bbfc3a500506a1ba11986f28bcaf8e6e9bf540dd179e496c',
-    'docs/wave-2/tools-parity.json': 'b225f5ab716c46000ec234c63a7f70b8b47a9773f9d98c7e6b25461343f1cfeb',
+    'docs/wave-2/tools-parity.json': '6201f70c22d0a4d6218676bd15342978ffc6bb1cff0699a83ea50c49948b8b09',
     'swift/ExteralessCore/Sources/ExteralessCore/AIFeatures.swift': '2e06fbb08ba7f94caa63e932a2fc4a16ec6804df4133b1cff732d44fafa1f51d',
     'swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift': '4f48d757f4552b3a2fc888d25e9c309e47cdfbe44c7936794461be039e53df22',
     'swift/ExteralessCore/Sources/ExteralessCore/AppearanceAdditionalFeatures.swift': 'e779cc5e1d74a533a7272a6023038db67966fa17af1b481c0ce03b8bd5ef303b',
@@ -57,6 +56,12 @@ SOURCES = {
     'third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/utils/UtilsConfig.kt': 'c8f3d16230e3480a7053ca43363029e2e96a12cb1fdc8f2eae4b98c76626d226',
     'third_party/exteraless-android/TMessagesProj/src/main/kotlin/xyz/nextalone/nagram/NaConfig.kt': '495356be6d7050b4c5ca313ff5d4bb6be61d6ce4f3022c47fcddead222014646',
     'third_party/exteraless-android/TMessagesProj/src/main/python/extera_utils/class_aliases.py': '4f6999a246f0838355ea260bdd5ddd2fcaee652e4f427de7fc24fede14804c0c',
+}
+
+INVENTORY_CONTRACT = {
+    'contract_sha256': '37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40',
+    'hash_mode': 'sdk-config-input-v1',
+    'path': 'docs/parity/client-features.json',
 }
 
 ROOT_REGISTRATION = {
