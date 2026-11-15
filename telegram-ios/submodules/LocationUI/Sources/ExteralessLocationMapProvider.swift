@@ -19,12 +19,19 @@ final class ExteralessLocationMapProvider {
 
     init(mapView: MKMapView) {
         self.mapView = mapView
-        attribution.titleLabel?.font = UIFont.systemFont(ofSize: 10, weight: .medium)
+        var configuration = UIButton.Configuration.plain()
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6)
+        configuration.baseForegroundColor = .darkGray
+        configuration.titleLineBreakMode = .byWordWrapping
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.systemFont(ofSize: 10, weight: .medium)
+            return attributes
+        }
+        attribution.configuration = configuration
         attribution.titleLabel?.numberOfLines = 2
         attribution.backgroundColor = UIColor(white: 1, alpha: 0.9)
-        attribution.setTitleColor(.darkGray, for: .normal)
         attribution.layer.cornerRadius = 5
-        attribution.contentEdgeInsets = UIEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
         attribution.addAction(UIAction { [weak self] _ in self?.openAttribution() }, for: .touchUpInside)
         mapView.addSubview(attribution)
         _ = MapPolicyRuntime.shared
@@ -55,6 +62,7 @@ final class ExteralessLocationMapProvider {
         if let overlay { mapView.removeOverlay(overlay); overlay.invalidate(); self.overlay = nil }
         let policy = MapPolicy.current()
         let standard = mapType == .standard
+        let title: String
         if policy.useOpenStreetMap && standard && !fallback {
             let overlay = ExteralessOSMTileOverlay(namespace: namespace, epoch: MapPolicyRuntime.shared.epoch)
             overlay.failed = { [weak self, weak overlay] in
@@ -65,14 +73,17 @@ final class ExteralessLocationMapProvider {
             }
             self.overlay = overlay
             mapView.addOverlay(overlay, level: .aboveRoads)
-            attribution.setTitle("© OpenStreetMap contributors", for: .normal)
+            title = "© OpenStreetMap contributors"
         } else if policy.useOpenStreetMap && !standard {
-            attribution.setTitle(mapType == .satellite || mapType == .satelliteFlyover ? "Apple Maps · Satellite\nOSM has standard tiles only" : "Apple Maps · Hybrid\nOSM has standard tiles only", for: .normal)
+            title = mapType == .satellite || mapType == .satelliteFlyover ? "Apple Maps · Satellite\nOSM has standard tiles only" : "Apple Maps · Hybrid\nOSM has standard tiles only"
         } else {
-            attribution.setTitle(fallback ? "OSM unavailable · Apple Maps fallback" : "Apple Maps", for: .normal)
+            title = fallback ? "OSM unavailable · Apple Maps fallback" : "Apple Maps"
         }
         mapView.mapType = mapType
-        attribution.accessibilityLabel = attribution.title(for: .normal)
+        var configuration = attribution.configuration ?? .plain()
+        configuration.title = title
+        attribution.configuration = configuration
+        attribution.accessibilityLabel = title
         updateLayout(size: size, topInset: topInset)
     }
 

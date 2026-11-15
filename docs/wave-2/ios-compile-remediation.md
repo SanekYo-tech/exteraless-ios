@@ -91,3 +91,10 @@ uses directional configuration insets (38 leading /16 trailing), the same Dynami
 Type subheadline/truncation, native title/color updates and the existing0.16s
 crossfade. Existing `pill-render` expectations cover the affected control; this
 source correction does not itself certify its recorded frames.
+
+## LocationUI pass from 43752817531 / 897e3106
+
+Gallery compiled. The map attribution button now uses configuration insets and
+explicit ten-point medium title attributes. All provider/fallback titles, their
+accessibility text, the two-line limit and the existing constrained frame remain.
+The native map/tile/cancellation provider is unchanged by this compiler correction.
