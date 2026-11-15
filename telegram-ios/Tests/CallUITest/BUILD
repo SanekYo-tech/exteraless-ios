@@ -41,6 +41,7 @@ swift_library(
         ":AppResources",
     ],
     deps = [
+        "//submodules/ComponentFlow:ComponentFlow",
         "//submodules/Display",
         "//submodules/MetalEngine",
         "//submodules/TelegramPresentationData",

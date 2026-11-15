@@ -1,15 +1,16 @@
 """Bounded declaration/source map for the dedicated native XCTest suite."""
 
 import ast
-import fnmatch
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'telegram-ios/build-system/Make'))
 from PostboxImportCheck import strip_comments_and_strings
+from check_bazel_imports import glob_regex
 
 MAP_PATH = 'Tests/Exteraless/native-tests.json'
 # Masked comments/fixture strings can leave thousands of blank lines. Leading
@@ -56,6 +57,71 @@ def fixture_classes(text, *, class_name=None):
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def source_inventory_fingerprint(files):
+    if not isinstance(files, dict) or not files or any(
+            not isinstance(name, str) or not isinstance(sha, str) or not re.fullmatch(r'[0-9a-f]{64}', sha)
+            for name, sha in files.items()):
+        raise ValueError('Missing or invalid source inventory')
+    return hashlib.sha256(''.join(sha + '  ' + name + '\n' for name, sha in sorted(files.items())).encode()).hexdigest()
+
+
+def glob_sources(directory, expression):
+    """Bazel checks each include pattern, and never crosses package boundaries."""
+    directory = Path(directory)
+    patterns = ast.literal_eval(expression.args[0])
+    excluded = next((ast.literal_eval(item.value) for item in expression.keywords if item.arg == 'exclude'), [])
+    allow_empty = next((ast.literal_eval(item.value) for item in expression.keywords if item.arg == 'allow_empty'), False)
+    found = set()
+    for pattern in patterns:
+        matches = set()
+        for path in directory.glob(pattern):
+            if not path.is_file() or not glob_regex(pattern).fullmatch(path.relative_to(directory).as_posix()):
+                continue
+            parents = path.relative_to(directory).parent.parts
+            if any(any((directory.joinpath(*parents[:index]) / name).is_file() for name in ('BUILD', 'BUILD.bazel'))
+                   for index in range(1, len(parents) + 1)):
+                continue
+            matches.add(path)
+        if not matches and not allow_empty:
+            raise ValueError('Bazel glob pattern matches no source (allow_empty=False): ' + pattern)
+        found.update(path for path in matches if not any(glob_regex(pattern).fullmatch(path.relative_to(directory).as_posix())
+                                                        for pattern in excluded))
+    if not found and not allow_empty:
+        raise ValueError('Bazel glob has no sources after exclusions')
+    return sorted(found)
+
+
+def verify_native_results(result, plan, identity):
+    if (result.get('status') != 'passed' or result.get('native_execution_verified') is not True
+            or result.get('configuration') != 'debug_sim_arm64'
+            or result.get('source_fingerprint') != plan.get('source_fingerprint')
+            or result.get('acceptanceIdentity') != identity):
+        raise ValueError('Required native XCTest snapshot did not pass')
+    expected = [(target, case) for target in plan['targets'] for case in target['classes']]
+    actual = result.get('classes', [])
+    if not expected or len(actual) != len(expected):
+        raise ValueError('Missing/extra native XCTest classes')
+    total = 0
+    for observed, (target, case) in zip(actual, expected):
+        methods = sorted(case['methods'])
+        if (not methods or len(set(methods)) != len(methods)
+                or any(observed.get(key) != value for key, value in {
+                    'target': target['label'], 'class': case['class'], 'source': case['source'],
+                    'host': target['host'], 'host_bundle_id': target['host_bundle_id'],
+                    'started_methods': methods, 'passed_methods': methods}.items())):
+            raise ValueError('Missing/partial/reordered native XCTest method evidence')
+        for field, maximum in (('logic_seconds', plan['contract']['logic_seconds']),
+                               ('preparation_seconds', plan['contract']['preparation_seconds'])):
+            seconds = observed.get(field)
+            if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 <= seconds <= maximum:
+                raise ValueError('Native XCTest phase budget exceeded: ' + field)
+        total += len(methods)
+    if type(result.get('passed_methods')) is not int or result['passed_methods'] != total:
+        raise ValueError('Native XCTest method total differs from the complete source map')
+    return {'targets': len(plan['targets']), 'classes': len(expected), 'methods': total,
+            'source_fingerprint': plan['source_fingerprint']}
 
 
 def label(value, package):
@@ -112,13 +178,7 @@ class Declarations:
         if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
             return self.sources(value.left, package, seen) + self.sources(value.right, package, seen)
         if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == 'glob':
-            patterns = ast.literal_eval(value.args[0])
-            excludes = next((ast.literal_eval(item.value) for item in value.keywords if item.arg == 'exclude'), [])
-            directory = self.root / package
-            found = sorted({path for pattern in patterns for path in directory.glob(pattern) if path.is_file()
-                            and not any(fnmatch.fnmatch(path.relative_to(directory).as_posix(), pattern) for pattern in excludes)})
-            if not found:
-                raise ValueError('Empty native test source glob in ' + package)
+            found = glob_sources(self.root / package, value)
             return [self.input(path) for path in found]
         if isinstance(value, ast.Constant) and isinstance(value.value, str):
             name = value.value
@@ -223,7 +283,7 @@ def build_plan(telegram_root, *, source_checkout=False):
     if kind != 'test_suite':
         raise ValueError('IntegrationTests must be an explicit test_suite')
     labels = [label(item, suite_package) for item in ast.literal_eval(suite['tests'])]
-    if len(labels) != len(set(labels)) or not 1 <= len(labels) <= 32:
+    if len(labels) != len(set(labels)) or not 1 <= len(labels) <= 40:
         raise ValueError('Duplicate or unbounded native test targets')
     if set(contract.get('target_hosts', {})) - set(labels):
         raise ValueError('Native test host override names a target outside the suite')
@@ -235,9 +295,15 @@ def build_plan(telegram_root, *, source_checkout=False):
     declarations.input(root / 'MODULE.bazel')
     declarations.input(root / 'build-system/exteraless-testing/BUILD')
     declarations.input(root / 'build-system/exteraless-testing/xctestrunner-serial.patch')
+    resource_contract = declarations.input(root / 'build-system/exteraless/native-bundle-resources.json')
+    for resources in json.loads(resource_contract.read_text(encoding='utf-8'))['groups'].values():
+        for resource in resources:
+            declarations.input(root / resource['source'])
     declarations.input(root / 'build-system/Make/Make.py')
     declarations.input(root / 'build-system/Make/PostboxImportCheck.py')
     declarations.input(root / 'build-system/bazel-rules/rules_apple/apple/testing/default_runner/ios_test_runner.template.sh')
+    for name in ('native_test_plan.py', 'run_native_integration_tests.py', 'native_test_resources.py'):
+        declarations.input(Path(__file__).with_name(name), 'tools/runtime/' + name)
     targets, selected = [], {}
     for target in labels:
         resolved = plan_target(declarations, target, contract)

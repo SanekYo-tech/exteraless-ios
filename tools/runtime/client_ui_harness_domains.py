@@ -4,6 +4,8 @@ import hashlib
 import json
 import re
 
+from client_ui_harness_visuals import VISUAL_SCENARIOS, check_visual_sources
+
 DOMAIN_SCENARIOS = ("feed-render", "player-render", "pill-render")
 PROBES = {
     "feed-render": ["home", "feed-initial", "feed-albums", "feed-edited", "feed-dark", "feed-bottom-player", "feed-top-player", "feed-cleanup"],
@@ -26,11 +28,25 @@ def selected_scenarios(requested, baseline):
     selected = tuple(requested) if requested else tuple(baseline)
     if len(selected) > 3 or len(set(selected)) != len(selected):
         raise ValueError("A batch contains at most three distinct scenarios")
-    if any(name not in tuple(baseline) + DOMAIN_SCENARIOS for name in selected):
+    if any(name not in tuple(baseline) + DOMAIN_SCENARIOS + VISUAL_SCENARIOS for name in selected):
         raise ValueError("Unknown UI scenario")
-    if set(selected) & set(baseline) and set(selected) & set(DOMAIN_SCENARIOS):
-        raise ValueError("Select either a baseline or an explicit domain batch")
+    if sum(bool(set(selected) & set(group)) for group in (baseline, DOMAIN_SCENARIOS, VISUAL_SCENARIOS)) != 1:
+        raise ValueError("Select one explicit batch: baseline (3), domains (3), or final visuals (2)")
     return selected
+
+
+def batch_name(selected, baseline):
+    for name, group in (("baseline-3", baseline), ("domains-3", DOMAIN_SCENARIOS), ("final-visuals-2", VISUAL_SCENARIOS)):
+        if set(selected) <= set(group):
+            return name
+    raise ValueError("Unrecognized scenario batch")
+
+
+def complete_batch(selected, scenarios, recordings):
+    return (0 < len(selected) <= 3
+            and [item.get("scenario") for item in scenarios] == list(selected)
+            and all(item.get("semanticPassed") is True for item in scenarios)
+            and [item.get("scenario") for item in recordings] == list(selected))
 
 
 def check_manifest(value):
@@ -49,8 +65,10 @@ def check_manifest(value):
     return value
 
 
-def manifest_from_ipa(archive, app_root):
-    return check_manifest(json.loads(archive.read(app_root + "/" + MANIFEST_RESOURCE)))
+def manifest_from_ipa(archive, app_root, scenarios=()):
+    value = check_manifest(json.loads(archive.read(app_root + "/" + MANIFEST_RESOURCE)))
+    check_visual_sources(value, scenarios)
+    return value
 
 
 def validate_domain(state, scenario):

@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from native_test_plan import build_plan, digest
+from native_test_plan import build_plan, digest, verify_native_results
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
@@ -105,14 +105,15 @@ class LogicClock:
 
     def finish(self):
         required = set(self.case['methods'])
-        if (self.logic_start is None or self.logic_end is None or self.failures
+        if (not required or self.logic_start is None or self.logic_end is None or self.failures
                 or self.started_methods != required or self.passed_methods != required):
             raise ValueError('Missing/partial/skipped native XCTest evidence: ' + repr({
                 'class': self.case['class'], 'missing': sorted(required - self.passed_methods), 'failures': self.failures}))
         seconds = self.logic_end - self.logic_start
         if seconds > self.contract['logic_seconds']:
             raise ValueError('XCTest logic exceeded its 30-second budget')
-        return {'class': self.case['class'], 'passed_methods': sorted(self.passed_methods),
+        return {'class': self.case['class'], 'started_methods': sorted(self.started_methods),
+                'passed_methods': sorted(self.passed_methods),
                 'logic_seconds': round(seconds, 3), 'preparation_seconds': round(self.logic_start - self.started, 3)}
 
 
@@ -243,8 +244,9 @@ def execute(args, plan, paths):
         json.loads(output(['xcrun', 'simctl', 'list', 'devicetypes', '--json']))['devicetypes'],
         json.loads(output(['xcrun', 'simctl', 'list', 'runtimes', '--json']))['runtimes'], contract)
     app = json.loads(args.app_build_report.read_text(encoding='utf-8'))
+    from client_ui_harness_build import APPLICATION, HARNESS
     if (app.get('status') != 'built' or app.get('configuration') != 'debug_sim_arm64'
-            or set(app.get('targets', [])) != {'//Telegram:Telegram', '//Tests/ExteralessHarness:ClientUIHarness'}):
+            or set(app.get('targets', [])) != {APPLICATION, HARNESS}):
         raise ValueError('The full simulator app/harness build must complete before native tests')
     os.chdir(telegram)
     sys.path.insert(0, str(telegram / 'build-system/Make'))
@@ -254,13 +256,16 @@ def execute(args, plan, paths):
     from UnsignedBuild import prepare_unsigned_rules, validate_unsigned_actions
     from types import SimpleNamespace
     staging = load_staging_manifest(telegram)
+    from client_ui_harness_inputs import harness_inputs, require_build_identity
+    identity = require_build_identity(app, plan, harness_inputs(telegram), staging, Path(app['ipa']))
     if app.get('packaging', {}).get('clientSourcePatches') != staging['client_source_patches']:
         raise ValueError('Full simulator build and native-test source patch identities differ')
     write_json(args.output / 'source-identity.json', {'plan': plan, 'commit': os.environ.get('GITHUB_SHA'),
         'generation': args.generation, 'xcode': actual, 'sdk': sdk,
         'tool_sha256': {name: digest(Path(__file__).with_name(name)) for name in (
-            'run_native_integration_tests.py', 'native_test_plan.py', 'client_ui_harness_workspace.py')},
-        'client_source_patches': staging['client_source_patches']})
+            'run_native_integration_tests.py', 'native_test_plan.py', 'client_ui_harness_workspace.py',
+            'native_bundle_resources.py')},
+        'client_source_patches': staging['client_source_patches'], 'acceptanceIdentity': identity})
     for logical, path in paths.items():
         relative = logical.replace('@exteraless//', 'external/exteraless/').replace(':', '/')
         target = args.output / 'sources' / relative
@@ -299,8 +304,11 @@ def execute(args, plan, paths):
                     shutil.copyfile(Path(private) / name, args.output / name)
     run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits,
                telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
-    if build_plan(telegram)[0]['source_fingerprint'] != plan['source_fingerprint']:
-        raise ValueError('Native test sources changed during compilation')
+    from native_test_resources import verify_test_host_resources
+    host_resources = verify_test_host_resources(telegram, plan)
+    write_json(args.output / 'native-bundle-resources.json', host_resources)
+    require_build_identity(app, build_plan(telegram)[0], harness_inputs(telegram),
+                           load_staging_manifest(telegram), Path(app['ipa']))
     if time.monotonic() >= overall_deadline - 330:
         raise TimeoutError('Native test envelope has no room for simulator preparation and cleanup')
     record = {'name': 'EXL-NativeTests-' + str(uuid.uuid4()), 'runtime': runtime, 'device_type': device_type}
@@ -340,17 +348,21 @@ def execute(args, plan, paths):
                 result.update(target=target['label'], source=case['source'], host=target['host'], host_bundle_id=host_bundle_id)
                 results.append(result)
                 write_json(args.output / 'completed-classes.json', results)
-        if build_plan(telegram)[0]['source_fingerprint'] != plan['source_fingerprint'] or load_staging_manifest(telegram) != staging:
-            raise ValueError('Native source/staging identity changed during XCTest execution')
+        require_build_identity(app, build_plan(telegram)[0], harness_inputs(telegram),
+                               load_staging_manifest(telegram), Path(app['ipa']))
     finally:
         shutdown_device(record)
         if own_device(record):
             output(['xcrun', 'simctl', 'delete', record['udid']], timeout=20)
         record['deleted'] = True
         write_json(args.output / 'simulator.json', record)
-    return {'status': 'passed', 'configuration': 'debug_sim_arm64', 'classes': results,
-            'passed_methods': sum(len(item['passed_methods']) for item in results),
-            'source_fingerprint': plan['source_fingerprint'], 'visual_review': 'recording remains a separate step'}
+    result = {'status': 'passed', 'configuration': 'debug_sim_arm64', 'classes': results,
+             'passed_methods': sum(len(item['passed_methods']) for item in results),
+              'source_fingerprint': plan['source_fingerprint'], 'acceptanceIdentity': identity,
+              'native_execution_verified': True, 'host_resources': host_resources,
+              'visual_review': 'recording remains a separate step'}
+    verify_native_results(result, plan, identity)
+    return result
 
 
 def main():

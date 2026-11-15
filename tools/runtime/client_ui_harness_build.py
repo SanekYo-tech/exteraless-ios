@@ -23,9 +23,13 @@ from types import SimpleNamespace
 
 from client_ui_harness import APP_ROOT, command, digest, verify_ipa, write_json
 from client_ui_harness_domains import manifest_from_ipa
+from client_ui_harness_visuals import BUILD_SELECTION, VISUAL_SCENARIOS
+from native_bundle_resources import verify_native_bundle_resources
+from native_test_plan import build_plan
+from client_ui_harness_inputs import acceptance_identity, harness_inputs
 
 ROOT = Path(__file__).resolve().parents[2]
-HARNESS = "//Tests/ExteralessHarness:ClientUIHarness"
+HARNESS = BUILD_SELECTION["target"]
 APPLICATION = "//Telegram:Telegram"
 
 
@@ -47,6 +51,9 @@ def source_preflight(telegram):
         "submodules/AccountContext/BUILD": ['name = "ClientHarnessProtocolSource"'],
         "Tests/ComposerHarness/BUILD": ['name = "DisposableAccountSources"'],
         "Tests/ExteralessHarness/BUILD": ['name = "DomainSourceManifest"', '":DomainSourceManifest"'],
+        "submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessComposerVisualFactory.swift": [
+            "#if DEBUG", "public func makeExteralessComposerPanel(",
+            "inputPanelForChatPresentationIntefaceState(", "panel.loadTextInputNodeIfNeeded()"],
     }
     errors = []
     for relative, needles in required.items():
@@ -73,6 +80,8 @@ def source_preflight(telegram):
                 and target not in content and not (package_path / target).is_file()):
             errors.append("missing dependency target: //" + package + ":" + target)
     framework_build = (telegram / "Telegram/BUILD").read_text(encoding="utf-8")
+    if not re.search(r'alias\(\s*name\s*=\s*"ClientUIHarness",\s*actual\s*=\s*"//Tests/ExteralessHarness:ClientUIHarness"', framework_build):
+        errors.append("Telegram/BUILD: the frozen visual build-selection alias must resolve to the existing harness app")
     for target in ("MtProtoKitFramework", "SwiftSignalKitFramework", "PostboxFramework", "TelegramCoreFramework", "TelegramUIFramework"):
         block = re.search(r'^ios_framework\(\s*name\s*=\s*"' + target + r'".*?^\)', framework_build, re.M | re.S)
         if block is None or not any(label in block[0] for label in (
@@ -81,12 +90,23 @@ def source_preflight(telegram):
     return errors
 
 
+def declaration_preflight(telegram, *, source_checkout=True):
+    plan, _ = build_plan(telegram, source_checkout=source_checkout)
+    snapshot = harness_inputs(telegram, source_checkout=source_checkout)
+    return {"nativeTestMap": {"targets": len(plan["targets"]),
+        "classes": sum(len(target["classes"]) for target in plan["targets"]),
+        "methods": sum(len(case["methods"]) for target in plan["targets"] for case in target["classes"]),
+        "requiredSources": len(plan["contract"]["required_sources"]), "sourceFingerprint": plan["source_fingerprint"]},
+        "harnessInputsSha256": snapshot["fingerprint"],
+        "domainSourceSha256": snapshot["domain_sources"]["sha256"], "generatedSources": snapshot["generated_sources"]}
+
+
 def preflight(telegram, *, check_xcode=True):
     errors = source_preflight(telegram)
     versions = json.loads((telegram / "versions.json").read_text(encoding="utf-8"))
     report = {"status": "source-preflight", "requiredXcode": versions["xcode"], "errors": errors,
               "targets": [APPLICATION, HARNESS], "configuration": "debug_sim_arm64",
-              "swiftTypechecked": False, "uikitExecuted": False}
+               "swiftTypechecked": False, "uikitExecuted": False}
     if check_xcode:
         if sys.platform != "darwin" or platform.machine() != "arm64":
             errors.append("macOS arm64/Xcode is required; no native/model fallback")
@@ -148,6 +168,10 @@ def build(telegram, output, cache, bazel_root, seconds):
     line.set_build_number("1")  # A fresh device makes installd's same-version cache irrelevant.
     line.add_cache_dir(str(cache))
     manifest = load_staging_manifest(str(telegram))
+    native_plan, _ = build_plan(telegram)
+    snapshot = harness_inputs(telegram)
+    write_json(output / "native-test-plan.json", native_plan)
+    write_json(output / "harness-inputs.json", snapshot)
     startup = [bazel, *line.get_startup_bazel_arguments(), "--host_jvm_args=-Xmx4096m", "--max_idle_secs=30"]
     flags = ["--//Telegram:disableProvisioningProfiles", *line.common_args, *line.common_build_args,
              *line.get_define_arguments(), *line.get_additional_build_arguments(), "--disk_cache=" + str(cache),
@@ -169,10 +193,18 @@ def build(telegram, output, cache, bazel_root, seconds):
                     timeout=deadline - time.monotonic())
             ipa = telegram / "bazel-bin/Tests/ExteralessHarness/ClientUIHarness.ipa"
             packaging = verify_ipa(ipa, telegram / "build-input/exteraless/runtime-staging.json", telegram)
+            native_resources = {
+                "Telegram": verify_native_bundle_resources(telegram / "bazel-bin/Telegram/Telegram.ipa", telegram, "Telegram"),
+                "ClientUIHarness": verify_native_bundle_resources(ipa, telegram, "ClientUIHarness"),
+            }
+            write_json(output / "native-bundle-resources.json", native_resources)
             with zipfile.ZipFile(ipa) as archive:
-                domain_sources = manifest_from_ipa(archive, APP_ROOT)
+                domain_sources = manifest_from_ipa(archive, APP_ROOT, VISUAL_SCENARIOS)
+            if (domain_sources != snapshot["domain_sources"] or harness_inputs(telegram) != snapshot
+                    or build_plan(telegram)[0] != native_plan or load_staging_manifest(telegram) != manifest):
+                raise ValueError("Compiled acceptance manifest/source/staging differs from its declared snapshot")
             # Later test builds can repoint bazel-bin. Freeze the verified archive
-            # once so both serial recording batches consume exactly these bytes.
+            # once so all three serial recording batches consume these bytes.
             retained_ipa = output / "ClientUIHarness.ipa"
             shutil.copyfile(ipa, retained_ipa)
             if digest(retained_ipa) != packaging["ipaSha256"]:
@@ -181,6 +213,11 @@ def build(telegram, output, cache, bazel_root, seconds):
             write_json(output / "build-result.json", {"status": "built", "configuration": "debug_sim_arm64",
                 "targets": [APPLICATION, HARNESS], "unsigned": unsigned, "runtime": runtime,
                 "domainDebug": domain_debug, "domainSources": domain_sources,
+                "buildSelection": BUILD_SELECTION,
+                "nativeTestPlan": native_plan,
+                "acceptanceIdentity": acceptance_identity(native_plan, snapshot, manifest, packaging["ipaSha256"]),
+                "driverSha256": snapshot["input_sha256"]["tools/runtime/client_ui_harness.py"],
+                "nativeResources": native_resources,
                 "packaging": packaging, "ipa": str(retained_ipa), "visualReview": "not-run"})
     finally:
         # aquery can contain generated configuration file contents; publish only
@@ -209,6 +246,8 @@ def main():
     telegram, output = args.telegram_root.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     result = preflight(telegram, check_xcode=not args.source_only)
+    if not result["errors"]:
+        result.update(declaration_preflight(telegram, source_checkout=args.phase == "preflight"))
     write_json(output / "preflight.json", result)
     if result["errors"]:
         raise SystemExit("UI HARNESS BUILD BLOCKED:\n" + "\n".join(result["errors"]))

@@ -28,6 +28,7 @@ ios_application(
     minimum_os_version = "15.0",
     infoplists = ["NativeTestHost.plist"],
     resources = [
+        "//submodules/Display:ExteralessFontResources",
         "//Telegram:AppStringResources",
         "//Telegram:GeneratedPresentationStrings/Resources/PresentationStrings.data",
         "//submodules/TelegramUI:TelegramUIAssets",
@@ -216,6 +217,35 @@ ios_unit_test(
     deps = [":RuntimeRecoveryContinuationTestsLib"],
 )
 
+swift_library(
+    name = "FontFamilyConsumerTestsLib",
+    testonly = True,
+    module_name = "FontFamilyConsumerTests",
+    srcs = ["FontFamilyConsumerTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/AsyncDisplayKit:AsyncDisplayKit",
+        "//submodules/Display:Display",
+        "//submodules/ChatListUI:ChatListUI",
+        "//submodules/ListSectionHeaderNode:ListSectionHeaderNode",
+        "//submodules/LottieSettings:LottieSettings",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode:ChatMessageContactBubbleContentNode",
+    ],
+)
+
+ios_unit_test(
+    name = "FontFamilyConsumerTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = ":Runner",
+    test_host = ":NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":FontFamilyConsumerTestsLib"],
+)
+
 test_suite(
     name = "IntegrationTests",
     tests = [
@@ -231,11 +261,17 @@ test_suite(
         "//submodules/TelegramUI:ExteralessFeedTests",
         "//submodules/TelegramUI:ExteralessAINativeTests",
         "//submodules/TelegramUI:ExteralessChatMediaTests",
+        "//submodules/ChatListUI:ExteralessChatSwipeTests",
         "//submodules/InstantPageUI:ExteralessAIVisibilityTests",
         "//submodules/TelegramUI:ExteralessTLModelTests",
         "//submodules/TelegramUI:ExteralessPlayerNativeTests",
         "//submodules/TelegramUI:ExteralessAppearanceRootTests",
         "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
+        "//submodules/Display:ExteralessFontFamilyTests",
+        ":FontFamilyConsumerTests",
+        "//submodules/Display:ExteralessLayoutModeTests",
+        "//submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl:ExteralessDCTTimingTests",
+        "//submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl:ExteralessSubcodecTimingTests",
         "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
         "//submodules/TelegramStringFormatting:ExteralessAppearancePresenceTests",
         "//submodules/TelegramUI/Components/NavigationExpansionTransition:ExteralessGlassTests",

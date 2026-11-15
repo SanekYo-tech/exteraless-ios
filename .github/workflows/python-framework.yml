@@ -55,14 +55,20 @@ jobs:
             telegram-ios/submodules/TelegramUI/Tests/FeedTests
             telegram-ios/submodules/TelegramUI/Tests/Player
             telegram-ios/submodules/AvatarNode/Tests
+            telegram-ios/submodules/ChatListUI/Tests
+            telegram-ios/submodules/Display/Tests
+            telegram-ios/submodules/Display/Resources/Fonts/ExteralessRoboto
             telegram-ios/submodules/InstantPageUI/Tests
             telegram-ios/submodules/MTProtoRustEngine/Tests/MTProtoRustEngineTests
             telegram-ios/submodules/Postbox/Tests
             telegram-ios/submodules/TelegramPresentationData/Tests
+            telegram-ios/submodules/TelegramPresentationData/Sources/MonetColorUtilities
             telegram-ios/submodules/TelegramStringFormatting/Tests
             telegram-ios/submodules/TextFormat/Tests
             telegram-ios/submodules/TelegramUI/Components/NavigationExpansionTransition/Tests
             telegram-ios/submodules/TelegramUI/Components/SwitchComponent/Tests
+            telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Tests
+            telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Tests
             telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Tests/RichTextEditorCoreTests
             telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Tests/RichTextEditorUIKitTests
             telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Host/Tests/Engine

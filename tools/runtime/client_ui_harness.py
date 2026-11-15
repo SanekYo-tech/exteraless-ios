@@ -26,7 +26,10 @@ import time
 import uuid
 import zipfile
 
-from client_ui_harness_domains import DOMAIN_SCENARIOS, manifest_from_ipa, selected_scenarios, validate_domain
+from client_ui_harness_domains import (DOMAIN_SCENARIOS, batch_name, check_manifest, complete_batch,
+                                       manifest_from_ipa, selected_scenarios, validate_domain)
+from client_ui_harness_visuals import (VISUAL_SCENARIOS, BUILD_SELECTION, copy_visual_artifacts,
+                                       recorded_frame_index, validate_visual)
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = "org.exteraless.ClientUIHarness"
@@ -184,7 +187,7 @@ def validate_state(state, scenario, run_id):
             state.get("scenario") != scenario or state.get("phase") != "completed" or state.get("semanticPassed") is not True):
         raise ValueError("Harness did not complete this exact run")
     expected = SDK_PROBES if scenario == "sdk-ui" else CORE_PROBES
-    if scenario not in DOMAIN_SCENARIOS and [probe.get("name") for probe in state.get("probes", [])] != expected:
+    if scenario not in DOMAIN_SCENARIOS + VISUAL_SCENARIOS and [probe.get("name") for probe in state.get("probes", [])] != expected:
         raise ValueError("Missing/reordered UIKit probes; a zero-scenario pass is forbidden")
     if state.get("unexpectedServices") != [] or state.get("visualReview") != "pending-recorded-frame-review":
         raise ValueError("Unexpected service effect or unsupported visual-pass claim")
@@ -193,6 +196,13 @@ def validate_state(state, scenario, run_id):
             raise ValueError("Probe contains no observed UIKit hierarchy")
     if scenario in DOMAIN_SCENARIOS:
         validate_domain(state, scenario)
+    elif scenario in VISUAL_SCENARIOS:
+        check_manifest(state.get("facts", {}).get("domainSources", {}))
+        bootstrap = state.get("facts", {}).get("bootstrap", {})
+        if (bootstrap.get("apiIdentity") != "synthetic-private-fixture-store" or bootstrap.get("systemKeychain") is not False
+                or bootstrap.get("retention") != "registered-main-application-snapshot-before-writer"):
+            raise ValueError("Final visual fixture did not establish the Account/bootstrap boundary")
+        validate_visual(state, scenario)
     elif scenario == "sdk-ui":
         runtime = state.get("facts", {}).get("runtime", {})
         engine = runtime.get("engine", {})
@@ -325,9 +335,13 @@ def run_scenario(udid, scenario, output, log):
             except RuntimeError:
                 pass
             finally:
+                write_json(destination / "timing.json", timing)
                 if state_path.is_file() and state_path.stat().st_size <= 8 * 1024 * 1024:
                     shutil.copyfile(state_path, destination / "state.json")
-                write_json(destination / "timing.json", timing)
+                    if scenario in VISUAL_SCENARIOS:
+                        evidence = json.loads((destination / "state.json").read_text(encoding="utf-8"))
+                        if evidence.get("facts", {}).get("visualArtifacts"):
+                            copy_visual_artifacts(evidence, state_path.parent, destination)
 
 
 def analyze_recording(folder, telegram, log):
@@ -355,6 +369,12 @@ def analyze_recording(folder, telegram, log):
                 timeout=90, log=analysis)
     if not list((folder / "frames").glob("sheet-*.png")) or not (folder / "frames/frames.tsv").is_file():
         raise ValueError("animation_sheet produced no labelled frame evidence")
+    if state.get("scenario") in VISUAL_SCENARIOS:
+        timing = json.loads((folder / "timing.json").read_text(encoding="utf-8"))
+        handles = recorded_frame_index(state, timing, info)
+        if any(not (folder / frame["frame"]).is_file() or not (folder / frame["sheet"]).is_file() for frame in handles["frames"]):
+            raise ValueError("Indexed PTS frame/sheet handle is missing")
+        write_json(folder / "frame-handles.json", handles)
     return {"scenario": folder.name, "recordingSha256": digest(video), "frameCount": len(frames),
             "timestampSource": "ffprobe", "visualReview": "pending-recorded-frame-review"}
 
@@ -365,7 +385,7 @@ def main():
     parser.add_argument("--staging-manifest", type=Path, required=True)
     parser.add_argument("--telegram-root", type=Path, default=ROOT / "telegram-ios")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--scenario", choices=SCENARIOS + DOMAIN_SCENARIOS, action="append")
+    parser.add_argument("--scenario", choices=SCENARIOS + DOMAIN_SCENARIOS + VISUAL_SCENARIOS, action="append")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("Real UIKit recording requires macOS/Xcode; no model fallback exists")
@@ -380,14 +400,16 @@ def main():
     if output.exists() and any(output.iterdir()):
         parser.error("--output must be empty; stale artifacts are not acceptance evidence")
     output.mkdir(parents=True, exist_ok=True)
-    report = {"status": "running", "semanticPassed": False, "visualReview": "pending-recorded-frame-review", "scenarios": []}
+    report = {"status": "running", "semanticPassed": False, "visualReview": "pending-recorded-frame-review", "scenarios": [],
+              "requestedScenarios": list(selected), "batch": batch_name(selected, SCENARIOS), "processLimit": 3,
+              "buildSelection": BUILD_SELECTION}
     record = None
     failure = None
     try:
         report["bundle"] = verify_ipa(args.ipa, args.staging_manifest, args.telegram_root)
-        if set(selected) & set(DOMAIN_SCENARIOS):
+        if set(selected) & set(DOMAIN_SCENARIOS + VISUAL_SCENARIOS):
             with zipfile.ZipFile(args.ipa) as archive:
-                sources = manifest_from_ipa(archive, APP_ROOT)
+                sources = manifest_from_ipa(archive, APP_ROOT, selected)
             report["domainSources"] = sources
             write_json(output / "domain-source-fingerprints.json", sources)
         with (output / "driver.log").open("w", encoding="utf-8") as log:
@@ -408,7 +430,7 @@ def main():
                     command(["xcrun", "simctl", "install", udid, app], timeout=45, log=log)
                 for scenario in selected:
                     result = run_scenario(udid, scenario, output, log)
-                    if scenario in DOMAIN_SCENARIOS:
+                    if scenario in DOMAIN_SCENARIOS + VISUAL_SCENARIOS:
                         state = json.loads((output / scenario / "state.json").read_text(encoding="utf-8"))
                         if state["facts"]["domainSources"] != report["domainSources"]:
                             raise ValueError("Running native app source manifest differs from the built IPA")
@@ -435,7 +457,7 @@ def main():
                 except Exception as error:
                     report.setdefault("frameErrors", []).append({"scenario": scenario, "error": str(error)})
                     failure = failure or error
-        if failure is None and len(report["recordings"]) == len(selected):
+        if failure is None and complete_batch(selected, report["scenarios"], report["recordings"]):
             report["semanticPassed"] = True
             report["status"] = "recorded-awaiting-visual-review"
         else:

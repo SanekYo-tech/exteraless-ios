@@ -185,6 +185,7 @@ ios_application(
     # and getAppBundle() is NSBundle.mainBundle for a plain app — so without these the harness
     # traps at launch the moment it builds a PresentationData.
     resources = [
+        "//submodules/Display:ExteralessFontResources",
         "//Telegram:AppStringResources",
         "//Telegram:GeneratedPresentationStrings/Resources/PresentationStrings.data",
         # The panel's icons (send, attach, mic, …) are `UIImage(bundleImageName:)` lookups into
@@ -209,6 +210,8 @@ swift_library(
     testonly = True,
     srcs = glob(["Tests/**/*.swift"]),
     deps = [
+        "//submodules/Display:Display",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//third-party/exteraless:ExteralessCore",
         "//submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer",
         "//submodules/TelegramUIPreferences",

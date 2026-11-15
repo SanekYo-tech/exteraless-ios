@@ -1,7 +1,7 @@
 import AccountContext
 import Display
 import Foundation
-import MediaPlayer
+import UniversalMediaPlayer
 import SwiftSignalKit
 import UIKit
 import XCTest
