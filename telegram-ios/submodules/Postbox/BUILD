@@ -121,3 +121,26 @@ ios_unit_test(
         "//visibility:public",
     ],
 )
+
+swift_library(
+    name = "ExteralessRetentionMediaTestsLib",
+    testonly = True,
+    module_name = "ExteralessRetentionMediaTests",
+    srcs = ["Tests/MediaBoxRetentionKeepTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":Postbox",
+        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessRetentionMediaTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessRetentionMediaTestsLib"],
+    visibility = ["//visibility:public"],
+)

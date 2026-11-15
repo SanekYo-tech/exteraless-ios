@@ -1,6 +1,11 @@
 package(default_visibility = ["//visibility:public"])
 
 alias(
+    name = "ExteralessCore",
+    actual = "@exteraless//swift/ExteralessCore:ExteralessCore",
+)
+
+alias(
     name = "PluginHost",
     actual = "@exteraless//swift/PluginHost:PluginHost",
 )

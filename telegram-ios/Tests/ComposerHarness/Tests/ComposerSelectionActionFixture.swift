@@ -1,0 +1,165 @@
+import Foundation
+import ExteralessCore
+import ChatPresentationInterfaceState
+import XCTest
+
+/// Pin only the preferences a fixture uses, restoring both values and override presence afterward.
+func composerSettingsForTesting(_ test: XCTestCase, _ values: [String: ClientSettingValue]) throws {
+    let store = ClientSettings.shared
+    try store.register(ChatFeatures.definitions)
+    let before = store.readSnapshot()
+    test.addTeardownBlock {
+        for key in values.keys {
+            if before.storedKeys.contains(key), let value = before.values[key] { try store.set(value, for: key) }
+            else { try store.reset(key) }
+        }
+    }
+    try store.applyPublic(values)
+}
+
+/// Replaces only presentation endpoints so tests can hold the REAL Format action's completion.
+/// All editing/undo callbacks still go to the harness host. No action or state transform is copied.
+func composerSelectionActionInteraction(
+    _ base: ChatPanelInterfaceInteraction,
+    openDate: @escaping () -> Void,
+    translate: @escaping (NSAttributedString, @escaping (NSAttributedString) -> Void) -> Void
+) -> ChatPanelInterfaceInteraction {
+    return ChatPanelInterfaceInteraction(
+        setupReplyMessage: base.setupReplyMessage,
+        setupEditMessage: base.setupEditMessage,
+        beginMessageSelection: base.beginMessageSelection,
+        cancelMessageSelection: base.cancelMessageSelection,
+        deleteSelectedMessages: base.deleteSelectedMessages,
+        reportSelectedMessages: base.reportSelectedMessages,
+        reportMessages: base.reportMessages,
+        blockMessageAuthor: base.blockMessageAuthor,
+        deleteMessages: base.deleteMessages,
+        forwardSelectedMessages: base.forwardSelectedMessages,
+        forwardCurrentForwardMessages: base.forwardCurrentForwardMessages,
+        forwardMessages: base.forwardMessages,
+        updateForwardOptionsState: base.updateForwardOptionsState,
+        presentForwardOptions: base.presentForwardOptions,
+        presentReplyOptions: base.presentReplyOptions,
+        presentLinkOptions: base.presentLinkOptions,
+        presentSuggestPostOptions: base.presentSuggestPostOptions,
+        shareSelectedMessages: base.shareSelectedMessages,
+        updateTextInputStateAndMode: { f in
+            withoutActuallyEscaping(f) { base.updateTextInputStateAndMode($0) }
+        },
+        updateInputModeAndDismissedButtonKeyboardMessageId: base.updateInputModeAndDismissedButtonKeyboardMessageId,
+        openStickers: base.openStickers,
+        editMessage: base.editMessage,
+        beginMessageSearch: base.beginMessageSearch,
+        dismissMessageSearch: base.dismissMessageSearch,
+        updateMessageSearch: base.updateMessageSearch,
+        openSearchResults: base.openSearchResults,
+        navigateMessageSearch: base.navigateMessageSearch,
+        openCalendarSearch: base.openCalendarSearch,
+        toggleMembersSearch: base.toggleMembersSearch,
+        navigateToMessage: base.navigateToMessage,
+        navigateToChat: base.navigateToChat,
+        navigateToProfile: base.navigateToProfile,
+        openPeerInfo: base.openPeerInfo,
+        togglePeerNotifications: base.togglePeerNotifications,
+        sendContextResult: base.sendContextResult,
+        sendBotCommand: base.sendBotCommand,
+        sendShortcut: base.sendShortcut,
+        openEditShortcuts: base.openEditShortcuts,
+        sendBotStart: base.sendBotStart,
+        botSwitchChatWithPayload: base.botSwitchChatWithPayload,
+        beginMediaRecording: base.beginMediaRecording,
+        finishMediaRecording: base.finishMediaRecording,
+        stopMediaRecording: base.stopMediaRecording,
+        stopIncomingStreamingMessage: base.stopIncomingStreamingMessage,
+        lockMediaRecording: base.lockMediaRecording,
+        resumeMediaRecording: base.resumeMediaRecording,
+        deleteRecordedMedia: base.deleteRecordedMedia,
+        sendRecordedMedia: base.sendRecordedMedia,
+        displayRestrictedInfo: base.displayRestrictedInfo,
+        displayVideoUnmuteTip: base.displayVideoUnmuteTip,
+        switchMediaRecordingMode: base.switchMediaRecordingMode,
+        setupMessageAutoremoveTimeout: base.setupMessageAutoremoveTimeout,
+        sendSticker: base.sendSticker,
+        editSticker: base.editSticker,
+        unblockPeer: base.unblockPeer,
+        pinMessage: base.pinMessage,
+        unpinMessage: base.unpinMessage,
+        unpinAllMessages: base.unpinAllMessages,
+        openPinnedList: base.openPinnedList,
+        shareAccountContact: base.shareAccountContact,
+        reportPeer: base.reportPeer,
+        presentPeerContact: base.presentPeerContact,
+        dismissReportPeer: base.dismissReportPeer,
+        deleteChat: base.deleteChat,
+        beginCall: base.beginCall,
+        toggleMessageStickerStarred: base.toggleMessageStickerStarred,
+        presentController: base.presentController,
+        presentControllerInCurrent: base.presentControllerInCurrent,
+        getNavigationController: base.getNavigationController,
+        presentGlobalOverlayController: base.presentGlobalOverlayController,
+        navigateFeed: base.navigateFeed,
+        openGrouping: base.openGrouping,
+        toggleSilentPost: base.toggleSilentPost,
+        requestUnvoteInMessage: base.requestUnvoteInMessage,
+        requestStopPollInMessage: base.requestStopPollInMessage,
+        updateInputLanguage: { f in
+            withoutActuallyEscaping(f) { base.updateInputLanguage($0) }
+        },
+        unarchiveChat: base.unarchiveChat,
+        openLinkEditing: base.openLinkEditing,
+        openDateEditing: openDate,
+        displaySlowmodeTooltip: base.displaySlowmodeTooltip,
+        displaySendMessageOptions: base.displaySendMessageOptions,
+        openScheduledMessages: base.openScheduledMessages,
+        displaySearchResultsTooltip: base.displaySearchResultsTooltip,
+        unarchivePeer: base.unarchivePeer,
+        scrollToTop: base.scrollToTop,
+        viewReplies: base.viewReplies,
+        activatePinnedListPreview: base.activatePinnedListPreview,
+        joinGroupCall: base.joinGroupCall,
+        presentInviteMembers: base.presentInviteMembers,
+        presentGigagroupHelp: base.presentGigagroupHelp,
+        openMonoforum: base.openMonoforum,
+        editMessageMedia: base.editMessageMedia,
+        updateShowCommands: base.updateShowCommands,
+        updateShowSendAsPeers: base.updateShowSendAsPeers,
+        openInviteRequests: base.openInviteRequests,
+        openSendAsPeer: base.openSendAsPeer,
+        presentChatRequestAdminInfo: base.presentChatRequestAdminInfo,
+        displayCopyProtectionTip: base.displayCopyProtectionTip,
+        openWebView: base.openWebView,
+        updateShowWebView: base.updateShowWebView,
+        insertText: base.insertText,
+        backwardsDeleteText: base.backwardsDeleteText,
+        restartTopic: base.restartTopic,
+        toggleTranslation: base.toggleTranslation,
+        changeTranslationLanguage: base.changeTranslationLanguage,
+        addDoNotTranslateLanguage: base.addDoNotTranslateLanguage,
+        hideTranslationPanel: base.hideTranslationPanel,
+        openPremiumGift: base.openPremiumGift,
+        openSuggestPost: base.openSuggestPost,
+        openPremiumRequiredForMessaging: base.openPremiumRequiredForMessaging,
+        openStarsPurchase: base.openStarsPurchase,
+        openMessagePayment: base.openMessagePayment,
+        openBoostToUnrestrict: base.openBoostToUnrestrict,
+        updateRecordingTrimRange: base.updateRecordingTrimRange,
+        dismissAllTooltips: base.dismissAllTooltips,
+        editTodoMessage: base.editTodoMessage,
+        dismissUrlPreview: base.dismissUrlPreview,
+        dismissForwardMessages: base.dismissForwardMessages,
+        dismissSuggestPost: base.dismissSuggestPost,
+        displayUndo: base.displayUndo,
+        presentInputTextTranslation: translate,
+        sendEmoji: base.sendEmoji,
+        openAICompose: base.openAICompose,
+        openExpandedInput: base.openExpandedInput,
+        openSetPeerAvatar: base.openSetPeerAvatar,
+        updateHistoryFilter: base.updateHistoryFilter,
+        updateChatLocationThread: base.updateChatLocationThread,
+        toggleChatSidebarMode: base.toggleChatSidebarMode,
+        updateDisplayHistoryFilterAsList: base.updateDisplayHistoryFilterAsList,
+        requestLayout: base.requestLayout,
+        chatController: base.chatController,
+        statuses: base.statuses
+    )
+}

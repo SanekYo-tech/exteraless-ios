@@ -33,6 +33,11 @@ class UnsignedBuildTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='exteraless-unsigned-')
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        # These fixtures exercise signing/flags with a synthetic BuildEnvironment.
+        # The real source-preparation state machine has its own raw-blob tests.
+        source_patch = patch.object(make, 'prepare_client_sources', return_value={'source_fingerprint': 'fixture'})
+        self.source_patch = source_patch.start()
+        self.addCleanup(source_patch.stop)
 
     def parser(self):
         parser = argparse.ArgumentParser()
@@ -68,6 +73,13 @@ class UnsignedBuildTests(unittest.TestCase):
     def command_line(self):
         with patch.object(make, 'BuildEnvironment'):
             return make.BazelCommandLine('/fake/bazel', False, False, None)
+
+    def test_source_patch_gate_precedes_build_environment_and_bazel(self):
+        self.source_patch.side_effect = ValueError('Unknown client source image')
+        with patch.object(make, 'BuildEnvironment') as environment:
+            with self.assertRaisesRegex(ValueError, 'Unknown client source image'):
+                make.BazelCommandLine('/fake/bazel', False, False, None)
+        environment.assert_not_called()
 
     def test_unsigned_enables_both_packaging_guards(self):
         command = self.command_line()

@@ -17,22 +17,70 @@ jobs:
   validate:
     name: CPython 3.12 + native bridge (iOS)
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           sparse-checkout: |
+            .github/workflows
+            docs/wave-2
             python
             tools/runtime
             tools/ci
             tools/compat
             telegram-ios/build-system/Make
+            telegram-ios/build-system/exteraless
+            telegram-ios/build-system/exteraless-patches
+            telegram-ios/build-system/exteraless-testing
+            telegram-ios/build-system/patches
+            telegram-ios/build-system/bazel-rules/rules_apple/apple/internal
+            telegram-ios/build-system/bazel-rules/rules_apple/apple/testing/default_runner
+            telegram-ios/third-party/exteraless
+            telegram-ios/submodules/TelegramUI/Resources/Exteraless/Links
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills
+            telegram-ios/submodules/TelegramUI/Sources/Exteraless
+            telegram-ios/submodules/BrowserUI/Sources
+            telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime
+            telegram-ios/submodules/TelegramCore/Tests
+            telegram-ios/submodules/TelegramUI/Tests/AI
+            telegram-ios/submodules/TelegramUI/Tests/Appearance
+            telegram-ios/submodules/TelegramUI/Tests/ChatMedia
+            telegram-ios/submodules/TelegramUI/Tests/Chats
+            telegram-ios/submodules/TelegramUI/Tests/FeedTests
+            telegram-ios/submodules/TelegramUI/Tests/Player
+            telegram-ios/submodules/AvatarNode/Tests
+            telegram-ios/submodules/InstantPageUI/Tests
+            telegram-ios/submodules/MTProtoRustEngine/Tests/MTProtoRustEngineTests
+            telegram-ios/submodules/Postbox/Tests
+            telegram-ios/submodules/TelegramPresentationData/Tests
+            telegram-ios/submodules/TelegramStringFormatting/Tests
+            telegram-ios/submodules/TextFormat/Tests
+            telegram-ios/submodules/TelegramUI/Components/NavigationExpansionTransition/Tests
+            telegram-ios/submodules/TelegramUI/Components/SwitchComponent/Tests
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Tests/RichTextEditorCoreTests
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Tests/RichTextEditorUIKitTests
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Host/Tests/Engine
+            telegram-ios/Tests/Common/Main
+            telegram-ios/Tests/ComposerHarness/AppContext
+            telegram-ios/Tests/ComposerHarness/Sources
+            telegram-ios/Tests/ComposerHarness/Tests
+            telegram-ios/Tests/Exteraless
+            telegram-ios/Tests/ExteralessHarness/Sources
             swift/PluginHost
             swift/PluginHooks
+            swift/ExteralessCore
+
+      - name: Prepare pinned rules_apple source inputs for plumbing tests
+        timeout-minutes: 2
+        run: |
+          git submodule update --init --depth=1 -- telegram-ios/build-system/bazel-rules/rules_apple
+          git -C telegram-ios/build-system/bazel-rules/rules_apple sparse-checkout set --cone apple/internal apple/testing/default_runner
 
       - name: Set up build Python
         uses: actions/setup-python@v5
@@ -41,6 +89,10 @@ jobs:
 
       - name: Install fixture test dependencies
         run: python -m pip install pytest
+
+      - name: Check component source receipts and sparse input coverage
+        timeout-minutes: 2
+        run: python -B tools/runtime/check_component_inputs.py --output "$RUNNER_TEMP/swift-components/input-preflight.json"
 
       - name: Cache pure Python wheels
         uses: actions/cache@v4
@@ -56,10 +108,25 @@ jobs:
             --report "$RUNNER_TEMP/python-dependencies.json"
 
       - name: Test runtime packaging
+        timeout-minutes: 2
         run: python -m unittest discover -s tools/runtime/tests -v
+
+      - name: Test unsigned and native-runner plumbing with source fixtures
+        timeout-minutes: 2
+        run: python -B -m unittest discover -s tools/ci/tests -v
 
       - name: Test SDK adapter and dependency bundle
         run: python -B -m pytest tools/runtime/tests/test_dependency_bundle.py tools/compat/tests/test_ios_runtime.py -q
+
+      - name: Test shipping native UI models and generation leases
+        run: python -B telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_fixture.py
+
+      - name: Test shipping native TL codec and request ownership
+        run: python -B tools/compat/tests/tl_bridge/run_native_fixtures.py
+
+      - name: Compile Foundation TL and run seven Java byte-value codec cases
+        timeout-minutes: 6
+        run: python -B tools/runtime/check_java_tl_codec.py --output "$RUNNER_TEMP/swift-components/JavaTLCodec"
 
       - name: Restore compiled Swift test packages
         id: swift-test-cache
@@ -69,13 +136,20 @@ jobs:
           path: |
             swift/PluginHost/.build
             swift/PluginHooks/.build
-          key: runtime-swift-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**') }}
+            swift/ExteralessCore/.build
+          key: runtime-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'swift/ExteralessCore/Tests/**') }}
 
-      - name: Test Swift runtime bootstrap
-        run: swift test --package-path swift/PluginHost --jobs 2
+      - name: Compile all Host sources and test lifecycle, maintenance and callback gates
+        timeout-minutes: 6
+        run: python -B tools/runtime/check_swift_components.py --package PluginHost --output "$RUNNER_TEMP/swift-components/PluginHost"
 
       - name: Test lightweight Core hook routing
-        run: swift test --package-path swift/PluginHooks --jobs 2
+        timeout-minutes: 6
+        run: python -B tools/runtime/check_swift_components.py --package PluginHooks --output "$RUNNER_TEMP/swift-components/PluginHooks"
+
+      - name: Compile all Foundation Core sources and run every policy and actor test
+        timeout-minutes: 6
+        run: python -B tools/runtime/check_swift_components.py --package ExteralessCore --output "$RUNNER_TEMP/swift-components/ExteralessCore"
 
       - name: Save verified Swift test packages
         if: steps.swift-test-cache.outputs.cache-hit != 'true'
@@ -85,13 +159,44 @@ jobs:
           path: |
             swift/PluginHost/.build
             swift/PluginHooks/.build
-          key: runtime-swift-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**') }}
+            swift/ExteralessCore/.build
+          key: runtime-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'swift/ExteralessCore/Tests/**') }}
+
+      - name: Restore the PluginUI remediation executable build cache
+        id: hns-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/build/plugin-ui-hns-cache
+          key: plugin-ui-hns-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/*.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIRemediationFixture.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py', 'tools/runtime/check_swift_components.py') }}
+
+      - name: Run 23 shipping PluginUI remediation scenarios with Core and Host
+        timeout-minutes: 10
+        run: |
+          python -B telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py \
+            --output "$RUNNER_TEMP/swift-components/PluginUIRemediation" \
+            --scratch-path "$GITHUB_WORKSPACE/build/plugin-ui-hns-cache" \
+            --component-reports "$RUNNER_TEMP/swift-components" \
+            --compile-seconds 480 --run-seconds 30
+
+      - name: Save the verified PluginUI remediation executable build cache
+        if: steps.hns-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ github.workspace }}/build/plugin-ui-hns-cache
+          key: plugin-ui-hns-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/*.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIRemediationFixture.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py', 'tools/runtime/check_swift_components.py') }}
 
       - name: Compile and run Swift adapter with native CPython
         run: python tools/runtime/check_swift_embedding.py --output "$RUNNER_TEMP/python-swift"
 
-      - name: Run real SDK plugin through Swift and C bridge
-        run: python tools/runtime/check_swift_plugin_embedding.py --output "$RUNNER_TEMP/python-plugin"
+      - name: Run all three owner-bound SDK children through Swift and C bridge
+        timeout-minutes: 10
+        run: |
+          python -B tools/runtime/check_swift_plugin_embedding.py \
+            --python "$(command -v python)" \
+            --python-root "$GITHUB_WORKSPACE/python" \
+            --output "$RUNNER_TEMP/python-plugin"
 
       - name: Cache pinned support archive
         uses: actions/cache@v4
@@ -126,6 +231,8 @@ jobs:
             ${{ runner.temp }}/python-native/runtime-compile-manifest.json
             ${{ runner.temp }}/python-swift/swift-engine-smoke.json
             ${{ runner.temp }}/python-plugin/swift-plugin-smoke.json
+            ${{ runner.temp }}/python-plugin/swift-sdk-tl-smoke.json
+            ${{ runner.temp }}/python-plugin/swift-sdk-hns-smoke.json
             ${{ runner.temp }}/python-plugin/build-inputs.json
           if-no-files-found: error
           retention-days: 30
@@ -151,6 +258,12 @@ jobs:
           cp "$RUNNER_TEMP/python-native/simulator-bridge-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-swift/swift-engine-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-plugin-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-tl-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-hns-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-plugin-build.log" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-plugin-console.log" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-tl-console.log" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-hns-console.log" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/build-inputs.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-dependencies.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
@@ -180,5 +293,14 @@ jobs:
             ${{ runner.temp }}/python-swift/*.log
             ${{ runner.temp }}/python-plugin/*.json
             ${{ runner.temp }}/python-plugin/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload bounded Swift component reports and compiler logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-component-tests-${{ github.run_id }}
+          path: ${{ runner.temp }}/swift-components/
           if-no-files-found: ignore
           retention-days: 7

@@ -17,6 +17,7 @@ import tempfile
 
 from support import digest, download, inspect_archive, read_lock, stage_application
 from vendor_dependencies import vendor as vendor_dependencies, verify_bundle as verify_dependency_bundle
+from native_dependencies import stage_application_policy
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,8 +29,11 @@ SUPPORT_BUILD = 'telegram-ios/third-party/exteraless/runtime.BUILD.bazel'
 SOURCE_FILES = (
     'MODULE.bazel', 'BUILD.bazel',
     'swift/PluginHost/BUILD.bazel', 'swift/PluginHooks/BUILD.bazel',
+    'swift/ExteralessCore/BUILD.bazel',
+    'swift/ExteralessCore/Tests/ExteralessCoreTests/EmojiFontFixture.swift',
     'python/runtime/BUILD.bazel', 'python/runtime/support-lock.json',
     'python/runtime/dependency-lock.json',
+    'python/runtime/new-native-dependency-lock.json', 'python/runtime/tl-schema.json',
     'python/runtime/engine.c', 'python/runtime/cpython312_compat.c',
     'python/runtime/cpython312_compat.h', 'python/runtime/register_bridge.c',
     'python/bridge/_exteraless_bridge.c',
@@ -65,11 +69,33 @@ def inventory(root):
             for path in sorted(Path(root).rglob('*')) if path.is_file()}
 
 
+def application_resources(telegram_root):
+    """Check tracked client data before Bazel analysis, preserving upstream bytes."""
+    root = Path(telegram_root)
+    lock = json.loads((root / 'build-system/exteraless/runtime-assets.json').read_text(encoding='utf-8'))
+    if lock.get('schema') != 1:
+        raise ValueError('Unsupported client resource lock')
+    result = {}
+    for item in lock['assets']:
+        relative = PurePosixPath(item['source'])
+        name = item['bundle_path']
+        if (relative.is_absolute() or '..' in relative.parts or '\\' in item['source']
+                or PurePosixPath(name).name != name or name in result):
+            raise ValueError('Invalid client resource path')
+        path = root / item['source']
+        if (not path.is_file() or path.is_symlink() or path.stat().st_size != item['size']
+                or digest(path) != item['sha256']):
+            raise ValueError('Pinned client resource mismatch: ' + item['source'])
+        result[name] = {key: item[key] for key in ('source', 'size', 'sha256')}
+    return result
+
+
 def source_inventory(source_root):
     files = {Path(name) for name in SOURCE_FILES}
     for folder, suffixes in (
         ('swift/PluginHost/Sources', {'.swift', '.c', '.h'}),
         ('swift/PluginHooks/Sources', {'.swift', '.c', '.h'}),
+        ('swift/ExteralessCore/Sources/ExteralessCore', {'.swift'}),
         ('python/runtime/include', {'.h'}),
     ):
         found = [path for path in (source_root / folder).rglob('*')
@@ -143,10 +169,20 @@ def extract_support(archive_path, destination, lock):
     tests on Windows without symlink privileges. Runtime files remain intact.
     """
     prefix = lock['framework'] + '/'
+    runtime_prefixes = [prefix + 'lib/python3.12/']
+    for spec in lock['slices'].values():
+        runtime_prefixes += [prefix + spec['library'] + '/Python.framework/',
+                             prefix + spec['library'] + '/lib-' + spec['architecture'] + '/']
+    required_files = {prefix + 'Info.plist', prefix + 'build/iOS-dylib-Info-template.plist'}
     with tarfile.open(archive_path, 'r:gz') as archive:
         members = []
         for member in archive.getmembers():
             if not member.name.startswith(prefix):
+                continue
+            if member.name not in required_files and not any(member.name.startswith(item) for item in runtime_prefixes):
+                continue
+            parts = PurePosixPath(member.name).parts
+            if EXCLUDED_DIRS.intersection(parts) or any(part.startswith('config-3.12-') for part in parts):
                 continue
             if member.issym() or member.islnk():
                 if PurePosixPath(member.name).name == 'libpython3.12.dylib':
@@ -181,7 +217,8 @@ def validate_markers(app, extensions):
         raise ValueError('PEP 730 marker/framework inventory mismatch')
 
 
-def stage_support(framework, destination, lock, bundle_id, expected_count=EXTENSION_COUNT):
+def stage_support(framework, destination, lock, bundle_id, expected_count=EXTENSION_COUNT,
+                  native_lock=None, native_bundle=None):
     reports = {}
     modules = None
     for target in ('device', 'simulator'):
@@ -198,21 +235,32 @@ def stage_support(framework, destination, lock, bundle_id, expected_count=EXTENS
         # These headers are C compile inputs, outside the application resources.
         headers = framework / spec['library'] / 'Python.framework/Headers'
         shutil.copytree(headers, folder / 'Headers')
+        policy = stage_application_policy(app, target, lock_path=native_lock, bundle=native_bundle) if native_lock else None
+        if policy and policy['support_sha256'] != lock['sha256']:
+            raise ValueError('Native dependency and CPython support pins disagree')
         reports[target] = {
             'architecture': spec['architecture'], 'platform_id': spec['platform_id'],
             'extension_frameworks': extensions,
+            'native_frameworks': policy['frameworks'] if policy else [],
             'resources': {name: sha for name, sha in inventory(app).items()
-                          if name.startswith('python-stdlib/')},
+                          if name.startswith(('python-stdlib/', 'python/'))},
         }
     (destination / 'extensions.bzl').write_text(
         '# Generated from the SHA-256-verified support archive.\nEXTENSION_MODULES = ' +
-        json.dumps(modules, indent=4) + '\n', encoding='utf-8', newline='\n')
+        json.dumps(modules, indent=4) + '\nNATIVE_FRAMEWORKS = ' +
+        json.dumps([entry['framework'] for entry in reports['device']['native_frameworks']], indent=4) + '\n',
+        encoding='utf-8', newline='\n')
+    if ([entry['framework'] for entry in reports['device']['native_frameworks']] !=
+            [entry['framework'] for entry in reports['simulator']['native_frameworks']]):
+        raise ValueError('Native device/simulator framework inventories must match')
     return reports
 
 
-def copy_assets(source_root, destination):
+def copy_assets(source_root, destination, *, include_vendor=True):
     inputs = {}
     for package in ASSET_PACKAGES:
+        if package == 'vendor' and not include_vendor:
+            continue
         source = source_root / 'python' / package
         for path in sorted(source.rglob('*')):
             relative = path.relative_to(source)
@@ -231,11 +279,11 @@ def copy_assets(source_root, destination):
     return inputs
 
 
-def prepare(source_root, telegram_root, archive, lock, report_path=None, dependency_cache=None):
+def prepare(source_root, telegram_root, archive, lock, report_path=None, dependency_cache=None, native_bundle=None):
     source_root, telegram_root = Path(source_root).resolve(), Path(telegram_root).resolve()
-    dependencies = vendor_dependencies(
-        dependency_cache or source_root / 'build/dependency-downloads', source_root / 'python/vendor',
-        lock_path=source_root / 'python/runtime/dependency-lock.json')
+    sys.path.insert(0, str(source_root / 'telegram-ios/build-system/Make'))
+    from ClientSourcePatches import prepare_client_source_copy
+    client_patches = prepare_client_source_copy(source_root / 'telegram-ios', telegram_root)
     if set(lock['slices']) != {'device', 'simulator'}:
         raise ValueError('Only the locked device/simulator targets are supported')
     if any(spec['architecture'] != 'arm64' for spec in lock['slices'].values()):
@@ -243,6 +291,7 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
     if lock.get('actualCPython', CPYTHON_VERSION) != CPYTHON_VERSION:
         raise ValueError('Review the C compatibility layer before changing CPython')
     sources = source_inventory(source_root)
+    client_assets = application_resources(telegram_root)
     compat = compatibility_manifest(source_root)
     support_report = inspect_archive(archive, lock)
     if any(item['python'] != CPYTHON_VERSION for item in support_report['slices'].values()):
@@ -272,20 +321,44 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
         support = staged / 'support'
         support.mkdir()
         shutil.copyfile(source_root / SUPPORT_BUILD, support / 'BUILD.bazel')
-        targets = stage_support(extracted / lock['framework'], support, lock, bundle_id)
-        inputs.update(copy_assets(source_root, staged / 'resources'))
+        native_lock = source_root / 'python/runtime/new-native-dependency-lock.json'
+        targets = stage_support(extracted / lock['framework'], support, lock, bundle_id,
+                               native_lock=native_lock, native_bundle=native_bundle)
+        # Build the sealed dependency tree directly as Bazel inputs. A cached
+        # source_root/python/vendor from a previous lock is not an app input.
+        dependencies = vendor_dependencies(
+            dependency_cache or source_root / 'build/dependency-downloads', staged / 'resources/python/vendor',
+            lock_path=source_root / 'python/runtime/dependency-lock.json')
+        inputs.update(copy_assets(source_root, staged / 'resources', include_vendor=False))
         verify_dependency_bundle(staged / 'resources/python/vendor', dependencies['lock_sha256'])
         inputs.update(compat['source_files'])
         for name in (SUPPORT_BUILD, 'tools/runtime/prepare_telegram_runtime.py', 'tools/runtime/support.py',
-                     'tools/runtime/vendor_dependencies.py', 'python/runtime/dependency-lock.json'):
+                      'tools/runtime/vendor_dependencies.py', 'python/runtime/dependency-lock.json'):
             inputs[name] = digest(source_root / name)
         write_json(staged / 'resources/python/compat-manifest.json', compat)
+        for name in ('tools/runtime/native_dependencies.py', 'tools/runtime/pinned_download.py'):
+            inputs[name] = digest(source_root / name)
+        inputs['telegram-ios/build-system/exteraless/runtime-assets.json'] = digest(
+            telegram_root / 'build-system/exteraless/runtime-assets.json')
+        for item in client_assets.values():
+            inputs['telegram-ios/' + item['source']] = item['sha256']
+        for group in ('input_sha256', 'postimage_sha256'):
+            inputs.update({'telegram-ios/' + name: sha for name, sha in client_patches[group].items()})
+        # TL schema is produced by the TL/services owner. Keep its exact bytes.
+        schema = source_root / 'python/runtime/tl-schema.json'
+        if not isinstance(json.loads(schema.read_text(encoding='utf-8')), dict):
+            raise ValueError('TL schema must be a JSON object')
+        shutil.copyfile(schema, staged / 'resources/python/tl-schema.json')
         # Report outside resources: changing provenance never ships build-only
         # C/Swift sources, private headers or diagnostic executables in the app.
         report = {
             'schema': 1, 'generator': GENERATOR,
             'bundle_id': bundle_id, 'actual_cpython': CPYTHON_VERSION,
+            'client_core_module': 'ExteralessCore',
+            'application_resources': client_assets,
+            'client_source_patches': client_patches,
             'support': support_report, 'targets': targets,
+            'native_dependency_lock_sha256': digest(native_lock),
             'dependencies': {'bundle_sha256': dependencies['bundle_sha256'],
                              'lock_sha256': dependencies['lock_sha256'],
                              'packages': [{key: item[key] for key in ('name', 'version', 'sha256')}
@@ -298,8 +371,8 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
         if destination.exists():
             shutil.rmtree(destination)
         staged.rename(destination)
-    if report_path is not None:
-        write_json(report_path, report)
+        if report_path is not None:
+            write_json(report_path, report)
     return report
 
 
@@ -310,15 +383,21 @@ def main():
     parser.add_argument('--cache', type=Path)
     parser.add_argument('--archive', type=Path, help='Use an existing archive; its SHA-256 is still verified')
     parser.add_argument('--dependency-cache', type=Path)
+    parser.add_argument('--native-bundle', type=Path, help='Only matching, reviewed OWN_GIL-admitted component inputs')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     source_root = args.source_root.resolve()
+    sys.path.insert(0, str(source_root / 'telegram-ios/build-system/Make'))
+    from ClientSourcePatches import prepare_client_source_copy
+    # Fail on a missing/unknown nested source image before any support download.
+    prepare_client_source_copy(source_root / 'telegram-ios', args.telegram_root or source_root / 'telegram-ios')
     lock = read_lock(source_root / 'python/runtime/support-lock.json')
     archive = args.archive or download(lock, args.cache or source_root / 'build/runtime-downloads')
     report = prepare(source_root, args.telegram_root or source_root / 'telegram-ios', archive, lock,
-                     args.report, args.dependency_cache)
+                     args.report, args.dependency_cache, args.native_bundle)
     print('Bazel runtime inputs ready: CPython {}, {} frameworks per target, {} Python assets'.format(
-        report['actual_cpython'], 1 + len(report['targets']['device']['extension_frameworks']), len(report['assets'])))
+        report['actual_cpython'], 1 + len(report['targets']['device']['extension_frameworks']) +
+        len(report['targets']['device']['native_frameworks']), len(report['assets'])))
 
 
 if __name__ == '__main__':

@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "assets": [
+    {
+      "name": "adguard_url_tracking",
+      "source": "submodules/TelegramUI/Resources/Exteraless/Links/adguard_url_tracking.txt",
+      "bundle_path": "adguard_url_tracking.txt",
+      "url": "https://filters.adtidy.org/extension/ublock/filters/17.txt",
+      "version": "2.0.14.84",
+      "upstream_time_updated": "2026-11-13T11:08:24+00:00",
+      "size": 184303,
+      "sha256": "06098fad1d9ee93ce294223206d9cb4b4c180df7a356eb563fa64e775e36cdfc",
+      "license": "Embedded upstream copyright/license header retained verbatim",
+      "license_url": "https://github.com/AdguardTeam/AdguardFilters/blob/master/LICENSE"
+    },
+    {
+      "name": "adguard_url_tracking_license",
+      "source": "submodules/TelegramUI/Resources/Exteraless/Links/adguard_url_tracking.LICENSE.txt",
+      "bundle_path": "adguard_url_tracking.LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/04e0f73b214ddc9d9c59ded9a5934878059d9f39/LICENSE",
+      "version": "GPL-3.0",
+      "size": 35149,
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    }
+  ]
+}

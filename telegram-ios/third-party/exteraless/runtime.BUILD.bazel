@@ -3,7 +3,7 @@ load("@build_bazel_rules_apple//apple:apple.bzl", "apple_dynamic_framework_impor
 load("@build_bazel_rules_apple//apple:resources.bzl", "apple_resource_group")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load(":extensions.bzl", "EXTENSION_MODULES")
+load(":extensions.bzl", "EXTENSION_MODULES", "NATIVE_FRAMEWORKS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -47,9 +47,23 @@ cc_library(
     for module in EXTENSION_MODULES
 ]
 
+[
+    apple_dynamic_framework_import(
+        name = "Native_" + framework,
+        framework_imports = select({
+            "//:ios_arm64": glob(["device/app/Frameworks/{}.framework/**".format(framework)], allow_empty = False),
+            "//:ios_sim_arm64": glob(["simulator/app/Frameworks/{}.framework/**".format(framework)], allow_empty = False),
+        }, no_match_error = UNSUPPORTED_PLATFORM),
+        bundle_only = True,
+    )
+    for framework in NATIVE_FRAMEWORKS
+]
+
 objc_library(
     name = "RuntimeFrameworks",
-    deps = [":Python"] + [":Extension_" + module for module in EXTENSION_MODULES],
+    deps = [":Python"] + [":Extension_" + module for module in EXTENSION_MODULES] + [
+        ":Native_" + framework for framework in NATIVE_FRAMEWORKS
+    ],
 )
 
 # Attach only to ios_application.resources: TelegramUIFramework is shared with
@@ -57,8 +71,8 @@ objc_library(
 apple_resource_group(
     name = "RuntimeResources",
     structured_resources = select({
-        "//:ios_arm64": glob(["device/app/python-stdlib/**"], allow_empty = False),
-        "//:ios_sim_arm64": glob(["simulator/app/python-stdlib/**"], allow_empty = False),
+        "//:ios_arm64": glob(["device/app/python-stdlib/**", "device/app/python/**"], allow_empty = False),
+        "//:ios_sim_arm64": glob(["simulator/app/python-stdlib/**", "simulator/app/python/**"], allow_empty = False),
     }, no_match_error = UNSUPPORTED_PLATFORM),
     strip_structured_resources_prefixes = ["device/app", "simulator/app"],
 )

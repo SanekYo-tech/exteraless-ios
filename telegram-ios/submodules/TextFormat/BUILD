@@ -12,6 +12,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SwiftSignalKit",
     	"//submodules/TelegramCore:TelegramCore",
         "//submodules/Display:Display",
@@ -33,6 +34,7 @@ swift_library(
     ]),
     deps = [
         ":TextFormat",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/Postbox:Postbox",
@@ -60,4 +62,34 @@ ios_unit_test(
     visibility = [
         "//visibility:public",
     ],
+)
+
+swift_library(
+    name = "ExteralessComposerTestsLib",
+    testonly = True,
+    module_name = "ExteralessComposerTests",
+    srcs = [
+        "Tests/ExteralessComposerPolicyTests.swift",
+        "Tests/ExteralessComposerProducerTests.swift",
+    ],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TextFormat",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
+        "//submodules/Postbox:Postbox",
+        "//submodules/Display:Display",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessComposerTestsLib"],
+    visibility = ["//visibility:public"],
 )

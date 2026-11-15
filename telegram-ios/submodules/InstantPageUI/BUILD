@@ -95,3 +95,28 @@ ios_unit_test(
         "//visibility:public",
     ],
 )
+
+# The published visibility fixture is also in the legacy module suite. Select it
+# explicitly for the bounded cohort rather than all unrelated renderer tests.
+swift_library(
+    name = "ExteralessAIVisibilityTestsLib",
+    testonly = True,
+    module_name = "ExteralessAIVisibilityTests",
+    srcs = ["Tests/InstantPageAIVisibilityTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":InstantPageUI",
+        "//submodules/TelegramCore:TelegramCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessAIVisibilityTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessAIVisibilityTestsLib"],
+    visibility = ["//visibility:public"],
+)

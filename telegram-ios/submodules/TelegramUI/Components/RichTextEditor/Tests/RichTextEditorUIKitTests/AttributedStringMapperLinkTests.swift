@@ -15,7 +15,7 @@ final class AttributedStringMapperLinkTests: XCTestCase {
         XCTAssertNotNil(dict[.foregroundColor], "links render with an explicit foreground color")
     }
 
-    func test_readback_link_suppressesForegroundAndUnderline() {
+    func test_readback_link_suppressesAccentButKeepsAuthoredUnderline() {
         let dict: [NSAttributedString.Key: Any] = [
             .link: "https://x.com",
             .foregroundColor: UIColor.link,
@@ -24,7 +24,7 @@ final class AttributedStringMapperLinkTests: XCTestCase {
         ]
         let ca = mapper.characterAttributes(from: dict)
         XCTAssertEqual(ca.link, "https://x.com")
-        XCTAssertFalse(ca.underline, "underline from link styling must not leak into the model")
+        XCTAssertTrue(ca.underline, "link creation adds no underlineStyle; this explicit underline is authored")
         XCTAssertNil(ca.foreground, "blue from link styling must not leak into the model")
     }
 
@@ -61,7 +61,7 @@ final class AttributedStringMapperLinkTests: XCTestCase {
         XCTAssertNil(linked?.attributes.foreground)
     }
 
-    func test_runs_fromAttributedString_urlValuedLink_normalizesAndSuppresses() {
+    func test_runs_fromAttributedString_urlValuedLink_keepsExplicitUnderline() {
         let s = NSAttributedString(string: "tap", attributes: [
             .font: UIFont.systemFont(ofSize: 16),
             .link: URL(string: "https://x.com")!,
@@ -70,7 +70,7 @@ final class AttributedStringMapperLinkTests: XCTestCase {
         ])
         let back = mapper.runs(from: s).first
         XCTAssertEqual(back?.attributes.link, "https://x.com")
-        XCTAssertEqual(back?.attributes.underline, false)
+        XCTAssertEqual(back?.attributes.underline, true)
         XCTAssertNil(back?.attributes.foreground)
     }
 

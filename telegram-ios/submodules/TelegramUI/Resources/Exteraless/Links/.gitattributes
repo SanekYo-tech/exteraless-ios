@@ -1,0 +1,3 @@
+# Preserve the checked upstream bytes across Windows/macOS checkouts.
+adguard_url_tracking.txt -text whitespace=cr-at-eol
+adguard_url_tracking.LICENSE.txt -text

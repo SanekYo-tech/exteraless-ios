@@ -29,6 +29,7 @@ swift_library(
         "Tests/**/*.swift",
     ]),
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         ":NavigationExpansionTransition",
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
@@ -55,4 +56,31 @@ ios_unit_test(
     visibility = [
         "//visibility:public",
     ],
+)
+
+swift_library(
+    name = "ExteralessGlassTestsLib",
+    testonly = True,
+    module_name = "ExteralessGlassTests",
+    srcs = ["Tests/GlassShapeKeyframesTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":NavigationExpansionTransition",
+        "//submodules/AsyncDisplayKit",
+        "//submodules/Display",
+        "//submodules/ComponentFlow",
+        "//submodules/TelegramUI/Components/GlassBackgroundComponent",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessGlassTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessGlassTestsLib"],
+    visibility = ["//visibility:public"],
 )

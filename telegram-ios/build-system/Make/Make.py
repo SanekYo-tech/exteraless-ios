@@ -8,6 +8,7 @@ import tempfile
 import subprocess
 import shutil
 import glob
+import re
 
 from BuildEnvironment import resolve_executable, call_executable, run_executable_with_output, BuildEnvironmentVersions, BuildEnvironment
 from ProjectGeneration import generate
@@ -19,6 +20,7 @@ import GenerateProfiles
 import PostboxImportCheck
 from UnsignedBuild import prepare_unsigned_rules, validate_unsigned_actions
 from RuntimePackaging import load_staging_manifest, validate_runtime_actions
+from ClientSourcePatches import prepare_client_sources
 
 
 class ResolvedCodesigningData:
@@ -29,6 +31,7 @@ class ResolvedCodesigningData:
 
 class BazelCommandLine:
     def __init__(self, bazel, override_bazel_version, override_xcode_version, bazel_user_root):
+        self.client_source_patches = prepare_client_sources(os.getcwd())
         self.build_environment = BuildEnvironment(
             base_path=os.getcwd(),
             bazel_path=bazel,
@@ -366,17 +369,39 @@ class BazelCommandLine:
         print(subprocess.list2cmdline(combined_arguments))
         call_executable(combined_arguments)
 
-    def invoke_test(self, test_target='Tests/AllTests'):
+    def get_test_arguments(self, test_target='Tests/AllTests', *, build_only=False, run_only=False,
+                           test_filter=None, test_arguments=(), test_environment=(),
+                           test_timeout=None, streamed=False):
+        if build_only and run_only:
+            raise ValueError('Test compilation and cached execution are separate phases')
+        targets = [test_target] if isinstance(test_target, str) else list(test_target)
+        if not targets:
+            raise ValueError('At least one explicit test target is required')
+        if self.unsigned and any(not re.fullmatch(r'//[A-Za-z0-9_./-]+:[A-Za-z0-9_.-]+', target)
+                                 or target in ('//Tests:AllTests', '//Tests/AllTests:AllTests') for target in targets):
+            raise ValueError('--unsigned tests require explicit focused //package:target labels')
         combined_arguments = [
             self.build_environment.bazel_path
         ]
         combined_arguments += self.get_startup_bazel_arguments()
-        combined_arguments += ['test']
-
-        combined_arguments += ['--cache_test_results=no']
-        combined_arguments += ['--test_output=errors']
-
-        combined_arguments += [test_target]
+        combined_arguments += ['build' if build_only else 'test', *targets]
+        if self.disable_provisioning_profiles:
+            combined_arguments += ['--//Telegram:disableProvisioningProfiles']
+        if not build_only:
+            combined_arguments += ['--cache_test_results=no', '--test_output=' + ('streamed' if streamed else 'errors')]
+            combined_arguments += ['--flaky_test_attempts=1', '--runs_per_test=1', '--local_test_jobs=1']
+            if run_only:
+                # Bazel 9.2 CheckUpToDateFilter forbids build actions but still
+                # permits TestRunnerAction with check_tests_up_to_date disabled.
+                combined_arguments += ['--check_up_to_date', '--nocheck_tests_up_to_date']
+            if test_filter:
+                combined_arguments += ['--test_filter=' + test_filter]
+            combined_arguments += ['--test_arg=' + value for value in test_arguments]
+            combined_arguments += ['--test_env=' + value for value in test_environment]
+            if test_timeout is not None:
+                if not 1 <= test_timeout <= 600:
+                    raise ValueError('Test launcher timeout must be 1...600 seconds')
+                combined_arguments += ['--test_timeout=' + str(test_timeout)]
 
         combined_arguments += self.common_args
         combined_arguments += self.common_build_args
@@ -394,6 +419,35 @@ class BazelCommandLine:
             ]
 
         combined_arguments += self.configuration_args
+        return combined_arguments
+
+    def get_unsigned_test_preflight_arguments(self, test_target):
+        targets = [test_target] if isinstance(test_target, str) else list(test_target)
+        arguments = self.get_test_arguments(targets, build_only=True)
+        command_index = 1 + len(self.get_startup_bazel_arguments())
+        arguments[command_index] = 'aquery'
+        arguments[command_index + 1:command_index + 1 + len(targets)] = [
+            'deps(set(//Telegram:Telegram {}))'.format(' '.join(targets))
+        ]
+        return arguments + ['--nobuild', '--output=jsonproto', '--include_artifacts',
+                            '--include_commandline', '--include_param_files', '--include_file_write_contents']
+
+    def invoke_test(self, test_target='Tests/AllTests', **options):
+        combined_arguments = self.get_test_arguments(test_target, **options)
+        if self.unsigned and not options.get('run_only', False):
+            diagnostics = os.path.join(os.getcwd(), 'build', 'diagnostics', 'native-tests')
+            os.makedirs(diagnostics, exist_ok=True)
+            graph_path = os.path.join(diagnostics, 'private-test-actions.json')
+            try:
+                with open(graph_path, 'w', encoding='utf-8') as graph_file:
+                    subprocess.run(self.get_unsigned_test_preflight_arguments(test_target), stdout=graph_file,
+                                   check=True, timeout=300)
+                validate_unsigned_actions(graph_path)
+                if self.runtime_manifest is not None:
+                    validate_runtime_actions(graph_path, self.runtime_manifest)
+            finally:
+                if os.path.exists(graph_path):
+                    os.remove(graph_path)
 
         print('TelegramBuild: running')
         print(subprocess.list2cmdline(combined_arguments))
@@ -715,6 +769,10 @@ def build(bazel, arguments):
 
     bazel_command_line.invoke_build()
 
+    if bazel_command_line.runtime_manifest is not None:
+        if load_staging_manifest(os.getcwd()) != bazel_command_line.runtime_manifest:
+            raise RuntimeError('Runtime/client patch provenance changed during the build')
+
     if arguments.outputBuildArtifactsPath is not None:
         artifacts_path = os.path.abspath(arguments.outputBuildArtifactsPath)
         if os.path.exists(artifacts_path + '/Telegram.ipa'):
@@ -750,6 +808,9 @@ def build(bazel, arguments):
 
 
 def test(bazel, arguments):
+    unsigned = getattr(arguments, 'unsigned', False)
+    if unsigned:
+        prepare_unsigned_rules(os.getcwd())
     if PostboxImportCheck.run(os.getcwd()) != 0:
         sys.exit(1)
 
@@ -773,9 +834,16 @@ def test(bazel, arguments):
     )
 
     bazel_command_line.set_configuration('debug_sim_arm64')
-    bazel_command_line.set_build_number('10000')
+    bazel_command_line.set_build_number(str(arguments.buildNumber))
+    if unsigned:
+        bazel_command_line.set_unsigned()
+        bazel_command_line.runtime_manifest = load_staging_manifest(os.getcwd())
 
-    bazel_command_line.invoke_test(test_target=arguments.target)
+    bazel_command_line.invoke_test(test_target=arguments.target, build_only=arguments.buildOnly,
+                                  run_only=arguments.runOnly, test_filter=arguments.testFilter,
+                                  test_arguments=arguments.testArgument or (),
+                                  test_environment=arguments.testEnvironment or (),
+                                  test_timeout=arguments.testTimeout, streamed=arguments.streamTestOutput)
 
 
 def query(bazel, arguments):
@@ -942,6 +1010,20 @@ def add_project_and_build_common_arguments(current_parser: argparse.ArgumentPars
     add_codesigning_common_arguments(current_parser=current_parser, allow_unsigned=allow_unsigned)
 
 
+def add_test_arguments(current_parser):
+    add_project_and_build_common_arguments(current_parser, allow_unsigned=True)
+    current_parser.add_argument('--target', default='Tests/AllTests', help='Explicit focused Bazel test label for unsigned runs.')
+    phase = current_parser.add_mutually_exclusive_group()
+    phase.add_argument('--buildOnly', action='store_true', help='Compile test bundles without launching tests.')
+    phase.add_argument('--runOnly', action='store_true', help='Run tests while refusing any new build action.')
+    current_parser.add_argument('--buildNumber', type=int, default=10000)
+    current_parser.add_argument('--testFilter', help='XCTest class name; native driver verifies actual executed methods.')
+    current_parser.add_argument('--testArgument', action='append', help='Argument forwarded to the pinned iOS runner.')
+    current_parser.add_argument('--testEnvironment', action='append', help='NAME=value for the runner environment.')
+    current_parser.add_argument('--testTimeout', type=int, help='Outer launcher/test envelope, 1...600 seconds.')
+    current_parser.add_argument('--streamTestOutput', action='store_true')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog='Make')
 
@@ -1013,13 +1095,7 @@ if __name__ == '__main__':
             Run all tests.
             '''
     )
-    add_project_and_build_common_arguments(testParser)
-    testParser.add_argument(
-        '--target',
-        type=str,
-        default='Tests/AllTests',
-        help='Bazel test target to run (default: Tests/AllTests, the full suite).'
-    )
+    add_test_arguments(testParser)
 
     generateProjectParser = subparsers.add_parser('generateProject', help='Generate Xcode project')
     generateProjectParser.add_argument(
@@ -1463,6 +1539,7 @@ if __name__ == '__main__':
             build(bazel=bazel_path, arguments=args)
         elif args.commandName == 'remote-build':
             base_path = os.getcwd()
+            prepare_client_sources(base_path)
             remote_input_path = '{}/build-input/remote-input'.format(base_path)
             if os.path.exists(remote_input_path):
                 shutil.rmtree(remote_input_path)
@@ -1518,6 +1595,7 @@ if __name__ == '__main__':
                 mode='persistent' if args.persistentVM else 'ephemeral',
                 wait=args.waitForLock
             ):
+                prepare_client_sources(base_path)
                 remote_input_path = '{}/build-input/remote-input'.format(base_path)
                 if os.path.exists(remote_input_path):
                     shutil.rmtree(remote_input_path)

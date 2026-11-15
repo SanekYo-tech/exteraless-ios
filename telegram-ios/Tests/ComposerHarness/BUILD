@@ -4,6 +4,15 @@ load("//build-system/bazel-utils:plist_fragment.bzl", "plist_fragment")
 load("@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl", "ios_test_runner")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
+filegroup(
+    name = "DisposableAccountSources",
+    srcs = [
+        "AppContext/HarnessAccount.swift",
+        "AppContext/HarnessProcessRetainer.swift",
+    ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 # Pinned to a device/OS that actually exists. The default runner picks an invalid device and the
 # test process exits 15 with no diagnostic. Mirrors //submodules/TextFormat:TextFormatTestRunner.
 # Runs before every harness test: the reused test simulator would otherwise keep the previous build.
@@ -183,6 +192,7 @@ ios_application(
         "//submodules/TelegramUI:TelegramUIAssets",
         # Sounds and animations (the send/mic/video button morphs are `.tgs` resources here).
         "//submodules/TelegramUI:TelegramUIResources",
+        "//submodules/TelegramUI:ExteralessLinkResources",
         # The voice-record button and its overlay draw from LegacyComponents' own bundle.
         "//submodules/LegacyComponents:LegacyComponentsResources",
         "//submodules/LegacyComponents:LegacyComponentsAssets",
@@ -199,6 +209,8 @@ swift_library(
     testonly = True,
     srcs = glob(["Tests/**/*.swift"]),
     deps = [
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer",
         "//submodules/TelegramUIPreferences",
         "//submodules/ChatPresentationInterfaceState",
         "//submodules/TextFormat",
@@ -236,6 +248,33 @@ ios_unit_test(
     test_host = ":ComposerHarness",
     deps = [":ComposerHarnessTestsLib"],
     visibility = ["//Tests:__subpackages__"],
+)
+
+# These fixtures use AppDelegate.harnessRootViewController and shared helpers
+# from ComposerHarnessTestsLib. Compile that library once, then select exactly
+# one class per bounded process against the real scene-based ComposerHarness.
+ios_unit_test(
+    name = "ExteralessComposerSelectionTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = ":ComposerHarness",
+    test_filter = "HarnessComposerSelectionActionTests",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ComposerHarnessTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerPasteTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = ":ComposerHarness",
+    test_filter = "HarnessComposerPlainPasteTests",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ComposerHarnessTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
 )
 
 swift_library(

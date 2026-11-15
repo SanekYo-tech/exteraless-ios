@@ -1,4 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 load("@build_bazel_rules_apple//apple:resources.bzl", "apple_resource_bundle")
 load("//build-system/bazel-utils:plist_fragment.bzl", "plist_fragment")
 # Bazel 9 removed the built-in `objc_library`; it must be loaded explicitly.
@@ -265,4 +266,87 @@ swift_library(
     visibility = [
         "//visibility:public",
     ],
+)
+
+# CMC fixtures compile the shipping Bazel modules with the iOS simulator SDK.
+# Keep the package/Host project's Swift 5 language mode for these existing tests.
+swift_library(
+    name = "ExteralessComposerMetadataTestsLib",
+    testonly = True,
+    module_name = "ExteralessComposerMetadataTests",
+    srcs = ["Tests/RichTextEditorCoreTests/DocumentSelectionMediaMetadataTests.swift"],
+    copts = ["-swift-version", "5"],
+    deps = [":RichTextEditorCore"],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerMetadataTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    deps = [":ExteralessComposerMetadataTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
+swift_library(
+    name = "ExteralessComposerUIKitTestsLib",
+    testonly = True,
+    module_name = "ExteralessComposerUIKitTests",
+    srcs = [
+        "Tests/RichTextEditorUIKitTests/CanvasPlainPasteLiteralTests.swift",
+        # The published fixture uses this class's nested FakePasteboard.
+        "Tests/RichTextEditorUIKitTests/CanvasClipboardTests.swift",
+    ],
+    copts = ["-swift-version", "5"],
+    deps = [":RichTextEditorCore", ":RichTextEditorUIKit"],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerUIKitTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    test_filter = "CanvasPlainPasteLiteralTests",
+    deps = [":ExteralessComposerUIKitTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
+swift_library(
+    name = "ExteralessComposerMapperTestsLib",
+    testonly = True,
+    module_name = "ExteralessComposerMapperTests",
+    srcs = ["Tests/RichTextEditorUIKitTests/AttributedStringMapperLinkTests.swift"],
+    copts = ["-swift-version", "5"],
+    deps = [":RichTextEditorCore", ":RichTextEditorUIKit"],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerMapperTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    deps = [":ExteralessComposerMapperTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
+swift_library(
+    name = "ExteralessComposerInputDecTestsLib",
+    testonly = True,
+    module_name = "ExteralessComposerInputDecTests",
+    srcs = ["Host/Tests/Engine/ChatLinkIngressTests.swift"],
+    copts = ["-swift-version", "5"],
+    deps = [":RichTextEditorCore", ":RichTextEditorUIKit", ":RichTextEngineEditor"],
+)
+
+ios_unit_test(
+    name = "ExteralessComposerInputDecTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    deps = [":ExteralessComposerInputDecTestsLib"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
 )

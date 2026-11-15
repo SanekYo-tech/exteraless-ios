@@ -26,6 +26,47 @@ from verify_unsigned_ipa import inspect_executable
 
 BUNDLE_ID = 'com.exteraless.python-smoke'
 EXECUTABLE = 'ExteralessPythonSmoke'
+BRIDGE_CALLBACK_COUNTS = {
+    'callbacks': 219, 'previous_suite_callbacks': 213, 'bulk_clear_callbacks': 6,
+    'baseline_callbacks': 169, 'owner_bound_callbacks': 41,
+    'terminal_admission_checks': 27, 'terminal_payloads_created': 2, 'terminal_payloads_freed': 2,
+    'native_workers': 2, 'own_gil_interpreters': 2,
+}
+BRIDGE_REQUIRED_CHECKS = (
+    'ok', 'native_dispatcher', 'seven_backend_operations', 'plugin_context_isolated',
+    'spoofed_plugin_id_ignored', 'byte_and_float_tags', 'negative_handles',
+    'owner_release', 'detached_release_rejected', 'dispatcher_lifetime',
+    'error_envelopes', 'counted_buffers', 'legacy_service_override',
+    'native_handle_rollback', 'reentrant_handle_publication',
+    'rollback_preserves_existing_and_negative', 'late_completion_identity',
+    'rollback_exception_identity', 'native_realm_guard',
+    'owner_token_authoritative', 'unbound_owner_token_removed', 'immutable_owner_token',
+    'canonical_owner_token', 'owner_token_validation', 'isolated_owner_tokens',
+    'parent_owner_isolated', 'owner_bound_seven_ops', 'finalized',
+    'bulk_clear_reentrant_registration', 'bulk_clear_nested_once',
+    'bulk_clear_realm_registry_swaps', 'bulk_clear_monotonic_ids', 'terminal_owned_refs_released',
+)
+
+
+def validate_bridge_report(report):
+    """Require rollback/epoch coverage plus the P2 reentrant/terminal clear proof."""
+    missing = [key for key in BRIDGE_REQUIRED_CHECKS if report.get(key) is not True]
+    counts = {key: report.get(key) for key, expected in BRIDGE_CALLBACK_COUNTS.items()
+              if type(report.get(key)) is not int or report[key] != expected}
+    # The six new clear dispatches are owner-bound: the report's bound count is
+    # now 41, containing the old 35-call owner subset. Do not relabel it as 35.
+    if not counts and report['owner_bound_callbacks'] - report['bulk_clear_callbacks'] != 35:
+        counts['previous_owner_bound_callbacks'] = report['owner_bound_callbacks'] - report['bulk_clear_callbacks']
+    rejected = report.get('terminal_admission_rejected')
+    before_clear = report.get('terminal_admission_before_clear')
+    # Forced m_clear rejects admission. During real End, GC may legitimately run
+    # the finalizer before m_clear; that admitted payload must still be freed.
+    if (type(rejected) is not int or type(before_clear) is not int
+            or (rejected, before_clear) not in ((1, 1), (2, 0))):
+        counts['terminal_admission_timing'] = (rejected, before_clear)
+    if missing or counts or report.get('probe') != 'native-bridge-callback':
+        raise RuntimeError('Native bridge callback contract failed: missing/false checks {}; counts {}'.format(missing, counts))
+    return report
 
 
 def run(*args, timeout=180, capture=False):
@@ -233,8 +274,8 @@ def simulator_probe(app, output, simulator_device='iPhone 17'):
                 raise RuntimeError('Simulator {} checks did not pass: {}'.format(kind, report))
             if kind == 'engine' and (report.get('native_workers') != 2 or report.get('finalized') is not True):
                 raise RuntimeError('Native engine did not complete both workers and finalization')
-            if kind == 'bridge' and (report.get('native_dispatcher') is not True or report.get('finalized') is not True):
-                raise RuntimeError('Native bridge callback probe did not finish')
+            if kind == 'bridge':
+                validate_bridge_report(report)
             report['execution'] = 'simctl spawn --standalone'
             report['application_installation_verified'] = False
             (output / report_name).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
@@ -271,11 +312,35 @@ def verify_probe_ipa(path):
 
 
 def source_fingerprint():
-    sources = [path for path in (ROOT / 'python/runtime').rglob('*')
-               if path.suffix in {'.c', '.h', '.m', '.modulemap'}]
-    sources += [ROOT / 'python/bridge/_exteraless_bridge.c', ROOT / 'python/runtime/support-lock.json',
-                ROOT / 'tools/runtime/support.py', Path(__file__).resolve()]
-    sources += list((ROOT / 'python/virtualjava').glob('*.py'))
+    # This artifact's gate includes native C and Swift/SDK fixtures. Bind all
+    # reviewed fixture/adapter inputs, not just engine.c or one Python entrypoint.
+    sources = set()
+    for directory, suffixes in (
+        ('python/runtime', {'.c', '.h', '.m', '.modulemap', '.swift', '.py', '.plugin', '.json'}),
+        ('python/virtualjava', {'.py'}), ('python/sdk', {'.py'}),
+        ('python/exteraless_runtime', {'.py'}), ('tools/runtime', {'.py', '.c', '.json'}),
+        ('swift/PluginHost/Sources', {'.swift', '.c', '.h', '.modulemap'}),
+        ('swift/PluginHooks/Sources', {'.swift', '.c', '.h', '.modulemap'}),
+        ('swift/PluginHost/Tests', {'.swift'}),
+        ('swift/PluginHooks/Tests', {'.swift'}),
+        ('swift/ExteralessCore/Sources', {'.swift'}),
+        ('swift/ExteralessCore/Tests', {'.swift'}),
+        ('telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI', {'.swift', '.py'}),
+        ('telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime', {'.swift'}),
+        ('tools/compat/tests/tl_bridge', {'.swift', '.py'}),
+        ('tools/compat/tests/fixtures/java_values', {'.swift', '.json'}),
+        ('telegram-ios/build-system/exteraless-patches', {'.patch', '.json'}),
+    ):
+        sources.update(path for path in (ROOT / directory).rglob('*')
+                       if path.is_file() and path.suffix in suffixes and '__pycache__' not in path.parts)
+    sources.add(ROOT / 'python/bridge/_exteraless_bridge.c')
+    sources.add(ROOT / 'tools/compat/tests/test_java_value_regressions.py')
+    patch_helper = ROOT / 'telegram-ios/build-system/Make/ClientSourcePatches.py'
+    if patch_helper.is_file():
+        sources.add(patch_helper)
+    for package in ('PluginHost', 'PluginHooks', 'ExteralessCore'):
+        sources.update(path for name in ('Package.swift', 'BUILD.bazel')
+                       if (path := ROOT / 'swift' / package / name).is_file())
     return {path.relative_to(ROOT).as_posix(): digest(path) for path in sorted(sources)}
 
 

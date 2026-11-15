@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "plugin-ui-followup-applied-postimage",
+  "normalization": "utf8-lf",
+  "proof_level": "source postimage only; 23-scenario Mac execution pending SDK lead final source",
+  "handoff": "docs/wave-2/plugin-ui-remediation.md",
+  "applied_by": "coordinator",
+  "files": {
+    "telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift": "8c000b2b5e45c6b3b1abce8a9b86db3939b28f10319de42cb4ca7017202adc7d",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIBridgeExtension.swift": "f1749131840545b34e42002de6852847c75319b79ab796477dab6946418e1f03",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift": "cd83fe3b26d89fa4f4db07b54efd83296eab493c373990c84bc8750f040e23f6",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIRetainedEffect.swift": "96ace8e25fa0c32d304ce2828c7cfa3354b1bbb017fa17c00c773310e2a03e88",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsActionAuthority.swift": "90d3a56c2e1df0db4f9cc379e015aa42c6bc58fd54c93a0d41ce15e40dbc3639",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsActionGate.swift": "dc0f894d909340d48ffa227ae7e68721ddc01f53cab1a598f6c9fc89496024fb",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsActionInvocation.swift": "788f8f8603b28e5527b67538b39f8fd3f7c398af0f6f9b8bd88b1727ed8ada98",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsReadInvocation.swift": "c6cd08205022e3d0d6fe3a4a3bfa6aa94b226022b60d8feb13fecac7ae2e9707",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIUnprovenSchemaCache.swift": "efdae501c1c6d572df99c402331ff181b351f9b1fccc88f20f9deb47cb52e1e7",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIRemediationFixture.swift": "45e443a61da78034f692c8e6e3e52b9d5e58f1d42343f0c81ad73f4dabea3698",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py": "ba4f4b8288fa367c6e0f85510c31f0eacd97c3b0e4005351ac40c66780fcef05",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_source_checks.py": "94fbf12eed1fada5e3a5c883c01adb219a768b55bc26dad722970744bfb12cd7",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/plugin_ui_postimage.py": "1741e25d923be56674957c6779bdfd9cc5dfb6e36a6b3e4224c192e7247c4a74"
+  },
+  "regions": [
+    {
+      "id": "runtime.settings-read",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift",
+      "start": "    public func settings(id: String) async throws -> String {\n",
+      "end": "\n    public func updateSetting(",
+      "sha256": "8367fe40146a2a74dcb29cf5daeabadacfd4e5150e38a4e54aae769f58c9e0ce"
+    },
+    {
+      "id": "harness.settings-read",
+      "path": "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift",
+      "start": "            settings: { id in\n",
+      "end": "            updateSetting:",
+      "sha256": "76471a5408cf6e23d48d19bc362ee7d90fa9bc9dd0b0eac9d223419352307c62"
+    },
+    {
+      "id": "runtime.tl-binding",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift",
+      "start": "                let tl = PluginTLBridgeExtension(\n",
+      "end": "                if let context = self.currentContext { tl.update(context: context) }",
+      "sha256": "f3686c2a862b741b74cbc0bf158568bec9a9042a9c8f1a37b103cd281e97e9f3"
+    }
+  ]
+}

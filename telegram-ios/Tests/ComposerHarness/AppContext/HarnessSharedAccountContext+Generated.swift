@@ -718,7 +718,7 @@ extension HarnessSharedAccountContext {
     public func makeChatRankPreviewItem(context: AccountContext, peer: EnginePeer, rank: String, rankRole: ChatRankInfoScreenRole, theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, sectionId: Int32) -> ListViewItem {
         fatalError("harness: SharedAccountContext.makeChatRankPreviewItem is not provided")
     }
-    public func makeTextProcessingScreen( context: AccountContext, theme: PresentationTheme?, mode: TextProcessingScreenMode, inputText: ComposedRichMessage, copyResult: ((ComposedRichMessage) -> Void)?, translateChat: ((String) -> Void)? ) async -> ViewController {
+    public func makeTextProcessingScreen( context: AccountContext, capability: ExteralessAIProcessingCapability, theme: PresentationTheme?, mode: TextProcessingScreenMode, inputText: ComposedRichMessage, copyResult: ((ComposedRichMessage) -> Void)?, translateChat: ((String) -> Void)? ) async -> ViewController {
         fatalError("harness: SharedAccountContext.makeTextProcessingScreen is not provided")
     }
     public func makeCreateBotScreen( context: AccountContext, parentBot: EnginePeer.Id, initialUsername: String?, initialTitle: String?, openAutomatically: Bool, completion: @escaping (EnginePeer.Id?) -> Void ) async -> ViewController? {

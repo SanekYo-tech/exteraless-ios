@@ -11,7 +11,12 @@ from pathlib import Path, PurePosixPath
 import plistlib
 import posixpath
 import struct
+import sys
 import zipfile
+
+# Also supports the harness's importlib.spec_from_file_location loader.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ClientSourcePatches import validate_patch_provenance, verify_client_sources
 
 
 GENERATOR = 'exteraless-telegram-runtime-v1'
@@ -44,6 +49,12 @@ def load_staging_manifest(base_path):
     report = json.loads(path.read_text(encoding='utf-8'))
     if report.get('generator') != GENERATOR or report.get('actual_cpython') != CPYTHON_VERSION:
         raise RuntimeError('Unexpected runtime staging version; regenerate build-input/exteraless')
+    if report.get('client_source_patches') != verify_client_sources(base):
+        raise RuntimeError('Client source patch provenance changed; regenerate runtime staging')
+    for group in ('input_sha256', 'postimage_sha256'):
+        for name, expected in report['client_source_patches'][group].items():
+            if report['source_files'].get('telegram-ios/' + name) != expected:
+                raise RuntimeError('Client patch input missing from source fingerprint: ' + name)
     for target in ('device', 'simulator'):
         spec = report['targets'][target]
         if spec['architecture'] != 'arm64' or len(spec['extension_frameworks']) != 54:
@@ -61,6 +72,13 @@ def load_staging_manifest(base_path):
         with file.open('rb') as stream:
             if _digest(stream) != expected:
                 raise RuntimeError('Changed runtime staging input; regenerate: ' + name)
+    for name, resource in report.get('application_resources', {}).items():
+        file = base / resource['source']
+        if not file.is_file() or file.stat().st_size != resource['size']:
+            raise RuntimeError('Missing or changed pinned application resource: ' + name)
+        with file.open('rb') as stream:
+            if _digest(stream) != resource['sha256']:
+                raise RuntimeError('Pinned application resource changed after staging: ' + name)
     # A local checkout still has the outer source tree. Refuse an old snapshot
     # after a Swift/C/SDK edit; the relocated CI copy is prepared just beforehand.
     source_root = base.parent
@@ -77,6 +95,8 @@ def load_staging_manifest(base_path):
 
 def validate_runtime_actions(graph_path, manifest):
     """Check that the unsigned preflight actually includes the native runtime."""
+    if manifest.get('generator') == GENERATOR or 'client_source_patches' in manifest:
+        validate_patch_provenance(manifest.get('client_source_patches'))
     graph_path = Path(graph_path)
     graph = json.loads(graph_path.read_text(encoding='utf-8'))
     targets = {str(item['id']): item['label'] for item in graph.get('targets', [])}
@@ -96,6 +116,8 @@ def validate_runtime_actions(graph_path, manifest):
                              if any(arg.endswith('/' + name) for arg in args))
             if '//swift/PluginHooks:PluginHooks' in label:
                 swift.add('PluginHooks')
+            if '//swift/ExteralessCore:ExteralessCore' in label:
+                swift.add('ExteralessCore')
         if mnemonic == 'ImportedDynamicFrameworkProcessor' and label.endswith('//Telegram:Telegram'):
             for index, arg in enumerate(args[:-1]):
                 if arg == '--framework_binary':
@@ -103,7 +125,10 @@ def validate_runtime_actions(graph_path, manifest):
         if mnemonic in ('ObjcLink', 'CppLink') and label.endswith('//Telegram:TelegramUIFramework'):
             ui_links.append(args)
     required_swift = {'CPythonXCFrameworkEngine.swift', 'NativeBridgeBinding.swift', 'PluginHost.swift', 'PluginHooks'}
-    required_imports = {'Python', *manifest['targets']['device']['extension_frameworks']}
+    if manifest.get('client_core_module') == 'ExteralessCore':
+        required_swift.add('ExteralessCore')
+    required_imports = {'Python', *manifest['targets']['device']['extension_frameworks'],
+                        *(entry['framework'] for entry in manifest['targets']['device'].get('native_frameworks', []))}
     errors = []
     if set(NATIVE_SOURCES) - native:
         errors.append('C runtime sources missing from compile actions: ' + ', '.join(sorted(set(NATIVE_SOURCES) - native)))
@@ -116,6 +141,7 @@ def validate_runtime_actions(graph_path, manifest):
     report = {'native_sources': sorted(native), 'swift_sources': sorted(swift),
               'main_app_framework_imports': sorted(imports), 'errors': errors,
               'status': 'invalid' if errors else 'valid'}
+    report['client_source_patches'] = manifest.get('client_source_patches')
     write_report(graph_path.parent / 'runtime-preflight.json', report)
     if errors:
         raise RuntimeError('Runtime preflight failed:\n' + '\n'.join(errors))
@@ -250,9 +276,14 @@ def verify_dependency_archive(archive, root, manifest):
 
 
 def verify_runtime_ipa(ipa, manifest, target='device'):
+    if manifest.get('generator') == GENERATOR or 'client_source_patches' in manifest:
+        validate_patch_provenance(manifest.get('client_source_patches'))
     root = 'Payload/Telegram.app'
     spec = manifest['targets'][target]
     modules = spec['extension_frameworks']
+    native_frameworks = spec.get('native_frameworks', [])
+    framework_names = ['Python', *modules, *(entry['framework'] for entry in native_frameworks)]
+    application_assets = manifest.get('application_resources', {})
     expected = dict(spec['resources'], **manifest['assets'])
     with zipfile.ZipFile(ipa) as archive:
         names = set(archive.namelist())
@@ -267,7 +298,29 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
             with archive.open(root + '/' + name) as stream:
                 if _digest(stream) != sha:
                     raise ValueError('Runtime resource differs from Bazel staging: ' + name)
+        for name, resource in application_assets.items():
+            path = root + '/' + name
+            matches = {candidate for candidate in names if candidate.endswith('/' + name)}
+            if matches != {path}:
+                raise ValueError('Application resource must occur once at the main bundle root: ' + name)
+            if archive.getinfo(path).file_size != resource['size']:
+                raise ValueError('Pinned application resource size mismatch: ' + name)
+            with archive.open(path) as stream:
+                if _digest(stream) != resource['sha256']:
+                    raise ValueError('Pinned application resource hash mismatch: ' + name)
         dependencies = verify_dependency_archive(archive, root, manifest)
+        native_policy = None
+        if 'native_dependency_lock_sha256' in manifest:
+            native_policy = json.loads(archive.read(root + '/python/native-dependencies.json'))
+            if (native_policy.get('schema') != 1 or native_policy.get('generator') != 'exteraless-native-dependencies-v1'
+                    or native_policy.get('lock_sha256') != manifest['native_dependency_lock_sha256']
+                    or native_policy.get('support_sha256') != manifest['support']['sha256']
+                    or native_policy.get('actual_cpython') != manifest['actual_cpython']
+                    or native_policy.get('target') != target or native_policy.get('frameworks') != native_frameworks
+                    or native_policy.get('diagnostic_only')):
+                raise ValueError('Native dependency policy does not match the staged production inputs')
+            if {entry['package'] for entry in native_frameworks} != set(native_policy.get('admitted_packages', [])):
+                raise ValueError('Native frameworks do not match the admitted package inventory')
         for name in names:
             if ('ExteralessPythonBridge.framework/' in name or
                     ('CPythonRuntimeImplementation' in name and name.endswith(('.so', '.dylib')))):
@@ -277,7 +330,7 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
                     raise ValueError('Runtime resources embedded outside the main app: ' + name)
             if '/PlugIns/' in name and ('/python/' in name or '/python-stdlib/' in name):
                 raise ValueError('Python resources duplicated in an extension: ' + name)
-            for module in ('Python', *modules):
+            for module in framework_names:
                 fragment = '/{}.framework/'.format(module)
                 if fragment in name and not name.startswith(root + '/Frameworks/{}.framework/'.format(module)):
                     raise ValueError('Python framework is not in the main Frameworks directory: ' + name)
@@ -293,7 +346,7 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
         python = binary(python_path)
         if python['filetype'] != 6 or python['install_name'] != '@rpath/Python.framework/Python':
             raise ValueError('Python must be a dynamic framework with its relocatable install name')
-        for module in ('Python', *modules):
+        for module in framework_names:
             prefix = root + '/Frameworks/{}.framework/'.format(module)
             info = plistlib.loads(archive.read(prefix + 'Info.plist'))
             platform_name = 'iPhoneOS' if target == 'device' else 'iPhoneSimulator'
@@ -302,13 +355,23 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
             if any(name.startswith(prefix + folder + '/') for name in names for folder in ('Headers', 'Modules')):
                 raise ValueError('Build-only framework headers/modules were bundled: ' + module)
             binary(prefix + module)
-            if module != 'Python':
+            if module in modules:
                 origin = archive.read(prefix + module + '.origin').decode('utf-8').strip()
                 if origin not in expected or not origin.endswith('.fwork'):
                     raise ValueError('Invalid framework origin: ' + module)
                 marker = archive.read(root + '/' + origin).decode('utf-8').strip()
                 if marker != 'Frameworks/{0}.framework/{0}'.format(module):
                     raise ValueError('Broken PEP 730 framework/origin pair: ' + module)
+
+        for entry in native_frameworks:
+            if (entry['binary'] != 'Frameworks/{0}.framework/{0}'.format(entry['framework'])
+                    or entry['origin'] != entry['binary'] + '.origin'
+                    or not entry['marker'].startswith('python/native-vendor/')
+                    or entry['marker'] not in expected or not entry['marker'].endswith('.fwork')):
+                raise ValueError('Invalid native extension bundle paths')
+            if (archive.read(root + '/' + entry['marker']).decode('utf-8').strip() != entry['binary']
+                    or archive.read(root + '/' + entry['origin']).decode('utf-8').strip() != entry['marker']):
+                raise ValueError('Broken native PEP 730 framework/origin pair')
 
         ui_path = root + '/Frameworks/TelegramUIFramework.framework/TelegramUIFramework'
         if '@rpath/Python.framework/Python' not in binary(ui_path)['loads']:
@@ -362,11 +425,16 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
         main_paths = [_expand_path(path, root, root) for path in binary(main)['rpaths']]
         for module in modules:
             walk(root + '/Frameworks/{0}.framework/{0}'.format(module), main, main_paths)
+        for entry in native_frameworks:
+            walk(root + '/' + entry['binary'], main, main_paths)
     return {'status': 'valid', 'actual_cpython': manifest['actual_cpython'],
             'support_sha256': manifest['support']['sha256'], 'target': target,
-            'frameworks': ['Python', *modules], 'resource_files': len(expected),
+            'frameworks': framework_names, 'resource_files': len(expected) + len(application_assets),
+            'application_resources': application_assets,
             'extensions': extension_report, 'checked_macho_files': len(binary_info),
             'dependencies': dependencies,
+            'native_dependencies': native_policy,
+            'client_source_patches': manifest.get('client_source_patches'),
             'runtime_execution_verified': False}
 
 

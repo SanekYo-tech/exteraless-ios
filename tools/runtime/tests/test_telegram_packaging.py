@@ -15,10 +15,12 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/runtime'))
 sys.path.insert(0, str(ROOT / 'telegram-ios/build-system/Make'))
-from prepare_telegram_runtime import compatibility_manifest, copy_assets, inventory, stage_support
+from prepare_telegram_runtime import application_resources, compatibility_manifest, copy_assets, inventory, source_inventory, stage_support
 from RuntimePackaging import EXTENSIONS, NATIVE_SOURCES, load_staging_manifest, validate_runtime_actions, verify_runtime_ipa
 from support import digest, read_lock
 from vendor_dependencies import bundle_hash
+from ClientSourcePatches import prepare_client_sources
+from test_client_source_patches import create_fixture
 
 
 def macho(platform=2, loads=(), rpaths=(), install_name=None, filetype=6):
@@ -85,6 +87,17 @@ class TelegramPackagingTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
+    def test_relocated_bazel_inputs_include_the_exported_font_fixture_and_all_core_host_sources(self):
+        files = {path.as_posix() for path in source_inventory(ROOT)}
+        fixture = 'swift/ExteralessCore/Tests/ExteralessCoreTests/EmojiFontFixture.swift'
+        self.assertIn(fixture, files)
+        for package in ('ExteralessCore', 'PluginHost', 'PluginHooks'):
+            sources = {path.relative_to(ROOT).as_posix()
+                       for path in (ROOT / 'swift' / package / 'Sources').rglob('*.swift')}
+            self.assertTrue(sources)
+            self.assertFalse(sources - files)
+        self.assertFalse(any(name.startswith('resources/') for name in files))
+
     def app(self, target='device'):
         app = self.support / target / 'app'
         platform = self.lock['slices'][target]['platform_id']
@@ -147,6 +160,30 @@ class TelegramPackagingTests(unittest.TestCase):
         (app / 'python/sdk/__init__.py').write_bytes(b'changed')
         with self.assertRaisesRegex(ValueError, 'differs from Bazel staging'):
             verify_runtime_ipa(self.archive(app), self.manifest)
+
+    def test_pinned_adguard_data_and_license_are_present_as_exact_source_bytes(self):
+        resources = application_resources(ROOT / 'telegram-ios')
+        self.assertEqual(resources['adguard_url_tracking.txt']['sha256'],
+                         '06098fad1d9ee93ce294223206d9cb4b4c180df7a356eb563fa64e775e36cdfc')
+        self.assertEqual(resources['adguard_url_tracking.txt']['size'], 184303)
+        self.assertIn('adguard_url_tracking.LICENSE.txt', resources)
+
+    def test_application_resource_is_hashed_and_must_be_at_the_main_bundle_root(self):
+        app = self.app()
+        name = 'adguard_url_tracking.txt'
+        self.write(app / name, b'! licensed fixture\n$removeparam=fixture\n')
+        manifest = dict(self.manifest, application_resources={name: {
+            'source': 'Resources/' + name, 'size': (app / name).stat().st_size, 'sha256': digest(app / name),
+        }})
+        self.assertIn(name, verify_runtime_ipa(self.archive(app), manifest)['application_resources'])
+        self.write(app / 'Nested' / name, (app / name).read_bytes())
+        (app / name).unlink()
+        with self.assertRaisesRegex(ValueError, 'main bundle root'):
+            verify_runtime_ipa(self.archive(app), manifest)
+        self.write(app / name, b'x' * manifest['application_resources'][name]['size'])
+        (app / 'Nested' / name).unlink()
+        with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+            verify_runtime_ipa(self.archive(app), manifest)
 
     def test_vendor_copy_preserves_its_sealed_inventory(self):
         copied = self.root / 'copied-assets'
@@ -225,6 +262,43 @@ class TelegramPackagingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'cpython312_compat.c'):
             validate_runtime_actions(path, self.manifest)
 
+    def test_preflight_requires_the_client_core_module_when_staged(self):
+        manifest = dict(self.manifest, client_core_module='ExteralessCore')
+        graph = self.graph()
+        path = self.root / 'core-actions.json'
+        path.write_text(json.dumps(graph))
+        with self.assertRaisesRegex(RuntimeError, 'ExteralessCore'):
+            validate_runtime_actions(path, manifest)
+        graph['targets'].append({'id': 5, 'label': '@@exteraless+//swift/ExteralessCore:ExteralessCore'})
+        graph['actions'].append({'targetId': 5, 'mnemonic': 'SwiftCompile', 'arguments': ['Sources/ClientSettings.swift']})
+        path.write_text(json.dumps(graph))
+        self.assertEqual(validate_runtime_actions(path, manifest)['status'], 'valid')
+
+    def test_custom_native_framework_uses_its_manifest_paths_and_dynamic_count(self):
+        from native_dependencies import install_extension
+        app = self.app()
+        source = self.root / '_image.cpython-312-iphoneos.so'
+        source.write_bytes(macho(loads=['@rpath/Python.framework/Python'], filetype=8))
+        entry = install_extension(source, 'fixture/' + source.name, app,
+                                  {'name': 'fixture', 'version': '1.0', 'import_roots': ['fixture']},
+                                  'device', 'com.example')
+        manifest = copy.deepcopy(self.manifest)
+        manifest['targets']['device']['native_frameworks'] = [entry]
+        manifest['native_dependency_lock_sha256'] = 'f' * 64
+        policy = {'schema': 1, 'generator': 'exteraless-native-dependencies-v1',
+                  'lock_sha256': 'f' * 64, 'support_sha256': manifest['support']['sha256'],
+                  'actual_cpython': '3.12.16', 'target': 'device',
+                  'frameworks': [entry], 'admitted_packages': ['fixture']}
+        self.write(app / 'python/native-dependencies.json', json.dumps(policy).encode())
+        for name in (entry['marker'], 'python/native-dependencies.json'):
+            manifest['targets']['device']['resources'][name] = digest(app / name)
+        report = verify_runtime_ipa(self.archive(app), manifest)
+        self.assertEqual(len(report['frameworks']), 4)
+        self.assertIn(entry['framework'], report['frameworks'])
+        (app / entry['origin']).write_text('python/wrong.fwork\n')
+        with self.assertRaisesRegex(ValueError, 'Broken native PEP 730'):
+            verify_runtime_ipa(self.archive(app), manifest)
+
     def test_compatibility_manifest_is_deterministic_source_data(self):
         source = self.root / 'source'
         seed = source / 'telegram-ios/build-system/exteraless/compat-classes.txt'
@@ -252,18 +326,41 @@ class TelegramPackagingTests(unittest.TestCase):
         self.write(checkout / name, b'// source version one\n')
         self.write(stage / name, (checkout / name).read_bytes())
         self.write(checkout / 'tools/runtime/prepare_telegram_runtime.py', b'# checkout marker\n')
+        create_fixture(base)
+        client_patches = prepare_client_sources(base)
         manifest = {'generator': 'exteraless-telegram-runtime-v1', 'actual_cpython': '3.12.16',
                     'targets': {target: {'architecture': 'arm64', 'extension_frameworks': list(range(54))}
                                 for target in ('device', 'simulator')},
-                    'files': inventory(stage), 'source_files': {name: digest(checkout / name)}}
+                    'files': inventory(stage), 'source_files': {name: digest(checkout / name)},
+                    'client_source_patches': client_patches}
+        for group in ('input_sha256', 'postimage_sha256'):
+            manifest['source_files'].update({'telegram-ios/' + key: sha for key, sha in client_patches[group].items()})
         self.write(stage / 'runtime-staging.json', json.dumps(manifest).encode())
         self.assertEqual(load_staging_manifest(base)['actual_cpython'], '3.12.16')
+        metadata = base / 'build-system/exteraless-patches/manifest.json'
+        original = metadata.read_bytes()
+        metadata.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(RuntimeError, 'patch provenance changed'):
+            load_staging_manifest(base)
+        metadata.write_bytes(original)
         self.write(checkout / name, b'// source version two\n')
         with self.assertRaisesRegex(RuntimeError, 'Runtime source changed'):
             load_staging_manifest(base)
         self.write(stage / 'unexpected.swift', b'// unrecorded Bazel glob input\n')
         with self.assertRaisesRegex(RuntimeError, 'file inventory changed'):
             load_staging_manifest(base)
+
+    def test_app_artifact_requires_and_carries_client_patch_identity(self):
+        base = self.root / 'client'
+        create_fixture(base)
+        proof = prepare_client_sources(base)
+        manifest = dict(self.manifest, generator='exteraless-telegram-runtime-v1')
+        archive = self.archive(self.app())
+        with self.assertRaisesRegex(ValueError, 'Missing or stale client source patch'):
+            verify_runtime_ipa(archive, manifest)
+        manifest['client_source_patches'] = proof
+        result = verify_runtime_ipa(archive, manifest)
+        self.assertEqual(result['client_source_patches'], proof)
 
 
 if __name__ == '__main__':

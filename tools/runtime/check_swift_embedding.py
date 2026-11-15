@@ -67,7 +67,7 @@ def main():
         'module CPluginHostShims {\n  header ' + json.dumps(str(shims / 'include/ph_atomic.h')) + '\n  export *\n}\n',
         encoding='utf-8')
     executable = args.output / 'swift-engine-probe'
-    sources = sorted((ROOT / 'swift/PluginHost/Sources/PluginHost').glob('*.swift'))
+    sources = sorted((ROOT / 'swift/PluginHost/Sources/PluginHost').rglob('*.swift'))
     sdk = subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip()
     run('xcrun', '--sdk', 'macosx', 'swiftc', '-swift-version', '6', '-parse-as-library',
         '-module-name', 'PluginHostNativeProbe', '-sdk', sdk,

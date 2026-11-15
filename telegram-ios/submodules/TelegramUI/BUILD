@@ -1,4 +1,5 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
 load(
     "@build_configuration//:variables.bzl",
@@ -11,14 +12,69 @@ filegroup(
     srcs = glob([
         "Sounds/**/*",
         "Resources/**/*",
-    ], exclude = ["Sounds/**/.*", "Resources/**/.*"]),
+    ], exclude = ["Sounds/**/.*", "Resources/**/.*", "Resources/Exteraless/Links/*.txt"]),
     visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "ExteralessLinkResources",
+    srcs = [
+        "Resources/Exteraless/Links/adguard_url_tracking.txt",
+        "Resources/Exteraless/Links/adguard_url_tracking.LICENSE.txt",
+    ],
+    visibility = ["//Telegram:__pkg__", "//Tests/Exteraless:__pkg__", "//Tests/ComposerHarness:__pkg__"],
 )
 
 filegroup(
     name = "TelegramUIAssets",
     srcs = glob(["Images.xcassets/**"]),
     visibility = ["//visibility:public"],
+)
+
+# Compile the shipping Foundation contracts in isolated XCTest modules without
+# pulling application lifecycle/UIKit presentation into model/lease tests.
+filegroup(
+    name = "ExteralessNativeUIContractSources",
+    srcs = [
+        "Sources/ExteralessClient/PluginUI/PluginUIModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIMenuModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUINavigation.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIRequest.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIShareFiles.swift",
+        "Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift",
+        "Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift",
+        "Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift",
+        "Sources/ExteralessClient/PluginUI/PluginRuntimeMaintenance.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIReleaseQueue.swift",
+    ],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
+filegroup(
+    name = "ClientHarnessDomainFingerprintSources",
+    srcs = glob([
+        "Sources/ExteralessClient/Feed/*.swift",
+        "Sources/ExteralessClient/Player/*.swift",
+        "Sources/ExteralessClient/Pills/*.swift",
+    ]) + [
+        "Sources/ExteralessClient/Chats/ExteralessPillStack.swift",
+        "Sources/ExteralessClient/Chats/ExteralessChatTableController.swift",
+        "Sources/ExteralessClient/ExteralessSettingsController.swift",
+        "Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift",
+    ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
+filegroup(
+    name = "ExteralessPluginPillContractSources",
+    srcs = [
+        "Sources/ExteralessClient/Pills/PluginPillIdentityArchive.swift",
+        "Sources/ExteralessClient/Pills/PluginPillWire.swift",
+        "Sources/ExteralessClient/Pills/ExteralessPillSettingsAction.swift",
+    ],
+    visibility = ["//Tests/Exteraless:__pkg__"],
 )
 
 # Sources the composer flat-rebuild guard test scans. A Bazel-sandboxed XCTest only sees what is
@@ -64,6 +120,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//third-party/exteraless:PluginHost",
         "//third-party/exteraless:PluginHooks",
         "//submodules/CrashReporting:CrashReporting",
@@ -78,6 +135,7 @@ swift_library(
         "//submodules/MtProtoKit:MtProtoKit",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/Weather:Weather",
         "//submodules/LegacyComponents:LegacyComponents",
         "//submodules/lottie-ios:Lottie",
         "//submodules/FFMpegBinding:FFMpegBinding",
@@ -238,6 +296,7 @@ swift_library(
         "//submodules/SemanticStatusNode:SemanticStatusNode",
         "//submodules/AccountUtils:AccountUtils",
         "//submodules/Svg/LegacyImpl",
+        "//submodules/Svg:Svg",
         "//submodules/ManagedAnimationNode:ManagedAnimationNode",
         "//submodules/TooltipUI:TooltipUI",
         "//submodules/ListMessageItem:ListMessageItem",
@@ -308,6 +367,7 @@ swift_library(
         "//submodules/TelegramUI/Components/TextNodeWithEntities:TextNodeWithEntities",
         "//submodules/TelegramUI/Components/EmojiSuggestionsComponent:EmojiSuggestionsComponent",
         "//submodules/TelegramUI/Components/EmojiStatusSelectionComponent:EmojiStatusSelectionComponent",
+        "//submodules/TelegramUI/Components/Settings/QuickReactionSetupController:QuickReactionSetupController",
         "//submodules/TelegramUI/Components/EmojiStatusComponent:EmojiStatusComponent",
         "//submodules/TelegramUI/Components/ChatControllerInteraction:ChatControllerInteraction",
         "//submodules/Components/ComponentDisplayAdapters:ComponentDisplayAdapters",
@@ -395,6 +455,8 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItem",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageItemImpl:ChatMessageItemImpl",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageItemView:ChatMessageItemView",
         "//submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageSwipeToReplyNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageSelectionNode",
@@ -430,6 +492,7 @@ swift_library(
         "//submodules/TelegramUI/Components/Chat/ChatMessageDisableCopyProtectionBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode",
         "//submodules/TelegramUI/Components/Chat/ChatMessageTransferBubbleContentNode",
         "//submodules/TelegramUI/Components/Premium/PremiumDiamondComponent",
         "//submodules/TelegramUI/Components/Chat/ChatRecentActionsController",
@@ -596,4 +659,168 @@ swift_library(
     visibility = [
         "//visibility:public",
     ],
+)
+
+# The owner's finite page/window fixtures exercise the shipping orchestration.
+swift_library(
+    name = "ExteralessFeedTestsLib",
+    testonly = True,
+    module_name = "ExteralessFeedTests",
+    srcs = glob(["Tests/FeedTests/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/AccountContext:AccountContext",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessFeedTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessFeedTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessAINativeTestsLib",
+    testonly = True,
+    module_name = "ExteralessAINativeTests",
+    srcs = glob(["Tests/AI/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/TelegramCore:TelegramCore",
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/AccountContext:AccountContext",
+        "//submodules/ComponentFlow:ComponentFlow",
+        "//submodules/Postbox:Postbox",
+        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+        "//submodules/TelegramUI/Components/AudioTranscriptionButtonComponent",
+        "//submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessAINativeTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessAINativeTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessPlayerNativeTestsLib",
+    testonly = True,
+    module_name = "ExteralessPlayerNativeTests",
+    srcs = glob(["Tests/Player/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/AccountContext:AccountContext",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessPlayerNativeTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessPlayerNativeTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessAppearanceRootTestsLib",
+    testonly = True,
+    module_name = "ExteralessAppearanceRootTests",
+    srcs = glob(["Tests/Appearance/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/AccountContext:AccountContext",
+        "//submodules/ContactListUI:ContactListUI",
+        "//submodules/Display:Display",
+        "//submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen:PeerInfoScreen",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessAppearanceRootTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessAppearanceRootTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessTLModelTestsLib",
+    testonly = True,
+    module_name = "ExteralessTLModelTests",
+    srcs = ["Tests/PluginTLEditModelTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/TelegramCore:TelegramCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessTLModelTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessTLModelTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessChatMediaTestsLib",
+    testonly = True,
+    module_name = "ExteralessChatMediaTests",
+    srcs = glob([
+        "Tests/ChatMedia/*.swift",
+        "Tests/Chats/*.swift",
+    ], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramUI",
+        "//submodules/AccountContext:AccountContext",
+        "//submodules/Display:Display",
+        "//submodules/GalleryUI:GalleryUI",
+        "//submodules/MediaPlayer:MediaPlayer",
+        "//submodules/Postbox:Postbox",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessChatMediaTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessChatMediaTestsLib"],
+    visibility = ["//visibility:public"],
 )

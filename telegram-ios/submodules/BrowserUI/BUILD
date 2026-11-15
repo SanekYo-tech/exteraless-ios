@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+filegroup(
+    name = "ExteralessBrowserGestureContractSource",
+    srcs = ["Sources/ExteralessBrowserGestures.swift"],
+    visibility = ["//Tests/Exteraless:__pkg__"],
+)
+
 swift_library(
     name = "BrowserUI",
     module_name = "BrowserUI",
@@ -10,6 +16,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SwiftSignalKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/AsyncDisplayKit",

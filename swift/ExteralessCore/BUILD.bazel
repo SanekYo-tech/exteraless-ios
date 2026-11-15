@@ -1,0 +1,31 @@
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+
+# Shared generated font bytes for the owner's loginless UIKit rendering tests.
+exports_files(["Tests/ExteralessCoreTests/EmojiFontFixture.swift"], visibility = ["//visibility:public"])
+
+filegroup(
+    name = "ClientHarnessDomainFingerprintSources",
+    srcs = glob([
+        "Sources/ExteralessCore/ClientAPI*.swift",
+        "Sources/ExteralessCore/ClientSetting*.swift",
+        "Sources/ExteralessCore/ClientSecrets.swift",
+        "Sources/ExteralessCore/Retention*.swift",
+        "Sources/ExteralessCore/ChatFeatures.swift",
+        "Sources/ExteralessCore/ChatFeedPolicy.swift",
+        "Sources/ExteralessCore/CorePillFeatures.swift",
+        "Sources/ExteralessCore/Feed*.swift",
+        "Sources/ExteralessCore/Player*.swift",
+        "Sources/ExteralessCore/Pill*.swift",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+# Foundation/system-SDK client policies. One linked copy belongs to
+# TelegramCoreFramework; its existing exported-symbols scan covers UI clients.
+swift_library(
+    name = "ExteralessCore",
+    module_name = "ExteralessCore",
+    srcs = glob(["Sources/ExteralessCore/**/*.swift"], allow_empty = False),
+    copts = ["-swift-version", "6"],
+    visibility = ["//visibility:public"],
+)

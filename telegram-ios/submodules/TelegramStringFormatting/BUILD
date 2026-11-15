@@ -12,6 +12,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/Display:Display",
         "//submodules/PlatformRestrictionMatching:PlatformRestrictionMatching",
@@ -33,6 +34,8 @@ swift_library(
     srcs = glob(["Tests/**/*.swift"]),
     deps = [
         ":TelegramStringFormatting",
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/Postbox:Postbox",
         "//submodules/TextFormat:TextFormat",
@@ -50,5 +53,31 @@ ios_unit_test(
     minimum_os_version = "15.0",
     runner = ":TelegramStringFormattingTestRunner",
     deps = [":TelegramStringFormattingTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessAppearancePresenceTestsLib",
+    testonly = True,
+    module_name = "ExteralessAppearancePresenceTests",
+    srcs = ["Tests/AppearancePresenceTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":TelegramStringFormatting",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
+        "//submodules/TextFormat:TextFormat",
+        "//third-party/exteraless:ExteralessCore",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessAppearancePresenceTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    linkopts = ["-framework", "MediaPlayer"],
+    deps = [":ExteralessAppearancePresenceTestsLib"],
     visibility = ["//visibility:public"],
 )

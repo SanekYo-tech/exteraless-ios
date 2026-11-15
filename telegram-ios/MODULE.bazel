@@ -218,6 +218,15 @@ local_path_override(
     path = "./build-system/bazel-rules/rules_apple",
 )
 
+# Keep the existing rules_apple pin; its xcodebuild launcher must explicitly
+# disable parallel simulator clones for the serial native-test driver.
+single_version_override(
+    module_name = "xctestrunner",
+    version = "0.2.16-20260212-4c6f493",
+    patches = ["//build-system/exteraless-testing:xctestrunner-serial.patch"],
+    patch_strip = 1,
+)
+
 bazel_dep(name = "rules_swift", repo_name = "build_bazel_rules_swift")
 local_path_override(
     module_name = "rules_swift",

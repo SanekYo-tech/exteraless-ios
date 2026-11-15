@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/runtime'))
-from validate_runtime import main, run_probe_command
+from validate_runtime import main, run_probe_command, source_fingerprint
 
 
 class RuntimePhaseTests(unittest.TestCase):
@@ -34,6 +34,36 @@ class RuntimePhaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'sources changed'):
                     main()
             simulator.assert_not_called()
+
+    def test_fingerprint_includes_sdk_native_fixture_and_swift_host_changes(self):
+        with tempfile.TemporaryDirectory(prefix='runtime-fingerprint-') as folder:
+            root = Path(folder)
+            names = ['python/bridge/_exteraless_bridge.c', 'python/runtime/smoke/plugins/wave2.plugin',
+                     'python/exteraless_runtime/_callbacks.py', 'python/sdk/base_plugin.py',
+                     'python/runtime/smoke/swift_sdk_fixture.swift',
+                     'swift/ExteralessCore/Package.swift',
+                     'swift/ExteralessCore/Sources/ExteralessCore/PillRequestPool.swift',
+                     'swift/PluginHost/Sources/PluginHost/PluginHostLifecycle.swift',
+                     'swift/PluginHost/Tests/PluginHostTests/NativeEffectBudgetTests.swift',
+                     'swift/PluginHooks/Tests/PluginHooksTests/PluginTLTransformTests.swift',
+                     'telegram-ios/build-system/exteraless-patches/mtproto-engine-native-dns.patch',
+                      'telegram-ios/build-system/exteraless-patches/manifest.json',
+                      'telegram-ios/build-system/Make/ClientSourcePatches.py',
+                      'tools/compat/tests/test_java_value_regressions.py',
+                      'tools/compat/tests/fixtures/java_values/native_codec.swift',
+                      'tools/compat/tests/fixtures/java_values/schema.json',
+                      'tools/compat/tests/tl_bridge/NativeFixtures.swift']
+            for name in names:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'initial')
+            with patch('validate_runtime.ROOT', root):
+                first = source_fingerprint()
+                self.assertEqual(set(first), set(names))
+                for name in names[1:]:
+                    with self.subTest(source=name):
+                        (root / name).write_bytes(b'new owner epoch or actor surface')
+                        self.assertNotEqual(first[name], source_fingerprint()[name])
 
     def test_timeout_samples_then_kills_only_the_owned_process_group(self):
         command = ['xcrun', 'simctl', 'spawn', '--standalone', 'owned-device', 'probe']
