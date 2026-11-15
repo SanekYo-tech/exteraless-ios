@@ -14,7 +14,7 @@ public actor EmojiPackStore {
     private let root: URL
 
     public init(root: URL, accountId: Int64) {
-        self.root = root.standardizedFileURL.resolvingSymlinksInPath()
+        self.root = root
         self.accountId = accountId
     }
 
@@ -137,15 +137,17 @@ public actor EmojiPackStore {
 
     private func prepareRoot() throws {
         guard root.isFileURL else { throw EmojiPackError.storage }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let properties = try root.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        guard properties.isDirectory == true, properties.isSymbolicLink != true else { throw EmojiPackError.storage }
+        #if canImport(Darwin) || canImport(Glibc)
+        do { _ = try ToolsDirectoryDescriptor.open(root, create: true) }
+        catch { throw EmojiPackError.storage }
+        #else
+        throw EmojiPackError.storage
+        #endif
     }
 
     private func child(_ name: String) throws -> URL {
         guard root.isFileURL, !name.isEmpty, !name.contains("/"), !name.contains("\\"), name != ".", name != ".." else { throw EmojiPackError.storage }
-        let path = root.appendingPathComponent(name)
-        guard root.resolvingSymlinksInPath() == root, path.resolvingSymlinksInPath() == path else { throw EmojiPackError.storage }
-        return path
+        do { return try ToolsFileSafety.checkedChild(name, root: root) }
+        catch { throw EmojiPackError.storage }
     }
 }

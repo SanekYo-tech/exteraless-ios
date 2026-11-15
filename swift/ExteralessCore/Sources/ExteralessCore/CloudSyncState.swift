@@ -28,11 +28,8 @@ public final class CloudFileStateStorage: CloudSyncStateStorage, @unchecked Send
     private let lock = NSLock()
 
     public init(directory: URL) throws {
-        guard directory.isFileURL,
-              directory.standardizedFileURL.resolvingSymlinksInPath().pathComponents == directory.standardizedFileURL.pathComponents else {
-            throw CloudError.localStorage
-        }
-        self.directory = directory.standardizedFileURL
+        do { self.directory = try ToolsFileSafety.checkedPath(directory, directory: true) }
+        catch { throw CloudError.localStorage }
     }
 
     public func load(scope: CloudAccountScope) throws -> CloudLocalState {
@@ -54,8 +51,11 @@ public final class CloudFileStateStorage: CloudSyncStateStorage, @unchecked Send
         defer { lock.unlock() }
         do {
             try validate(state)
-            guard directory.resolvingSymlinksInPath().pathComponents == directory.pathComponents else { throw CloudError.localStorage }
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            #if canImport(Darwin) || canImport(Glibc)
+            _ = try ToolsDirectoryDescriptor.open(directory, create: true)
+            #else
+            throw CloudError.localStorage
+            #endif
             let file = try ToolsFileSafety.checkedChild(state.scope.stateFileName, root: directory)
             let bytes = try CloudProtocol.encode(Envelope(version: 1, state: state))
             try bytes.write(to: file, options: .atomic)

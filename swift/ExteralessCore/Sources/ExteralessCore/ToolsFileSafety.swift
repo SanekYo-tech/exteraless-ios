@@ -44,23 +44,40 @@ public enum ToolsFileSafety {
 
     public static func checkedChild(_ name: String, root: URL) throws -> URL {
         guard root.isFileURL, isComponent(name) else { throw ToolsError.unsafePath }
-        let base = canonicalFileURL(root)
+        let base = try checkedPath(root, directory: true)
         let child = base.appendingPathComponent(name)
-        guard child.resolvingSymlinksInPath().standardizedFileURL.pathComponents == child.pathComponents else {
-            throw ToolsError.unsafePath
-        }
-        return child
+        return try checkedPath(child)
     }
 
+    /// Spelling only. Filesystem authority comes from checkedPath / held directory
+    /// descriptors, never Foundation's whole-path symlink resolution or URL equality.
     static func canonicalFileURL(_ url: URL) -> URL {
-        let url = url.standardizedFileURL
         #if canImport(Darwin)
-        // Fixed OS aliases only, never a resolution of caller-controlled ancestors.
         for alias in ["/var", "/tmp", "/etc"] where url.path == alias || url.path.hasPrefix(alias + "/") {
             return URL(fileURLWithPath: "/private" + url.path, isDirectory: url.hasDirectoryPath)
         }
         #endif
         return url
+    }
+
+    static func pathComponents(_ url: URL) throws -> [String] {
+        guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost",
+              url.path.hasPrefix("/"), !url.path.contains("\0") else { throw ToolsError.unsafePath }
+        let components = url.path.split(separator: "/").map(String.init)
+        // Do not let lexical standardization erase a caller-controlled link before
+        // it is checked. FileManager-provided temp/home/container URLs need no dots.
+        guard !components.contains("."), !components.contains("..") else { throw ToolsError.unsafePath }
+        return components
+    }
+
+    /// Readonly validation of every existing component. Missing suffixes are allowed
+    /// for prospective app-owned paths; actual I/O reopens/pins them with O_NOFOLLOW.
+    static func checkedPath(_ url: URL, directory: Bool = false) throws -> URL {
+        #if canImport(Darwin) || canImport(Glibc)
+        return try ToolsDirectoryDescriptor.checkedPath(url, directory: directory)
+        #else
+        throw ToolsError.unavailable("Descriptor-bound file access is unavailable on this platform.")
+        #endif
     }
 
     public static func read(_ url: URL, maximumBytes: Int, hooks: ToolsFileOperationHooks = .init()) throws -> Data {

@@ -100,48 +100,86 @@ final class ToolsDirectoryDescriptor {
     }
     private let descriptor: ToolsOwnedDescriptor
     private let links: [Link]
-    private let requestedURL: URL
+    private let systemAlias: ToolsSystemAliasPin?
     let url: URL
     var rawValue: Int32 { descriptor.value }
     var identity: ToolsFileIdentity { get throws { ToolsFileIdentity(try toolsDescriptorStat(rawValue)) } }
 
-    private init(descriptor: ToolsOwnedDescriptor, links: [Link], requestedURL: URL, url: URL) {
-        self.descriptor = descriptor; self.links = links; self.requestedURL = requestedURL; self.url = url
+    private init(descriptor: ToolsOwnedDescriptor, links: [Link], systemAlias: ToolsSystemAliasPin?, url: URL) {
+        self.descriptor = descriptor; self.links = links; self.systemAlias = systemAlias; self.url = url
     }
 
     static func open(_ url: URL, create: Bool = false) throws -> ToolsDirectoryDescriptor {
-        guard url.isFileURL, !url.path.contains("\0") else { throw ToolsError.unsafePath }
-        let requested = url.standardizedFileURL
-        // Translate fixed Darwin OS aliases, then walk every caller-controlled
-        // component with O_NOFOLLOW. Never resolve an attacker-substituted ancestor.
-        let canonical = ToolsFileSafety.canonicalFileURL(requested)
+        try walk(url, create: create, allowMissing: false).directory
+    }
+
+    static func checkedPath(_ url: URL, directory: Bool) throws -> URL {
+        let components = try ToolsFileSafety.pathComponents(url)
+        if directory || components.isEmpty {
+            let result = try walk(url, create: false, allowMissing: true)
+            try result.directory.verify()
+        } else {
+            let result = try walk(url.deletingLastPathComponent(), create: false, allowMissing: true)
+            if !result.missing, let name = components.last {
+                do {
+                    guard ToolsFileIdentity(try result.directory.metadata(name)).kind != UInt32(S_IFLNK) else { throw ToolsError.unsafePath }
+                } catch let error as POSIXError where error.code == .ENOENT { }
+            }
+            try result.directory.verify()
+        }
+        return ToolsFileSafety.canonicalFileURL(url)
+    }
+
+    private static func walk(_ url: URL, create: Bool, allowMissing: Bool) throws -> (directory: ToolsDirectoryDescriptor, missing: Bool) {
+        let requested = try ToolsFileSafety.pathComponents(url)
+        let canonical = ToolsFileSafety.canonicalFileURL(url)
+        let components = try ToolsFileSafety.pathComponents(canonical)
         #if canImport(Darwin)
         let initial = try ToolsOwnedDescriptor(Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW))
         #else
         let initial = try ToolsOwnedDescriptor(Glibc.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW))
         #endif
+        let systemAlias: ToolsSystemAliasPin?
+        #if canImport(Darwin)
+        if let name = requested.first, ToolsSystemAliasPin.names.contains(name) {
+            let root = ToolsDirectoryDescriptor(descriptor: initial, links: [], systemAlias: nil,
+                url: URL(fileURLWithPath: "/", isDirectory: true))
+            systemAlias = try ToolsSystemAliasPin(root: root, name: name)
+        } else { systemAlias = nil }
+        #else
+        _ = requested
+        systemAlias = nil
+        #endif
         var descriptor = initial
         var links: [Link] = []
-        for component in canonical.pathComponents where component != "/" {
+        var openedComponents: [String] = []
+        var missing = false
+        for component in components {
             var opened = component.withCString { openat(descriptor.value, $0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW) }
             if opened < 0, errno == ENOENT, create {
                 if component.withCString({ mkdirat(descriptor.value, $0, 0o700) }) != 0 && errno != EEXIST { throw toolsFileIOError() }
                 guard fsync(descriptor.value) == 0 else { throw toolsFileIOError() }
                 opened = component.withCString { openat(descriptor.value, $0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW) }
             }
+            if opened < 0, errno == ENOENT, allowMissing {
+                missing = true
+                break
+            }
             let next = try ToolsOwnedDescriptor(opened)
             let identity = ToolsFileIdentity(try toolsDescriptorStat(next.value))
             guard identity.kind == UInt32(S_IFDIR) else { throw ToolsError.unsafePath }
             links.append(Link(parent: descriptor, name: component, child: next, identity: identity))
             descriptor = next
+            openedComponents.append(component)
         }
-        let result = ToolsDirectoryDescriptor(descriptor: descriptor, links: links, requestedURL: requested, url: canonical)
+        let result = ToolsDirectoryDescriptor(descriptor: descriptor, links: links, systemAlias: systemAlias,
+            url: URL(fileURLWithPath: "/" + openedComponents.joined(separator: "/"), isDirectory: true))
         try result.verify()
-        return result
+        return (result, missing)
     }
 
     func verify() throws {
-        guard ToolsFileSafety.canonicalFileURL(requestedURL).pathComponents == url.pathComponents else { throw ToolsError.unsafePath }
+        try systemAlias?.verify()
         for link in links {
             var current = stat()
             guard link.name.withCString({ fstatat(link.parent.value, $0, &current, AT_SYMLINK_NOFOLLOW) }) == 0,
@@ -167,7 +205,7 @@ final class ToolsDirectoryDescriptor {
         guard identity.kind == UInt32(S_IFDIR) else { throw ToolsError.unsafePath }
         let result = ToolsDirectoryDescriptor(descriptor: next,
             links: links + [Link(parent: descriptor, name: name, child: next, identity: identity)],
-            requestedURL: requestedURL.appendingPathComponent(name), url: url.appendingPathComponent(name))
+            systemAlias: systemAlias, url: url.appendingPathComponent(name))
         try result.verify()
         return result
     }
@@ -315,6 +353,46 @@ final class ToolsDirectoryDescriptor {
             throw error
         }
         return true
+    }
+}
+
+/// Only the real filesystem-root descriptor is used in production. An owned root
+/// can exercise this exact prefix check in fixtures without touching OS symlinks.
+/// This is not a caller-configurable whitelist for arbitrary descendant aliases.
+final class ToolsSystemAliasPin {
+    static let names: Set<String> = ["var", "tmp", "etc"]
+    private let root: ToolsDirectoryDescriptor
+    private let target: ToolsDirectoryDescriptor
+    private let name: String
+    private let linkVersion: ToolsFileMetadata
+    private let targetIdentity: ToolsFileIdentity
+
+    init(root: ToolsDirectoryDescriptor, name: String) throws {
+        guard Self.names.contains(name) else { throw ToolsError.unsafePath }
+        self.root = root; self.name = name
+        linkVersion = ToolsFileMetadata(try root.metadata(name))
+        guard linkVersion.identity.kind == UInt32(S_IFLNK) else { throw ToolsError.unsafePath }
+        target = try root.child("private", create: false).child(name, create: false)
+        targetIdentity = try target.identity
+        try verify()
+    }
+
+    func verify() throws {
+        try root.verify()
+        try target.verify()
+        guard ToolsFileMetadata(try root.metadata(name)) == linkVersion else { throw ToolsError.unsafePath }
+        var bytes = [CChar](repeating: 0, count: 256)
+        let count = bytes.withUnsafeMutableBufferPointer { buffer in
+            name.withCString { readlinkat(root.rawValue, $0, buffer.baseAddress!, buffer.count) }
+        }
+        guard count > 0, count < bytes.count,
+              let destination = String(bytes: bytes.prefix(count).map { UInt8(bitPattern: $0) }, encoding: .utf8),
+              destination == "private/" + name || destination == "/private/" + name else { throw ToolsError.unsafePath }
+        // The only following lookup is the fixed root alias itself. All components
+        // of its documented target and every subsequent descendant remain no-follow.
+        var followed = stat()
+        guard name.withCString({ fstatat(root.rawValue, $0, &followed, 0) }) == 0,
+              ToolsFileIdentity(followed) == targetIdentity else { throw ToolsError.unsafePath }
     }
 }
 

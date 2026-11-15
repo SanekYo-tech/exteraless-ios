@@ -151,9 +151,8 @@ public enum ToolsBackupPolicy {
     public static func validateLocation(_ location: ToolsBackupPluginLocation) throws {
         // Deliberately refuse the service root (which also holds executable plugins),
         // account directories and a symlinked settings directory.
-        let root = ToolsFileSafety.canonicalFileURL(location.directory)
-        guard root.isFileURL, root.lastPathComponent == "settings",
-              root.resolvingSymlinksInPath().pathComponents == root.pathComponents else {
+        let root = try ToolsFileSafety.checkedPath(location.directory, directory: true)
+        guard root.lastPathComponent == "settings" else {
             throw ToolsError.unsafePath
         }
         var seen = Set<String>()
