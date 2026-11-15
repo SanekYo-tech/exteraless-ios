@@ -98,3 +98,10 @@ Gallery compiled. The map attribution button now uses configuration insets and
 explicit ten-point medium title attributes. All provider/fallback titles, their
 accessibility text, the two-line limit and the existing constrained frame remain.
 The native map/tile/cancellation provider is unchanged by this compiler correction.
+
+## ChatList pass from 43754686421 / bd95a112
+
+LocationUI compiled. Floating-compose visibility now requires the optional primary
+chat-list context to explicitly allow it. A missing/not-yet-installed context keeps
+the control absent, consistent with the policy's initial false state; preview/search
+suppression and the native layout/action remain in place.

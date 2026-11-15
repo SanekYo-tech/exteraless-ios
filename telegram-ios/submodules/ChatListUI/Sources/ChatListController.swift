@@ -3572,7 +3572,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         let navigationBarHeight: CGFloat = 0.0
         
         self.chatListDisplayNode.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, visualNavigationHeight: navigationBarHeight, cleanNavigationBarHeight: navigationBarHeight, storiesInset: 0.0, transition: transition)
-        let showsCompose = self.primaryContext.exteralessAllowsFloatingCompose && !self.previewing && !self.isSearchActive
+        let showsCompose = self.primaryContext?.exteralessAllowsFloatingCompose == true && !self.previewing && !self.isSearchActive
         if showsCompose {
             let button: ExteralessComposeButton
             if let current = self.exteralessComposeButton { button = current }
