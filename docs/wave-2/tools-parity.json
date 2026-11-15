@@ -47,13 +47,20 @@
     },
     {
       "id": "nagram.performanceClass",
-      "ios": {"setting_key": null, "existing_equivalent": "EnergyUsageSettings.default retains hw.ncpu-based defaults; the native animation clock retains its measured automatic 30/60-fps heuristic.", "adaptation": "Defined native 0 automatic / 1 High up to 60 fps / 2 Average 30 fps with reduced effects / 3 Low static cached animations policy and revisioned publication are supplied in ToolsPerformancePolicy. Native per-feature false values and system/battery/thermal/background constraints remain ceilings. Energy projection, per-target veto and live clock helpers are supplied, with exact native consumer and Root registration hunks staged separately. The key stays null until coordinator applies the consumers and registration; this is pending integration, not an unsupported Android enum or verified native execution.", "implementation_callsites": []},
-      "implementation": {"status": "partial", "ported": false, "evidence": [
+      "ios": {"setting_key": "tools.performanceClass", "existing_equivalent": "Native EnergyUsageSettings and DCT/Subcodec client renderer budgets.", "adaptation": "Applied native 0 automatic / 1 High up to 60 fps / 2 Average 30 fps with reduced translucency/effects/background work / 3 Low static cached animations and disabled automatic playback/loops. High is a rendering budget, not a hardware identity or permission override. Native per-feature false values and system/battery/thermal/background constraints remain ceilings. Live revision publication updates real energy settings, per-target vetoes, timers, message layouts and optional prefetch admission without persisting derived booleans. This is a defined iOS adaptation, not identical Android Canvas/cache/particle implementation; native execution/frames remain pending.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/SharedAccountContext.swift", "symbol": "toolsPerformanceEnergy / native-to-effective automaticMediaDownloadSettings publication"},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Sources/DCTMultiAnimationRendererImpl.swift", "symbol": "performanceClock / performanceAllowsAnimation"},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Sources/SubcodecMultiAnimationRendererImpl.swift", "symbol": "performanceClock / performanceAllowsAnimation"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/PrefetchManager.swift", "symbol": "updateOrderedPreloadMedia energy eligibility"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "symbol": "updateAutomaticMediaDownloadSettings(downloadSettings, energyChanged: energyChanged)"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift", "symbol": "ExteralessClientSettingsWorker.definitions"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
         {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1830},
         {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift", "symbol": "ToolsPerformancePolicy.resolve / ToolsPerformancePolicyStore.publish"},
         {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsPerformancePolicyTests.swift", "note": "Bounded 0/1/2/3, explicit preference, power/thermal/background/reset and publication fixtures supplied, not executed."},
         {"kind": "source", "path": "docs/wave-2/performance-parity.md"},
-        {"kind": "source", "path": "docs/wave-2/performance-native-hunks.patch", "note": "Shared consumers staged for coordinator; key promotion requires actual application."}
+        {"kind": "source", "path": "docs/wave-2/performance-native-hunks.patch", "note": "Shared consumers, separate ChatController callback and Root registration applied by coordinator; native execution/frames remain pending."}
       ]}
     },
     {

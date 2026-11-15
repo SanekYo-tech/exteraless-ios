@@ -31,7 +31,10 @@ ENUMS = ("AvatarCornerType", "DividerStyle", "GlassOutlineStyle", "CameraType", 
          "TranslationFormality", "TabIconsMode", "IconPackType", "ProxyDisableCondition")
 HELPERS = {
     "AppearanceFeatures.swift": {}, "AppearanceAdditionalFeatures.swift": {},
+    "CoreAppearanceFontFamilyPolicy.swift": {}, "AppearanceLayoutModePolicy.swift": {},
+    "CoreAppearanceMonetPolicy.swift": {},
     "ToolsFeatures.swift": {}, "ToolsNativeModePolicy.swift": {}, "FeedFeatures.swift": {},
+    "ToolsPerformancePolicy.swift": {},
     "ChatFeatures.swift": {"toggle": ("chats.", "bool")},
     "StickerFeatures.swift": {"toggle": ("chats.", "bool")},
     "PlayerFeatures.swift": {"toggle": ("appearance.", "bool"), "choice": ("appearance.", "int"), "range": ("appearance.", "int")},
@@ -51,8 +54,14 @@ SECRET = re.compile(r"api.?key|token|password|secret|private.?key|provider\w*key
 MANAGER_FIELDS = {"PluginsDevMode": "developerMode", "PluginsSafeMode": "safeMode", "PluginsCompactView": "compactView",
                   "PinnedPlugins": "pinned", "PluginsEngine": "engineEnabled"}
 NATIVE_REGISTRATIONS = {
+    "CoreAppearanceFontFamilyPolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+        ("CoreAppearanceFontFamilyPolicy.definitions",)),
     "AppearanceAdditionalFeatures.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
         ("AppearanceAdditionalFeatures.definitions", "AppearanceAdditionalFeatures.settingsSectionDefinitions")),
+    "AppearanceLayoutModePolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+        ("AppearanceLayoutModePolicy.definitions",)),
+    "CoreAppearanceMonetPolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+        ("AppearanceMonetPolicy.definitions",)),
     "ToolsNativeModePolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift",
         ("ToolsNativeModePolicy.videoBitrateDefinition", "ToolsNativeModePolicy.voiceEnhancementDefinition",
          "ToolsNativeModePolicy.groupAudioBitrateDefinition", "ToolsNativeModePolicy.rpcErrorsDefinition")),
@@ -60,8 +69,12 @@ NATIVE_REGISTRATIONS = {
         ("settings.store.register(AINativeVisibilityPolicy.definitions)",)),
 }
 REGISTERED_MEMBERS = {
+    "CoreAppearanceFontFamilyPolicy.swift": ("definitions",),
     "AppearanceAdditionalFeatures.swift": ("definitions", "settingsSectionDefinitions"),
+    "AppearanceLayoutModePolicy.swift": ("definitions",),
+    "CoreAppearanceMonetPolicy.swift": ("definition",),
     "ToolsNativeModePolicy.swift": ("videoBitrateDefinition", "voiceEnhancementDefinition", "groupAudioBitrateDefinition", "rpcErrorsDefinition"),
+    "ToolsPerformancePolicy.swift": ("definition",),
     "AINativePolicyVisibility.swift": ("definitions",),
 }
 MIGRATION_ONLY = {
@@ -165,7 +178,7 @@ def root_registration(pins):
 
 
 def native_definitions(pins):
-    root_registration(pins)
+    registered_root = root_registration(pins)
     definitions = {}
     def add(key, kind, secret, path, text, position, symbols=()):
         if not kind or "\\(" in key:
@@ -183,9 +196,24 @@ def native_definitions(pins):
         if filename == "IdentityFeatures.swift":
             # Account-local editor definitions are explicitly not ClientSettings registrations.
             text = text.split("public static let accountDefinitions", 1)[0]
-        constants = dict(re.findall(r'public static let (\w+)\s*=\s*"([^"\\]+)"', text)) if filename == "AINativePolicyVisibility.swift" else {}
+        constants = dict(re.findall(r'public static let (\w+)\s*=\s*"([^"\\]+)"', text)) if filename in (
+            "AINativePolicyVisibility.swift", "ToolsPerformancePolicy.swift", "CoreAppearanceMonetPolicy.swift") else {}
         registration = []
-        if filename in NATIVE_REGISTRATIONS:
+        if filename in ("ToolsPerformancePolicy.swift", "CoreAppearanceMonetPolicy.swift"):
+            policy = "ToolsPerformancePolicy" if filename == "ToolsPerformancePolicy.swift" else "AppearanceMonetPolicy"
+            group = selected_declarations(text, ("definitions",))
+            if not re.fullmatch(r"static\s+let\s+definitions\s*(?::\s*\[ClientSettingDefinition\])?\s*=\s*\[\s*definition\s*\]", group.strip()):
+                raise ValueError("review changed " + policy + ".definitions membership")
+            registration.append({"kind": "source", "path": path.relative_to(ROOT).as_posix(),
+                "line": text.count("\n", 0, text.index("static let definitions")) + 1,
+                "note": policy + ".definitions contains definition"})
+        if filename == "ToolsPerformancePolicy.swift":
+            reference = "ToolsPerformancePolicy.definitions"
+            if reference not in registered_root["groups"]:
+                raise ValueError("native definition is no longer registered: " + reference)
+            registration.append({"kind": "source", "path": CLIENT_ROOT,
+                "line": registered_root["line"], "note": reference})
+        elif filename in NATIVE_REGISTRATIONS:
             owner_path, references = NATIVE_REGISTRATIONS[filename]
             owner = inventory.mask_source(read(ROOT / owner_path, pins), nested_comments=True)
             if filename != "AINativePolicyVisibility.swift": owner = selected_declarations(owner, ("definitions",))
@@ -530,13 +558,14 @@ def build():
             "implementation": {"status": status, "ported": False, "evidence": evidence}})
 
     manifest = {"SOURCES": dict(sorted(pins.items())), "INVENTORY_CONTRACT": contract_pin, "ROOT_REGISTRATION": registered_root,
-                "BINDINGS": bindings, "CLASSES": classes,
-                "ENUMS": enum_values, "APIS": routes, "FIELD_ALIASES": aliases}
+                 "BINDINGS": bindings, "CLASSES": classes,
+                 "ENUMS": enum_values, "APIS": routes, "FIELD_ALIASES": aliases}
+    implementation_counts = Counter(row["implementation"]["status"] for row in records)
     receipt = {"schema_version": 2, "generator": "python -m tools.compat.sdk_config_manifest --write",
         "scope": "SDK API mirror only; not UI/client-effect parity or a new native execution pass",
         "source_inventory": contract_pin,
         "source_pins": dict(sorted(pins.items())), "source_classification_counts": dict(Counter(a["behavior"] for a in apis)),
-        "implementation_counts": dict(Counter(r["implementation"]["status"] for r in records)),
+        "implementation_counts": {status: implementation_counts[status] for status in ("implemented", "blocked", "unsupported")},
         "root_registration": registered_root,
         "registered_config_classes": sorted([*classes, "com.exteragram.messenger.ExteraConfig"]), "compatibility_apis": records,
         "compat_storage_boundary": "44 overloads use 22 closed global compat.exteraconfig definitions in the actual ClientSettings root registration set. No per-plugin substitution or new client feature is claimed.",

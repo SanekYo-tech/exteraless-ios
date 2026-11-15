@@ -10,21 +10,24 @@
   "source_pins": {
     "docs/wave-2/ai-parity.json": "b60bf991781b65f1956254e8f658db1cb9e6682e2beadb5c68bf720ecca2d98e",
     "docs/wave-2/ai-visibility-parity.json": "b791dee27760f3f0bbb740f93a15d8caff3d2d2722b89d970e759ce3ca7bbda1",
-    "docs/wave-2/appearance-parity.json": "abb015196cc64f555fa8437aac03ae7df028528740ddd12be65f5fe89ebeeec9",
+    "docs/wave-2/appearance-parity.json": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175",
     "docs/wave-2/chat-parity.json": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f",
     "docs/wave-2/dialogs-parity.json": "03b3d10d72265c7a18baded766bae8522c8e398d20a9043518e037dc402d0b86",
     "docs/wave-2/identity-parity.json": "252d41e095f979724de5f2e38973a7af09d2dc9540507a5925cee3ed31283a80",
     "docs/wave-2/privacy-parity.json": "e683a2539dd703f0101b01942571c8cce298af4d7ae0fe26e6bb548d756bd96e",
     "docs/wave-2/retention-parity.json": "e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a",
-    "docs/wave-2/sdk-config-binding-dispositions.json": "0904b733cff80fb4bbfc3a500506a1ba11986f28bcaf8e6e9bf540dd179e496c",
-    "docs/wave-2/tools-parity.json": "6201f70c22d0a4d6218676bd15342978ffc6bb1cff0699a83ea50c49948b8b09",
+    "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
+    "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf",
     "swift/ExteralessCore/Sources/ExteralessCore/AIFeatures.swift": "2e06fbb08ba7f94caa63e932a2fc4a16ec6804df4133b1cff732d44fafa1f51d",
     "swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift": "4f48d757f4552b3a2fc888d25e9c309e47cdfbe44c7936794461be039e53df22",
     "swift/ExteralessCore/Sources/ExteralessCore/AppearanceAdditionalFeatures.swift": "e779cc5e1d74a533a7272a6023038db67966fa17af1b481c0ce03b8bd5ef303b",
-    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "ec7b61074fae6c89f54e7697f60d7780cd3a1f8e9c658ed78ad6a60155a99225",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "8a492071f5195321e6df2c9f36ba74b9f81716712c2ac5a52cb4c11df857d132",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00",
     "swift/ExteralessCore/Sources/ExteralessCore/ChatFeatures.swift": "8f90b157230e9c4c58d60b7e914ffebb85ff16b02bbeba314adb35a3509c7b33",
     "swift/ExteralessCore/Sources/ExteralessCore/ChatMenuPolicy.swift": "127bbeb8f95a8c9ba8ac23ba072eb02e36a06909da05b8e81627f91ddb7103af",
     "swift/ExteralessCore/Sources/ExteralessCore/ChatPolicy.swift": "0033c096a5f68a45cfa61aec541de1c7d4161a77bf8f8a7d6cb0558076f11bca",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceMonetPolicy.swift": "7285eb59f890530ab9b366d4edd5552b918b88868ac1fd5c3fd15d03a94a6980",
     "swift/ExteralessCore/Sources/ExteralessCore/CoreDialogFeatures.swift": "7ec148204096a5a2f78f7c06e862fac662d2aab0dd0bce5e0bd533e6d7449d30",
     "swift/ExteralessCore/Sources/ExteralessCore/CorePillFeatures.swift": "ba568a7eebc70a03b9aa50e234b326f70805c639902d07ae0a6ffe9534df3bc3",
     "swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift": "35eee798ab988f79f6a2d77e512b8fedda06c1d2f3f41f4cc65e345b8e4ffefe",
@@ -37,10 +40,11 @@
     "swift/ExteralessCore/Sources/ExteralessCore/StickerFeatures.swift": "013d56750ebc4e8062c793912da02f424d603eb96e6d483c490ed9117f29c277",
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift": "b5cca254c1770cfc6504af9db541a2bd4b6f4c87dfe98531321765be6fd4f7de",
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift": "950973b1a855e6dcfb27a5a162e9696b0e8429e925b8481306caa0e10ed3c3b8",
+    "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
     "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift": "ee6d97ee3a01b1e593fd58806eab176b64be4f2adf4139ad2bf12ed602def18e",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ClientSettingsBridgeExtension.swift": "e0600d7492f6e9a478341235ff451147fc0e41fe2908d0925af50e9d14897717",
-    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift": "7d10fffce395a25c8cd50e5da177009e486648e66ab3c2043b3120c093986e6d",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift": "e78665ba5d8c6a3ea47dae228ed69cd03b0586e9fdff8425265eb5faed9e4f44",
     "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/AvatarCornerType.java": "7014cc60413ef1451904578900986d53cf69f4b841e84be3481991317ea91040",
@@ -70,17 +74,18 @@
     "compat-storage": 44
   },
   "implementation_counts": {
-    "unsupported": 32,
-    "implemented": 272,
-    "blocked": 4
+    "implemented": 276,
+    "blocked": 0,
+    "unsupported": 32
   },
   "root_registration": {
     "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift",
-    "line": 54,
+    "line": 55,
     "groups": [
       "AIFeatures.definitions",
       "AppearanceFeatures.definitions",
       "ChatFeatures.definitions",
+      "ChatSwipeFeatures.definitions",
       "ClientAPIFeatures.definitions",
       "DialogFeatures.definitions",
       "ExteraConfigCompatibility.definitions",
@@ -96,7 +101,8 @@
       "PrivacyFeatures.definitions",
       "RetentionFeatures.definitions",
       "StickerFeatures.definitions",
-      "ToolsFeatures.definitions"
+      "ToolsFeatures.definitions",
+      "ToolsPerformancePolicy.definitions"
     ]
   },
   "registered_config_classes": [
@@ -2078,7 +2084,7 @@
           {
             "kind": "source",
             "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
-            "line": 249,
+            "line": 251,
             "note": "appearance.hideActionBarStatus"
           }
         ]
@@ -2118,7 +2124,7 @@
           {
             "kind": "source",
             "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
-            "line": 249,
+            "line": 251,
             "note": "appearance.hideActionBarStatus"
           }
         ]
@@ -2558,7 +2564,7 @@
           {
             "kind": "source",
             "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
-            "line": 241,
+            "line": 243,
             "note": "appearance.titleText"
           }
         ]
@@ -2598,7 +2604,7 @@
           {
             "kind": "source",
             "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
-            "line": 241,
+            "line": 243,
             "note": "appearance.titleText"
           }
         ]
@@ -3511,15 +3517,17 @@
     {
       "id": "compat.ExteraConfig.getTabletMode()",
       "ios": {
-        "setting_key": null,
+        "setting_key": "appearance.tabletMode",
         "adaptation": {
           "sdk_route": "read",
-          "canonical_keys": [],
-          "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting."
+          "canonical_keys": [
+            "appearance.tabletMode"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings"
         }
       },
       "implementation": {
-        "status": "blocked",
+        "status": "implemented",
         "ported": false,
         "evidence": [
           {
@@ -3535,17 +3543,19 @@
           {
             "kind": "source",
             "path": "python/exteraless_runtime/_config.py",
-            "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting."
+            "note": "live native settings; defaults/validation belong to ClientSettings"
           },
           {
             "kind": "source",
-            "path": "telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift",
-            "note": "super.init(mode: .automaticMasterDetail)"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift",
+            "line": 10,
+            "note": "appearance.tabletMode"
           },
           {
             "kind": "source",
-            "path": "docs/wave-2/appearance-parity.json",
-            "note": "neko.tabletMode: setting_key null and forced layout override explicitly not implemented"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+            "line": 239,
+            "note": "AppearanceLayoutModePolicy.definitions"
           }
         ]
       }
@@ -3553,15 +3563,17 @@
     {
       "id": "compat.ExteraConfig.setTabletMode(int)",
       "ios": {
-        "setting_key": null,
+        "setting_key": "appearance.tabletMode",
         "adaptation": {
           "sdk_route": "write",
-          "canonical_keys": [],
-          "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting."
+          "canonical_keys": [
+            "appearance.tabletMode"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings"
         }
       },
       "implementation": {
-        "status": "blocked",
+        "status": "implemented",
         "ported": false,
         "evidence": [
           {
@@ -3577,17 +3589,19 @@
           {
             "kind": "source",
             "path": "python/exteraless_runtime/_config.py",
-            "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting."
+            "note": "live native settings; defaults/validation belong to ClientSettings"
           },
           {
             "kind": "source",
-            "path": "telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift",
-            "note": "super.init(mode: .automaticMasterDetail)"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift",
+            "line": 10,
+            "note": "appearance.tabletMode"
           },
           {
             "kind": "source",
-            "path": "docs/wave-2/appearance-parity.json",
-            "note": "neko.tabletMode: setting_key null and forced layout override explicitly not implemented"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+            "line": 239,
+            "note": "AppearanceLayoutModePolicy.definitions"
           }
         ]
       }
@@ -3595,15 +3609,17 @@
     {
       "id": "compat.ExteraConfig.getUseSystemFonts()",
       "ios": {
-        "setting_key": null,
+        "setting_key": "appearance.useSystemFonts",
         "adaptation": {
           "sdk_route": "read",
-          "canonical_keys": [],
-          "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean."
+          "canonical_keys": [
+            "appearance.useSystemFonts"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings"
         }
       },
       "implementation": {
-        "status": "blocked",
+        "status": "implemented",
         "ported": false,
         "evidence": [
           {
@@ -3619,17 +3635,19 @@
           {
             "kind": "source",
             "path": "python/exteraless_runtime/_config.py",
-            "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean."
+            "note": "live native settings; defaults/validation belong to ClientSettings"
           },
           {
             "kind": "source",
-            "path": "docs/wave-2/appearance-parity.json",
-            "note": "neko.typeface: exact family-selection parity explicitly absent"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift",
+            "line": 9,
+            "note": "appearance.useSystemFonts"
           },
           {
             "kind": "source",
-            "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/TypefaceHelper.java",
-            "line": 353
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+            "line": 239,
+            "note": "CoreAppearanceFontFamilyPolicy.definitions"
           }
         ]
       }
@@ -3637,15 +3655,17 @@
     {
       "id": "compat.ExteraConfig.setUseSystemFonts(boolean)",
       "ios": {
-        "setting_key": null,
+        "setting_key": "appearance.useSystemFonts",
         "adaptation": {
           "sdk_route": "write",
-          "canonical_keys": [],
-          "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean."
+          "canonical_keys": [
+            "appearance.useSystemFonts"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings"
         }
       },
       "implementation": {
-        "status": "blocked",
+        "status": "implemented",
         "ported": false,
         "evidence": [
           {
@@ -3661,17 +3681,19 @@
           {
             "kind": "source",
             "path": "python/exteraless_runtime/_config.py",
-            "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean."
+            "note": "live native settings; defaults/validation belong to ClientSettings"
           },
           {
             "kind": "source",
-            "path": "docs/wave-2/appearance-parity.json",
-            "note": "neko.typeface: exact family-selection parity explicitly absent"
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift",
+            "line": 9,
+            "note": "appearance.useSystemFonts"
           },
           {
             "kind": "source",
-            "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/TypefaceHelper.java",
-            "line": 353
+            "path": "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+            "line": 239,
+            "note": "CoreAppearanceFontFamilyPolicy.definitions"
           }
         ]
       }

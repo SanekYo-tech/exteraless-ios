@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "cohort": "sdk-font-layout-worktree-successor",
+  "first_mac_snapshot": "a320166c18216bcc1433b361849397822fec51e1",
+  "first_mac_snapshot_counts": {"implemented": 272, "blocked": 4, "unsupported": 32},
+  "worktree_counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
+  "committed": false,
+  "native_executed": false,
+  "handoff": "docs/wave-2/sdk-font-layout-cohort.md",
+  "inventory_contract": {
+    "hash_mode": "sdk-config-input-v1",
+    "contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+    "same_as_a320166c": true,
+    "raw_derived_inventory_pin_restored": false
+  },
+  "exact_status_changes": [
+    "compat.ExteraConfig.getTabletMode()",
+    "compat.ExteraConfig.setTabletMode(int)",
+    "compat.ExteraConfig.getUseSystemFonts()",
+    "compat.ExteraConfig.setUseSystemFonts(boolean)"
+  ],
+  "command": "python -X utf8 -B -m pytest tools/compat/tests/test_sdk_config_manifest.py tools/compat/tests/test_sdk_config_binding.py -q",
+  "suite_timeout_seconds": 30,
+  "runtime_scenario_timeout_seconds": 20,
+  "runs": [
+    {"python": "3.12.10", "passed": 22, "failed": 0, "seconds": 13.64, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-font-layout-py312.xml"},
+    {"python": "3.14.8", "passed": 22, "failed": 0, "seconds": 12.61, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-font-layout-py314.xml"}
+  ],
+  "regeneration_check": "passed",
+  "root_fixture": {
+    "path": "python/runtime/smoke/swift_sdk_config_root_fixture.swift",
+    "sha256": "fd8c180dd4c8c94457bbcd24f6bbbf32d1647d07f1f4bfbc574a27b0d470496e",
+    "byte_identical_to_a320166c": true,
+    "source": "SDKConfigRootRegistration.definitions -> AppearanceFeatures.definitions -> both registered child policy groups"
+  },
+  "ready_files_sha256": {
+    "tools/compat/sdk_config_manifest.py": "fc11a020092ab4acf0d88c7d66b890d04d13191757447feade30ac97d75e93ff",
+    "tools/compat/tests/test_sdk_config_manifest.py": "d1873df09c8d5fd7a68b3e4cb741e12885de5b4b966059c8c053cdc0fb3baa7a",
+    "tools/compat/tests/test_sdk_config_binding.py": "02e9beaa6ec95ad91b285e8588af93a9af1c8d78388fbf3a6c5b704bfb58b7ba",
+    "python/exteraless_runtime/_config_manifest.py": "2796b94d11318600104ec6749db09c2c5e462985f3e3f74c5a9935ce713c2d26",
+    "docs/wave-2/sdk-config-parity.json": "0fa081e3063a831418f90369c28489a0e55bbc6a52446f545cdc29b692e46ad9",
+    "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea"
+  },
+  "native_dependency_snapshot_sha256": {
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "273a003b86145e0ec423a75912fab9897b86a4f36119f8b795105069e6dfeedd",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00"
+  },
+  "source_patches_sha256": {
+    "docs/wave-2/font-family-config.patch": "a98a6cb0dc0cd8c4b8f0bcb21a0a0e7bd30ac989ad10b791f03595217025426a",
+    "docs/wave-2/layout-mode-sdk.patch": "27d97d4a424c812db75adc6f89418cc7ba1d033e472db547986504c45e6fddbb"
+  }
+}

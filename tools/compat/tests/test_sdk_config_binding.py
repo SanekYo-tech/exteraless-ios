@@ -46,6 +46,9 @@ def worker(case, root):
             self.definitions = {"compat.exteraconfig." + key: value for key, value in DEFAULTS.items()}
             self.definitions.update({"appearance.disableVibration": False, "appearance.actionBarDecoration": 0,
                 "appearance.chatDecoration": 0, "identity.idDcType": 1, "identity.showOnlineStatus": False})
+            self.definitions.update({"appearance.useSystemFonts": True, "appearance.tabletMode": 0,
+                "appearance.forceFontWeightFallback": False, "appearance.monetStyle": 0, "tools.performanceClass": 0})
+            self.metadata_overrides = {}
             self.definitions.update({"tools.uploadBoost": False, "appearance.hideAllTab": False,
                 "appearance.hideAiEditor": False, "appearance.hideMessageSummary": False, "appearance.useSystemIconShape": False,
                 "tools.videoMessageCameraFacing": 0, "tools.enhancedVideoBitrate": False, "tools.voiceEnhancement": False,
@@ -71,7 +74,9 @@ def worker(case, root):
                     if args[0] in ("ai.privateCredential", "legacyCredential"): raise PermissionError("private credential")
                     if args[0] not in self.definitions: return None
                     default = self.definitions[args[0]]
-                    return json.dumps({"key": args[0], "scope": "global", "type": {bool: "bool", int: "int", str: "text"}[type(default)], "default": default})
+                    metadata = {"key": args[0], "scope": "global", "type": {bool: "bool", int: "int", str: "text"}[type(default)], "default": default}
+                    metadata.update(self.metadata_overrides.get(args[0], {}))
+                    return json.dumps(metadata)
                 values = json.loads(global_file.read_text(encoding="utf-8")) if global_file.is_file() else {}
                 if member == "getClientSetting": return values.get(args[0], self.definitions[args[0]]) if args[0] in self.definitions else None
                 if member == "setClientSettings":
@@ -85,10 +90,14 @@ def worker(case, root):
                     if key in ("ai.privateCredential", "legacyCredential"): raise PermissionError("private credential alias")
                     if key not in self.definitions: raise LookupError("unregistered key")
                     if type(value) is not type(self.definitions[key]): raise TypeError("native setting type mismatch")
-                    if key in ("compat.exteraconfig.translationFormality", "compat.exteraconfig.tabIcons", "identity.idDcType", "tools.videoMessageCameraFacing") and value not in (0, 1, 2):
+                    if key in ("compat.exteraconfig.translationFormality", "compat.exteraconfig.tabIcons", "identity.idDcType", "tools.videoMessageCameraFacing", "appearance.tabletMode") and value not in (0, 1, 2):
                         raise ValueError("native enum option")
                     if key in ("appearance.actionBarDecoration", "appearance.chatDecoration") and value not in (0, 1):
                         raise ValueError("native snow option")
+                    if key == "appearance.monetStyle" and value not in (0, 1):
+                        raise ValueError("native enum option")
+                    if key == "tools.performanceClass" and value not in (0, 1, 2, 3):
+                        raise ValueError("native enum option")
                 values.update(patch)
                 global_file.write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
                 return None
@@ -103,7 +112,7 @@ def worker(case, root):
     runtime.load_json(str(path))
     from java import jclass
     from extera_utils import plugin_loader as loader
-    from exteraless_runtime import UnsupportedSurfaceError
+    from exteraless_runtime import RuntimeStateError, UnsupportedSurfaceError
     extera = jclass("com.exteragram.messenger.ExteraConfig")
     plugin = loader.plugins[plugin_id].instance
     raises = support.raises
@@ -232,8 +241,6 @@ def worker(case, root):
                 assert item.defaultValue == default
                 (item.setConfigBool if type(changed) is bool else item.setConfigInt)(changed)
                 assert json.loads(global_file.read_text(encoding="utf-8"))[key] == changed
-            for getter in (extera.getTabletMode, extera.getUseSystemFonts):
-                raises(UnsupportedSurfaceError, getter, "setting_key=null")
             crash = jclass("app.exteraless.general.GeneralConfig").crashReports
             host.definitions["tools.crashReports"] = False
             crash.setConfigBool(True)
@@ -242,6 +249,93 @@ def worker(case, root):
                 raises(UnsupportedSurfaceError, lambda: migrated.setConfigBool(value), "migration-only")
                 assert crash.Bool() is True, "a legacy migration flag changed the live collection control"
             raises(UnsupportedSurfaceError, migrated.Bool, "migration-only")
+        elif case == "font_layout":
+            neko = jclass("tw.nekomimi.nekogram.NekoConfig")
+            font, layout = neko.typeface, neko.tabletMode
+            # These remain the actual source ConfigItems, backed by the two
+            # registered native keys rather than synthetic Typeface/device data.
+            assert font is jclass("tw.nekomimi.nekogram.NekoConfig").typeface
+            assert layout is jclass("tw.nekomimi.nekogram.NekoConfig").tabletMode
+            assert font.getKey() == "TypefaceUseDefault" and font.type == font.configTypeBool
+            assert layout.getKey() == "TabletMode" and layout.type == layout.configTypeInt
+            assert extera.getUseSystemFonts() is True and font.defaultValue is True
+            extera.setUseSystemFonts(False)
+            assert font.Bool() is False and extera.getUseSystemFonts() is False
+            assert json.loads(global_file.read_text(encoding="utf-8"))["appearance.useSystemFonts"] is False
+            assert neko.forceFontWeightFallback.Bool() is False
+            font.setConfigBool(True)
+            assert extera.getUseSystemFonts() is True
+            assert layout.defaultValue == 0
+            for value in (1, 2, 0):
+                extera.setTabletMode(value)
+                assert extera.getTabletMode() == layout.Int() == value
+                assert json.loads(global_file.read_text(encoding="utf-8"))["appearance.tabletMode"] == value
+            before = global_file.read_bytes()
+            for value in (-1, 3):
+                raises(ValueError, lambda: extera.setTabletMode(value), "native enum option")
+            for value in (True, 1.5, "1"):
+                raises(TypeError, lambda: extera.setTabletMode(value), "expected one")
+            raises(TypeError, lambda: extera.setUseSystemFonts(1), "expected one")
+            raises(TypeError, lambda: font.setConfigBool(1), "boolean")
+            raises(TypeError, lambda: layout.setConfigInt(True), "integer")
+            assert global_file.read_bytes() == before
+            host.permissions.remove("settings")
+            for action in (extera.getUseSystemFonts, extera.getTabletMode,
+                lambda: extera.setUseSystemFonts(False), lambda: extera.setTabletMode(2),
+                lambda: font.defaultValue, lambda: layout.defaultValue):
+                raises(PermissionError, action, "settings")
+            assert global_file.read_bytes() == before
+            host.permissions.add("settings")
+            del host.definitions["appearance.tabletMode"]
+            del host.definitions["appearance.useSystemFonts"]
+            for getter in (extera.getTabletMode, extera.getUseSystemFonts, lambda: font.defaultValue, lambda: layout.defaultValue):
+                raises(UnsupportedSurfaceError, getter, "not registered")
+        elif case == "portable_scalars":
+            appearance = jclass("app.exteraless.appearance.AppearanceConfig")
+            na = jclass("xyz.nextalone.nagram.NaConfig")
+            monet, performance = appearance.monetStyle, na.getPerformanceClass()
+            assert appearance.INSTANCE.monetStyle is monet
+            assert na.INSTANCE.getPerformanceClass() is na.performanceClass is performance
+            items = ((monet, "appearance.monetStyle", "OEAppearanceMonetStyle", (1, 0)),
+                     (performance, "tools.performanceClass", "PerformanceClass", (1, 2, 3, 0)))
+            for item, key, source_key, values in items:
+                assert item.getKey() == source_key and item.type == item.configTypeInt
+                assert item.Int() == item.defaultValue == 0 and type(item.defaultValue) is int
+                for value in values:
+                    item.setConfigInt(value)
+                    assert type(item.Int()) is int and item.Int() == value
+                    assert json.loads(global_file.read_text(encoding="utf-8"))[key] == value
+                    assert item.defaultValue == 0, "stored selection replaced native default metadata"
+                host.definitions[key] = max(values)
+                assert item.defaultValue == max(values) and item.Int() == 0, "SDK cached an Android default"
+                host.definitions[key] = 0
+                before, calls = global_file.read_bytes(), host.single_calls
+                for value in (-1, max(values) + 1):
+                    raises(ValueError, lambda: item.setConfigInt(value), "native enum option")
+                assert host.single_calls == calls + 2, "range rejection must come from the native authority"
+                for value in (True, 1.5, "1"):
+                    raises(TypeError, lambda: item.setConfigInt(value), "integer")
+                for value in (-2 ** 31 - 1, 2 ** 31):
+                    raises(OverflowError, lambda: item.setConfigInt(value), "out of range")
+                raises(TypeError, item.Bool, "not bool")
+                raises(TypeError, lambda: item.setConfigBool(True), "not bool")
+                for invalid in ({"key": "unrelated.setting"}, {"type": "bool"}, {"scope": "plugin"}):
+                    host.metadata_overrides[key] = invalid
+                    raises(RuntimeStateError, lambda: item.defaultValue, "disagrees")
+                del host.metadata_overrides[key]
+                assert global_file.read_bytes() == before
+            raises(UnsupportedSurfaceError, appearance.monetAssetSuffix, "monetAssetSuffix")
+            before = global_file.read_bytes()
+            host.permissions.remove("settings")
+            for item, _, _, _ in items:
+                for action in (item.Int, lambda: item.value, lambda: item.defaultValue, lambda: item.setConfigInt(1)):
+                    raises(PermissionError, action, "settings")
+            assert global_file.read_bytes() == before
+            host.permissions.add("settings")
+            for item, key, _, _ in items:
+                del host.definitions[key]
+                for getter in (item.Int, lambda: item.defaultValue):
+                    raises(UnsupportedSurfaceError, getter, "not registered")
     runtime.unload()
     assert bridge.xt_handle_count() == 0
 
@@ -263,6 +357,6 @@ else:
         run("native_writer", tmp_path)
         run("native_reader", tmp_path)
 
-    @pytest.mark.parametrize("case", ("metadata_batch", "manager", "domain_cohort"))
+    @pytest.mark.parametrize("case", ("metadata_batch", "manager", "domain_cohort", "font_layout", "portable_scalars"))
     def test_config_native_bindings(case, tmp_path):
         run(case, tmp_path)

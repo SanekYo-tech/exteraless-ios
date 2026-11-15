@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "cohort": "sdk-portable-source-activation",
+  "scope": "Source parity activation and bounded Python SDK verification",
+  "observed_head_before_edits": "d8cbdaca17272ba848ac65be2b4dcbbc6b175275",
+  "committed": false,
+  "native_executed": false,
+  "handoff": "docs/wave-2/sdk-portable-source-cohort.md",
+  "implementation_counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
+  "exact_api_ids": 308,
+  "source_classification_counts": {"mapped-alias": 220, "compat-storage": 44, "shim-utility-or-unresolved": 44},
+  "new_direct_config_bindings": {"appearance.monetStyle": "appearance.monetStyle", "nagram.performanceClass": "tools.performanceClass"},
+  "changed_api_statuses_since_font_layout": [],
+  "source_receipt_rows": {"appearance": ["appearance.monetStyle", "neko.typeface", "neko.tabletMode"], "tools": ["nagram.performanceClass"]},
+  "all_activated_rows_ported": false,
+  "inventory_contract": {
+    "path": "docs/parity/client-features.json",
+    "hash_mode": "sdk-config-input-v1",
+    "contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+    "preserved": true,
+    "main_inventory_rewritten": false
+  },
+  "raw_source_pins": {"count": 59, "path": "docs/wave-2/sdk-config-parity.json", "field": "source_pins"},
+  "all_pinned_receipt_paths_present_in_HEAD": true,
+  "command": "python -X utf8 -B -m pytest tools/compat/tests/test_sdk_config_manifest.py tools/compat/tests/test_sdk_config_binding.py -q",
+  "suite_timeout_seconds": 30,
+  "runtime_scenario_timeout_seconds": 20,
+  "runs": [
+    {"python": "3.12.10", "passed": 29, "failed": 0, "skipped": 0, "seconds": 14.04, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-portable-final-py312.xml", "junit_sha256": "41fd8b480cc1a7ecc05deab5e2c740fe20ebb27d3ff44f2c429fd914b374a084"},
+    {"python": "3.14.8", "passed": 29, "failed": 0, "skipped": 0, "seconds": 13.01, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-portable-final-py314.xml", "junit_sha256": "883172f8bcdb1b6af797f16e05024c1301e24671a235bea53597a368d8f35621"}
+  ],
+  "regeneration_check": "passed",
+  "domain_fragment_schema_check": "passed in memory; existing feature IDs preserved",
+  "root_fixture": {
+    "path": "python/runtime/smoke/swift_sdk_config_root_fixture.swift",
+    "driver": "tools/runtime/check_swift_plugin_embedding.py",
+    "verification": "Isolated execution of the driver's actual root-staging expression; Swift fixture consumes the resulting group on init and reopen",
+    "actual_root_groups": 21,
+    "required_root_arrays": ["AppearanceFeatures.definitions", "ChatSwipeFeatures.definitions", "ToolsPerformancePolicy.definitions"],
+    "appearance_children": ["CoreAppearanceFontFamilyPolicy.definitions", "AppearanceLayoutModePolicy.definitions", "AppearanceMonetPolicy.definitions"],
+    "staged_root_sha256": "1827fce4d9ffa66f1365b90b6fd828410e28995a390ccc85be36cfa039d7dc85",
+    "staged_root_artifact": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-portable-final-py312/test_native_root_fixture_stage0/SDKConfigRootRegistration.swift",
+    "same_staged_bytes_on_both_pythons": true,
+    "native_executed": false
+  },
+  "ready_files_sha256": {
+    "tools/compat/sdk_config_manifest.py": "da3c3af0bc9483331bf3ad781c4b3fea343605b1a3a0345cb0ae73a793455dce",
+    "tools/compat/tests/test_sdk_config_manifest.py": "dddf22b99603c708c2b972e4f8c248d1e07cd346b944c21db657db0761e4711a",
+    "tools/compat/tests/test_sdk_config_binding.py": "442c12f6578559b6cc79a48addbf25de99c0d8d044538c0b64bcf7595d5cc78a",
+    "python/exteraless_runtime/_config_manifest.py": "febe6b2e4a9f6cebc04b1a910f34b0ebb6a00e0eadd341cccba57be72cd53991",
+    "docs/wave-2/sdk-config-parity.json": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367",
+    "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
+    "docs/wave-2/appearance-parity.json": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175",
+    "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
+  },
+  "config_input_receipts_sha256": {
+    "docs/wave-2/ai-parity.json": "b60bf991781b65f1956254e8f658db1cb9e6682e2beadb5c68bf720ecca2d98e",
+    "docs/wave-2/ai-visibility-parity.json": "b791dee27760f3f0bbb740f93a15d8caff3d2d2722b89d970e759ce3ca7bbda1",
+    "docs/wave-2/appearance-parity.json": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175",
+    "docs/wave-2/chat-parity.json": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f",
+    "docs/wave-2/dialogs-parity.json": "03b3d10d72265c7a18baded766bae8522c8e398d20a9043518e037dc402d0b86",
+    "docs/wave-2/identity-parity.json": "252d41e095f979724de5f2e38973a7af09d2dc9540507a5925cee3ed31283a80",
+    "docs/wave-2/privacy-parity.json": "e683a2539dd703f0101b01942571c8cce298af4d7ae0fe26e6bb548d756bd96e",
+    "docs/wave-2/retention-parity.json": "e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a",
+    "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
+    "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
+  },
+  "root_dependency_snapshot_sha256": {
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "8a492071f5195321e6df2c9f36ba74b9f81716712c2ac5a52cb4c11df857d132",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceMonetPolicy.swift": "7285eb59f890530ab9b366d4edd5552b918b88868ac1fd5c3fd15d03a94a6980",
+    "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
+    "swift/ExteralessCore/Sources/ExteralessCore/ChatSwipeFeatures.swift": "008552b96198c40f255f8158ca3c72ee3e70bb3434af8c6aac9982a986a85c20",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e",
+    "tools/runtime/check_swift_plugin_embedding.py": "76ec0ffb815560d4813e07b8ce7ecb42cd4c958c1722766428503f7df706129a",
+    "python/runtime/smoke/swift_sdk_config_root_fixture.swift": "fd8c180dd4c8c94457bbcd24f6bbbf32d1647d07f1f4bfbc574a27b0d470496e"
+  }
+}

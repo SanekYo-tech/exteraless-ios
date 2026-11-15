@@ -1,9 +1,11 @@
 """Exact source/API identity and regeneration, bounded without executing plugins."""
 
+import ast
 from pathlib import Path
 from copy import deepcopy
 import json
 import os
+import re
 import subprocess
 import sys
 import pytest
@@ -25,16 +27,124 @@ def test_config_source_receipt_is_current():
         "compat.ExteraConfig.setHideAllChats(boolean)": "appearance.hideAllTab",
         "compat.ExteraConfig.getUseSystemIconShape()": "appearance.useSystemIconShape",
         "compat.ExteraConfig.setUseSystemIconShape(boolean)": "appearance.useSystemIconShape",
+        "compat.ExteraConfig.getUseSystemFonts()": "appearance.useSystemFonts",
+        "compat.ExteraConfig.setUseSystemFonts(boolean)": "appearance.useSystemFonts",
+        "compat.ExteraConfig.getTabletMode()": "appearance.tabletMode",
+        "compat.ExteraConfig.setTabletMode(int)": "appearance.tabletMode",
     }.items():
         assert records[identity]["implementation"]["status"] == "implemented"
         assert records[identity]["ios"]["adaptation"]["canonical_keys"] == [key]
+
+
+def test_font_and_layout_are_root_registered_identity_bindings():
+    manifest, receipt = generator.build()
+    assert receipt["implementation_counts"] == {"implemented": 276, "blocked": 0, "unsupported": 32}
+    assert "AppearanceFeatures.definitions" in manifest["ROOT_REGISTRATION"]["groups"]
+    for identity, key, kind, policy in (
+        ("neko.typeface", "appearance.useSystemFonts", "bool", "CoreAppearanceFontFamilyPolicy"),
+        ("neko.tabletMode", "appearance.tabletMode", "int", "AppearanceLayoutModePolicy"),
+    ):
+        binding = manifest["BINDINGS"][identity]
+        assert binding["key"] == key and binding["type"] == binding["native"]["type"] == kind
+        assert binding.get("value_codec") is None and binding["secret"] is False
+        assert binding["native"]["path"].endswith("/" + policy + ".swift")
+        assert any(row["note"] == policy + ".definitions" for row in binding["native"]["registration"])
+        assert binding["native"]["path"] in manifest["SOURCES"]
+        # The native probe stages this root expression. Children arrive through
+        # AppearanceFeatures, not a fixture-only extra registration.
+        assert policy + ".definitions" not in manifest["ROOT_REGISTRATION"]["groups"]
+    for name in ("getUseSystemFonts", "setUseSystemFonts", "getTabletMode", "setTabletMode"):
+        route, = [row for row in manifest["APIS"] if row["name"] == name]
+        assert route["transform"] == "identity"
+
+
+@pytest.mark.parametrize("policy", ("CoreAppearanceFontFamilyPolicy", "AppearanceLayoutModePolicy"))
+def test_font_layout_unregistered_child_cannot_be_promoted(monkeypatch, policy):
+    original = generator.read
+    def unregistered(path, pins):
+        text = original(path, pins)
+        return text.replace("+ " + policy + ".definitions", "") if path.name == "AppearanceFeatures.swift" else text
+    monkeypatch.setattr(generator, "read", unregistered)
+    with pytest.raises(ValueError, match="native definition is no longer registered: " + policy):
+        generator.native_definitions({})
+
+
+def test_monet_and_performance_are_registered_scalar_config_items():
+    manifest, receipt = generator.build()
+    for identity, key, filename, policy, owner in (
+        ("appearance.monetStyle", "appearance.monetStyle", "CoreAppearanceMonetPolicy.swift",
+         "AppearanceMonetPolicy", "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift"),
+        ("nagram.performanceClass", "tools.performanceClass", "ToolsPerformancePolicy.swift",
+         "ToolsPerformancePolicy", generator.CLIENT_ROOT),
+    ):
+        binding = manifest["BINDINGS"][identity]
+        native = binding["native"]
+        assert binding["key"] == native["key"] == key
+        assert binding["type"] == native["type"] == "int"
+        assert binding.get("value_codec") is None and binding["secret"] is False
+        assert native["path"].endswith("/" + filename) and native["path"] in manifest["SOURCES"]
+        assert {row["note"] for row in native["registration"]} == {
+            policy + ".definitions contains definition", policy + ".definitions"}
+        assert any(row["path"] == owner and row["note"] == policy + ".definitions"
+                   for row in native["registration"])
+    classes = manifest["CLASSES"]
+    assert classes["app.exteraless.appearance.AppearanceConfig"]["fields"]["monetStyle"] == "appearance.monetStyle"
+    assert classes["xyz.nextalone.nagram.NaConfig"]["getters"]["getPerformanceClass"] == "nagram.performanceClass"
+    assert all(not {"appearance.monetStyle", "nagram.performanceClass"}.intersection(route["targets"])
+               for route in manifest["APIS"])
+    assert receipt["implementation_counts"] == {"implemented": 276, "blocked": 0, "unsupported": 32}
+    assert len(receipt["compatibility_apis"]) == len({row["id"] for row in receipt["compatibility_apis"]}) == 308
+
+
+@pytest.mark.parametrize("filename,policy,owner", (
+    ("CoreAppearanceMonetPolicy.swift", "AppearanceMonetPolicy", "AppearanceFeatures.swift"),
+    ("ToolsPerformancePolicy.swift", "ToolsPerformancePolicy", "ExteralessClientRuntime.swift"),
+))
+@pytest.mark.parametrize("missing", ("membership", "owner_reference"))
+def test_scalar_policy_requires_selected_definition_and_registered_owner(monkeypatch, filename, policy, owner, missing):
+    original = generator.read
+    def unregistered(path, pins):
+        text = original(path, pins)
+        if missing == "membership" and path.name == filename:
+            assert "= [definition]" in text
+            return text.replace("= [definition]", "= []", 1)
+        if missing == "owner_reference" and path.name == owner:
+            assert "+ " + policy + ".definitions" in text
+            return text.replace("+ " + policy + ".definitions", "", 1)
+        return text
+    monkeypatch.setattr(generator, "read", unregistered)
+    message = "review changed " if missing == "membership" else "native definition is no longer registered: "
+    with pytest.raises(ValueError, match=message + policy):
+        generator.build()
+
+
+def test_native_root_fixture_stages_actual_chat_swipe_and_performance_arrays(tmp_path):
+    """Run only the driver's source-staging expression, without starting a native child."""
+    registered = generator.root_registration({})
+    assert {"AppearanceFeatures.definitions", "ChatSwipeFeatures.definitions",
+            "ToolsPerformancePolicy.definitions"}.issubset(registered["groups"])
+    assert not {"CoreAppearanceFontFamilyPolicy.definitions", "AppearanceLayoutModePolicy.definitions",
+                "AppearanceMonetPolicy.definitions"}.intersection(registered["groups"])
+    driver = ROOT / "tools/runtime/check_swift_plugin_embedding.py"
+    write, = [node for node in ast.walk(ast.parse(driver.read_text(encoding="utf-8")))
+              if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+              and isinstance(node.value.func, ast.Attribute) and node.value.func.attr == "write_text"
+              and isinstance(node.value.func.value, ast.Name) and node.value.func.value.id == "root_fixture"]
+    output = tmp_path / "SDKConfigRootRegistration.swift"
+    exec(compile(ast.Module(body=[write], type_ignores=[]), str(driver), "exec"),
+         {"registered_root": registered, "root_fixture": output})
+    staged = output.read_text(encoding="utf-8")
+    assert re.findall(r"result\.append\(contentsOf: (\w+\.\w+)\)", staged) == registered["groups"]
+    fixture = generator.inventory.mask_source(
+        (ROOT / "python/runtime/smoke/swift_sdk_config_root_fixture.swift").read_text(encoding="utf-8"), nested_comments=True)
+    assert re.findall(r"\bsettings\.register\(([^)]*)\)", fixture) == ["SDKConfigRootRegistration.definitions"] * 2
 
 
 def test_only_registered_child_declarations_are_discovered(monkeypatch):
     original = generator.read
     def with_unregistered_array(path, pins):
         text = original(path, pins)
-        if path.name == "AppearanceAdditionalFeatures.swift":
+        if path.name in ("AppearanceAdditionalFeatures.swift", "CoreAppearanceMonetPolicy.swift", "ToolsPerformancePolicy.swift"):
             text += '\nprivate enum UnregisteredSDKFixture { static let unused: [ClientSettingDefinition] = [\n.init(key: "fixture.unregistered", title: "Unused", section: "Fixture", defaultValue: .bool(false), androidSymbols: ["NekoConfig.hideAllTab"])\n] }\n'
         return text
     monkeypatch.setattr(generator, "read", with_unregistered_array)
@@ -42,7 +152,8 @@ def test_only_registered_child_declarations_are_discovered(monkeypatch):
     definitions = generator.native_definitions(pins)
     assert "fixture.unregistered" not in definitions
     for key in ("appearance.hideAllTab", "appearance.useSystemIconShape", "appearance.hideHelpSection",
-                "tools.enhancedVideoBitrate", "tools.voiceEnhancement", "tools.groupAudioBitrate", "tools.showRPCError"):
+                "tools.enhancedVideoBitrate", "tools.voiceEnhancement", "tools.groupAudioBitrate", "tools.showRPCError",
+                "appearance.monetStyle", "tools.performanceClass"):
         assert definitions[key]["registration"]
     assert any(path.endswith("AppearanceAdditionalFeatures.swift") for path in pins)
     assert any(path.endswith("ToolsNativeModePolicy.swift") for path in pins)

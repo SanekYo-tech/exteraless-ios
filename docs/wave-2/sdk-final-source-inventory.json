@@ -1,20 +1,24 @@
 {
   "schema_version": 1,
   "date": "2026-11-15",
-  "status": "SDK source handoff; native Mac compilation/execution pending",
-  "handoff": "docs/wave-2/sdk-adapters-final.md",
+  "status": "Final portable SDK source activation; native verification for this snapshot pending",
+  "handoff": "docs/wave-2/sdk-portable-source-cohort.md",
+  "historical_adapter_handoff": "docs/wave-2/sdk-adapters-final.md",
   "config_receipt": {
     "path": "docs/wave-2/sdk-config-parity.json",
-    "sha256": "35f0dca4fcd7f54b828c4bf5dcbf15ccadf080a7c6b103972d72c4424ce8ce4d",
-    "counts": {"implemented": 272, "blocked": 4, "unsupported": 32},
+    "sha256": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367",
+    "counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
     "exact_ids": 308,
-    "participating_declaration_pins": "source_pins and root_registration in the receipt",
+    "participating_declaration_pins": "59 raw-byte source_pins and actual root_registration in the receipt",
     "generation_check": "passed"
   },
   "verification": {
     "python_full_cohort_each": 49,
     "python_native_root_join_each": 7,
     "new_distinct_root_join_scenarios": 1,
+    "python_portable_source_join_each": 29,
+    "portable_source_evidence": "docs/wave-2/tests/sdk-portable-source-checks.json",
+    "scope_note": "The 49/7 adapter runs are historical; the current 29-case Config generator/binding cohort passed on both Python versions. Native results keep their original snapshots.",
     "python_scenario_timeout_seconds": 20,
     "native_children": 3,
     "native_child_timeout_seconds": 30,
@@ -24,13 +28,13 @@
   },
   "sdk_source_sha256": {
     "python/exteraless_runtime/_config.py": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
-    "python/exteraless_runtime/_config_manifest.py": "e41b0876e4f560e6c3a3f550f1635ad78b1a96edaded48f9a6fedaa8d18d896f",
+    "python/exteraless_runtime/_config_manifest.py": "febe6b2e4a9f6cebc04b1a910f34b0ebb6a00e0eadd341cccba57be72cd53991",
     "python/exteraless_runtime/_controllers.py": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
     "python/exteraless_runtime/_notifications.py": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
     "python/exteraless_runtime/_scheduling.py": "d5f4dd1b8598e38b0ab26850c4583621cfcf47b41b11940993b02abc8d3861a6",
-    "tools/compat/sdk_config_manifest.py": "fd421b4f2c25baeb3141f193e88ab7baff83ec589a8eb092cc2e0d294b511802",
-    "tools/compat/tests/test_sdk_config_binding.py": "ab73f6b0a17b93276bfe8566a2f7940b96af7964c77bb3c7fe888c94d0ae8d29",
-    "tools/compat/tests/test_sdk_config_manifest.py": "738ae29d2b1a567a2f4ea45ae09ca0b4a43c4c529840ad93591c8c09cb00b6ae",
+    "tools/compat/sdk_config_manifest.py": "da3c3af0bc9483331bf3ad781c4b3fea343605b1a3a0345cb0ae73a793455dce",
+    "tools/compat/tests/test_sdk_config_binding.py": "442c12f6578559b6cc79a48addbf25de99c0d8d044538c0b64bcf7595d5cc78a",
+    "tools/compat/tests/test_sdk_config_manifest.py": "dddf22b99603c708c2b972e4f8c248d1e07cd346b944c21db657db0761e4711a",
     "tools/compat/tests/test_sdk_adapter_wave2.py": "b241f52305612b600f061909b527cdea969624cf0464040d217e9598b6ed1116",
     "tools/runtime/check_swift_plugin_embedding.py": "76ec0ffb815560d4813e07b8ce7ecb42cd4c958c1722766428503f7df706129a",
     "python/runtime/smoke/swift_sdk_config_root_fixture.swift": "fd8c180dd4c8c94457bbcd24f6bbbf32d1647d07f1f4bfbc574a27b0d470496e",
@@ -39,7 +43,9 @@
     "python/runtime/smoke/swift_sdk_tl_probe.swift": "f0ab5063dc60f776b728ba471d9e6d82311bc1c4d0c87c601961bf205e6f917f",
     "python/runtime/smoke/native_tl_probe.py": "6a90928a3082c24b1b8ef85dc08c8813b17031152241251ae60377fa9e744e3e",
     "python/runtime/smoke/native_hns_probe.py": "7d0fb49cea521f4599e8b76d41659221cf8d12cde4f03f5fd93963bee0591fc7",
-    "docs/wave-2/tests/sdk-python-checks.json": "5f9f9f9f70826330517f6a9ef3f539a5584b971df13685360dd1c4a86333c5e1"
+    "docs/wave-2/tests/sdk-python-checks.json": "5f9f9f9f70826330517f6a9ef3f539a5584b971df13685360dd1c4a86333c5e1",
+    "docs/wave-2/tests/sdk-portable-source-checks.json": "18522665af02eef8c28c3aaced6bec0e70edf91cb0d92eb2481c6bffb671e892",
+    "docs/wave-2/sdk-portable-source-cohort.md": "01c64261dc1a075bcff0ea14f335fda78e8fbae464e85ca1581fa73f00f28a8d"
   },
   "integration_dependency_note": "Other owners' current source, not an SDK-agent freeze of those files",
   "integration_dependency_snapshot_sha256": {
@@ -47,7 +53,13 @@
     "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLUpdatePolicy.swift": "ba6ad1462fc5d1dfce5ddc3fd619178ff1c4b0b5a8a5bd57650a0ec5166f3b2b",
     "swift/PluginHost/Sources/PluginHost/PluginHost.swift": "db6dad816dcf11ccd82400f753c42dc46d20acfb4ec11fed33db541fb1435837",
     "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
-    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "8a492071f5195321e6df2c9f36ba74b9f81716712c2ac5a52cb4c11df857d132",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f",
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00",
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceMonetPolicy.swift": "7285eb59f890530ab9b366d4edd5552b918b88868ac1fd5c3fd15d03a94a6980",
+    "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
+    "swift/ExteralessCore/Sources/ExteralessCore/ChatSwipeFeatures.swift": "008552b96198c40f255f8158ca3c72ee3e70bb3434af8c6aac9982a986a85c20",
     "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
     "python/exteraless_runtime/_tl.py": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7",
     "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
@@ -92,10 +104,29 @@
     "focused_tests_each_python": 18,
     "native_executed": false
   },
-  "remaining_config_ids": [
-    "compat.ExteraConfig.getTabletMode()",
-    "compat.ExteraConfig.setTabletMode(int)",
-    "compat.ExteraConfig.getUseSystemFonts()",
-    "compat.ExteraConfig.setUseSystemFonts(boolean)"
-  ]
+  "portable_source_activation": {
+    "cohort": "sdk-portable-source-activation",
+    "committed": false,
+    "raw_source_pins_retained": 59,
+    "config_input_receipts": 10,
+    "new_direct_scalar_bindings": ["appearance.monetStyle", "nagram.performanceClass"],
+    "all_current_pins": "docs/wave-2/sdk-config-parity.json:source_pins",
+    "hash_mode": "sdk-config-input-v1",
+    "contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+    "main_inventory_rewritten": false,
+    "native_executed": false
+  },
+  "config_input_receipts_sha256": {
+    "docs/wave-2/ai-parity.json": "b60bf991781b65f1956254e8f658db1cb9e6682e2beadb5c68bf720ecca2d98e",
+    "docs/wave-2/ai-visibility-parity.json": "b791dee27760f3f0bbb740f93a15d8caff3d2d2722b89d970e759ce3ca7bbda1",
+    "docs/wave-2/appearance-parity.json": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175",
+    "docs/wave-2/chat-parity.json": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f",
+    "docs/wave-2/dialogs-parity.json": "03b3d10d72265c7a18baded766bae8522c8e398d20a9043518e037dc402d0b86",
+    "docs/wave-2/identity-parity.json": "252d41e095f979724de5f2e38973a7af09d2dc9540507a5925cee3ed31283a80",
+    "docs/wave-2/privacy-parity.json": "e683a2539dd703f0101b01942571c8cce298af4d7ae0fe26e6bb548d756bd96e",
+    "docs/wave-2/retention-parity.json": "e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a",
+    "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
+    "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
+  },
+  "remaining_config_ids": []
 }
