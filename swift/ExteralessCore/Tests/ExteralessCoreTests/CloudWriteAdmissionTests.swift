@@ -10,6 +10,21 @@ private final class CloudAdmissionCounter: @unchecked Sendable {
     var value: Int { lock.lock(); defer { lock.unlock() }; return count }
 }
 
+/// These fixtures intentionally hold a synchronous writer behind a finite gate.
+/// Keep that wait off Swift's cooperative executor on both Apple and Linux.
+private func cloudAdmissionWorker(_ work: @escaping @Sendable () throws -> Void) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        DispatchQueue(label: "Exteraless.CloudAdmissionFixture").async {
+            do {
+                try work()
+                continuation.resume()
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+}
+
 @MainActor final class CloudWriteAdmissionTests: XCTestCase {
     private func fixture() throws -> (ClientSettings, URL, CloudFixtureSecrets, ClientAPIFixtureStorage) {
         let file = try cloudTemporaryDirectory().appendingPathComponent("settings.json")
@@ -31,8 +46,10 @@ private final class CloudAdmissionCounter: @unchecked Sendable {
         defer { observation.cancel() }
         let gate = DispatchSemaphore(value: 0)
         let queued = Task.detached {
-            guard gate.wait(timeout: .now() + 1) == .success else { throw CloudError.timedOut }
-            try admission.withAdmittedWrite(contextIdentity: identity) { try settings.applyPublic(["cloud.autoSync": .bool(true)]) }
+            try await cloudAdmissionWorker {
+                guard gate.wait(timeout: .now() + 1) == .success else { throw CloudError.timedOut }
+                try admission.withAdmittedWrite(contextIdentity: identity) { try settings.applyPublic(["cloud.autoSync": .bool(true)]) }
+            }
         }
         admission.revoke()
         gate.signal()
@@ -58,9 +75,11 @@ private final class CloudAdmissionCounter: @unchecked Sendable {
         let admission = CloudWriteAdmission(contextIdentity: identity)
         let gate = DispatchSemaphore(value: 0)
         let queued = Task.detached {
-            guard gate.wait(timeout: .now() + 1) == .success else { throw CloudError.timedOut }
-            try admission.withAdmittedWrite(contextIdentity: identity) {
-                try configuration.save(mode: .custom, apiId: 456, replacementHash: String(repeating: "b", count: 32), environment: .production)
+            try await cloudAdmissionWorker {
+                guard gate.wait(timeout: .now() + 1) == .success else { throw CloudError.timedOut }
+                try admission.withAdmittedWrite(contextIdentity: identity) {
+                    try configuration.save(mode: .custom, apiId: 456, replacementHash: String(repeating: "b", count: 32), environment: .production)
+                }
             }
         }
         admission.revoke()
@@ -83,9 +102,11 @@ private final class CloudAdmissionCounter: @unchecked Sendable {
         let observation = settings.observe { _ in events.increment() }
         defer { observation.cancel(); gate.signal() }
         let writer = Task.detached {
-            try admission.withAdmittedWrite(contextIdentity: identity) {
-                guard gate.wait(timeout: .now() + 2) == .success else { throw CloudError.timedOut }
-                try settings.applyPublic(["cloud.autoSync": .bool(true)])
+            try await cloudAdmissionWorker {
+                try admission.withAdmittedWrite(contextIdentity: identity) {
+                    guard gate.wait(timeout: .now() + 2) == .success else { throw CloudError.timedOut }
+                    try settings.applyPublic(["cloud.autoSync": .bool(true)])
+                }
             }
         }
         for _ in 0..<200 {
