@@ -6,7 +6,7 @@
   "historical_adapter_handoff": "docs/wave-2/sdk-adapters-final.md",
   "config_receipt": {
     "path": "docs/wave-2/sdk-config-parity.json",
-    "sha256": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367",
+    "sha256": "c65350e5da0d14d9edf51c091a69c8bb46248c9065658ef021f6a1bb61da07bb",
     "counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
     "exact_ids": 308,
     "participating_declaration_pins": "59 raw-byte source_pins and actual root_registration in the receipt",
@@ -28,7 +28,7 @@
   },
   "sdk_source_sha256": {
     "python/exteraless_runtime/_config.py": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
-    "python/exteraless_runtime/_config_manifest.py": "febe6b2e4a9f6cebc04b1a910f34b0ebb6a00e0eadd341cccba57be72cd53991",
+    "python/exteraless_runtime/_config_manifest.py": "e07ab6008635478254b19e3b1cca5d8ab3e858bdd365f29f8c27fb81e9a92e30",
     "python/exteraless_runtime/_controllers.py": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
     "python/exteraless_runtime/_notifications.py": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
     "python/exteraless_runtime/_scheduling.py": "d5f4dd1b8598e38b0ab26850c4583621cfcf47b41b11940993b02abc8d3861a6",
@@ -136,6 +136,14 @@
     "preserved_byte_branch": true,
     "mac_fixed_snapshot_executed": false,
     "historical_java_results_rerun": false
+  },
+  "ghost_atomic_root_alignment": {
+    "handoff": "docs/wave-2/ghost-toggle-final-admission.md",
+    "root_source_sha256": "5709414fc3a29f553eb160c3fc267956e3138de56fc207cbcf61e57981a4dcbf",
+    "catalog_changed": false,
+    "generation_check": "passed",
+    "current_snapshot_native_executed": false,
+    "previous_native_gate": "43738810843 / 136c946f; independent PASS in runtime-native-acceptance.md"
   },
   "remaining_config_ids": []
 }

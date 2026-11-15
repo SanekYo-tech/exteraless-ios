@@ -120,15 +120,7 @@ private final class ExteralessPillSignalHolder: @unchecked Sendable {
             let error: String?
             do {
                 try lease.withCurrent {
-                    let before = ClientSettings.shared.readSnapshot()
-                    let policy = PrivacyPolicy(values: before.values)
-                    var changes = policy.ghostModeChanges(enabled: !policy.ghostModeActive)
-                    // CAS also protects the locked flags that the batch decision read.
-                    for field in PrivacyFeatures.ghostFields {
-                        let key = "privacy." + field + "Locked"
-                        if let value = before.values[key] { changes[key] = value }
-                    }
-                    try ClientSettings.shared.applyPublic(changes, expected: before)
+                    _ = try PrivacyGhostModeMutation.toggle(in: .shared)
                 }
                 error = nil
             } catch PillError.cancelled { return }

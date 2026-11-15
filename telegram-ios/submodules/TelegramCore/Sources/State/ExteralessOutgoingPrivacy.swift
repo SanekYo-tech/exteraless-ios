@@ -6,11 +6,8 @@ internal import TelegramApi
 
 public func exteralessToggleGhostMode(account: Account) -> Signal<Bool, ClientSettingsError> {
     return (Signal<Bool, ClientSettingsError> { subscriber in
-        let enabled = !PrivacyPolicy.current.ghostModeActive
         do {
-            for (key, value) in PrivacyPolicy.current.ghostModeChanges(enabled: enabled).sorted(by: { $0.key < $1.key }) {
-                try ClientSettings.shared.set(value, for: key)
-            }
+            let enabled = try PrivacyGhostModeMutation.toggle(in: .shared)
             subscriber.putNext(enabled)
             subscriber.putCompletion()
         } catch let error as ClientSettingsError {

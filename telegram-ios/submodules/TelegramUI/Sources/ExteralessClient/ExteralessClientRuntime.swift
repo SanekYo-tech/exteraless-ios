@@ -125,18 +125,9 @@ private final class ExteralessClientSettingsWorker: @unchecked Sendable {
             do {
                 guard context.isValid, operation.isValid else { throw ExteralessClientWorkError.retiredContext }
                 let before = ClientSettings.shared.readSnapshot()
-                let policy = PrivacyPolicy(values: before.values)
-                var changes = policy.ghostModeChanges(enabled: !policy.ghostModeActive)
-                for field in PrivacyFeatures.ghostFields {
-                    let key = "privacy." + field
-                    // Include unchanged dependencies too: both direction and
-                    // locked-field decisions belong to the same snapshot CAS.
-                    if changes[key] == nil, let value = before.values[key] { changes[key] = value }
-                    if let value = before.values[key + "Locked"] { changes[key + "Locked"] = value }
-                }
                 guard context.isValid, operation.isValid else { throw ExteralessClientWorkError.retiredContext }
-                try ClientSettings.shared.applyPublic(changes, expected: before)
-                completion(.success(PrivacyPolicy.current.ghostModeActive))
+                let active = try PrivacyGhostModeMutation.toggle(in: .shared, expectedBefore: before)
+                completion(.success(active))
             } catch {
                 completion(.failure(error))
             }
