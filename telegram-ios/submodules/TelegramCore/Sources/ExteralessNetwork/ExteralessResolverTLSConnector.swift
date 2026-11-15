@@ -39,7 +39,7 @@ public enum ExteralessResolverTLSConnector {
         }
         func start() {
             guard !finished, port > 0 else { fail(); return }
-            policyObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
+            policyObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
                 guard let self else { return }
                 self.queue.async { if !self.finished { self.fail() } }
             }

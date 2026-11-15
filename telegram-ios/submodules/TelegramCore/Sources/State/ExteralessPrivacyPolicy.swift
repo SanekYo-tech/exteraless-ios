@@ -220,7 +220,7 @@ func exteralessPrivacyRequest<T, E>(allow: @escaping () -> Bool, suppressed: @es
 }
 
 func exteralessReadMessageContents(network: Network, peerId: PeerId, ids: [Int32]) -> Signal<Api.messages.AffectedMessages?, MTRpcError> {
-    return exteralessPrivacyRequest(allow: { exteralessAllowsMessageRead(network: network, peerId: peerId) }, suppressed: { nil }, request: {
+    return exteralessPrivacyRequest(allow: { exteralessAllowsMessageRead(network: network, peerId: peerId) }, suppressed: { nil }, request: { [network] in
         guard let account = exteralessTLRegisteredAccount(network) else { return .fail(MTRpcError(errorCode: 401, errorDescription: "ACCOUNT_CONTEXT_RELEASED")) }
         return exteralessAutomaticReadMessageContents(admissions: exteralessReadRequestAdmissions, owner: account, transport: network, accountId: network.accountRecordId, peerId: peerId, ids: ids, ownerIsCurrent: { account, network in
             account.network === network && exteralessTLRegisteredAccount(network) === account && exteralessTLAccountIsCurrent(network)

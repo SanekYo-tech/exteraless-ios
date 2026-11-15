@@ -81,7 +81,10 @@ public struct NetworkEngineRequestFailure: Error, CustomStringConvertible, Custo
 
     public var description: String { logContext.errorDescription(code: error.errorCode, text: error.errorDescription) }
     public var debugDescription: String { description }
-    public var customMirror: Mirror { Mirror(self, children: ["error": description, "info": info] as [String: Any]) }
+    public var customMirror: Mirror {
+        let children: KeyValuePairs<String, Any> = ["error": description, "info": info]
+        return Mirror(self, children: children)
+    }
 }
 
 /// One RPC call. Built by TelegramCore and executed by a `NetworkEngineRequestService`.

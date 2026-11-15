@@ -524,9 +524,15 @@ func exteralessAccountRetentionStartup<Prepared, Writer>(recovery: ExteralessAcc
 
 /// UI recovery is available before any AuthorizedApplicationContext exists.
 /// A single queue publishes the retained handles; no credentials/message text are exposed.
-public struct ExteralessAccountRecoveryEntry {
+public struct ExteralessAccountRecoveryEntry: Equatable {
     public let recovery: ExteralessAccountRetentionRecovery
     public let status: ExteralessAccountRecoveryStatus
+
+    public static func ==(lhs: ExteralessAccountRecoveryEntry, rhs: ExteralessAccountRecoveryEntry) -> Bool {
+        // A retained handle owns its own attempts/readiness; equal account/status
+        // payloads must not equate distinct recovery lifetimes.
+        return lhs.recovery === rhs.recovery && lhs.status == rhs.status
+    }
 }
 
 public final class ExteralessAccountRecoveryCenter: @unchecked Sendable {
@@ -905,7 +911,8 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                         
                         return (state, localizationSettings, proxySettings, transaction.getPreferencesEntry(key: PreferencesKeys.networkSettings)?.get(NetworkSettings.self), appConfig)
                     }
-                    |> mapToSignal { (accountState, localizationSettings, proxySettings, networkSettings, appConfig) -> Signal<AccountResult, NoError> in
+                    |> mapToSignal { (values: (PostboxCoding?, LocalizationSettings?, ProxySettings?, NetworkSettings?, AppConfiguration)) -> Signal<AccountResult, NoError> in
+                        let (accountState, localizationSettings, proxySettings, networkSettings, appConfig) = values
                         if !(accountState is AuthorizedAccountState), ExteralessAccountRetentionEnvironment.shared.current.configuration == nil {
                             return .complete()
                         }

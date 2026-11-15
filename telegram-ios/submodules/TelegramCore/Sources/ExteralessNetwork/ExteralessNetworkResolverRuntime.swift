@@ -34,7 +34,7 @@ public final class ExteralessNetworkResolverRuntime: @unchecked Sendable {
         queue.sync {
             guard !started else { return }
             started = true
-            contextObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
+            contextObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
                 guard let self else { return }
                 self.contextsLock.lock(); let contexts = self.contexts.allObjects; self.contextsLock.unlock()
                 for context in contexts { context.invalidateTransportSchemesForKnownDatacenterIds() }

@@ -26,8 +26,12 @@ public struct ExteralessFeedMessageProjection {
     public func allowsMedia(contentSettings: ContentSettings) -> Bool {
         guard self.isEligible else { return false }
         if self.peer?.restrictionText(platform: "ios", contentSettings: contentSettings) != nil { return false }
-        if let restricted = self.message.attributes.first(where: { $0 is RestrictedContentMessageAttribute }) as? RestrictedContentMessageAttribute,
-           restricted.platformText(platform: "ios", contentSettings: contentSettings) != nil { return false }
+        // PlatformRestrictionMatching is a downstream module; use its iOS rule predicate.
+        if !exteralessIgnoreLocalRestrictionNotice(),
+           let restricted = self.message.attributes.first(where: { $0 is RestrictedContentMessageAttribute }) as? RestrictedContentMessageAttribute,
+           restricted.rules.contains(where: { rule in
+               rule.reason != "sensitive" && (rule.platform == "all" || rule.platform == "ios" || contentSettings.addContentRestrictionReasons.contains(rule.platform)) && !contentSettings.ignoreContentRestrictionReasons.contains(rule.reason)
+           }) { return false }
         return true
     }
 
@@ -123,7 +127,17 @@ private func exteralessFeedRenderSnapshot(_ message: Message, depth: Int = 0) ->
             let snapshot = exteralessFeedRenderSnapshot(value, depth: depth + 1)
             if snapshot !== value { associated[id] = snapshot; changed = true }
         }
-        if changed { result = result.withUpdatedAssociatedMessages(associated) }
+        if changed {
+            // Public full-value copy: retain every field except the associated snapshots.
+            result = Message(stableId: result.stableId, stableVersion: result.stableVersion, id: result.id,
+                globallyUniqueId: result.globallyUniqueId, groupingKey: result.groupingKey, groupInfo: result.groupInfo,
+                threadId: result.threadId, timestamp: result.timestamp, flags: result.flags, tags: result.tags,
+                globalTags: result.globalTags, localTags: result.localTags, customTags: result.customTags,
+                forwardInfo: result.forwardInfo, author: result.author, text: result.text, attributes: result.attributes,
+                media: result.media, peers: result.peers, associatedMessages: associated,
+                associatedMessageIds: result.associatedMessageIds, associatedMedia: result.associatedMedia,
+                associatedThreadInfo: result.associatedThreadInfo, associatedStories: result.associatedStories)
+        }
     }
     return result
 }

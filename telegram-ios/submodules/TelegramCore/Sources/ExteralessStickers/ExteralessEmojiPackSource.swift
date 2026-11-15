@@ -64,7 +64,7 @@ public func exteralessStickerResourceData(engine: TelegramEngine, file: FileMedi
         let disposables = DisposableSet()
         disposables.add(engine.resources.fetch(reference: file.resourceReference(file.media.resource), userLocation: .other, userContentType: .other).start(error: { _ in subscriber.putError(.network) }))
         disposables.add((engine.resources.data(resource: EngineMediaResource(file.media.resource))
-        |> filter { $0.complete }
+        |> filter { $0.isComplete }
         |> take(1)
         |> deliverOn(Queue.concurrentDefaultQueue())).start(next: { resource in
             guard !disposed.with({ $0 }) else { return }

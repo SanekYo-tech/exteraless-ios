@@ -33,3 +33,15 @@ The Emoji cmap-14 reader used CoreText's iOS-unavailable `excludeSynthetic` opti
 It now reads the exact installed `CGFont` table through `table(for:)` (available
 since iOS 2), preserving raw-font variation support checks and the 1-MiB bound.
 Apple API declaration: https://developer.apple.com/documentation/coregraphics/cgfont/table(for:).
+
+## TelegramCore pass from 43740868881 / fac6cf26
+
+The previous header and Emoji blockers passed. TelegramCore then exposed 25
+source diagnostics across Account, resolver/privacy captures, TL enqueue and
+typed data adapters; their focused correction cohorts have separate receipts.
+
+The new `MTRequest.initWithLogContext:` initializer is explicitly nonnull, matching
+its NSObject initialization and always-created log context. Legacy method
+nullability remains unspecified. The credential-safe failure mirror now supplies
+`KeyValuePairs<String, Any>` to Mirror's labelled-child overload; raw RPC error
+contents remain outside the reflection children.

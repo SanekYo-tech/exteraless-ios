@@ -138,7 +138,7 @@ private final class TLNetworkRequestOperation<T>: @unchecked Sendable {
     }
 
     func start() {
-        self.queue.async {
+        self.queue.async { [self] in
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: DispatchTime(uptimeNanoseconds: self.prefixDeadline))
             timer.setEventHandler { [weak self] in

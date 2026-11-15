@@ -16,7 +16,7 @@ public func exteralessPillOwnStatus(engine: TelegramEngine) -> Signal<Exteraless
     |> mapToSignal { _ -> Signal<ExteralessPillOwnStatus?, NoError> in
         return exteralessPrivacyObservationTransaction(account: account, fallback: nil) { transaction in
             let now = Int32(clamping: Int64(Date().timeIntervalSince1970))
-            let presence = transaction.getPeerPresence(account.peerId) as? TelegramUserPresence
+            let presence = transaction.getPeerPresence(peerId: account.peerId) as? TelegramUserPresence
             let value: ExteralessPillOwnStatus.Presence
             switch presence?.status {
             case let .present(until)?: value = until > now ? .online(until: until) : until > 0 ? .lastSeen(until) : .unknown

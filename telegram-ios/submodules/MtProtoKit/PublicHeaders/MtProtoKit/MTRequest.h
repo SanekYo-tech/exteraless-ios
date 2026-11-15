@@ -57,6 +57,6 @@
 - (id _Null_unspecified)scanInternalId __attribute__((objc_direct));
 
 - (void)setPayload:(NSData * _Null_unspecified)payload metadata:(id _Null_unspecified)metadata shortMetadata:(id _Null_unspecified)shortMetadata responseParser:(id _Null_unspecified (^ _Null_unspecified)(NSData * _Null_unspecified))responseParser;
-- (instancetype _Null_unspecified)initWithLogContext:(MTRequestLogContext * _Nullable)logContext;
+- (instancetype _Nonnull)initWithLogContext:(MTRequestLogContext * _Nullable)logContext;
 
 @end

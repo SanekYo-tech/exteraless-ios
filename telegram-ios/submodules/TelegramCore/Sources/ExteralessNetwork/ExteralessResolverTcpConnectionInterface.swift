@@ -65,7 +65,7 @@ final class ExteralessResolverTcpConnectionInterface: NSObject, MTTcpConnectionI
         self.resolver = resolver
         self.factory = factory ?? { NetworkFrameworkTcpConnectionInterface(delegate: $0, delegateQueue: $1) }
         super.init()
-        policyObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
+        policyObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.queue.async { if self.started { self.close(error: Self.connectionError) } }
         }
@@ -89,7 +89,7 @@ final class ExteralessResolverTcpConnectionInterface: NSObject, MTTcpConnectionI
 
     func connect(toHost host: String, onPort port: UInt16, viaInterface interface: String?, withTimeout timeout: TimeInterval, error errPtr: NSErrorPointer) -> Bool {
         guard port != 0, timeout.isFinite, timeout > 0 else { errPtr?.pointee = Self.connectionError; return false }
-        queue.async {
+        queue.async { [self] in
             guard !self.started, !self.closed else { return }
             self.started = true; self.port = port; self.interface = interface
             self.deadline = ProcessInfo.processInfo.systemUptime + min(20, timeout)

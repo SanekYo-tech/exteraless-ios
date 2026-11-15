@@ -34,8 +34,8 @@ func tlStoredMediaReference(account: Account, media: ExteralessTLPreparedMedia, 
     let resource = LocalFileMediaResource(fileId: id, size: Int64(media.data.count), isSecretRelated: isSecret)
     account.postbox.mediaBox.storeResourceData(resource.id, data: media.data, synchronous: true)
     guard let path = account.postbox.mediaBox.completedResourcePath(resource),
-          let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-          (attributes[.size] as? NSNumber)?.int64Value == Int64(media.data.count) else {
+          let fileAttributes = try? FileManager.default.attributesOfItem(atPath: path),
+          (fileAttributes[.size] as? NSNumber)?.int64Value == Int64(media.data.count) else {
         throw ExteralessTLServiceError.local("MEDIA_RESOURCE_STORAGE_FAILED")
     }
     if media.kind == .photo, let width = media.width, let height = media.height {

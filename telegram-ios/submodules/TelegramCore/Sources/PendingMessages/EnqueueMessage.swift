@@ -761,8 +761,8 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
 }
 
 public func enqueueMessagesWithAdmission(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
-    let messages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
-    let messages = exteralessDefaultSendNotifications(messages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
+    let preparedMessages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
+    let messages = exteralessDefaultSendNotifications(preparedMessages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
     guard PluginHookRouter.hasSubscribers(.sendMessage) else {
         return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
     }
@@ -816,8 +816,8 @@ public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages
 }
 
 public func enqueueMessagesFromPluginWithAdmission(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
-    let messages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
-    let messages = exteralessDefaultSendNotifications(messages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
+    let preparedMessages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
+    let messages = exteralessDefaultSendNotifications(preparedMessages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
     return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
 }
 

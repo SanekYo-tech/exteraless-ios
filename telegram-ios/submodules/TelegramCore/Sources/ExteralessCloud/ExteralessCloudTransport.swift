@@ -23,7 +23,7 @@ public final class ExteralessCloudTransport: CloudKeyValueTransport, @unchecked 
             guard data.count <= CloudProtocol.maximumPayloadBytes, let compressed = MTGzip.compress(data) else { throw CloudError.sizeLimit }
             return compressed
         }, decompress: { data, limit in
-            guard let result = MTGzip.decompress(data, maxOutputLength: limit) else { throw CloudError.malformedRemote }
+            guard let maximumLength = UInt(exactly: limit), let result = MTGzip.decompress(data, maxOutputLength: maximumLength) else { throw CloudError.malformedRemote }
             return result
         })
     }
@@ -65,7 +65,7 @@ public final class ExteralessCloudTransport: CloudKeyValueTransport, @unchecked 
 
     private func inputBot() -> Signal<Api.InputUser, CloudError> {
         let account = self.account
-        let botId = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id(CloudProtocol.botId))
+        let botId = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(CloudProtocol.botId))
         func cached() -> Signal<Api.InputUser?, NoError> {
             account.postbox.transaction { transaction -> Api.InputUser? in
                 guard let user = transaction.getPeer(botId) as? TelegramUser, user.botInfo != nil else { return nil }
