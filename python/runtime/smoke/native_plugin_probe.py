@@ -68,8 +68,11 @@ def _profile(frame, event, arg):
     try:
         if event in ("c_call", "c_exception"):
             bridge = sys.modules.get("_exteraless_bridge")
-            if (event == "c_call" and bridge is not None
-                    and isinstance(getattr(arg, "__self__", None), bridge.BridgeBackend)
+            # Multi-phase module execution publishes sys.modules before adding
+            # BridgeBackend. The pre-bootstrap profiler also sees those C calls.
+            backend_type = getattr(bridge, "BridgeBackend", None)
+            if (event == "c_call" and backend_type is not None
+                    and isinstance(getattr(arg, "__self__", None), backend_type)
                     and getattr(arg, "__name__", None) in _operations):
                 _backend_calls += 1
             if bridge is not None and arg is getattr(bridge, "xt_call_host", None):
