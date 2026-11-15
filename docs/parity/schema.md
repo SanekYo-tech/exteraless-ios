@@ -167,3 +167,42 @@ review layers, applied-source overlays, and read-time source pins. Review closur
 are copied only from existing independent reports into their own layer; they do
 not promote client/API parity. Final checks assert identity, author status/key
 preservation, all 20/15 Pill joins, 567/30/925/308 counts and unchanged verification.
+
+## Final source cohort (fac6cf26 request)
+
+`final-source-join.json` binds the refreshed materialized inventories to the final
+SDK input contract, current receipt hashes, scoped review closures and completed
+data checks. `cohorts/93a1badc.json` locates the complete historical documents by
+immutable Git commit/blob and raw SHA-256; earlier SDK counts, pins, receipt drift
+and run IDs retain their original meaning. Historical planning/handoff documents
+are not current completion tables.
+
+- The SDK-owned canonical `sdk-config-input-v1` projection must remain unchanged
+  when `client-features.json`'s derived body is regenerated. Run the existing
+  `python -B -m tools.compat.sdk_config_manifest --check` after the join; do not
+  rewrite its manifest or ten source-pinned input JSON files to make it pass.
+- The final Config receipt has **276 implemented / 0 blocked / 32 unsupported**,
+  **59 raw source pins**, **10 input receipts** and **308 exact overload IDs**.
+  The separate aggregate's source-file count is not the SDK pin count.
+- `chat-swipe` is the primary receipt for `etgbackup.ChatSwipeAction`; the older
+  Tools claim remains secondary. The five applied portable policies use
+  `portable-native-source-adaptation`, with actual Root/Cloud/consumer anchors.
+  Author statuses remain verbatim; assets, native execution and visual limits
+  are not erased by this disposition.
+- A review identity includes its **report path**. In particular, AI `AF-03` and
+  Avatar `AF-03` are different findings. `review_layers[].open_ids` records the
+  published historical state; `supersedes` and the final cohort's
+  `current_review_groups` supply the later scoped closure. The join itself does
+  not issue review verdicts. Owner-reported fixes stay distinguishable from an
+  independent final re-review.
+- Mac component `43738810843 / 136c946f`, the last full Telegram IPA
+  `43635233046 / 68bb1adf`, the requested full IPA `43740868881 / fac6cf26`, and
+  the authored 36-label/410-method native plan are separate evidence identities.
+  Component/standalone probe success cannot promote client/API `verified` or
+  `ported`, or establish Telegram networking, UIKit or recorded-frame acceptance.
+
+The existing scanner's Markdown renderer contains historical hard-coded CI and
+review prose. The final Markdown reconciliation is an explicitly reviewed docs
+projection; `--check-data` checks the materialized identity/status joins, and the
+SDK `--check` checks the canonical consumed contract. Scanner/tool source is not
+modified by this final reconciliation.

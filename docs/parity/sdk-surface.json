@@ -21,8 +21,8 @@
       "sha256": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799"
     },
     "python/exteraless_runtime/_config_manifest.py": {
-      "bytes": 404790,
-      "sha256": "f52fb8a8d4d676d58ff58c00fba2b054d2c2cb22abcec952907c4a7c93569ecd"
+      "bytes": 406315,
+      "sha256": "febe6b2e4a9f6cebc04b1a910f34b0ebb6a00e0eadd341cccba57be72cd53991"
     },
     "python/exteraless_runtime/_controllers.py": {
       "bytes": 11666,
@@ -73,8 +73,8 @@
       "sha256": "9421584fbc940ffb54f191d6b9726de36b53d6c037b6a71278ea49bfa20077a2"
     },
     "python/exteraless_runtime/_tl.py": {
-      "bytes": 34076,
-      "sha256": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7"
+      "bytes": 34237,
+      "sha256": "38421d438a8efedd32ce62cfa9946c5b31545d792e86ac8e7ad3c20e611773cf"
     },
     "python/exteraless_runtime/_ui.py": {
       "bytes": 31984,
@@ -771,11 +771,15 @@
       },
       "appearance": {
         "path": "docs/wave-2/appearance-parity.json",
-        "sha256": "7c397ebf12dc7a1e5f1a1bb54dc3b7925469af15bd2d395225fa62dbe00fb0c3"
+        "sha256": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175"
       },
       "chat": {
         "path": "docs/wave-2/chat-parity.json",
         "sha256": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f"
+      },
+      "chat-swipe": {
+        "path": "docs/wave-2/chat-swipe-parity.json",
+        "sha256": "5621446e51cc23fb78a6f0f0bf56e7c18b84577e9f3cfbbac86e79e7002c977f"
       },
       "cloud-api": {
         "path": "docs/wave-2/cloud-api-parity.json",
@@ -787,7 +791,7 @@
       },
       "feed": {
         "path": "docs/wave-2/feed-parity.json",
-        "sha256": "21152aea58a0b4e542f40195e0f377b559d9843ca831eb0d228bcfc9c769d33b"
+        "sha256": "c660f9c0cef5aaaa98212c0db484647a707b6996992d3c61d40c19ed8fd80489"
       },
       "identity": {
         "path": "docs/wave-2/identity-parity.json",
@@ -823,7 +827,7 @@
       },
       "sdk-config": {
         "path": "docs/wave-2/sdk-config-parity.json",
-        "sha256": "63264b9f1c8b8b88c2903b9f4f598b19c68027cf3d7590b19eafa1d290e06bfe"
+        "sha256": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367"
       },
       "stickers": {
         "path": "docs/wave-2/stickers-parity.json",
@@ -831,11 +835,11 @@
       },
       "tools": {
         "path": "docs/wave-2/tools-parity.json",
-        "sha256": "b225f5ab716c46000ec234c63a7f70b8b47a9773f9d98c7e6b25461343f1cfeb"
+        "sha256": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
       }
     },
     "report": "docs/parity/wave-2-reconciliation.json",
-    "source_evidence_fingerprint": "f424232474c2a4dda049c2289dc005eec73983dcdc98445e12440490019d3aa9"
+    "source_evidence_fingerprint": "ebfa8bfdbd74bf621f79e07758acba42ae1a448603acd6d108227db6c988e402"
   },
   "strict_bridge": {
     "construct": "unsupported",

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "kind": "immutable-historical-source-join-locator",
+  "joined_head": "93a1badcb0ef414ca5218cf938e3b8e2be47a828",
+  "request_head": "6f718b1108b9f90b5d498e07ee324325842bbe5d",
+  "retained_in_commit": "fac6cf26be9f622dc1c5eec8cf7cf165fff6200c",
+  "retrieval": "git show <retained_in_commit>:<path>; raw SHA-256 below identifies the complete original bytes",
+  "boundary": "Historical claims, hashes, line snapshots, review states and run IDs stay attached to this cohort. New receipts do not replace hashes inside these immutable Git objects.",
+  "artifacts": {
+    "docs/parity/client-features.json": {
+      "git_blob": "6a02fb7897a955324938f9f6999233ac8ac3a295",
+      "sha256": "8fa5e3e5e40e29160ab2db033bd2fe413ef5dbee72162abfa16039aa685f0423",
+      "bytes": 6983400
+    },
+    "docs/parity/sdk-surface.json": {
+      "git_blob": "0b85d604870cbd256b6cecca87cba362dc640f85",
+      "sha256": "c6e6bd2ec7bb7e10d1ce845e5f76994889504ee6d826aecc50a762d5e8b42614",
+      "bytes": 982005
+    },
+    "docs/parity/wave-2-reconciliation.json": {
+      "git_blob": "835bbec51c46f0aa09962d9df0ac9bf7809cf281",
+      "sha256": "a3f501c8c2c59af18f39a55d9f9c1f8c7dc2f270e4c167eff057bfdb6e7f8dbf",
+      "bytes": 801742
+    },
+    "docs/parity/wave-2-reconciliation.md": {
+      "git_blob": "2d884e6a7c11d425456b0f74cd2b530ee3c095d8",
+      "sha256": "20580e8462e67b97edae4e99b983428d6a91beadb33211420b7742407f45ca38",
+      "bytes": 15110
+    },
+    "docs/parity/join-policy.json": {
+      "git_blob": "da6d439934fe625777c8b865dda2f8627a9027e1",
+      "sha256": "87e60dafdca0dad0b768d2a47183e9afbbbe23e3452c293a5ba11d8a4a71b7ab",
+      "bytes": 18204
+    }
+  },
+  "counts": {
+    "features": 567,
+    "modules": 30,
+    "sdk_symbols": 925,
+    "config_overloads": 308,
+    "pill_settings": 20,
+    "pill_types": 15,
+    "feature_receipt_gaps": 0,
+    "verified": 0,
+    "config_implemented": 272,
+    "config_blocked": 4,
+    "config_unsupported": 32
+  },
+  "selected_receipts": {
+    "feed": "21152aea58a0b4e542f40195e0f377b559d9843ca831eb0d228bcfc9c769d33b",
+    "sdk-config": "63264b9f1c8b8b88c2903b9f4f598b19c68027cf3d7590b19eafa1d290e06bfe"
+  },
+  "post_join_drift": ["feed", "sdk-config"],
+  "post_join_drift_details": "Retained verbatim inside the historical reconciliation Git blob; the later final join samples a new cohort.",
+  "reported_component_gate": {
+    "run_id": "43708260304",
+    "commit": "7d04a35a3612a2dc32dba6fb54744e38c07cabe9",
+    "Core": 545,
+    "PluginHost": 169,
+    "PluginHooks": 30,
+    "scope": "Linux component gate; no native app or visual acceptance"
+  }
+}

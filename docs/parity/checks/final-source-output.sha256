@@ -1,0 +1,13 @@
+# Raw output bytes for the fac6cf26 source join / 16c23a99 report publication.
+# Repository-relative paths; this checksum manifest excludes itself.
+547ccaa41dab992bff8505edad7311892e4d08df21892e312ea492cd3b8ae2cf  docs/parity/checks/inventory-tests-fac6cf26.xml
+ee82f6d3f53c1ff2ccc9785305b63553ea504abdb5274c11fa9148144d5fc240  docs/parity/client-features.json
+fceeaabf60fba6936c88b8234a0fc4d500f8acd0da3f31302b2ec5b4b56642cf  docs/parity/cohorts/93a1badc.json
+917b7cf57698ed116a84a2b2f15dad79bf77649f38a0cbdb927c46e72b5e6100  docs/parity/final-source-join.json
+f384e7c24871c8b712265ec3997578a5dec022e31bc08cad4f3d7a4a5c2ef294  docs/parity/index.md
+bbf70cfe5318bf0fe8f4a4e170a9fab9b21bb8c721dda5ed18c808aea397e30e  docs/parity/join-policy.json
+192927ae992bac53a2dac7e0b147f62827ec0dc2e027d6dd9dae28eaa922aef5  docs/parity/schema.md
+ce7b067fdcffc440ba3640ac194c2eef8a68192a80410cbcb3a593e0d9cf64d8  docs/parity/sdk-surface.json
+65c940cbd72d5ebcd50e5e12c87950ab9fc1b56694336cbb1d361cd4a3a5c593  docs/parity/wave-2-reconciliation.json
+8f470c46722f93ee7666b35b934a217ac35138c75be4947b7a8dd92444d334bf  docs/parity/wave-2-reconciliation.md
+7cb146d6d6a84ef7f29d475ad4012e50062eab1c3491bc51e0a967495801b21d  docs/wave-2/parity-final-source-join.md

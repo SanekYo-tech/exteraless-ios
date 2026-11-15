@@ -1,14 +1,15 @@
 {
   "aggregation_checks": {
-    "inventory_tests": {"result":"passed","count":42,"scope":"test_feature_inventory_join.py, test_feature_inventory_parity.py, test_feature_inventory_scanner.py; ordinary CPython 3.12, no SDK/plugin/native execution"},
-    "pure_data_check": "python -m tools.compat.feature_inventory --check-data: passed",
-    "scoped_whitespace_check": "passed",
-    "output_client_features_sha256": "8fa5e3e5e40e29160ab2db033bd2fe413ef5dbee72162abfa16039aa685f0423",
-    "output_sdk_surface_sha256": "c6e6bd2ec7bb7e10d1ce845e5f76994889504ee6d826aecc50a762d5e8b42614",
-    "original_java_kotlin_sha256": "8ef4beb977e16fc92583851958c906cfcf2e2f3a0a9c635e35209d3ad0e25cf4",
-    "sdk_input_relationship": "Selected SDK receipt was published against original inventory 17cf1a8e…; the data join necessarily changes that input document hash. The later SDK receipt observed below uses another intervening input snapshot, not this final 8fa5e3e5… output. SDK owner controls any subsequent regeneration.",
-    "new_review_closures": 0,
-    "verified_promotions": 0
+    "canonical_sdk_contract_unchanged": true,
+    "client_android_records_unchanged": true,
+    "original_module_method_indexes_unchanged": true,
+    "original_sdk_modules_byte_identical": 36,
+    "inventory_tests_passed": 42,
+    "inventory_test_receipt": "docs/parity/checks/inventory-tests-fac6cf26.xml",
+    "final_cohort_receipt": "docs/parity/final-source-join.json",
+    "historical_cohort": "docs/parity/cohorts/93a1badc.json",
+    "review_projection_note": "review_layers preserves each published report state/open_ids and report-scoped identity. Follow supersedes and the final cohort's current_review_groups for the later closure; historical open_ids are not current defect findings.",
+    "scope": "Static inventory and source-receipt reconciliation only; no verification promotion. SDK manifest --check passed after regeneration."
   },
   "android_consumer_corrections": [
     {
@@ -75,17 +76,17 @@
       "reference": {
         "anchor": "Source Root/App/Cloud C1–C6/PR02/03/05/14",
         "anchor_resolution": "exact-anchor",
-        "line": 49,
+        "line": 293,
         "match_count": 1,
         "matches": [
           {
-            "line": 49,
+            "line": 293,
             "text": "- Source Root/App/Cloud C1–C6/PR02/03/05/14, tracking/canonical migration и common"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -97,17 +98,17 @@
       "reference": {
         "anchor": "TLN04 — все11 hunks applied",
         "anchor_resolution": "exact-anchor",
-        "line": 53,
+        "line": 297,
         "match_count": 1,
         "matches": [
           {
-            "line": 53,
+            "line": 297,
             "text": "- **TLN04 — все11 hunks applied** поверх PR02/C5/CA04. **TLN05 — все5 Enqueue hunks"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -119,17 +120,17 @@
       "reference": {
         "anchor": "TLN05 — все5 Enqueue hunks",
         "anchor_resolution": "exact-anchor",
-        "line": 53,
+        "line": 297,
         "match_count": 1,
         "matches": [
           {
-            "line": 53,
+            "line": 297,
             "text": "- **TLN04 — все11 hunks applied** поверх PR02/C5/CA04. **TLN05 — все5 Enqueue hunks"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -141,17 +142,17 @@
       "reference": {
         "anchor": "AP common Help/Premium/Stickers и четыре Tools mode consumers applied",
         "anchor_resolution": "exact-anchor",
-        "line": 58,
+        "line": 302,
         "match_count": 1,
         "matches": [
           {
-            "line": 58,
+            "line": 302,
             "text": "- AP common Help/Premium/Stickers и четыре Tools mode consumers applied coordinator"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -163,17 +164,17 @@
       "reference": {
         "anchor": "IDS02 Avatar/PeerAvatar display-filter hunks applied",
         "anchor_resolution": "exact-anchor",
-        "line": 60,
+        "line": 304,
         "match_count": 1,
         "matches": [
           {
-            "line": 60,
+            "line": 304,
             "text": "method/code buffer). IDS02 Avatar/PeerAvatar display-filter hunks applied; AF05"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -185,17 +186,17 @@
       "reference": {
         "anchor": "Runtime patch применён SDK",
         "anchor_resolution": "exact-anchor",
-        "line": 50,
+        "line": 294,
         "match_count": 1,
         "matches": [
           {
-            "line": 50,
+            "line": 294,
             "text": "Chat optional-sound signatures применены. Native HNS Runtime patch применён SDK"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -207,17 +208,17 @@
       "reference": {
         "anchor": "CMC12 coordinator source fix",
         "anchor_resolution": "exact-anchor",
-        "line": 62,
+        "line": 306,
         "match_count": 1,
         "matches": [
           {
-            "line": 62,
+            "line": 306,
             "text": "- CMC12 coordinator source fix: Browser root подключён к modal и horizontal gates;"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -229,17 +230,17 @@
       "reference": {
         "anchor": "CA04 все Network/Runtime Swift logging hunks applied",
         "anchor_resolution": "exact-anchor",
-        "line": 56,
+        "line": 300,
         "match_count": 1,
         "matches": [
           {
-            "line": 56,
+            "line": 300,
             "text": "`tlCommit:`. CA04 все Network/Runtime Swift logging hunks applied, nested Rust"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
@@ -251,20 +252,64 @@
       "reference": {
         "anchor": "NetworkMaps/Rust/passive RTT уже applied",
         "anchor_resolution": "exact-anchor",
-        "line": 168,
+        "line": 412,
         "match_count": 1,
         "matches": [
           {
-            "line": 168,
+            "line": 412,
             "text": "Chat owner. NetworkMaps/Rust/passive RTT уже applied. Build подготовил strict outer"
           }
         ],
         "path": "docs/wave-2/progress.md",
         "reference_scope": "published-report",
-        "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
       },
       "report": "docs/wave-2/progress.md",
       "state": "reported-applied-source",
+      "verified": false
+    },
+    {
+      "anchor": "Все source joins пяти portable adapters применены",
+      "id": "portable-five-final-source",
+      "reference": {
+        "anchor": "Все source joins пяти portable adapters применены",
+        "anchor_resolution": "exact-anchor",
+        "line": 157,
+        "match_count": 1,
+        "matches": [
+          {
+            "line": 157,
+            "text": "- Все source joins пяти portable adapters применены: Font/Layout root/registration,"
+          }
+        ],
+        "path": "docs/wave-2/progress.md",
+        "reference_scope": "published-report",
+        "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
+      },
+      "report": "docs/wave-2/progress.md",
+      "state": "reported-applied-source",
+      "verified": false
+    },
+    {
+      "anchor": "276 implemented / 0 blocked / 32 unsupported",
+      "id": "sdk-final-portable-bindings",
+      "reference": {
+        "anchor": "276 implemented / 0 blocked / 32 unsupported",
+        "anchor_resolution": "exact-anchor",
+        "line": 3,
+        "match_count": 1,
+        "matches": [
+          {
+            "line": 3,
+            "text": "**276 implemented / 0 blocked / 32 unsupported**, exactly **308 ExteraConfig IDs**"
+          }
+        ],
+        "path": "docs/wave-2/sdk-portable-source-cohort.md",
+        "reference_scope": "published-report",
+        "sha256": "01c64261dc1a075bcff0ea14f335fda78e8fbae464e85ca1581fa73f00f28a8d"
+      },
+      "report": "docs/wave-2/sdk-portable-source-cohort.md",
+      "state": "published-source-cohort",
       "verified": false
     }
   ],
@@ -328,34 +373,34 @@
         {
           "anchor": "ChatFeatures.migrateSettings(in: ClientSettings.shared)",
           "anchor_resolution": "exact-anchor",
-          "line": 85,
+          "line": 90,
           "match_count": 1,
           "matches": [
             {
-              "line": 85,
+              "line": 90,
               "text": "try ChatFeatures.migrateSettings(in: ClientSettings.shared)"
             }
           ],
           "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift",
           "reference_scope": "source",
           "role": "main-migration",
-          "sha256": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473"
+          "sha256": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e"
         },
         {
           "anchor": "ChatFeatures.migrateSettings(in: ClientSettings.shared)",
           "anchor_resolution": "exact-anchor",
-          "line": 52,
+          "line": 56,
           "match_count": 1,
           "matches": [
             {
-              "line": 52,
+              "line": 56,
               "text": "try ChatFeatures.migrateSettings(in: ClientSettings.shared)"
             }
           ],
           "path": "telegram-ios/Telegram/Share/ShareRootController.swift",
           "reference_scope": "source",
           "role": "share-migration",
-          "sha256": "3f2511adac3a6807a2fb9c77555fffbc7fcd033f5d33822659232f40c48c111a"
+          "sha256": "cee140228d618911b9fde754009b528cefaac4aafe9deee00d45649e759fa620"
         }
       ],
       "boundary": "Applied declaration/consumer/migration source joins only; does not close CMC/AI review findings or grant native/visual verification.",
@@ -1723,57 +1768,65 @@
       "id": "compat.ExteraConfig.getTabletMode()",
       "ios": {
         "adaptation": {
-          "canonical_keys": [],
-          "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting.",
+          "canonical_keys": [
+            "appearance.tabletMode"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings",
           "sdk_route": "read"
         },
         "platform_constraints": [],
-        "setting_key": null
+        "setting_key": "appearance.tabletMode"
       },
       "ported": false,
-      "status": "blocked"
+      "status": "implemented"
     },
     {
       "id": "compat.ExteraConfig.setTabletMode(int)",
       "ios": {
         "adaptation": {
-          "canonical_keys": [],
-          "note": "NekoConfig.tabletMode: Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting.",
+          "canonical_keys": [
+            "appearance.tabletMode"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings",
           "sdk_route": "write"
         },
         "platform_constraints": [],
-        "setting_key": null
+        "setting_key": "appearance.tabletMode"
       },
       "ported": false,
-      "status": "blocked"
+      "status": "implemented"
     },
     {
       "id": "compat.ExteraConfig.getUseSystemFonts()",
       "ios": {
         "adaptation": {
-          "canonical_keys": [],
-          "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean.",
+          "canonical_keys": [
+            "appearance.useSystemFonts"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings",
           "sdk_route": "read"
         },
         "platform_constraints": [],
-        "setting_key": null
+        "setting_key": "appearance.useSystemFonts"
       },
       "ported": false,
-      "status": "blocked"
+      "status": "implemented"
     },
     {
       "id": "compat.ExteraConfig.setUseSystemFonts(boolean)",
       "ios": {
         "adaptation": {
-          "canonical_keys": [],
-          "note": "NekoConfig.typeface: Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean.",
+          "canonical_keys": [
+            "appearance.useSystemFonts"
+          ],
+          "note": "live native settings; defaults/validation belong to ClientSettings",
           "sdk_route": "write"
         },
         "platform_constraints": [],
-        "setting_key": null
+        "setting_key": "appearance.useSystemFonts"
       },
       "ported": false,
-      "status": "blocked"
+      "status": "implemented"
     },
     {
       "id": "compat.ExteraConfig.getGooeyAvatarAnimation()",
@@ -5214,30 +5267,78 @@
   ],
   "component_evidence": {
     "feature_verification_promotions": 0,
-    "head_at_request": "6f718b1108b9f90b5d498e07ee324325842bbe5d",
-    "head_ci": "pending/unread",
-    "last_full_green": {
+    "head_at_request": "fac6cf26be9f622dc1c5eec8cf7cf165fff6200c",
+    "historical_full_linux_green": {
       "Core": 545,
       "PluginHooks": 30,
       "PluginHost": 169,
       "commit": "7d04a35a3612a2dc32dba6fb54744e38c07cabe9",
       "run_id": "43708260304"
     },
+    "last_reported_linux_core": {
+      "Core": 661,
+      "PluginHooks": 30,
+      "PluginHost": 180,
+      "commit": "96bff39e89dc889d410821242139d78339c70185",
+      "run_id": "43732308228"
+    },
+    "last_verified_full_ipa": {
+      "build": 23,
+      "commit": "68bb1adf",
+      "run_id": "43635233046"
+    },
+    "mac_component": {
+      "Core": 671,
+      "PluginHooks": 30,
+      "PluginHost": 180,
+      "artifact_root": "build/artifacts/python-runtime-43738810843",
+      "boundary": "Mac components, real Swift/C/CPython SDK children with Foundation DTO/provider fixtures, and standalone simulator probes. No production Telegram network, UIKit, full Telegram IPA or physical-device execution claim.",
+      "commit": "136c946f",
+      "device_probe": "unsigned compilation only",
+      "foundation_hns_scenarios": 23,
+      "independent_validation_report": "docs/wave-2/runtime-native-acceptance.md",
+      "java_foundation_cases": 7,
+      "real_swift_c_cpython_sdk_children": 3,
+      "reported_status": "success",
+      "run_id": "43738810843",
+      "simulator_C_baseline_callbacks": 169,
+      "simulator_C_callbacks": 219,
+      "simulator_C_owner_bound_callbacks": 41
+    },
     "native_frames": false,
+    "native_ui_source_plan": {
+      "classes": 88,
+      "execution": "not supplied/executed in this source join",
+      "labels": 36,
+      "methods": 410,
+      "publication": "1f97255c",
+      "recording_batches": [
+        3,
+        3,
+        2
+      ],
+      "source_report": "docs/wave-2/native-ui-freeze.md",
+      "sources": 85
+    },
     "new_full_ipa": false,
-    "source": "coordinator/user report; no CI query"
+    "requested_full_ipa": {
+      "commit": "fac6cf26be9f622dc1c5eec8cf7cf165fff6200c",
+      "run_id": "43740868881",
+      "status_at_request": "in-progress; not queried/polled by this join"
+    },
+    "source": "coordinator/user report plus read-only local artifact summaries; no CI query or binary re-verification"
   },
   "counts": {
     "api_author_statuses": {
-      "blocked": 4,
-      "implemented": 272,
+      "blocked": 0,
+      "implemented": 276,
       "unsupported": 32
     },
     "compatibility_apis": 308,
     "feature_author_statuses": {
       "compat-storage": 7,
-      "implemented": 120,
-      "partial": 408,
+      "implemented": 121,
+      "partial": 407,
       "platform-prerequisite": 1,
       "unsupported": 31
     },
@@ -5729,9 +5830,9 @@
         "symbol": "AppearanceConfig.monetStyle"
       },
       "author_status": "partial",
-      "disposition": "portable-pending-or-scoped-adaptation",
+      "disposition": "portable-native-source-adaptation",
       "id": "appearance.monetStyle",
-      "ios_key": null,
+      "ios_key": "appearance.monetStyle",
       "owner": "appearance",
       "ported": false
     },
@@ -7187,10 +7288,10 @@
         "symbol": "EtgBackup.ChatSwipeAction"
       },
       "author_status": "partial",
-      "disposition": "portable-pending-or-scoped-adaptation",
+      "disposition": "portable-native-source-adaptation",
       "id": "etgbackup.ChatSwipeAction",
-      "ios_key": null,
-      "owner": "tools",
+      "ios_key": "chats.chatSwipeAction",
+      "owner": "chat-swipe",
       "ported": false
     },
     {
@@ -8677,7 +8778,7 @@
       "author_status": "partial",
       "disposition": "source-claim-with-explicit-scope",
       "id": "nagram.hideHelpSection",
-      "ios_key": null,
+      "ios_key": "appearance.hideHelpSection",
       "owner": "appearance",
       "ported": false
     },
@@ -8691,7 +8792,7 @@
       "author_status": "partial",
       "disposition": "source-claim-with-explicit-scope",
       "id": "nagram.hidePremiumSection",
-      "ios_key": null,
+      "ios_key": "appearance.hidePremiumSection",
       "owner": "appearance",
       "ported": false
     },
@@ -9444,10 +9545,10 @@
         "line": 1081,
         "symbol": "NaConfig.performanceClass"
       },
-      "author_status": "partial",
-      "disposition": "portable-pending-or-scoped-adaptation",
+      "author_status": "implemented",
+      "disposition": "portable-native-source-adaptation",
       "id": "nagram.performanceClass",
-      "ios_key": null,
+      "ios_key": "tools.performanceClass",
       "owner": "tools",
       "ported": false
     },
@@ -10455,7 +10556,7 @@
       "author_status": "partial",
       "disposition": "source-claim-with-explicit-scope",
       "id": "nagram.showStickersRowToplevel",
-      "ios_key": null,
+      "ios_key": "appearance.showStickersRowToplevel",
       "owner": "appearance",
       "ported": false
     },
@@ -12217,9 +12318,9 @@
         "symbol": "NekoConfig.tabletMode"
       },
       "author_status": "partial",
-      "disposition": "portable-pending-or-scoped-adaptation",
+      "disposition": "portable-native-source-adaptation",
       "id": "neko.tabletMode",
-      "ios_key": null,
+      "ios_key": "appearance.tabletMode",
       "owner": "appearance",
       "ported": false
     },
@@ -12301,9 +12402,9 @@
         "symbol": "NekoConfig.typeface"
       },
       "author_status": "partial",
-      "disposition": "portable-pending-or-scoped-adaptation",
+      "disposition": "portable-native-source-adaptation",
       "id": "neko.typeface",
-      "ios_key": null,
+      "ios_key": "appearance.useSystemFonts",
       "owner": "appearance",
       "ported": false
     },
@@ -13391,9 +13492,9 @@
     "proxyutil.oe_proxy_auto_disabled",
     "regexfiltereditactivity.view_animations"
   ],
-  "head_at_join": "93a1badcb0ef414ca5218cf938e3b8e2be47a828",
-  "input_inventory_sha256": "0d4c609683d9e30372152c348eb3d125c719d4717cbbb523820ab059b6f0c4a3",
-  "input_sdk_surface_sha256": "e1618018b9740265744e564c448e7dfe524fe27a2cb4665f10af24f126e639af",
+  "head_at_join": "16c23a99449eba704885a83982e35a079054f815",
+  "input_inventory_sha256": "8fa5e3e5e40e29160ab2db033bd2fe413ef5dbee72162abfa16039aa685f0423",
+  "input_sdk_surface_sha256": "c6e6bd2ec7bb7e10d1ce845e5f76994889504ee6d826aecc50a762d5e8b42614",
   "kind": "materialized-source-claim-reconciliation",
   "missing_feature_receipts": [],
   "module_authorship_needs": {
@@ -15661,6 +15762,13 @@
   },
   "owner_conflicts_resolved": [
     {
+      "id": "etgbackup.ChatSwipeAction",
+      "primary": "chat-swipe",
+      "secondary": [
+        "tools"
+      ]
+    },
+    {
       "id": "nagram.showTextTranslate",
       "primary": "chat",
       "secondary": [
@@ -15946,17 +16054,17 @@
         "reference": {
           "anchor": "NetworkMaps/Rust/passive RTT уже applied",
           "anchor_resolution": "exact-anchor",
-          "line": 168,
+          "line": 412,
           "match_count": 1,
           "matches": [
             {
-              "line": 168,
+              "line": 412,
               "text": "Chat owner. NetworkMaps/Rust/passive RTT уже applied. Build подготовил strict outer"
             }
           ],
           "path": "docs/wave-2/progress.md",
           "reference_scope": "published-report",
-          "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+          "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
         },
         "remaining": "MtProtoKit retained RTT and physical/native measurements unverified; no zero/RPC-latency substitution.",
         "state": "reported-Rust-passive-RTT-forwarding-applied",
@@ -16086,16 +16194,42 @@
       ]
     }
   ],
-  "policy_sha256": "87e60dafdca0dad0b768d2a47183e9afbbbe23e3452c293a5ba11d8a4a71b7ab",
-  "post_join_receipt_drift": ["feed", "sdk-config"],
-  "post_join_receipt_drift_details": [
-    {"owner":"feed","path":"docs/wave-2/feed-parity.json","selected_sha256":"21152aea58a0b4e542f40195e0f377b559d9843ca831eb0d228bcfc9c769d33b","observed_after_join_sha256":"145146c639d8e7307b5082dc35f82985c0550c60a79cf512969a57afab6f404f"},
-    {"owner":"sdk-config","path":"docs/wave-2/sdk-config-parity.json","selected_sha256":"63264b9f1c8b8b88c2903b9f4f598b19c68027cf3d7590b19eafa1d290e06bfe","observed_after_join_sha256":"e0d2d881d573364a2f0ce6f2d6916eabb2d3c22dec08ecbb665fd2575def8e94","observed_counts_not_joined":{"implemented":272,"blocked":4,"unsupported":32},"observed_input_inventory_sha256":"0d4c609683d9e30372152c348eb3d125c719d4717cbbb523820ab059b6f0c4a3"}
-  ],
-  "post_join_drift_policy": "One bounded final comparison of published receipt hashes, not polling. Retain the selected records and original hashes; the newer Feed/SDK publications are not mixed into this join. SDK owner output was never written or regenerated here.",
+  "policy_sha256": "bbf70cfe5318bf0fe8f4a4e170a9fab9b21bb8c721dda5ed18c808aea397e30e",
   "previous_verified": 0,
+  "post_join_receipt_drift": [],
+  "post_join_followup": {
+    "source": "Subsequent coordinator instruction; no CI query or repeated full source scan",
+    "cohort_boundary": "Materialized production source remains the fac6cf26 snapshot, with reports published at 16c23a99. Later owner changes require their own source/SDK receipt.",
+    "full_ipa": {
+      "run_id": "43740868881",
+      "commit": "fac6cf26be9f622dc1c5eec8cf7cf165fff6200c",
+      "reported_status": "failure",
+      "telegram_core_typecheck_errors": 25,
+      "followup": "Four owners assigned narrow signature/capture corrections"
+    },
+    "atomic_ghost": {
+      "status": "source follow-up assigned",
+      "owner": "ses_e1fbf2c33",
+      "reported_source": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift",
+      "issue": "Legacy per-setting for/set does not satisfy the final atomic Ghost requirement",
+      "change_scope": "Core helper and three writers, including a ClientRuntime Root method; definitions unchanged",
+      "sdk_source_pin_policy": "Temporary raw Root-pin drift is expected during this owned follow-up. Coordinator regenerates the SDK manifest after code completion; not classified as a broken catalog or repaired by the parity join."
+    },
+    "independent_runtime_acceptance": {
+      "path": "docs/wave-2/runtime-native-acceptance.md",
+      "sha256": "a56d2b7eee2b53e02baa978a55628fbde78c7660c3bf5ac29d36a450d94243f5",
+      "verdict": "PASS within runtime/component gate",
+      "run_id": "43738810843",
+      "commit": "136c946f87194221342a83b2b06743fe4cc3fc7c",
+      "terminal_payloads_created": 2,
+      "terminal_payloads_freed": 2,
+      "binary_verification_repeated_by_this_join": false,
+      "boundary": "Independent execution evidence for the pinned component/probe snapshot; no current all-feature, Telegram network, UIKit or full-IPA parity promotion."
+    }
+  },
+  "post_join_drift_policy": "One read-only comparison of the 19 selected receipt hashes immediately after materialization and before the announced follow-ups found no drift. Historical Feed/SDK drift remains attached to cohorts/93a1badc.json and its immutable Git blobs; later atomic-Ghost Root-pin changes belong to the coordinator's next SDK cohort.",
   "proof_boundary": "Published author claims and targeted source anchors only. No code review, CI query, compilation, plugin/native execution, UI/frames or verified promotions. Reference counts do not establish runtime effects.",
-  "receipt_read_mode": "replayed retained normalized source claims; original read-time hashes retained",
+  "receipt_read_mode": "published files read once and hash-pinned",
   "review_layers": [
     {
       "boundary": "Original source counterexamples closed; not Apple Keychain/power-loss/native feature acceptance.",
@@ -16326,6 +16460,415 @@
       "resolved_by_this_join": false,
       "sha256": "be65f8024e3061351173d6058e1f0ab4e7e63b5ec5485df2e79ada3588bdae42",
       "state": "independent-source-closure"
+    },
+    {
+      "boundary": "AI-only report-scoped AF-03; source merge/reload/Retry closure, native fixtures/frames separate.",
+      "path": "docs/wave-2/reviews/ai-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "1aedb3604d3d698a754a438a2f5a4317942bdd23c8f03df406eaf1af2907a8f5",
+      "source_closed_ids": [
+        "AIAF-01",
+        "AF-03"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/ai-af-followup.md"
+      ]
+    },
+    {
+      "boundary": "Four source counterexamples only; later Mac evidence is a separate run identity.",
+      "path": "docs/wave-2/reviews/host-native-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "69480dacf8fcd46ff67a0110aa76666afa86de7bd3fb584412400b03e36c96bb",
+      "source_closed_ids": [
+        "HNS-F01",
+        "HNS-F02",
+        "HNS-F03",
+        "HNS-F04"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/host-native-services-followup.md"
+      ]
+    },
+    {
+      "boundary": "Versioned owner/startup/recovery/resource source paths; native app fixtures unexecuted.",
+      "path": "docs/wave-2/reviews/privacy-retention-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "97b01f55cc82c6443fba10c60240ca3b4487e4be4eeb24ae3f47e1589d47604f",
+      "source_closed_ids": [
+        "PFR01",
+        "PFR02",
+        "PFR03",
+        "PFR04",
+        "PFR05"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/privacy-retention-followup.md"
+      ]
+    },
+    {
+      "boundary": "Original 13 closures retained; final two counterexamples are superseded by chat-final-source-closure.md.",
+      "open_ids": [
+        "CMC-03",
+        "CMC-05"
+      ],
+      "path": "docs/wave-2/reviews/chat-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "1c260550f22f27605f9b0d998ecbbde4fe74350ae1d4efb896ed33f4c1b9a79d",
+      "source_closed_ids": [
+        "CMC-01",
+        "CMC-02",
+        "CMC-04",
+        "CMC-06",
+        "CMC-07",
+        "CMC-08",
+        "CMC-09",
+        "CMC-10",
+        "CMC-11",
+        "CMC-12",
+        "CMC-13",
+        "CMC-14",
+        "CMC-15"
+      ],
+      "state": "historical-partial-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/chat-media-composer.md"
+      ]
+    },
+    {
+      "boundary": "Held persistent Forward writer and complete media Schedule DTO source-closed; 8+4 native fixture methods are authored, not run.",
+      "path": "docs/wave-2/reviews/chat-final-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "c42c0f0248f6eaeccdbbb7a7d5aa76acd23730e07001b34204f98a93bed2db0b",
+      "source_closed_ids": [
+        "CMC-03",
+        "CMC-05"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/chat-source-closure.md"
+      ]
+    },
+    {
+      "boundary": "Actual timeline, seven Save calls, surviving renderer and paused lyrics paths; no Photos/Activity/UIKit execution inference.",
+      "path": "docs/wave-2/reviews/feed-player-final-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "0c4956bf7d874268f9819bf53b45378dee88b41446baf2a72df9dff32afbab77",
+      "source_closed_ids": [
+        "FPP-FU-01",
+        "FPP-FU-02",
+        "FPP-FU-03",
+        "FPP-FU-04"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/feed-player-pills-followup.md"
+      ]
+    },
+    {
+      "boundary": "Nine original SDK defects closed. Its historical 272/4/32 and 56-pin snapshot is not the final 276/0/32, 59-pin cohort.",
+      "path": "docs/wave-2/reviews/sdk-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "5454eb9617074ba4ff86ae4294859da542ca917e04fa66b457d0224bcd6cd1ba",
+      "source_closed_ids": [
+        "SDK-01",
+        "SDK-02",
+        "SDK-03",
+        "SDK-04",
+        "SDK-05",
+        "SDK-06",
+        "SDK-07",
+        "SDK-08",
+        "SDK-09"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/sdk-config-adapters.md"
+      ]
+    },
+    {
+      "boundary": "Six named source counterexamples; device durability, native decoders and UI frames remain separate.",
+      "path": "docs/wave-2/reviews/tools-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "77f8ddd8d714a393dd7091560db889467a9c77296e4fa6fb4d384d8b585b235c",
+      "source_closed_ids": [
+        "TBF-01",
+        "TBF-02",
+        "TBF-03",
+        "TBF-04",
+        "TBF-05",
+        "TBF-06"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/tools-backup-followup.md"
+      ]
+    },
+    {
+      "boundary": "Retains original seven closures; IDS-02 consumer/invalidation tails follow in identity-source-closure.md.",
+      "open_ids": [
+        "IDSF-01",
+        "IDSF-02"
+      ],
+      "partially_closed_ids": [
+        "IDS-02"
+      ],
+      "path": "docs/wave-2/reviews/identity-dialogs-stickers-followup.md",
+      "resolved_by_this_join": false,
+      "sha256": "7bf9a8bd2ec384c6ce67add8cff68df47f76796db9c4c5072cdfa081daa21087",
+      "source_closed_ids": [
+        "IDS-01",
+        "IDS-03",
+        "IDS-04",
+        "IDS-05",
+        "IDS-06",
+        "IDS-07",
+        "IDS-08"
+      ],
+      "state": "historical-partial-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/identity-dialogs-stickers.md"
+      ]
+    },
+    {
+      "boundary": "Two actual contact-name/initials and live invalidation counterexamples; native/frames separate.",
+      "completes_original_ids": [
+        "IDS-02"
+      ],
+      "path": "docs/wave-2/reviews/identity-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "a19684430773dd7b789024ac8bdbf2e58dbec777755f1dce36880a71627c3a92",
+      "source_closed_ids": [
+        "IDSF-01",
+        "IDSF-02"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/identity-dialogs-stickers-followup.md"
+      ]
+    },
+    {
+      "boundary": "Avatar-specific AF IDs belong to this report, distinct from the AI AF findings.",
+      "open_ids": [
+        "AF-01",
+        "AF-02",
+        "AF-03",
+        "AF-04"
+      ],
+      "partially_closed_ids": [
+        "AP-04",
+        "AP-05",
+        "AP-06"
+      ],
+      "path": "docs/wave-2/reviews/appearance-followup.md",
+      "resolved_by_this_join": false,
+      "sha256": "77ab05838ead5286cb164dd3c6ed26e10c38b29f379a8728a05ff45a2e5fed66",
+      "source_closed_ids": [
+        "AP-01",
+        "AP-02",
+        "AP-03",
+        "AP-07",
+        "AP-08",
+        "AP-09",
+        "AP-10",
+        "AP-11"
+      ],
+      "state": "historical-partial-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/appearance.md"
+      ]
+    },
+    {
+      "boundary": "Four avatar source counterexamples closed; active-crossfade tail follows in avatar-crossfade-source-closure.md.",
+      "open_ids": [
+        "ASC-01"
+      ],
+      "path": "docs/wave-2/reviews/appearance-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "113d21b60dc63277e51c8f8473c8874c39441936680cb72fb9e91287741f3736",
+      "source_closed_ids": [
+        "AF-01",
+        "AF-02",
+        "AF-03",
+        "AF-04"
+      ],
+      "state": "historical-partial-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/appearance-followup.md"
+      ]
+    },
+    {
+      "boundary": "Owned active fade reset/late completion source-closed; native pixels and frames remain unverified.",
+      "completes_original_ids": [
+        "AP-04",
+        "AP-05",
+        "AP-06"
+      ],
+      "path": "docs/wave-2/reviews/avatar-crossfade-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "748b7aa8e0410524475c7365731abe28852a9c714921c7ca3d03c5e774103dd5",
+      "source_closed_ids": [
+        "ASC-01"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/appearance-source-closure.md"
+      ]
+    },
+    {
+      "boundary": "All original eleven closures retained; two validator intersections have a later exact closure.",
+      "open_ids": [
+        "TLN-F01",
+        "TLN-F02"
+      ],
+      "path": "docs/wave-2/reviews/tl-network-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "f4a0b87b5b36176739a50881b3eb6d2d0b3560f57567542734d5c7f67c1cbbc5",
+      "source_closed_ids": [
+        "TLN-01",
+        "TLN-02",
+        "TLN-03",
+        "TLN-04",
+        "TLN-05",
+        "TLN-06",
+        "TLN-07",
+        "TLN-08",
+        "TLN-09",
+        "TLN-10",
+        "TLN-11"
+      ],
+      "state": "historical-source-closure-with-followup",
+      "supersedes": [
+        "docs/wave-2/reviews/tl-network.md"
+      ]
+    },
+    {
+      "boundary": "Optional-null normalization and counter-free Vector mutation source-closed; preserves earlier standalone/Mac run identities.",
+      "path": "docs/wave-2/reviews/tl-validator-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "5566e68a65d75982121f4da83c695c6fa5a183043122fcfc06861def2584eae9",
+      "source_closed_ids": [
+        "TLN-F01",
+        "TLN-F02"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/tl-network-source-closure.md"
+      ]
+    },
+    {
+      "boundary": "Original Cloud/API closures and later CAF tails retain report-local identities.",
+      "open_ids": [
+        "CAF-01",
+        "CAF-02",
+        "CAF-03"
+      ],
+      "partially_closed_ids": [
+        "CA-04",
+        "CA-05"
+      ],
+      "path": "docs/wave-2/reviews/cloud-api-followup.md",
+      "resolved_by_this_join": false,
+      "sha256": "fb8d87d264cf9f70aa28485ca286cb1a99a4cd7a7b14bd793d01b11bf11c80bd",
+      "source_closed_ids": [
+        "CA-01",
+        "CA-02",
+        "CA-03",
+        "CA-06"
+      ],
+      "state": "historical-source-closure-with-followup"
+    },
+    {
+      "boundary": "Metadata protocol type, retained credential presence and opt-out restore source-closed; Keychain/native UI acceptance separate.",
+      "completes_original_ids": [
+        "CA-04",
+        "CA-05"
+      ],
+      "path": "docs/wave-2/reviews/cloud-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "c8ce61ff67c56185b58266bca2180e025c0607f2bf2452ad61c4c5e761efb304",
+      "source_closed_ids": [
+        "CAF-01",
+        "CAF-02",
+        "CAF-03"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/cloud-api-followup.md"
+      ]
+    },
+    {
+      "boundary": "Three portable source counterexamples, superseded by the exact Navigation/renderer closure.",
+      "open_ids": [
+        "PNP-01",
+        "PNP-02",
+        "PNP-03"
+      ],
+      "path": "docs/wave-2/reviews/portable-navigation-performance.md",
+      "resolved_by_this_join": false,
+      "sha256": "1640b95c7a3a96d591339a2f7c50df2be5785364181a777b5a2d3f763d52525e",
+      "state": "historical-source-findings"
+    },
+    {
+      "boundary": "Keyboard/focus adoption and actual DCT/Subcodec advances; 3+9 native fixtures remain unexecuted.",
+      "path": "docs/wave-2/reviews/navigation-performance-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "1465039ae3810991caa8a34942aeccd819799007be711786bd7dcf407a31366e",
+      "source_closed_ids": [
+        "PNP-01",
+        "PNP-02",
+        "PNP-03"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/portable-navigation-performance.md"
+      ]
+    },
+    {
+      "boundary": "Monet had no new P1/P2 in the reviewed scope; missing Original assets and native frames are still distinct parity limits.",
+      "open_ids": [
+        "PFM-01"
+      ],
+      "path": "docs/wave-2/reviews/portable-fonts-monet.md",
+      "resolved_by_this_join": false,
+      "sha256": "44d9ffd0ef45410feb6cd43795ceb72bcab93073b0b1fa6ea7797f7d21f7ee2b",
+      "state": "historical-source-findings"
+    },
+    {
+      "boundary": "Three actual consumers and 294 getter substitutions / 167 files; not all instance-cache/UI closure or an executed native fixture.",
+      "path": "docs/wave-2/reviews/font-consumer-source-closure.md",
+      "resolved_by_this_join": false,
+      "sha256": "f535a0508c728a2f8bbc5a96f18ca876fbf4e1c23b94301683ed4b7d251610fc",
+      "source_closed_ids": [
+        "PFM-01"
+      ],
+      "state": "independent-source-closure",
+      "supersedes": [
+        "docs/wave-2/reviews/portable-fonts-monet.md"
+      ]
+    },
+    {
+      "boundary": "Five-file OS-alias/no-follow source closure; later Mac component evidence is separately attributed.",
+      "path": "docs/wave-2/reviews/darwin-storage-source-closure.md",
+      "resolved_by_this_join": false,
+      "scope_id": "darwin-storage-root-trust",
+      "sha256": "52f662aa7c5a4115b6b62d680db9cbd684843afedcbbdad4f04af1e78954392d",
+      "state": "independent-source-closure"
+    },
+    {
+      "boundary": "Owner documents the presence/public-cache fix and three named regressions. No final independent SCR-01 re-review is supplied by this join; historical OPEN is not a fresh defect finding.",
+      "path": "docs/wave-2/settings-remediation.md",
+      "reported_fixed_ids": [
+        "SCR-01"
+      ],
+      "resolved_by_this_join": false,
+      "sha256": "23af04a6aaed1e7d7d7a1e6c2de85826ed2b15e7dfea86f9c550081e4c208683",
+      "state": "owner-source-remediation-published",
+      "supersedes": [
+        "docs/wave-2/reviews/settings-recovery-followup.md"
+      ]
     }
   ],
   "schema_version": 2,
@@ -17281,7 +17824,7 @@
       "sdk.base_plugin.BasePlugin.unhook_method"
     ]
   },
-  "source_evidence_fingerprint": "f424232474c2a4dda049c2289dc005eec73983dcdc98445e12440490019d3aa9",
+  "source_evidence_fingerprint": "ebfa8bfdbd74bf621f79e07758acba42ae1a448603acd6d108227db6c988e402",
   "source_file_pins": {
     "docs/dialogs-integration.md": {
       "bytes": 8603,
@@ -17289,9 +17832,9 @@
       "sha256": "10893ed23d5adc691d9f35d0f2af0e77ba475125a1dc91379e41df11669b9b22"
     },
     "docs/feed-remediation.md": {
-      "bytes": 27272,
-      "lines": 422,
-      "sha256": "f7c89352129f2a11e63ea9e1dcd6fc89fe71acd746fc9e5a5ca88cf392dc8653"
+      "bytes": 37951,
+      "lines": 577,
+      "sha256": "c3e3afba950774e0574c781d5d57ebf0843a1a536e239cadc9da5984027a7645"
     },
     "docs/wave-2/ai-native-hunks.patch": {
       "bytes": 15071,
@@ -17303,25 +17846,15 @@
       "lines": 76,
       "sha256": "5203898695da49fe9387ffcf7e81a23b514910011aeb81da297f6c27be737928"
     },
-    "docs/wave-2/appearance-owner-common.patch": {
-      "bytes": 1496,
-      "lines": 20,
-      "sha256": "06e12a5d380beecf421b93c664ae98e284a889c63afe23cd933f11a296c4e1fa"
-    },
     "docs/wave-2/appearance-owner-completion.md": {
       "bytes": 12466,
       "lines": 115,
       "sha256": "c484fb21ee6798fec8f305524c84ec3ff3d471bc2ec8a9007a9d7a258da212fc"
     },
-    "docs/wave-2/appearance-parity.json": {
-      "bytes": 85733,
-      "lines": 409,
-      "sha256": "7c397ebf12dc7a1e5f1a1bb54dc3b7925469af15bd2d395225fa62dbe00fb0c3"
-    },
     "docs/wave-2/appearance-remediation.md": {
-      "bytes": 15091,
-      "lines": 165,
-      "sha256": "9e359d910000a3c048c55222b483eeda07194d166d9dad1a7276865ac98479d1"
+      "bytes": 23117,
+      "lines": 275,
+      "sha256": "a70134ef41e6318d0972779f046dafda70e12ff0ebbb935a0e7c2fcb7622f5db"
     },
     "docs/wave-2/chat-media-ledger.md": {
       "bytes": 7743,
@@ -17333,6 +17866,16 @@
       "lines": 290,
       "sha256": "9425a8889c4845c0287ae0414928085e5c7dd6abd78672522a6a654b62db1631"
     },
+    "docs/wave-2/chat-swipe-cloud.patch": {
+      "bytes": 1165,
+      "lines": 18,
+      "sha256": "a767027783cc7676e9e1e00f485f621e308177925d1b0fe7a9785a98c2ccb6a1"
+    },
+    "docs/wave-2/chat-swipe-shared.patch": {
+      "bytes": 1356,
+      "lines": 21,
+      "sha256": "511f5609d612fd36e4eddaeac0c707bc343ad35eab11eb749d6e49ab8c780841"
+    },
     "docs/wave-2/dialogs-remediation.md": {
       "bytes": 9629,
       "lines": 151,
@@ -17343,10 +17886,25 @@
       "lines": 8,
       "sha256": "84d493ade4fce706d3f8583a5b88ecdecc2c59960791a1d1e29352bab52ff975"
     },
+    "docs/wave-2/feed-fu-native-frozen.sha256": {
+      "bytes": 5561,
+      "lines": 36,
+      "sha256": "a11351633da81d23754b9dea018974b09aa38a08276f4da4aa5612b9738e9c0c"
+    },
     "docs/wave-2/feed-occlusion.md": {
       "bytes": 4457,
       "lines": 85,
       "sha256": "4ea37c54f7e65d7112cf26c34fadaf824a5da9d0ca7cf38e6b67e45f0df1dc9f"
+    },
+    "docs/wave-2/feed-save-callsites.md": {
+      "bytes": 4920,
+      "lines": 81,
+      "sha256": "d35d1603efe54b825746d77de706508423128fcec5599b75c591de616a816f4f"
+    },
+    "docs/wave-2/font-family-parity.md": {
+      "bytes": 26743,
+      "lines": 435,
+      "sha256": "14e75781abf429710e10165cfbcb4bafb38a40892a34176c3d6615d1f613c99e"
     },
     "docs/wave-2/host-maintenance.md": {
       "bytes": 10231,
@@ -17357,6 +17915,21 @@
       "bytes": 60573,
       "lines": 633,
       "sha256": "e9692258d9e53175257ecc5badf1ae127f6c8392db18582a86d7afae55a2e3f2"
+    },
+    "docs/wave-2/layout-mode-parity.md": {
+      "bytes": 18898,
+      "lines": 298,
+      "sha256": "d5bb278fdc87797a77f825552542c232943a66ab9a0b34e59083e0d63e528bf1"
+    },
+    "docs/wave-2/monet-parity.md": {
+      "bytes": 17659,
+      "lines": 144,
+      "sha256": "d98a32867e671579fabe3289d7f9bbb7d2ad3d51995f5a2e57cb7c7cadbfcb6b"
+    },
+    "docs/wave-2/monet-source-pins.json": {
+      "bytes": 4889,
+      "lines": 65,
+      "sha256": "728ebf98af6a1492a6939466bf04515060901b2f65fc74961febbf18bb5dc754"
     },
     "docs/wave-2/native-services.md": {
       "bytes": 47653,
@@ -17382,6 +17955,16 @@
       "bytes": 14086,
       "lines": 191,
       "sha256": "4d155faddcd95b6c8dfa09eb33a3d105b65f903ebb6d9c8f7e7eff2a3bdf5dc6"
+    },
+    "docs/wave-2/performance-native-hunks.patch": {
+      "bytes": 18898,
+      "lines": 359,
+      "sha256": "7d2763e962013bb967ad4e950c4c0f1314d74de7e730e30132b08953c88f0497"
+    },
+    "docs/wave-2/performance-parity.md": {
+      "bytes": 30470,
+      "lines": 467,
+      "sha256": "b59e70ba9d39777da700c8d10927598b17c07ad1000335451ef64fe06fdce79e"
     },
     "docs/wave-2/pills.md": {
       "bytes": 19557,
@@ -17424,9 +18007,9 @@
       "sha256": "95f4d93471208b141f3b63550047e57ad93e3516a455e64aa8fb5155aa1a2b81"
     },
     "docs/wave-2/progress.md": {
-      "bytes": 37873,
-      "lines": 410,
-      "sha256": "91af49240828f0b72d2ac1302acfcc30d32d0fb8f2f5656a64b5cfa1a3bc0a37"
+      "bytes": 58390,
+      "lines": 654,
+      "sha256": "aa2b390d7d3597230c3de6bea2a1d512f9f065bf763994ee134969de5627872a"
     },
     "docs/wave-2/retention.md": {
       "bytes": 39679,
@@ -17448,45 +18031,140 @@
       "lines": 156,
       "sha256": "ca5e10041632661c2c95288f5c06f22587272a818004ae935463ee6bc300c550"
     },
+    "docs/wave-2/reviews/ai-source-closure.md": {
+      "bytes": 5934,
+      "lines": 44,
+      "sha256": "1aedb3604d3d698a754a438a2f5a4317942bdd23c8f03df406eaf1af2907a8f5"
+    },
+    "docs/wave-2/reviews/appearance-followup.md": {
+      "bytes": 39982,
+      "lines": 347,
+      "sha256": "77ab05838ead5286cb164dd3c6ed26e10c38b29f379a8728a05ff45a2e5fed66"
+    },
+    "docs/wave-2/reviews/appearance-source-closure.md": {
+      "bytes": 8071,
+      "lines": 85,
+      "sha256": "113d21b60dc63277e51c8f8473c8874c39441936680cb72fb9e91287741f3736"
+    },
     "docs/wave-2/reviews/appearance.md": {
       "bytes": 59391,
       "lines": 594,
       "sha256": "24aa06a5c4b439517545bd5e384f98bd5cdbbba3bbb7c4fbc0ffd3d7b51d482d"
+    },
+    "docs/wave-2/reviews/avatar-crossfade-source-closure.md": {
+      "bytes": 4865,
+      "lines": 63,
+      "sha256": "748b7aa8e0410524475c7365731abe28852a9c714921c7ca3d03c5e774103dd5"
+    },
+    "docs/wave-2/reviews/chat-final-source-closure.md": {
+      "bytes": 16829,
+      "lines": 80,
+      "sha256": "c42c0f0248f6eaeccdbbb7a7d5aa76acd23730e07001b34204f98a93bed2db0b"
     },
     "docs/wave-2/reviews/chat-media-composer.md": {
       "bytes": 46120,
       "lines": 235,
       "sha256": "b97a1e4bf89ebc400405adf3297209377776db5b78075875e42e72fa9c606c7a"
     },
+    "docs/wave-2/reviews/chat-source-closure.md": {
+      "bytes": 31982,
+      "lines": 179,
+      "sha256": "1c260550f22f27605f9b0d998ecbbde4fe74350ae1d4efb896ed33f4c1b9a79d"
+    },
+    "docs/wave-2/reviews/cloud-api-followup.md": {
+      "bytes": 22436,
+      "lines": 287,
+      "sha256": "fb8d87d264cf9f70aa28485ca286cb1a99a4cd7a7b14bd793d01b11bf11c80bd"
+    },
+    "docs/wave-2/reviews/cloud-source-closure.md": {
+      "bytes": 11589,
+      "lines": 155,
+      "sha256": "c8ce61ff67c56185b58266bca2180e025c0607f2bf2452ad61c4c5e761efb304"
+    },
+    "docs/wave-2/reviews/darwin-storage-source-closure.md": {
+      "bytes": 8985,
+      "lines": 76,
+      "sha256": "52f662aa7c5a4115b6b62d680db9cbd684843afedcbbdad4f04af1e78954392d"
+    },
+    "docs/wave-2/reviews/feed-player-final-source-closure.md": {
+      "bytes": 21511,
+      "lines": 131,
+      "sha256": "0c4956bf7d874268f9819bf53b45378dee88b41446baf2a72df9dff32afbab77"
+    },
     "docs/wave-2/reviews/feed-player-pills-followup.md": {
       "bytes": 34594,
       "lines": 193,
       "sha256": "6970849877b6b0023e09f95cc18bec1463052f8fd405828849f41d73c99d877e"
+    },
+    "docs/wave-2/reviews/font-consumer-source-closure.md": {
+      "bytes": 9642,
+      "lines": 115,
+      "sha256": "f535a0508c728a2f8bbc5a96f18ca876fbf4e1c23b94301683ed4b7d251610fc"
     },
     "docs/wave-2/reviews/host-native-services-followup.md": {
       "bytes": 17586,
       "lines": 100,
       "sha256": "252a9698a417e64036a7ddfcdba19f6710a0f0a80a69f55d6d0f11221ca9e70c"
     },
+    "docs/wave-2/reviews/host-native-source-closure.md": {
+      "bytes": 8445,
+      "lines": 46,
+      "sha256": "69480dacf8fcd46ff67a0110aa76666afa86de7bd3fb584412400b03e36c96bb"
+    },
+    "docs/wave-2/reviews/identity-dialogs-stickers-followup.md": {
+      "bytes": 30860,
+      "lines": 334,
+      "sha256": "7bf9a8bd2ec384c6ce67add8cff68df47f76796db9c4c5072cdfa081daa21087"
+    },
     "docs/wave-2/reviews/identity-dialogs-stickers.md": {
       "bytes": 55049,
       "lines": 614,
       "sha256": "78a52ae89033c4d76574cc33d8127fe831c33c33e097a32a33762ffd49dcbeae"
+    },
+    "docs/wave-2/reviews/identity-source-closure.md": {
+      "bytes": 10894,
+      "lines": 141,
+      "sha256": "a19684430773dd7b789024ac8bdbf2e58dbec777755f1dce36880a71627c3a92"
     },
     "docs/wave-2/reviews/native-owner-token-followup.md": {
       "bytes": 8174,
       "lines": 60,
       "sha256": "be65f8024e3061351173d6058e1f0ab4e7e63b5ec5485df2e79ada3588bdae42"
     },
+    "docs/wave-2/reviews/navigation-performance-source-closure.md": {
+      "bytes": 7742,
+      "lines": 39,
+      "sha256": "1465039ae3810991caa8a34942aeccd819799007be711786bd7dcf407a31366e"
+    },
+    "docs/wave-2/reviews/portable-fonts-monet.md": {
+      "bytes": 17326,
+      "lines": 210,
+      "sha256": "44d9ffd0ef45410feb6cd43795ceb72bcab93073b0b1fa6ea7797f7d21f7ee2b"
+    },
+    "docs/wave-2/reviews/portable-navigation-performance.md": {
+      "bytes": 12354,
+      "lines": 69,
+      "sha256": "1640b95c7a3a96d591339a2f7c50df2be5785364181a777b5a2d3f763d52525e"
+    },
     "docs/wave-2/reviews/privacy-retention-followup.md": {
       "bytes": 24767,
       "lines": 125,
       "sha256": "321e141608886c2319387cfdba25a0d9455a36905ebb41a0342b96f53c77bab3"
     },
+    "docs/wave-2/reviews/privacy-retention-source-closure.md": {
+      "bytes": 12132,
+      "lines": 72,
+      "sha256": "97b01f55cc82c6443fba10c60240ca3b4487e4be4eeb24ae3f47e1589d47604f"
+    },
     "docs/wave-2/reviews/sdk-config-adapters.md": {
       "bytes": 41930,
       "lines": 312,
       "sha256": "735bab1aa65253c9ce9ab3cb01576b14b951f3b1de0e8ae6ec04f872903599ec"
+    },
+    "docs/wave-2/reviews/sdk-source-closure.md": {
+      "bytes": 21526,
+      "lines": 158,
+      "sha256": "5454eb9617074ba4ff86ae4294859da542ca917e04fa66b457d0224bcd6cd1ba"
     },
     "docs/wave-2/reviews/settings-core-followup.md": {
       "bytes": 25818,
@@ -17498,20 +18176,50 @@
       "lines": 209,
       "sha256": "9ca35e59e49d8012c358f02a36f7e2bcb6250e081e5629ef70a5267cb5d9e5f1"
     },
+    "docs/wave-2/reviews/tl-network-source-closure.md": {
+      "bytes": 27380,
+      "lines": 162,
+      "sha256": "f4a0b87b5b36176739a50881b3eb6d2d0b3560f57567542734d5c7f67c1cbbc5"
+    },
     "docs/wave-2/reviews/tl-network.md": {
       "bytes": 45229,
       "lines": 357,
       "sha256": "95e740b878ba1c2f981e7d879484537937404036c3149bbeb623e3da0f752475"
+    },
+    "docs/wave-2/reviews/tl-validator-source-closure.md": {
+      "bytes": 10477,
+      "lines": 75,
+      "sha256": "5566e68a65d75982121f4da83c695c6fa5a183043122fcfc06861def2584eae9"
     },
     "docs/wave-2/reviews/tools-backup-followup.md": {
       "bytes": 30699,
       "lines": 388,
       "sha256": "94bb8c897dd0b0b7b8934a78f255c75992a4307c41e4213b42678bd080cf877e"
     },
+    "docs/wave-2/reviews/tools-source-closure.md": {
+      "bytes": 10208,
+      "lines": 76,
+      "sha256": "77f8ddd8d714a393dd7091560db889467a9c77296e4fa6fb4d384d8b585b235c"
+    },
+    "docs/wave-2/sdk-config-parity.json": {
+      "bytes": 424784,
+      "lines": 12371,
+      "sha256": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367"
+    },
+    "docs/wave-2/sdk-portable-source-cohort.md": {
+      "bytes": 4520,
+      "lines": 70,
+      "sha256": "01c64261dc1a075bcff0ea14f335fda78e8fbae464e85ca1581fa73f00f28a8d"
+    },
     "docs/wave-2/sdk.md": {
       "bytes": 29041,
       "lines": 364,
       "sha256": "aa7416713be5fbe69c3ddbd71b1899539e41e0d6a20dfe5fc3421d780cc5c6b7"
+    },
+    "docs/wave-2/settings-remediation.md": {
+      "bytes": 12677,
+      "lines": 155,
+      "sha256": "23af04a6aaed1e7d7d7a1e6c2de85826ed2b15e7dfea86f9c550081e4c208683"
     },
     "docs/wave-2/stickers-gif-hunks.patch": {
       "bytes": 6149,
@@ -17564,19 +18272,19 @@
       "sha256": "d1ef4ead5c6cd0dbef5ce0628b6198388f038b289bcc66e12a93d24f3872f634"
     },
     "docs/wave-2/tools-owner-completion.md": {
-      "bytes": 14423,
+      "bytes": 14826,
       "lines": 103,
-      "sha256": "db6c344cbe6d7f9fafff2a0a1d8588504b72a590b2c4bf737537ad9fd5497674"
+      "sha256": "3c006dd578a2c1ec5e42d31b2b2acc97dc01560f295137fe0266c42c7d1e287d"
     },
     "docs/wave-2/tools-parity.json": {
-      "bytes": 53781,
-      "lines": 502,
-      "sha256": "b225f5ab716c46000ec234c63a7f70b8b47a9773f9d98c7e6b25461343f1cfeb"
+      "bytes": 55703,
+      "lines": 511,
+      "sha256": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
     },
     "docs/wave-2/tools-remediation.md": {
-      "bytes": 24109,
-      "lines": 380,
-      "sha256": "7742af1509eec010672118b42a54b50d308af1465237db9b308930e78313453f"
+      "bytes": 33046,
+      "lines": 528,
+      "sha256": "0545a10434e1752ebbe352e8bb4cefae5ca2969d87a51ceeb367f342cd6b4f9c"
     },
     "docs/wave-2/tools-schema-evidence-contract.md": {
       "bytes": 7646,
@@ -17589,9 +18297,9 @@
       "sha256": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799"
     },
     "python/exteraless_runtime/_config_manifest.py": {
-      "bytes": 404790,
-      "lines": 1066,
-      "sha256": "f52fb8a8d4d676d58ff58c00fba2b054d2c2cb22abcec952907c4a7c93569ecd"
+      "bytes": 406315,
+      "lines": 1075,
+      "sha256": "febe6b2e4a9f6cebc04b1a910f34b0ebb6a00e0eadd341cccba57be72cd53991"
     },
     "python/exteraless_runtime/_settings.py": {
       "bytes": 5290,
@@ -17669,9 +18377,9 @@
       "sha256": "c6d832932260aa24ee6fa8ff5de4c773dd08420605ced830f9c2a9e270273805"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": {
-      "bytes": 21094,
-      "lines": 251,
-      "sha256": "ec7b61074fae6c89f54e7697f60d7780cd3a1f8e9c658ed78ad6a60155a99225"
+      "bytes": 21232,
+      "lines": 253,
+      "sha256": "8a492071f5195321e6df2c9f36ba74b9f81716712c2ac5a52cb4c11df857d132"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/AppearanceIconPackPolicy.swift": {
       "bytes": 9161,
@@ -17682,6 +18390,11 @@
       "bytes": 8810,
       "lines": 171,
       "sha256": "68bb6cdf08430533b4ddfc716603204a48d7fe439d4b275490af325f8451bceb"
+    },
+    "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": {
+      "bytes": 6141,
+      "lines": 124,
+      "sha256": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/AppearanceMotionPolicy.swift": {
       "bytes": 1020,
@@ -17738,6 +18451,11 @@
       "lines": 150,
       "sha256": "0033c096a5f68a45cfa61aec541de1c7d4161a77bf8f8a7d6cb0558076f11bca"
     },
+    "swift/ExteralessCore/Sources/ExteralessCore/ChatSwipeFeatures.swift": {
+      "bytes": 1318,
+      "lines": 18,
+      "sha256": "008552b96198c40f255f8158ca3c72ee3e70bb3434af8c6aac9982a986a85c20"
+    },
     "swift/ExteralessCore/Sources/ExteralessCore/ClientAPILaunchResolver.swift": {
       "bytes": 5539,
       "lines": 101,
@@ -17754,14 +18472,14 @@
       "sha256": "db45dbe25c81477e6adfd7391c998505f099856d2ea3c3efaf00de0c13c6c557"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift": {
-      "bytes": 61065,
+      "bytes": 61076,
       "lines": 1160,
-      "sha256": "60f695dd0919907b5ce6af08e6a36796f4918efd839e6cde518a3cf06d0ed7e6"
+      "sha256": "203b973a7f09bb657075ea92daf22065e2ee0baf060147bbc8c0661f1231c556"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/CloudArchive.swift": {
-      "bytes": 13936,
-      "lines": 226,
-      "sha256": "174b6cfd01d8d8628d7d78be4670a42568df0984824296248de56b88069cf422"
+      "bytes": 14720,
+      "lines": 233,
+      "sha256": "99fd7b87befef0ec1cb9529e9fd5475054ac1ece0429a0b8b378964b5476376c"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/CloudAutoSync.swift": {
       "bytes": 5132,
@@ -17773,15 +18491,40 @@
       "lines": 188,
       "sha256": "71afe53bcbbffb44eb79666404ce92a7df65df7c68b4c3fd0b9862ca6e733269"
     },
+    "swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift": {
+      "bytes": 15761,
+      "lines": 184,
+      "sha256": "0301c24cc42025935cdba1ef1aa81390040b308907c7916b12f6974e56fe2297"
+    },
+    "swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift": {
+      "bytes": 19486,
+      "lines": 270,
+      "sha256": "dc2d611143f9bcd3eda6a943582da0a201be857b47d3679ce9f6f3afadeb59a9"
+    },
     "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncSession.swift": {
       "bytes": 14947,
       "lines": 315,
       "sha256": "6d6908eac0e1cffe4815bd781cf16e72c1ad42013d366b6218c391e2959d639c"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncState.swift": {
-      "bytes": 3705,
+      "bytes": 3493,
       "lines": 74,
-      "sha256": "8f9bdb609c08d24fd7be17721d798ab28c98d31223c8aec8e1ac4b1364ed26bb"
+      "sha256": "54b14956daaea8272cb1ea33a79ec2daf2ed76f038adad6afc3467ceb6a3f510"
+    },
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": {
+      "bytes": 1710,
+      "lines": 44,
+      "sha256": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f"
+    },
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceMonetPolicy.swift": {
+      "bytes": 12570,
+      "lines": 237,
+      "sha256": "7285eb59f890530ab9b366d4edd5552b918b88868ac1fd5c3fd15d03a94a6980"
+    },
+    "swift/ExteralessCore/Sources/ExteralessCore/CoreChatSwipePolicy.swift": {
+      "bytes": 2579,
+      "lines": 61,
+      "sha256": "59c06ddacccc35abb9ed4b4b58102f44d81ce62491e62a25ad6295840f12c03a"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/CoreDialogFeatures.swift": {
       "bytes": 4348,
@@ -17799,9 +18542,9 @@
       "sha256": "a8ee2f57f943cc9d10695f7879d072261a980e9ed7712504fc393afe41f867ec"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/EmojiPackStore.swift": {
-      "bytes": 8190,
-      "lines": 151,
-      "sha256": "f0e9eb34f669eed264e181a817f5805023b2e34edcd4a59bb143e517ae559d67"
+      "bytes": 7948,
+      "lines": 153,
+      "sha256": "d113dfbd492dbd9070209e433dfa5f93d81b064a203a162a9a4ad40c3367d041"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift": {
       "bytes": 9984,
@@ -17959,14 +18702,14 @@
       "sha256": "f81c5a93490c8141030dfbe48f72978f23ad1e19a22df40ea6f371f69db7e8b9"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift": {
-      "bytes": 39615,
-      "lines": 656,
-      "sha256": "d1e9b5cde4e19fa2f6b1899653ee1ee185dee34657197912d46f85fd2aa3992c"
+      "bytes": 39531,
+      "lines": 655,
+      "sha256": "755fd1a52c261fcc12af3fef5a2667150fb549472775940eb239c718ec304351"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupRestore.swift": {
-      "bytes": 43721,
-      "lines": 720,
-      "sha256": "d981c552a5122b4d5bdbdbf9d80a8110c2224f1948803cadf93468cc2bdf031a"
+      "bytes": 42995,
+      "lines": 710,
+      "sha256": "5865c79e377cdc2464714e4879069ce5fd61fdc55e21aa59bf126fc705dc08d7"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift": {
       "bytes": 10305,
@@ -17983,10 +18726,15 @@
       "lines": 58,
       "sha256": "950973b1a855e6dcfb27a5a162e9696b0e8429e925b8481306caa0e10ed3c3b8"
     },
+    "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": {
+      "bytes": 11709,
+      "lines": 253,
+      "sha256": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d"
+    },
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsReleaseClient.swift": {
-      "bytes": 18813,
-      "lines": 385,
-      "sha256": "f437af3b5e7b87afdfe104efd609bb5c9b5c4365d87d5deb74df66069306eb33"
+      "bytes": 21568,
+      "lines": 446,
+      "sha256": "72b931f68a67d13da2cda2e560b2cce35fa699b19fda3f8f26be9ee2ff611843"
     },
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsSubtitles.swift": {
       "bytes": 4368,
@@ -18007,6 +18755,11 @@
       "bytes": 6241,
       "lines": 99,
       "sha256": "89704b22870db8b762557c19dedcf2b501e6756535c4defbda1fffcaf1e080c6"
+    },
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/AppearanceLayoutModePolicyTests.swift": {
+      "bytes": 5841,
+      "lines": 87,
+      "sha256": "a6b3778418e31f969f30d84851de73e982181129f948e4fcfd6d73e67832e948"
     },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/AppearanceOwnerCompletionTests.swift": {
       "bytes": 7363,
@@ -18033,15 +18786,25 @@
       "lines": 137,
       "sha256": "a4edeb94cc9da17a815aef7c6033e4c7c138f3556497a84839373c083f8ac009"
     },
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/ChatSwipeLegacyImportTests.swift": {
+      "bytes": 3290,
+      "lines": 50,
+      "sha256": "105f9caec113939ab56604e9826bae48850dc860ee34ec66a195b8e2c8f9be7a"
+    },
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/ChatSwipePolicyTests.swift": {
+      "bytes": 5053,
+      "lines": 77,
+      "sha256": "85226b742a1affa62512a1555b0979ed3dc4424f5120a4f42a0ad1da36c38458"
+    },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift": {
       "bytes": 12870,
       "lines": 188,
       "sha256": "5541a86a09d29bdfbc2e2ae3ceb2e744773fa63d242114d50ddb4ce4b6dfc43a"
     },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudArchiveTests.swift": {
-      "bytes": 12008,
-      "lines": 185,
-      "sha256": "e3a18e9d35fbf60bf196d1c5ab9a7d1f88e6bc3a32e8b0ea0e330990614ca3c6"
+      "bytes": 12288,
+      "lines": 189,
+      "sha256": "458922c8c44c69ba87a5932fc4e5e66c5a89c56642e98088beb6161a21b4da08"
     },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudRemoteTests.swift": {
       "bytes": 10303,
@@ -18163,10 +18926,15 @@
       "lines": 35,
       "sha256": "550054b6ad7a4d754d414370d3166dc3b98df810f0c28a96f12ce7bc6dfce897"
     },
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsPerformancePolicyTests.swift": {
+      "bytes": 13255,
+      "lines": 229,
+      "sha256": "cb24284049116a67f5b5e1ffa1d55cf03ff15ff2ea2438616f937dbcf8bbae98"
+    },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsReleaseTests.swift": {
-      "bytes": 17909,
-      "lines": 296,
-      "sha256": "99e9ca3f8d73798d440dc7d8f471bd31383f542b2cfd05beb2d7044fc140b66a"
+      "bytes": 25689,
+      "lines": 403,
+      "sha256": "f8fbc03d8f7ff780835e29eb16520254576f35862c140e96d08805b1114df4b3"
     },
     "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsTransferPolicyTests.swift": {
       "bytes": 2557,
@@ -18198,6 +18966,11 @@
       "lines": 337,
       "sha256": "4efb7cda74992219acde62f3de5b5fb72d0ff5c8d602a6bf2904c10c0ff3850c"
     },
+    "telegram-ios/Telegram/NotificationContent/NotificationViewController.swift": {
+      "bytes": 5210,
+      "lines": 87,
+      "sha256": "7037040d3471e5faaf827ba324cac282da0f3d35f938354c008bb8b910851abf"
+    },
     "telegram-ios/Telegram/NotificationService/Sources/ExteralessNotificationPrivacy.swift": {
       "bytes": 4204,
       "lines": 79,
@@ -18209,9 +18982,9 @@
       "sha256": "e2d5d2a1d243ce341e7ce40e222614636945f719bbf36b86080c96c1218f78e7"
     },
     "telegram-ios/Telegram/Share/ShareRootController.swift": {
-      "bytes": 7697,
-      "lines": 144,
-      "sha256": "3f2511adac3a6807a2fb9c77555fffbc7fcd033f5d33822659232f40c48c111a"
+      "bytes": 7884,
+      "lines": 148,
+      "sha256": "cee140228d618911b9fde754009b528cefaac4aafe9deee00d45649e759fa620"
     },
     "telegram-ios/Telegram/Telegram-iOS/Info.plist": {
       "bytes": 10285,
@@ -18239,9 +19012,9 @@
       "sha256": "c828d633dc2e1181c9c9477cd57931363dec43f012a0c4c36626085c9f846ca9"
     },
     "telegram-ios/submodules/AccountContext/Sources/ExteralessContentExportPermit.swift": {
-      "bytes": 12793,
-      "lines": 245,
-      "sha256": "4e42ae3f087a6edc4dc808632e18bce8c3078e12907bf8d21b1dc68eaaeaa603"
+      "bytes": 13007,
+      "lines": 247,
+      "sha256": "56d80bd743fa554d58b5c999d4e76cdde21df0df952f601813d29f4c49dd0c4d"
     },
     "telegram-ios/submodules/AccountContext/Sources/ExteralessContentOcclusions.swift": {
       "bytes": 4717,
@@ -18264,19 +19037,19 @@
       "sha256": "1191b378eb0aec3085a06694a2fa52de6b54fc18b5b8edb5f282e280a8e49af4"
     },
     "telegram-ios/submodules/AvatarNode/Sources/AvatarNode.swift": {
-      "bytes": 82691,
-      "lines": 1679,
-      "sha256": "c8c047d7327fcf63247af02f1c558ccb5d8f9f0e55c4df78cfcbc7565440e8a3"
+      "bytes": 83284,
+      "lines": 1689,
+      "sha256": "a2a8c6e4b793f92327262b542ccd4a9e375eca926a8d405c1cd23235a887ecfd"
     },
     "telegram-ios/submodules/AvatarNode/Sources/ExteralessAvatarShape.swift": {
-      "bytes": 3355,
-      "lines": 75,
-      "sha256": "54b09fe22c8224e518552ad78c66c41fcbd8b9070392372f1486f4450f810813"
+      "bytes": 3451,
+      "lines": 76,
+      "sha256": "18558f4c1cfc5208f8c83e9e75abbcf975554cacee55bcdbd2182869594a6dbc"
     },
     "telegram-ios/submodules/AvatarNode/Tests/AppearanceAvatarRenderingTests.swift": {
-      "bytes": 8121,
-      "lines": 126,
-      "sha256": "42034e4441fab6320b7800df89925ce26ae24b34a49e1c10241fe2514899f712"
+      "bytes": 26771,
+      "lines": 419,
+      "sha256": "321916d341d71675f9767eb85862f5f4e862597e7139f1acf78a0d14869df15c"
     },
     "telegram-ios/submodules/AvatarVideoNode/Sources/AvatarVideoNode.swift": {
       "bytes": 24509,
@@ -18329,9 +19102,9 @@
       "sha256": "83d9d03a8a94e060cb2775e7249994a9dffbc58d83e119db2782927ed8889121"
     },
     "telegram-ios/submodules/ChatListUI/Sources/ChatListControllerNode.swift": {
-      "bytes": 141889,
-      "lines": 2582,
-      "sha256": "2438ecb8590e7628ce289f49e8406dddfea90347928956d6e7bb14ecc46af770"
+      "bytes": 142088,
+      "lines": 2585,
+      "sha256": "6e8adeb1e1c8f243707863854e001576dce438897c5de4902e6380253e110cf3"
     },
     "telegram-ios/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift": {
       "bytes": 377585,
@@ -18344,9 +19117,9 @@
       "sha256": "1981e9f5338ddf55816380eafe77845b8e58fdb9b5ff05b9a59780f1f3433aa3"
     },
     "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift": {
-      "bytes": 367951,
-      "lines": 6019,
-      "sha256": "5460b5ab8802973940afcca4964fc18bff1fd8421c36030a192ef634e6cfa110"
+      "bytes": 373749,
+      "lines": 6118,
+      "sha256": "605abb29c9876999001152e18d1fb6fe78e6f6bbb7f69d293b5116f5eadd150a"
     },
     "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNode.swift": {
       "bytes": 224235,
@@ -18368,6 +19141,11 @@
       "lines": 317,
       "sha256": "78a44c1736d4f33e56a27da0b8f8afe608c5830790074a061db65c046d205685"
     },
+    "telegram-ios/submodules/ChatListUI/Tests/ChatSwipeNativeTests.swift": {
+      "bytes": 7225,
+      "lines": 102,
+      "sha256": "83acdd944274fc9ccadc6daed59fcf61f531e49ca1d57c5b526d8d413a963225"
+    },
     "telegram-ios/submodules/ChatPresentationInterfaceState/Sources/ChatTextFormat.swift": {
       "bytes": 17644,
       "lines": 319,
@@ -18383,25 +19161,50 @@
       "lines": 2217,
       "sha256": "ad554b18512452b46b08eeecab29afed0b437e89ad301440870f448333365b70"
     },
+    "telegram-ios/submodules/Display/Source/ExteralessFontFamily.swift": {
+      "bytes": 8206,
+      "lines": 165,
+      "sha256": "5ad75e8071e7fb8dbd0ff1bcc0e656a8b45ace518cdd71695bae6022fe5526b8"
+    },
     "telegram-ios/submodules/Display/Source/ExteralessSnowView.swift": {
       "bytes": 4796,
       "lines": 86,
       "sha256": "4348603279cff5c80efeb734fee2ce6c260071145dab5dc6237ac18f3ee928b5"
     },
     "telegram-ios/submodules/Display/Source/Font.swift": {
-      "bytes": 14265,
-      "lines": 372,
-      "sha256": "f7a0d1306664df65b450a9d8d33b9184ee992457cf27a470a68e288d51c0b112"
+      "bytes": 13863,
+      "lines": 365,
+      "sha256": "dd3c497460f0e638326b9138a99a4b787538cb8e4a2158575bbeff43565a4df2"
     },
     "telegram-ios/submodules/Display/Source/HapticFeedback.swift": {
       "bytes": 8639,
       "lines": 270,
       "sha256": "60f893239e07f8763455fc15cf5c4674ae334841d0df7947140cee841f5fc226"
     },
+    "telegram-ios/submodules/Display/Source/Navigation/NavigationController.swift": {
+      "bytes": 106675,
+      "lines": 2233,
+      "sha256": "1b1578150658bcf25361d95dfc56e99bc3a6cae745b646ca8e6dd08fdfa5b69d"
+    },
+    "telegram-ios/submodules/Display/Source/Navigation/NavigationLayout.swift": {
+      "bytes": 5275,
+      "lines": 131,
+      "sha256": "994d815a08d8574cffb3df98b6c759f40c1589ff5fd6559f3edc4175e3cdd116"
+    },
+    "telegram-ios/submodules/Display/Source/Navigation/NavigationModalContainer.swift": {
+      "bytes": 32090,
+      "lines": 667,
+      "sha256": "1f477ac95db33a3c15c2ba001c2a3194d834ff51c0f8a84a44b4499573ff075e"
+    },
     "telegram-ios/submodules/Display/Source/NavigationTransitionCoordinator.swift": {
       "bytes": 59716,
       "lines": 1154,
       "sha256": "eded9a2bf12ad18312030da2832f8cccf97f30efed5dd8246450408e5acc733d"
+    },
+    "telegram-ios/submodules/Display/Tests/AppearanceLayoutModeTests.swift": {
+      "bytes": 24759,
+      "lines": 401,
+      "sha256": "440831b722f55d813f7b8d767b2e7935688bf89a79bb6399afa06d643c55909c"
     },
     "telegram-ios/submodules/Emoji/Sources/EmojiFontRendering.swift": {
       "bytes": 8822,
@@ -18409,9 +19212,14 @@
       "sha256": "47b46190e5afc1879f49c05fb3d194f1472e8f47309a829c5a76fb9fa45c124b"
     },
     "telegram-ios/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift": {
-      "bytes": 162069,
-      "lines": 2811,
-      "sha256": "b72f858a1797c170c45ebdde28ba1bbec7cb4cfee3b707d199083ee47b0d8595"
+      "bytes": 162510,
+      "lines": 2822,
+      "sha256": "dd30617ee8dc4ef138a5abc756634ef51f946eed7a48c12c1abbeecc83d5a65b"
+    },
+    "telegram-ios/submodules/GalleryUI/Sources/ExteralessGallerySaveLifetime.swift": {
+      "bytes": 4368,
+      "lines": 108,
+      "sha256": "96fbedff49396e63d2ccc8f2b3b852edd5a4d468fba13eb04b78c9707e6c66dd"
     },
     "telegram-ios/submodules/GalleryUI/Sources/ExteralessGallerySubtitleBridge.swift": {
       "bytes": 4312,
@@ -18424,14 +19232,14 @@
       "sha256": "2bb463fc03fef749f85b5c93fbfd4a7506c491e4192ed5f1cbb11ca35a25442e"
     },
     "telegram-ios/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift": {
-      "bytes": 96480,
-      "lines": 1753,
-      "sha256": "47571eccb3d55e6e02be42e2bb80c8aad68312d60c0b05b713eeac947a894c07"
+      "bytes": 98115,
+      "lines": 1775,
+      "sha256": "3624875b33954f5bb6cd68480545e018cd6fab3973448b0df9d7b9a3fea71674"
     },
     "telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift": {
-      "bytes": 243463,
-      "lines": 4580,
-      "sha256": "6e59f202db2e5fce2abb74ca205369cef1fa4ebafd9ac08ef02788b04d8bbdba"
+      "bytes": 245641,
+      "lines": 4595,
+      "sha256": "283f491a3d5a77a4d2d16628ae7b836ce8f020fe3687269b3295a8c6c5ec8c6b"
     },
     "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchControllerNode.swift": {
       "bytes": 37431,
@@ -18494,9 +19302,9 @@
       "sha256": "c4d38809c86caf31d0bcb092be4909e4b44b0c32e6817599f7bbed0a190cc9be"
     },
     "telegram-ios/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift": {
-      "bytes": 216578,
-      "lines": 4440,
-      "sha256": "adf70e8bdc26a6520008e8cd41466d76861416f438ae25a73dfa88241b4a31ce"
+      "bytes": 219898,
+      "lines": 4485,
+      "sha256": "197acad70e3bd7cb9ed79d0ab29de8bcac648023729bc58e2fdbe63b03e6eebf"
     },
     "telegram-ios/submodules/MtProtoKit/Sources/MTContext.m": {
       "bytes": 86775,
@@ -18519,9 +19327,14 @@
       "sha256": "7ef1d766e28ecbf793c78fe6fa71f674f7075076136ed1de417bedcb0a10f26f"
     },
     "telegram-ios/submodules/Postbox/Sources/Postbox.swift": {
-      "bytes": 280976,
+      "bytes": 280983,
       "lines": 5375,
-      "sha256": "3209b384dc3a39cf4b1c69a4f2b51c147b2a19cf2c247203900bb55d696b1165"
+      "sha256": "630cd0c8359ac622cb0ec7ec6b12ee92d9460f23862e872b248830addc289d9f"
+    },
+    "telegram-ios/submodules/SaveToCameraRoll/Sources/SaveToCameraRoll.swift": {
+      "bytes": 28987,
+      "lines": 594,
+      "sha256": "f29977bcea25864b1994ca99a72e6e929a6e4dcffb9edda84103021f4c211a61"
     },
     "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxyServerSettingsController.swift": {
       "bytes": 24140,
@@ -18529,14 +19342,19 @@
       "sha256": "39ca9449cbad253de3fde49699e50f85ce3454ae3e77548233bf0405b31ccc9d"
     },
     "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift": {
-      "bytes": 31260,
+      "bytes": 31294,
       "lines": 552,
-      "sha256": "b6b918b320e603c6c9112efb2c5824357bcac3880e62d469a4186bfdffc62c65"
+      "sha256": "69a8fc4cc534be6c4b84f9c0b3a9a7955aa887e028da57dab621a37d06651e4f"
     },
     "telegram-ios/submodules/ShareController/Sources/ShareController.swift": {
-      "bytes": 169778,
-      "lines": 2821,
-      "sha256": "cfea82ce5c6bf20357f4b6aa482a309b7a9a7d05c269bc261b901163dcfad834"
+      "bytes": 177926,
+      "lines": 2958,
+      "sha256": "bc319f0c2a222d98ad049c4b081dafad9fb26ddd23d84f9d2fe2be00c189219e"
+    },
+    "telegram-ios/submodules/ShareController/Sources/ShareControllerNode.swift": {
+      "bytes": 116349,
+      "lines": 2288,
+      "sha256": "71fb70bc309b7f474eabca75f8194da9620f3dab9015f726746b96f1680ac56c"
     },
     "telegram-ios/submodules/TabBarUI/Sources/TabBarContollerNode.swift": {
       "bytes": 23951,
@@ -18549,9 +19367,9 @@
       "sha256": "b01f269cdfd7bc7010c35330b41acea80da6cbe56adbf5f1c1fda6df51d5b57f"
     },
     "telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift": {
-      "bytes": 44093,
+      "bytes": 44110,
       "lines": 826,
-      "sha256": "124dce34cd155381145169bf21f68e403feda64db6d3f70585a101e7b5c8bdc1"
+      "sha256": "b32f2d421273ccd851b94d842dce3367a53d8182f6e7251e994de8da7c057896"
     },
     "telegram-ios/submodules/TelegramCore/Sources/Account/Account.swift": {
       "bytes": 130215,
@@ -18574,9 +19392,9 @@
       "sha256": "7908e1da143e5fb69c25ec85dd351276015683941207fbf10e6218ab1f34a23e"
     },
     "telegram-ios/submodules/TelegramCore/Sources/ExteralessClientAPI/ExteralessClientAPIRequestPolicy.swift": {
-      "bytes": 895,
+      "bytes": 919,
       "lines": 20,
-      "sha256": "b9557d885258f7b7d2829ea9d8d69cea02b25206350a6718fe4d4b0f9694d6dd"
+      "sha256": "16d54501c142ddd7817486c62d6552c944b4c51119dbabf9a7e25f4ac392fe45"
     },
     "telegram-ios/submodules/TelegramCore/Sources/ExteralessCloud/ExteralessCloudTransport.swift": {
       "bytes": 6193,
@@ -18731,7 +19549,7 @@
     "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsLocalFavoriteStickers.swift": {
       "bytes": 16258,
       "lines": 244,
-      "sha256": "193f99ad3009cdd54c206183dee7769a95939f2462f3faffbd4a006c6dc9278f"
+      "sha256": "d8b866feea690aa12a06d4574d1cd7aec4f88a02b5253c3e402d261492236dc8"
     },
     "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift": {
       "bytes": 2181,
@@ -18934,9 +19752,9 @@
       "sha256": "f6b595043639ef9443044be323534213d6b1aba4ce5be64afc27e6e7f42ff22d"
     },
     "telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessAppearanceUpdates.swift": {
-      "bytes": 3802,
-      "lines": 59,
-      "sha256": "099662fd1f7646dc1488ebaf1fccdea4e3cfa7ea4a26a37d8a28c6ce18bca6d2"
+      "bytes": 3962,
+      "lines": 60,
+      "sha256": "32b1663e87bfda3f72fa7282db7be11f902e7845969bf99311a5b08966284157"
     },
     "telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessFolderTitle.swift": {
       "bytes": 823,
@@ -18948,6 +19766,16 @@
       "lines": 44,
       "sha256": "d57da611ae3f69a5dd7436f90c9931bc7a9ee0e7a670aeae2de3ebb329ccc881"
     },
+    "telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessMonetTheme.swift": {
+      "bytes": 24676,
+      "lines": 257,
+      "sha256": "e3fac28d6acbbe1a3a02e7a0c723fc91079c8e958c490282a0a7baf0914afed6"
+    },
+    "telegram-ios/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift": {
+      "bytes": 10937,
+      "lines": 137,
+      "sha256": "720d9e2c4f6d15b5feb6d5c09950209dbe3788770f97630be343c4245713b9d3"
+    },
     "telegram-ios/submodules/TelegramPresentationData/Sources/NumericFormat.swift": {
       "bytes": 15077,
       "lines": 336,
@@ -18957,6 +19785,11 @@
       "bytes": 49946,
       "lines": 929,
       "sha256": "f210596261c0ad92b0c6256bd5ef8be9fb40681d8b99c786c5f14c0480f9a6de"
+    },
+    "telegram-ios/submodules/TelegramPresentationData/Sources/PresentationThemeCoder.swift": {
+      "bytes": 34313,
+      "lines": 993,
+      "sha256": "41754a308e86a5076b6e4114c5fef351a9a51914357d4e6c03fe4db10de46582"
     },
     "telegram-ios/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesChat.swift": {
       "bytes": 103377,
@@ -18999,19 +19832,19 @@
       "sha256": "7ccb8e474979a67f60ce4ab0808be1df9c348d400276e39eb86f04cfa62afe2a"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift": {
-      "bytes": 54794,
+      "bytes": 54811,
       "lines": 1081,
-      "sha256": "4dc02d62fb1592c459b993748d5232243b5e5ed162b99fa68a4a0d4edfb2f26e"
+      "sha256": "a66a7ce4fcbe401046cec9db21ea557e146f466367f8a73cc7c7eaf3ff1f34f9"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift": {
-      "bytes": 93187,
+      "bytes": 93221,
       "lines": 1885,
-      "sha256": "18402b9faa8e555f6c54e71af8922add1659736883eaff352b1815f9f3a687b8"
+      "sha256": "47c81b22ddca8b3fa21d8c47f2fc64f893360d25dbc27b31555a630505e4c5fe"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift": {
-      "bytes": 187435,
-      "lines": 3358,
-      "sha256": "8a03e6db39d8fea17a0cd7f73b65a72ca0ee18ad1380ed7e0e9d069197551a7d"
+      "bytes": 188153,
+      "lines": 3369,
+      "sha256": "baf0c7c0c88ebbf07a4ea64d9feeb1ee9513987a20af0d581697f7140a17495e"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift": {
       "bytes": 113796,
@@ -19024,14 +19857,14 @@
       "sha256": "6e20962f5b4052589220b3bf0d636bbe0fbad46006da93b5b100840f39b53513"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode/Sources/ChatMessageContactBubbleContentNode.swift": {
-      "bytes": 34951,
-      "lines": 599,
-      "sha256": "5d926ac0bf6594f0b98505de77dabe404ddb2d6534c06452144c8b4480a09dbd"
+      "bytes": 35940,
+      "lines": 613,
+      "sha256": "d7acc310c6e6f7ecfdbde0050c0e7803dc777833d0bd4a6513573fc3de71e2ef"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift": {
-      "bytes": 95994,
+      "bytes": 96028,
       "lines": 1687,
-      "sha256": "f86bd2d7e0c4c62e1beff8c284e7635384f01aedaeeaf736cecdf67b7e54a4ef"
+      "sha256": "a0ff96df656b47d1ee8d9794b85c0e482768c5d590c2ddf6c485cb52d653a93b"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageFileBubbleContentNode/Sources/ChatMessageFileBubbleContentNode.swift": {
       "bytes": 13526,
@@ -19044,14 +19877,14 @@
       "sha256": "2ad62b4ffbc4645665610191e19e0ab45ef405f0c7fc9e4d713fa00af98e1af0"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift": {
-      "bytes": 90891,
+      "bytes": 90925,
       "lines": 1532,
-      "sha256": "c992441975e31cad7e8fa112cc3d48a56ece6fbc418c8390a9e0aaa77aa7f622"
+      "sha256": "a0db45660637d322ef0874873d831bca335d7e41609a1c40cea37bf4656b2cf8"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift": {
-      "bytes": 136213,
+      "bytes": 136264,
       "lines": 2309,
-      "sha256": "32ec0b4fbacd44088ae0d905c800442cdcd857020be91293826033f04308d640"
+      "sha256": "aaafc3f86c873d34c303da5835d812e976c1b1cf99e017c8d1496a799ed6e997"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift": {
       "bytes": 229660,
@@ -19074,14 +19907,14 @@
       "sha256": "02744a1f70fc2dc682d6cbe5be71043a2a10e6e69d095a934f12969221c7e637"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift": {
-      "bytes": 36125,
+      "bytes": 36176,
       "lines": 559,
-      "sha256": "3e8fa41c0a92efbe8e034f209cf8fba10c56cfc432faa46182014b5dac7af28a"
+      "sha256": "16e31efd5119fbcb3c4a9ae7f8919b60a702808a5bd22f5c3a176f4a73a65551"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift": {
-      "bytes": 225496,
+      "bytes": 225564,
       "lines": 4050,
-      "sha256": "a097e11e4145ada572d14cf2cae2e30472768fd93d7da4f0ed3c547c7953bf14"
+      "sha256": "7d2847089d4f07a0a162077e76c2193850ca77fab85d330aef40bed0cd69e25d"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageReactionsFooterContentNode/Sources/ChatMessageReactionsFooterContentNode.swift": {
       "bytes": 41313,
@@ -19104,9 +19937,9 @@
       "sha256": "37738c16624a869c7cd30fd316afb2da3b9090bbc5020001a020e24c37a731a4"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift": {
-      "bytes": 131236,
+      "bytes": 131270,
       "lines": 2304,
-      "sha256": "266ad1061610749f02bcc209abdb56421d75db5953910fe8301b875b5eb8002d"
+      "sha256": "a85006b2fdbc6b5e620f1d2eda62610e17ea966c8644def93a0e6f7b536703f9"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift": {
       "bytes": 104177,
@@ -19114,9 +19947,9 @@
       "sha256": "8fa2b7b33503ca33661d4d8b08a26a5b59c461f315f0d26689d886e87bc3ed7f"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift": {
-      "bytes": 383669,
+      "bytes": 383686,
       "lines": 6556,
-      "sha256": "441d5df2e321f86a1d383ae0c8e296a48ef71bf8e679c3f1279bf01539c251a7"
+      "sha256": "eb754741212c722daadb206cef97ce25f505809d01258de420d8f2a1038d886a"
     },
     "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ExteralessChatInputHelpers.swift": {
       "bytes": 11888,
@@ -19159,9 +19992,9 @@
       "sha256": "d8436e85e1d12aa179ea8bbd4df81e41da2405f8db1f05e23fe93675fe8488aa"
     },
     "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift": {
-      "bytes": 65127,
+      "bytes": 65161,
       "lines": 1198,
-      "sha256": "cbfed3d2813824affb1f0acefb514f4ff863b0dc403d8fcd630c46351cc9d1c0"
+      "sha256": "993f947e5d7fcdb4925e9f49ab382a43cff562837fd0bda4dec0c538051b490a"
     },
     "telegram-ios/submodules/TelegramUI/Components/ContextControllerImpl/Sources/ContextActionsContainerNode.swift": {
       "bytes": 41185,
@@ -19173,10 +20006,15 @@
       "lines": 2263,
       "sha256": "d4aec078a7538a95e02356850fb41ea2a713d36a190e3e763c68b192529229eb"
     },
+    "telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Sources/DCTMultiAnimationRendererImpl.swift": {
+      "bytes": 49069,
+      "lines": 1108,
+      "sha256": "94eda197066a008fe3ba01d554fe1598bc8c25b29823d4e8fd63d6dc5865b2ef"
+    },
     "telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiKeyboardItemLayer.swift": {
-      "bytes": 25135,
-      "lines": 561,
-      "sha256": "b13b9daa7da785359e623f3beef9c456137e5c1ae06be5bc58dc3d0df24ca1e6"
+      "bytes": 25602,
+      "lines": 570,
+      "sha256": "19fcd9bb271d70f118fde8e6668d11b635c838cc57254c7fe76f30b8382829df"
     },
     "telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiPagerContentComponent.swift": {
       "bytes": 298038,
@@ -19323,6 +20161,11 @@
       "lines": 2494,
       "sha256": "18f1fd0b4ab7c40c496a837bac021e466c0495658d8fbdebce086077871f4f09"
     },
+    "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Sources/SubcodecMultiAnimationRendererImpl.swift": {
+      "bytes": 28143,
+      "lines": 687,
+      "sha256": "43def3873f4c647fbdbc821c98cbcbcbbb4ef2170f3dadd3a779ac178e3a5569"
+    },
     "telegram-ios/submodules/TelegramUI/Components/SwitchComponent/Sources/AppearanceSwitchControl.swift": {
       "bytes": 6598,
       "lines": 147,
@@ -19379,9 +20222,9 @@
       "sha256": "4ddaa38328ce957f6c6a8e27d48fdff4fa608a96e2065ff270e3c79e4263333c"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift": {
-      "bytes": 668753,
-      "lines": 11539,
-      "sha256": "48fb18a7cc28682762fac7b43afbfcb398b68141aa0204c80181c8e4af54d760"
+      "bytes": 669996,
+      "lines": 11554,
+      "sha256": "faf5d386800945d8dbda26f732239996c054845d19b5a27f47be6f043c0ba7d9"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatControllerAdminBanUsers.swift": {
       "bytes": 45488,
@@ -19394,14 +20237,14 @@
       "sha256": "cfc36317afc9454d998478578b45ac069cba89ad997833b225df689c8f658383"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatControllerNode.swift": {
-      "bytes": 340089,
-      "lines": 5987,
-      "sha256": "f4649c1f14e5b516d3c96c678b3adc7e30bfc549786455a90dce2878f83daec2"
+      "bytes": 340588,
+      "lines": 5993,
+      "sha256": "4eaa64d2d491fea038bda9dfdb2b3cf383d4feb04105bc2a7d57953d25007382"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatControllerOpenAttachmentMenu.swift": {
-      "bytes": 154939,
-      "lines": 2344,
-      "sha256": "fee26ca8ed8f8636ef34a10c652c08991b78f04b8260de2d0787e2bfbabf02a0"
+      "bytes": 155365,
+      "lines": 2351,
+      "sha256": "34f8a7b0b53766aa9f7f6893c7ba667d878f9a0a23efe1f89287dacf559f2d22"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift": {
       "bytes": 331137,
@@ -19414,9 +20257,9 @@
       "sha256": "0553b7a4dab03ae2aa487545a9d4b6c81700a1bf3df7f37623ff6dca048ed153"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift": {
-      "bytes": 223027,
+      "bytes": 223044,
       "lines": 4069,
-      "sha256": "41b9c848783d573e3e625674a9947559a570141ae026117178b32ed86f01bdb2"
+      "sha256": "b1866a2253849117b55a476b261aa42c6213408a468da60709fdcde8e689ccd9"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextQueries.swift": {
       "bytes": 30238,
@@ -19439,9 +20282,9 @@
       "sha256": "27bac6c75a3f045faf95c5a8dae9eaa760cd8af27c6c8923d0d7a253bf501cd8"
     },
     "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": {
-      "bytes": 56261,
-      "lines": 1036,
-      "sha256": "6ed178c0fa45272c8a59aeaf019c74a00821416de32216a65aa71153bfe21a85"
+      "bytes": 61001,
+      "lines": 1128,
+      "sha256": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee"
     },
     "telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift": {
       "bytes": 34641,
@@ -19514,9 +20357,14 @@
       "sha256": "295d19fa74545e7211d4b5b26ff168692dc224d2509e441fbeac95874bcbb13c"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessAppearanceIntegration.swift": {
-      "bytes": 11002,
-      "lines": 198,
-      "sha256": "e7a85334583e9f2658e7950dfe55ad7af167e7722833cac6882a57c7c19e0a6b"
+      "bytes": 11201,
+      "lines": 201,
+      "sha256": "b2ce4c1a27807fd070e3910146d36b8c0b416a669f6813c81d62d91c274f59db"
+    },
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessAppearanceLayoutModeBinding.swift": {
+      "bytes": 1008,
+      "lines": 28,
+      "sha256": "017eec82266314ff45f2f14252e81eebeeb74524f2311498f539ce3c57d05baf"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessAppearanceListController.swift": {
       "bytes": 4539,
@@ -19557,6 +20405,11 @@
       "bytes": 9072,
       "lines": 156,
       "sha256": "1ffbc696dbecb46c7af093a826911304cdd7a22d3f56df6e4eb5c1503c208c84"
+    },
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessMonetThemeActions.swift": {
+      "bytes": 6765,
+      "lines": 128,
+      "sha256": "b192d1f82cea62edcb440081b837d92fc2e2828aa932202ce3dfc64021828520"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessTabNavigation.swift": {
       "bytes": 3047,
@@ -19649,9 +20502,9 @@
       "sha256": "c5a01fcabcbc32b5e1f4e01956ee2f6bbaad58811554f45b2542351e849b2120"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": {
-      "bytes": 22714,
-      "lines": 440,
-      "sha256": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473"
+      "bytes": 23022,
+      "lines": 445,
+      "sha256": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift": {
       "bytes": 22060,
@@ -19664,9 +20517,9 @@
       "sha256": "79ac4211fb894dcfc200b2d668964616582339d9476918c6536495e029be79a2"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedActions.swift": {
-      "bytes": 26097,
+      "bytes": 26101,
       "lines": 396,
-      "sha256": "e07375c9e73362075889d06b7d019fca383bc1d49d9deae682672520d7ed874c"
+      "sha256": "a42d4cb93724dbaae10c0f87c0d3d52d747fe647944a6b6c5d869d27dcf1230c"
     },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedIntegration.swift": {
       "bytes": 5791,
@@ -19903,6 +20756,11 @@
       "lines": 348,
       "sha256": "d4b4a8806ac96752ca3cf7bf58c4ed43dd1504024d7cff25f1a0f7b84f27b646"
     },
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsPerformanceEnergy.swift": {
+      "bytes": 4892,
+      "lines": 93,
+      "sha256": "543f195741d3bb7ad8784f9b261a1f9f5084c40026582fd1dd3f374e9c440664"
+    },
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsVideoController.swift": {
       "bytes": 8286,
       "lines": 172,
@@ -19929,14 +20787,19 @@
       "sha256": "e23289f5a4bbe4db7c4c4e8dffcb6d43d693e0b8fe1a363c7f1942851bf3512a"
     },
     "telegram-ios/submodules/TelegramUI/Sources/PrefetchManager.swift": {
-      "bytes": 15903,
-      "lines": 315,
-      "sha256": "39b2ead30476571b9e6aa7cf0346d49a10657b6298ef1881bca05bb0364627a7"
+      "bytes": 16066,
+      "lines": 316,
+      "sha256": "b5847f7910928d9ce80681fd5ee41de3c7c5ba481407c3c3ef11cd92497102f5"
     },
     "telegram-ios/submodules/TelegramUI/Sources/SaveMediaToFiles.swift": {
       "bytes": 6513,
       "lines": 152,
       "sha256": "9e21129c84fe2df70c60d90d78bd21a152a2ab369127b3ef52faf15ebd4b9bdc"
+    },
+    "telegram-ios/submodules/TelegramUI/Sources/SharedAccountContext.swift": {
+      "bytes": 272557,
+      "lines": 5058,
+      "sha256": "4d6a22ae9d3e72eba29c3b025309d508b2b0d9debb6caaa4685cb48ce76dffa8"
     },
     "telegram-ios/submodules/TelegramUI/Sources/SharedMediaPlayer.swift": {
       "bytes": 29470,
@@ -19944,9 +20807,9 @@
       "sha256": "83ea63d256e00a718fa87fc171ba8b10eb253307e9d6d8024632b392c9930dd4"
     },
     "telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift": {
-      "bytes": 46258,
-      "lines": 921,
-      "sha256": "e0cd5988728ce4c960160d2ec4a3bef3633d3cf1876f45315393df9cd3ddeeda"
+      "bytes": 46472,
+      "lines": 923,
+      "sha256": "5a9fda8d2366b9c92944dde7d0726df5920edb09978ae235ec6516a1c255b23b"
     },
     "telegram-ios/submodules/TelegramUI/Tests/Appearance/AppearanceRootTabsTests.swift": {
       "bytes": 2003,
@@ -19959,19 +20822,29 @@
       "sha256": "adf37b1e05d33dec2bb33696b24240904240c48fa479e8303e834283f4986905"
     },
     "telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedExportPermitTests.swift": {
-      "bytes": 9367,
-      "lines": 169,
-      "sha256": "f79b22d829380088e523750db58112bcf5104d1ea7e0b5ec0cccba2391ab19b6"
+      "bytes": 10426,
+      "lines": 190,
+      "sha256": "ca5ea9aeb25197c8070953d429a3f663428016bb1293ff787647d47ee9d3a11c"
     },
     "telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedFollowupTests.swift": {
       "bytes": 14422,
       "lines": 260,
       "sha256": "0c14ca304a18ba78b6e509476f4163417515f4d759314f07b7e9f4c9e82af3cb"
     },
+    "telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedGalleryDirectSaveTests.swift": {
+      "bytes": 7065,
+      "lines": 126,
+      "sha256": "e1c2a4ec61c3102561c764d448e2a031ba6a8430d093e3d78825df77e81206fb"
+    },
     "telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedRemediationNativeTests.swift": {
       "bytes": 13735,
       "lines": 215,
       "sha256": "dc02932ae314cf889b1fd5878a83825c566b558c4b20089bea795f629b9de790"
+    },
+    "telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedTerminalExportTests.swift": {
+      "bytes": 14390,
+      "lines": 276,
+      "sha256": "cfb1198ed301b1a1f6e3502a3ff7d87ce67fe7a903acc0f3e3ba9f95abb08535"
     },
     "telegram-ios/submodules/TelegramUIPreferences/Sources/CallListSettings.swift": {
       "bytes": 2169,
@@ -20107,6 +20980,11 @@
       "bytes": 78879,
       "lines": 2257,
       "sha256": "384de71c6f5870facf969ad2ad915a1ed40f34a2da405e01eda72542482c0239"
+    },
+    "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java": {
+      "bytes": 289483,
+      "lines": 7158,
+      "sha256": "72b9688891af95daf3ff6b55a31ff16f03eb84db730593de41dfd8b2de81acd5"
     },
     "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java": {
       "bytes": 151023,
@@ -20402,12 +21280,20 @@
     "appearance": {
       "metadata": {},
       "path": "docs/wave-2/appearance-parity.json",
-      "sha256": "7c397ebf12dc7a1e5f1a1bb54dc3b7925469af15bd2d395225fa62dbe00fb0c3"
+      "sha256": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175"
     },
     "chat": {
       "metadata": {},
       "path": "docs/wave-2/chat-parity.json",
       "sha256": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f"
+    },
+    "chat-swipe": {
+      "metadata": {
+        "owner": "chat",
+        "proof_level": "source implementation; shared-owner integration and native/frame execution pending"
+      },
+      "path": "docs/wave-2/chat-swipe-parity.json",
+      "sha256": "5621446e51cc23fb78a6f0f0bf56e7c18b84577e9f3cfbbac86e79e7002c977f"
     },
     "cloud-api": {
       "metadata": {
@@ -20702,7 +21588,7 @@
     "feed": {
       "metadata": {},
       "path": "docs/wave-2/feed-parity.json",
-      "sha256": "21152aea58a0b4e542f40195e0f377b559d9843ca831eb0d228bcfc9c769d33b"
+      "sha256": "c660f9c0cef5aaaa98212c0db484647a707b6996992d3c61d40c19ed8fd80489"
     },
     "identity": {
       "metadata": {
@@ -21143,8 +22029,8 @@
         "compat_storage_boundary": "44 overloads use 22 closed global compat.exteraconfig definitions in the actual ClientSettings root registration set. No per-plugin substitution or new client feature is claimed.",
         "generator": "python -m tools.compat.sdk_config_manifest --write",
         "implementation_counts": {
-          "blocked": 4,
-          "implemented": 272,
+          "blocked": 0,
+          "implemented": 276,
           "unsupported": 32
         },
         "kotlin_name_boundary": "No KTConfig class exists in the pinned source; actual Kotlin object FQCNs are registered.",
@@ -21165,6 +22051,7 @@
             "AIFeatures.definitions",
             "AppearanceFeatures.definitions",
             "ChatFeatures.definitions",
+            "ChatSwipeFeatures.definitions",
             "ClientAPIFeatures.definitions",
             "DialogFeatures.definitions",
             "ExteraConfigCompatibility.definitions",
@@ -21180,9 +22067,10 @@
             "PrivacyFeatures.definitions",
             "RetentionFeatures.definitions",
             "StickerFeatures.definitions",
-            "ToolsFeatures.definitions"
+            "ToolsFeatures.definitions",
+            "ToolsPerformancePolicy.definitions"
           ],
-          "line": 54,
+          "line": 55,
           "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift"
         },
         "runtime_metadata_boundary": "Manager snapshots and native FIFO mode operations are bound. Android ART compatibilityMode has a named native unsupported disposition; no fake JIT/engine value.",
@@ -21194,28 +22082,31 @@
           "shim-utility-or-unresolved": 44
         },
         "source_inventory": {
-          "path": "docs/parity/client-features.json",
-          "sha256": "17cf1a8efad7469c8696045904105694347e26a2dbe70040d0f64658464ed99c"
+          "contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+          "hash_mode": "sdk-config-input-v1",
+          "path": "docs/parity/client-features.json"
         },
         "source_pins": {
-          "docs/parity/client-features.json": "17cf1a8efad7469c8696045904105694347e26a2dbe70040d0f64658464ed99c",
           "docs/wave-2/ai-parity.json": "b60bf991781b65f1956254e8f658db1cb9e6682e2beadb5c68bf720ecca2d98e",
           "docs/wave-2/ai-visibility-parity.json": "b791dee27760f3f0bbb740f93a15d8caff3d2d2722b89d970e759ce3ca7bbda1",
-          "docs/wave-2/appearance-parity.json": "7c397ebf12dc7a1e5f1a1bb54dc3b7925469af15bd2d395225fa62dbe00fb0c3",
+          "docs/wave-2/appearance-parity.json": "72b3abc14f4594576159800e778197a5ae18a324a3985d42aa5fd0ee94757175",
           "docs/wave-2/chat-parity.json": "4feeaf86180eba0cf2eaf07a1a619511430767d1e667e93c6a81b7d79a36195f",
           "docs/wave-2/dialogs-parity.json": "03b3d10d72265c7a18baded766bae8522c8e398d20a9043518e037dc402d0b86",
           "docs/wave-2/identity-parity.json": "252d41e095f979724de5f2e38973a7af09d2dc9540507a5925cee3ed31283a80",
           "docs/wave-2/privacy-parity.json": "e683a2539dd703f0101b01942571c8cce298af4d7ae0fe26e6bb548d756bd96e",
           "docs/wave-2/retention-parity.json": "e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a",
-          "docs/wave-2/sdk-config-binding-dispositions.json": "0904b733cff80fb4bbfc3a500506a1ba11986f28bcaf8e6e9bf540dd179e496c",
-          "docs/wave-2/tools-parity.json": "b225f5ab716c46000ec234c63a7f70b8b47a9773f9d98c7e6b25461343f1cfeb",
+          "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
+          "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf",
           "swift/ExteralessCore/Sources/ExteralessCore/AIFeatures.swift": "2e06fbb08ba7f94caa63e932a2fc4a16ec6804df4133b1cff732d44fafa1f51d",
           "swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift": "4f48d757f4552b3a2fc888d25e9c309e47cdfbe44c7936794461be039e53df22",
           "swift/ExteralessCore/Sources/ExteralessCore/AppearanceAdditionalFeatures.swift": "e779cc5e1d74a533a7272a6023038db67966fa17af1b481c0ce03b8bd5ef303b",
-          "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "ec7b61074fae6c89f54e7697f60d7780cd3a1f8e9c658ed78ad6a60155a99225",
+          "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift": "8a492071f5195321e6df2c9f36ba74b9f81716712c2ac5a52cb4c11df857d132",
+          "swift/ExteralessCore/Sources/ExteralessCore/AppearanceLayoutModePolicy.swift": "b0a9e880c864e8c989bcd4ff9bc719cc23ed64fbb28460375e0b0bbf2dd9ad00",
           "swift/ExteralessCore/Sources/ExteralessCore/ChatFeatures.swift": "8f90b157230e9c4c58d60b7e914ffebb85ff16b02bbeba314adb35a3509c7b33",
           "swift/ExteralessCore/Sources/ExteralessCore/ChatMenuPolicy.swift": "127bbeb8f95a8c9ba8ac23ba072eb02e36a06909da05b8e81627f91ddb7103af",
           "swift/ExteralessCore/Sources/ExteralessCore/ChatPolicy.swift": "0033c096a5f68a45cfa61aec541de1c7d4161a77bf8f8a7d6cb0558076f11bca",
+          "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceFontFamilyPolicy.swift": "7673b03a438e9fcfc2e32a171b4f625b2a2fa267c1ae7f907a454ea31a1b639f",
+          "swift/ExteralessCore/Sources/ExteralessCore/CoreAppearanceMonetPolicy.swift": "7285eb59f890530ab9b366d4edd5552b918b88868ac1fd5c3fd15d03a94a6980",
           "swift/ExteralessCore/Sources/ExteralessCore/CoreDialogFeatures.swift": "7ec148204096a5a2f78f7c06e862fac662d2aab0dd0bce5e0bd533e6d7449d30",
           "swift/ExteralessCore/Sources/ExteralessCore/CorePillFeatures.swift": "ba568a7eebc70a03b9aa50e234b326f70805c639902d07ae0a6ffe9534df3bc3",
           "swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift": "35eee798ab988f79f6a2d77e512b8fedda06c1d2f3f41f4cc65e345b8e4ffefe",
@@ -21228,10 +22119,11 @@
           "swift/ExteralessCore/Sources/ExteralessCore/StickerFeatures.swift": "013d56750ebc4e8062c793912da02f424d603eb96e6d483c490ed9117f29c277",
           "swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift": "b5cca254c1770cfc6504af9db541a2bd4b6f4c87dfe98531321765be6fd4f7de",
           "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift": "950973b1a855e6dcfb27a5a162e9696b0e8429e925b8481306caa0e10ed3c3b8",
-          "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "d965ac3f6be145365c839524729932617e860d1a67fb057dc5ed2628d06e6fc8",
+          "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
+          "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
           "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift": "ee6d97ee3a01b1e593fd58806eab176b64be4f2adf4139ad2bf12ed602def18e",
           "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ClientSettingsBridgeExtension.swift": "e0600d7492f6e9a478341235ff451147fc0e41fe2908d0925af50e9d14897717",
-          "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "ea4803af9ca289db7135b90ca8d9bdc0bccbcfc62fc321c04475f640a61c8dc1",
+          "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "8bdc7bd9387e123f1c5440b23d901e7581ea03ad0d4ec85b099d62800d59db8e",
           "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift": "7d10fffce395a25c8cd50e5da177009e486648e66ab3c2043b3120c093986e6d",
           "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift": "e78665ba5d8c6a3ea47dae228ed69cd03b0586e9fdff8425265eb5faed9e4f44",
           "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/AvatarCornerType.java": "7014cc60413ef1451904578900986d53cf69f4b841e84be3481991317ea91040",
@@ -21258,7 +22150,7 @@
         "supersedes_classification_only_fragment": "12 overlapping compatibility_apis in docs/wave-2/tools-parity.json must be omitted from the coordinator merge when this SDK-owned receipt is selected."
       },
       "path": "docs/wave-2/sdk-config-parity.json",
-      "sha256": "63264b9f1c8b8b88c2903b9f4f598b19c68027cf3d7590b19eafa1d290e06bfe"
+      "sha256": "6624ada22f523f8028f2029b3dba7ac69285349930844d75f172dd48a6410367"
     },
     "stickers": {
       "metadata": {
@@ -21818,7 +22710,7 @@
         }
       },
       "path": "docs/wave-2/tools-parity.json",
-      "sha256": "b225f5ab716c46000ec234c63a7f70b8b47a9773f9d98c7e6b25461343f1cfeb"
+      "sha256": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
     }
   }
 }
