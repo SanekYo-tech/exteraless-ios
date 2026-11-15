@@ -29,13 +29,19 @@ final class InChatPrefetchManager {
     private var directionIsToLater: Bool = true
     
     private var contexts: [MediaId: PrefetchMediaContext] = [:]
+    private let filteringDisposable = MetaDisposable()
     
     init(context: AccountContext) {
         self.context = context
         self.settings = context.sharedContext.currentAutomaticMediaDownloadSettings
+        self.filteringDisposable.set((ExteralessFilteringRuntime.shared.changes
+        |> deliverOnMainQueue).start(next: { [weak self] _ in
+            self?.update()
+        }))
     }
     
     deinit {
+        self.filteringDisposable.dispose()
         for (_, context) in self.contexts {
             context.fetchDisposable.dispose()
         }
@@ -68,6 +74,9 @@ final class InChatPrefetchManager {
         
         var validIds = Set<MediaId>()
         for (message, media) in self.messages {
+            guard exteralessFilterAllowsAutomaticDownload(account: self.context.account, message: message) else {
+                continue
+            }
             guard let id = media.id else {
                 continue
             }

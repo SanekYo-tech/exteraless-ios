@@ -18,6 +18,7 @@ public extension EngineRawMessage {
 
 public extension RestrictedContentMessageAttribute {
     func platformText(platform: String, contentSettings: ContentSettings) -> String? {
+        if exteralessIgnoreLocalRestrictionNotice() { return nil }
         for rule in self.rules {
             if rule.reason == "sensitive" {
                 continue

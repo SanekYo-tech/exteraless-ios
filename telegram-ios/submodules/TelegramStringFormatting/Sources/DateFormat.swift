@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -13,6 +14,9 @@ public func getDateTimeComponents(timestamp: Int32) -> (day: Int32, month: Int32
 }
 
 public func stringForMediumCompactDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, withTime: Bool = true) -> String {
+    if let text = dateTimeFormat.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .monthDay(includeYear: false)) {
+        return withTime ? strings.Time_MediumDate(text, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string : text
+    }
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);
@@ -22,7 +26,7 @@ public func stringForMediumCompactDate(timestamp: Int32, strings: PresentationSt
     
     let timeString: String
     if withTime {
-        timeString = " \(stringForShortTimestamp(hours: Int32(timeinfo.tm_hour), minutes: Int32(timeinfo.tm_min), dateTimeFormat: dateTimeFormat))"
+        timeString = " \(stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat))"
     } else {
         timeString = ""
     }
@@ -37,6 +41,9 @@ public func stringForMediumCompactDate(timestamp: Int32, strings: PresentationSt
 }
 
 public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, withTime: Bool = true) -> String {
+    if let text = dateTimeFormat.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .numeric(dayFirst: dateTimeFormat.dateFormat == .dayFirst, separator: dateTimeFormat.dateSeparator, suffix: dateTimeFormat.dateSuffix, fullYear: dateTimeFormat.requiresFullYear)) {
+        return withTime ? strings.Time_MediumDate(text, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string : text
+    }
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);
@@ -57,7 +64,7 @@ public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, 
     }
     
     if withTime {
-        let timeString = stringForShortTimestamp(hours: Int32(timeinfo.tm_hour), minutes: Int32(timeinfo.tm_min), dateTimeFormat: dateTimeFormat)
+        let timeString = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
         return strings.Time_MediumDate(dateString, timeString).string
     } else {
         return dateString
@@ -65,13 +72,16 @@ public func stringForMediumDate(timestamp: Int32, strings: PresentationStrings, 
 }
 
 public func stringForFullDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat) -> String {
+    if let text = dateTimeFormat.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .monthDay(includeYear: true)) {
+        return strings.Time_AtPreciseDate(text, stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)).string
+    }
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);
     
     let dayString = "\(timeinfo.tm_mday)"
     let yearString = "\(2000 + timeinfo.tm_year - 100)"
-    let timeString = stringForShortTimestamp(hours: Int32(timeinfo.tm_hour), minutes: Int32(timeinfo.tm_min), dateTimeFormat: dateTimeFormat)
+    let timeString = stringForMessageTimestamp(timestamp: timestamp, dateTimeFormat: dateTimeFormat)
     
     let monthFormat: (String, String, String) -> PresentationStrings.FormattedString
     switch timeinfo.tm_mon + 1 {
@@ -107,6 +117,7 @@ public func stringForFullDate(timestamp: Int32, strings: PresentationStrings, da
 }
 
 public func stringForDate(timestamp: Int32, timeZone: TimeZone? = TimeZone(secondsFromGMT: 0), strings: PresentationStrings) -> String {
+    if let text = ExteralessIdentityPresentation.shared.policy.calendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .monthDay(includeYear: true), timeZone: timeZone ?? .current) { return text }
     let formatter = DateFormatter()
     formatter.timeStyle = .none
     formatter.dateStyle = .medium
@@ -116,6 +127,7 @@ public func stringForDate(timestamp: Int32, timeZone: TimeZone? = TimeZone(secon
 }
 
 public func stringForDate(date: Date, timeZone: TimeZone? = TimeZone(secondsFromGMT: 0), strings: PresentationStrings) -> String {
+    if let text = ExteralessIdentityPresentation.shared.policy.calendar.persianText(for: date, style: .monthDay(includeYear: true), timeZone: timeZone ?? .current) { return text }
     let formatter = DateFormatter()
     formatter.timeStyle = .none
     formatter.dateStyle = .medium
@@ -125,6 +137,7 @@ public func stringForDate(date: Date, timeZone: TimeZone? = TimeZone(secondsFrom
 }
 
 public func stringForDateWithoutYear(date: Date, timeZone: TimeZone? = TimeZone(secondsFromGMT: 0), strings: PresentationStrings) -> String {
+    if let text = ExteralessIdentityPresentation.shared.policy.calendar.persianText(for: date, style: .monthDay(includeYear: false), timeZone: timeZone ?? .current) { return text }
     let formatter = DateFormatter()
     formatter.timeStyle = .none
     formatter.timeZone = timeZone

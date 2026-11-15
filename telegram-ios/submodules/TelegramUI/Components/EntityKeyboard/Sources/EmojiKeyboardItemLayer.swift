@@ -11,6 +11,8 @@ import TelegramPresentationData
 import EmojiTextAttachmentView
 import EmojiStatusComponent
 import CoreVideo
+import Emoji
+import ExteralessCore
 
 final class EmojiKeyboardCloneItemLayer: SimpleLayer {
 }
@@ -37,7 +39,7 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
         case customFile(TelegramMediaFile.Accessor)
     }
     
-    public let item: EmojiPagerContentComponent.Item
+    public private(set) var item: EmojiPagerContentComponent.Item
     private let context: AccountContext
     
     private var content: EmojiPagerContentComponent.ItemContent
@@ -49,6 +51,7 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
     private let size: CGSize
     private var disposable: Disposable?
     private var fetchDisposable: Disposable?
+    private var emojiFontObserver: NSObjectProtocol?
     private var premiumBadgeView: PremiumBadgeView?
     
     private var iconLayer: SimpleLayer?
@@ -191,6 +194,15 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
         
         switch content {
         case let .animation(animationData):
+            if animationData.isReaction {
+                self.performanceAnimationKind = .emoji
+            } else {
+                switch animationData.resource {
+                case let .file(_, file): self.performanceAnimationKind = file.isCustomEmoji ? .emoji : .sticker
+                case .stickerPackThumbnail: self.performanceAnimationKind = .sticker
+                case .resource: self.performanceAnimationKind = .effect
+                }
+            }
             guard let animationDataResource = animationData.resource._parse() else {
                 return
             }
@@ -275,22 +287,10 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
                 underlyingContentLayer.addSublayer(starsLayer)
             }
         case let .staticEmoji(staticEmoji):
-            let image = generateImage(pointSize, opaque: false, scale: min(UIScreenScale, 3.0), rotatedContext: { size, context in
-                context.clear(CGRect(origin: CGPoint(), size: size))
-                
-                let preScaleFactor: CGFloat = 1.0
-                let scaledSize = CGSize(width: floor(size.width * preScaleFactor), height: floor(size.height * preScaleFactor))
-                let scaleFactor = scaledSize.width / size.width
-                
-                context.scaleBy(x: 1.0 / scaleFactor, y: 1.0 / scaleFactor)
-                
-                let string = NSAttributedString(string: staticEmoji, font: Font.regular(floor(32.0 * scaleFactor)), textColor: .black)
-                let boundingRect = string.boundingRect(with: scaledSize, options: .usesLineFragmentOrigin, context: nil)
-                UIGraphicsPushContext(context)
-                string.draw(at: CGPoint(x: floorToScreenPixels((scaledSize.width - boundingRect.width) / 2.0 + boundingRect.minX), y: floorToScreenPixels((scaledSize.height - boundingRect.height) / 2.0 + boundingRect.minY)))
-                UIGraphicsPopContext()
-            })
-            self.contents = image?.cgImage
+            self.updateStaticEmoji(staticEmoji)
+            self.emojiFontObserver = NotificationCenter.default.addObserver(forName: StickerFeatures.emojiChangedNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.updateStaticEmoji(staticEmoji)
+            }
         case let .icon(icon):
             let image = generateImage(pointSize, opaque: false, scale: min(UIScreenScale, 3.0), rotatedContext: { size, context in
                 context.clear(CGRect(origin: CGPoint(), size: size))
@@ -336,6 +336,31 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
             tintContentLayer.addSublayer(tintIconLayer)
         }
     }
+
+    private func updateStaticEmoji(_ emoji: String) {
+        let accountId = self.context.account.id.int64
+        let image = generateImage(self.pointSize, opaque: false, scale: min(UIScreenScale, 3.0), rotatedContext: { size, context in
+            context.clear(CGRect(origin: .zero, size: size))
+            let scaledSize = CGSize(width: floor(size.width), height: floor(size.height))
+            guard size.width > 0, scaledSize.width > 0 else { return }
+            let scaleFactor = scaledSize.width / size.width
+            context.scaleBy(x: 1.0 / scaleFactor, y: 1.0 / scaleFactor)
+            let fontSize = floor(32.0 * scaleFactor)
+            let font = ExteralessEmojiRendering.shared.font(for: emoji, size: fontSize, accountId: accountId, fallback: Font.regular(fontSize))
+            let string = NSAttributedString(string: emoji, font: font, textColor: .black)
+            let bounds = string.boundingRect(with: scaledSize, options: .usesLineFragmentOrigin, context: nil)
+            UIGraphicsPushContext(context)
+            string.draw(at: CGPoint(x: floorToScreenPixels((scaledSize.width - bounds.width) / 2 + bounds.minX), y: floorToScreenPixels((scaledSize.height - bounds.height) / 2 + bounds.minY)))
+            UIGraphicsPopContext()
+        })
+        self.contents = image?.cgImage
+    }
+
+    func updateItem(_ item: EmojiPagerContentComponent.Item) {
+        // Long-press uses this metadata; it must match the current grid model,
+        // including a refreshed document or local/cloud favorite provenance.
+        self.item = item
+    }
     
     override public init(layer: Any) {
         guard let layer = layer as? EmojiKeyboardItemLayer else {
@@ -363,6 +388,7 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
     deinit {
         self.disposable?.dispose()
         self.fetchDisposable?.dispose()
+        if let observer = self.emojiFontObserver { NotificationCenter.default.removeObserver(observer) }
     }
     
     public override func action(forKey event: String) -> CAAction? {
@@ -414,6 +440,7 @@ public final class EmojiKeyboardItemLayer: MultiAnimationRenderTarget {
                 func generateIcon(color: UIColor) -> UIImage? {
                     return generateImage(self.pointSize, opaque: false, scale: min(UIScreenScale, 3.0), rotatedContext: { size, context in
                         context.clear(CGRect(origin: CGPoint(), size: size))
+
                         
                         UIGraphicsPushContext(context)
                         

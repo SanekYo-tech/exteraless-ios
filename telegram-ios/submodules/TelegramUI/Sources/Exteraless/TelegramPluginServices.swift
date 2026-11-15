@@ -1,4 +1,5 @@
 import AccountContext
+import ExteralessCore
 import Foundation
 import PluginHost
 import SwiftSignalKit
@@ -18,6 +19,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     private let snapshotLock = NSLock()
     private var snapshot = PluginPlatformSnapshot()
+    private var accountContextIdentities: [Int64: ObjectIdentifier] = [:]
     private var protectedClientPaths: Set<String> = []
     private let effectBudget = PluginNativeEffectBudget()
 
@@ -127,6 +129,7 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         self.presentationData = nil
         self.snapshotLock.lock()
         self.snapshot = PluginPlatformSnapshot()
+        self.accountContextIdentities.removeAll()
         self.snapshotLock.unlock()
         self.effectBudget.cancelAll()
     }
@@ -159,10 +162,12 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         let scale = Double(window?.screen.scale ?? UIScreen.main.scale)
         let traits = window?.traitCollection ?? UITraitCollection.current
         var accounts: [PluginServiceAccount] = []
+        var contextIdentities: [Int64: ObjectIdentifier] = [:]
         for (recordId, context) in self.accountContexts {
             guard let index = self.accountSlots[recordId] else { continue }
             accounts.append(PluginServiceAccount(index: index, recordId: recordId,
                 userId: context.account.peerId.id._internalGetInt64Value()))
+            contextIdentities[recordId] = ObjectIdentifier(context)
         }
         accounts.sort { $0.index < $1.index }
         let selected = self.primaryRecordId.flatMap { id in
@@ -179,8 +184,18 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         }
         self.snapshotLock.lock()
         self.snapshot = snapshot
+        self.accountContextIdentities = contextIdentities
         if let protectedPath { self.protectedClientPaths.insert(protectedPath) }
         self.snapshotLock.unlock()
+    }
+
+    /// Lock-only identity check for native work which outlives its first main hop.
+    /// A replacement AccountContext cannot inherit an old request's admission.
+    private func accountContextIdentity(for account: PluginServiceAccount) -> ObjectIdentifier? {
+        self.snapshotLock.lock()
+        defer { self.snapshotLock.unlock() }
+        guard self.snapshot.accounts.contains(account) else { return nil }
+        return self.accountContextIdentities[account.recordId]
     }
 
     // MARK: Legacy service roles (throwing instead of invented defaults)
@@ -234,16 +249,30 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
 
     public func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws {
         try lease.check()
+        let snapshot = self.platformSnapshot
+        let account = try snapshot.account(at: snapshot.selectedAccount())
         let ticket = try effectBudget.reserve(pluginId: pluginId, bytes: url.absoluteString.utf8.count)
         let logs = self.serviceLogs
-        DispatchQueue.main.async {
-            defer { ticket.finish() }
-            guard ticket.isActive, lease.isCurrent else { return }
-            UIApplication.shared.open(url, options: [:], completionHandler: { opened in
-                if !opened, lease.isCurrent {
-                    logs.append(pluginId: pluginId, level: .error, message: "Browser.openUrl: iOS could not open the URL")
-                }
-            })
+        DispatchQueue.main.async { [weak self] in
+            guard let self, ticket.isActive, lease.isCurrent,
+                  let context = self.context(recordId: account.recordId) else {
+                ticket.finish()
+                return
+            }
+            let original = { [weak self] in
+                defer { ticket.finish() }
+                guard let self, ticket.isActive, lease.isCurrent,
+                      self.context(recordId: account.recordId) === context else { return }
+                UIApplication.shared.open(url, options: [:], completionHandler: { opened in
+                    if !opened, lease.isCurrent {
+                        logs.append(pluginId: pluginId, level: .error, message: "Browser.openUrl: iOS could not open the URL")
+                    }
+                })
+            }
+            let intercepted = MainActor.assumeIsolated {
+                NativeServiceOpenHooks.shared.interceptURL(context: context, url: url, original: original)
+            }
+            if !intercepted { original() }
         }
     }
 
@@ -251,9 +280,8 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
     /// enqueue result. This does not claim network delivery or fabricate a TL id.
     public func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String {
         try lease.check()
-        let current = try self.platformSnapshot.account(at: request.account.index)
-        guard current.recordId == request.account.recordId else {
-            throw BridgeFailure.invalidHandle("sendMessage: account record has changed")
+        guard let accountIdentity = self.accountContextIdentity(for: request.account) else {
+            throw BridgeFailure.invalidHandle("sendMessage: account lifetime has changed")
         }
         guard request.peerId > 0, request.peerId <= 0x00ff_ffff_ffff_ffff,
               !request.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -262,7 +290,10 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
         }
         let ticket = try effectBudget.reserve(pluginId: request.pluginId, bytes: request.text.utf8.count)
         let requestId = ticket.id.uuidString
-        let effectLease = PluginNativeCallLease { ticket.isActive && lease.isCurrent }
+        let effectLease = PluginNativeCallLease { [weak self] in
+            ticket.isActive && lease.isCurrent
+                && self?.accountContextIdentity(for: request.account) == accountIdentity
+        }
         Task { @MainActor [weak self] in
             defer { ticket.finish() }
             guard let self else { return }
@@ -340,21 +371,38 @@ public final class TelegramPluginServices: PluginMessagesService, PluginSettings
                 throw BridgeFailure.unavailable("sendMessage: account was removed while preparing the message")
             }
             try lease.check()
-            // Plugin-origin effects must not recursively re-enter the same send
-            // hook. Core retains its original media/Postbox enqueue pipeline.
-            let message = EnqueueMessage.message(text: request.text, attributes: [], inlineStickers: [:],
-                mediaReference: nil, threadId: nil, replyToMessageId: nil, replyToStoryId: nil,
-                localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
-            let result = await (enqueueMessagesFromPlugin(account: context.account, peerId: peerId, messages: [message])
+            // Use the same native text pipeline as the TL provider. It attaches
+            // correlation ancestry before PendingMessageManager can
+            // issue the RPC, so only ancestor plugins are skipped by child hooks.
+            let kind: ExteralessTLPeerReference.Kind
+            switch request.peerKind {
+            case .user: kind = .user
+            case .group: kind = .group
+            case .channel: kind = .channel
+            }
+            let reference = try ExteralessTLPeerReference(kind: kind, id: request.peerId)
+            let origin = try request.origin.map {
+                try ExteralessTLRequestOrigin(rootId: $0.rootId, pluginIds: $0.pluginIds)
+            }
+            let result = await (exteralessTLSendText(account: context.account, reference: reference,
+                text: request.text, entities: [], silent: ClientSettings.shared.bool("chats.silentMessageByDefault"),
+                replyToId: nil, threadId: nil, origin: origin, isCancelled: { !lease.isCurrent })
+                |> map { Result<ExteralessTLValue, ExteralessTLServiceError>.success($0) }
+                |> `catch` { error -> Signal<Result<ExteralessTLValue, ExteralessTLServiceError>, NoError> in
+                    .single(.failure(error))
+                }
                 |> take(1) |> last).get()
-            // `last` emits nil even if the native signal completes without a
-            // value, so an empty result is reported instead of a stuck Task.
-            let ids = result?.compactMap { $0 } ?? []
-            guard !ids.isEmpty else {
+            guard let result else {
                 throw BridgeFailure.unavailable("sendMessage: native enqueue produced no message")
             }
+            let response = try result.get()
+            guard case let .array(messageIds)? = response["messageIds"] else {
+                throw BridgeFailure.unavailable("sendMessage: native enqueue returned no local message ids")
+            }
+            let ids = messageIds.compactMap { $0["id"]?.integerValue }
+            guard !ids.isEmpty else { throw BridgeFailure.unavailable("sendMessage: native enqueue produced no message") }
             self.serviceLogs.append(pluginId: request.pluginId,
-                message: "sendMessage \(requestId): enqueued local message ids \(ids.map { String($0.id) }.joined(separator: ","))")
+                message: "sendMessage \(requestId): enqueued local message ids \(ids.map { String($0) }.joined(separator: ","))")
         } catch let failure as BridgeFailure {
             self.serviceLogs.append(pluginId: request.pluginId, level: .error,
                 message: "sendMessage \(requestId): \(failure.kind): \(failure.description)")

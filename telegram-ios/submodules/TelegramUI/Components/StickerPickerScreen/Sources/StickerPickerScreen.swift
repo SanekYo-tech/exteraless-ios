@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -581,7 +582,7 @@ public class StickerPickerScreen: ViewController {
             
             let gifItems: Signal<EntityKeyboardGifContent?, NoError>
             if controller.hasGifs {
-                let hasRecentGifs = context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudRecentGifs))
+                let hasRecentGifs = exteralessSavedGifItems(engine: context.engine)
                 |> map { savedGifs -> Bool in
                     return !savedGifs.isEmpty
                 }
@@ -757,7 +758,9 @@ public class StickerPickerScreen: ViewController {
                 canSaveGif = false
             }
             
-            let _ = (context.engine.stickers.isGifSaved(id: file.media.fileId)
+            let _ = (exteralessSavedGifItems(engine: context.engine)
+            |> take(1)
+            |> map { items in items.contains(where: { $0.media.fileId == file.media.fileId }) }
             |> deliverOnMainQueue).start(next: { [weak self] isGifSaved in
                 var isGifSaved = isGifSaved
                 if !canSaveGif {
@@ -797,10 +800,11 @@ public class StickerPickerScreen: ViewController {
                     }, action: { _, f in
                         f(.dismissWithoutContent)
                         
-                        let _ = removeSavedGif(postbox: context.account.postbox, mediaId: file.media.fileId).start()
+                        let _ = (exteralessToggleGifSaved(engine: context.engine, fileReference: file, saved: false)
+                        |> deliverOnMainQueue).start(error: { [weak self] error in self?.showGifError(error.localizedDescription) })
                     })))
                 } else if canSaveGif && !isGifSaved {
-                    items.append(.action(ContextMenuActionItem(text: presentationData.strings.Preview_SaveGif, icon: { theme in
+                    items.append(.action(ContextMenuActionItem(text: StickerPolicy().localGifs ? "Save GIF on This Device" : presentationData.strings.Preview_SaveGif, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                     }, action: { [weak self] _, f in
                         f(.dismissWithoutContent)
@@ -810,15 +814,17 @@ public class StickerPickerScreen: ViewController {
                         }
                         
                         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                        let _ = (toggleGifSaved(account: context.account, fileReference: file, saved: true)
+                        let _ = (exteralessToggleGifSaved(engine: context.engine, fileReference: file, saved: true)
                         |> deliverOnMainQueue).start(next: { [weak self] result in
                             guard let controller = self?.controller else {
                                 return
                             }
                             switch result {
-                            case .generic:
+                            case .local:
+                                controller.present(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: "GIF saved on this device", customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                            case .cloud(.generic):
                                 controller.present(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: presentationData.strings.Gallery_GifSaved, customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
-                            case let .limitExceeded(limit, premiumLimit):
+                            case let .cloud(.limitExceeded(limit, premiumLimit)):
                                 let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
                                 let text: String
                                 if limit == premiumLimit || premiumConfiguration.isPremiumDisabled {
@@ -835,7 +841,7 @@ public class StickerPickerScreen: ViewController {
                                     return false
                                 }), in: .window(.root))
                             }
-                        })
+                        }, error: { [weak self] error in self?.showGifError(error.localizedDescription) })
                     })))
                 }
                 
@@ -844,6 +850,13 @@ public class StickerPickerScreen: ViewController {
             })
         }
         
+        private func showGifError(_ text: String) {
+            guard let controller = self.controller else { return }
+            let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: controller.context.sharedContext.currentPresentationData.with { $0 }.strings.Common_OK, style: .default))
+            controller.context.sharedContext.applicationBindings.presentNativeController(alert)
+        }
+
         func updateContent(_ content: StickerPickerInputData) {
             self.content = content
             
@@ -1344,7 +1357,9 @@ public class StickerPickerScreen: ViewController {
                         })
                     } else {
                         let reference: FileMediaReference
-                        if groupId == AnyHashable("saved") {
+                        if let itemReference = item.fileReference {
+                            reference = itemReference
+                        } else if groupId == AnyHashable("saved") {
                             reference = .savedSticker(media: file)
                         } else if groupId == AnyHashable("recent") {
                             reference = .recentSticker(media: file)

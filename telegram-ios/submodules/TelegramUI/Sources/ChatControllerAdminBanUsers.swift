@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramPresentationData
 import AccountContext
@@ -103,6 +104,9 @@ extension ChatControllerImpl {
 
             if let banFromCommunity = result.banFromCommunity {
                 let _ = self.context.engine.peers.toggleCommunityParticipantBanned(communityId: banFromCommunity.communityId, participantId: banFromCommunity.participantId, banned: true).startStandalone()
+            }
+            if result.applyInCommonGroups {
+                self.exteralessApplyInCommonGroups(sourcePeerId: messagesPeerId, banPeers: result.banPeers, restrictions: result.updateBannedRights, deleteAllPeers: result.deleteAllFromPeers)
             }
         }
         
@@ -596,11 +600,11 @@ extension ChatControllerImpl {
                 }))
             }
             
-            var unsendPersonalMessages = false
+            var unsendPersonalMessages = ChatMenuPolicy.enabled("deleteChatForBothSides")
             if options.contains(.unsendPersonal) {
                 canDisplayContextMenu = false
                 items.append(ActionSheetTextItem(title: self.presentationData.strings.Chat_UnsendMyMessagesAlertTitle(personalPeerName ?? "").string))
-                items.append(ActionSheetSwitchItem(title: self.presentationData.strings.Chat_UnsendMyMessages, isOn: false, action: { value in
+                items.append(ActionSheetSwitchItem(title: self.presentationData.strings.Chat_UnsendMyMessages, isOn: unsendPersonalMessages, action: { value in
                     unsendPersonalMessages = value
                 }))
             } else if options.contains(.deleteGlobally) {

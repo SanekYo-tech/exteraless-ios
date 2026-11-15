@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import SwiftSignalKit
 import CoreMedia
 import AVFoundation
@@ -372,40 +373,59 @@ final class ManagedAudioRecorderContext {
         self.toneTimer?.invalidate()
     }
     
-    private func setupAudioUnit() {
+    private func setupAudioUnit(allowVoiceProcessing: Bool = true) {
         guard self.audioUnit.with({ $0 }) == nil else {
             return
         }
+        let voiceProcessing = allowVoiceProcessing && ClientSettings.shared.bool("tools.voiceEnhancement")
         var desc = AudioComponentDescription()
         desc.componentType = kAudioUnitType_Output
-        desc.componentSubType = kAudioUnitSubType_RemoteIO
+        desc.componentSubType = voiceProcessing ? kAudioUnitSubType_VoiceProcessingIO : kAudioUnitSubType_RemoteIO
         desc.componentFlags = 0
         desc.componentFlagsMask = 0
         desc.componentManufacturer = kAudioUnitManufacturer_Apple
         guard let inputComponent = AudioComponentFindNext(nil, &desc) else {
+            if voiceProcessing { self.setupAudioUnit(allowVoiceProcessing: false) }
             return
         }
         var maybeAudioUnit: AudioUnit? = nil
         AudioComponentInstanceNew(inputComponent, &maybeAudioUnit)
         
         guard let audioUnit = maybeAudioUnit else {
+            if voiceProcessing { self.setupAudioUnit(allowVoiceProcessing: false) }
             return
+        }
+        func failSetup() {
+            AudioComponentInstanceDispose(audioUnit)
+            if voiceProcessing {
+                Logger.shared.log("ManagedAudioRecorder", "Voice processing unavailable; using the native input unit")
+                self.setupAudioUnit(allowVoiceProcessing: false)
+            }
+        }
+        if voiceProcessing {
+            var enabled: UInt32 = 1
+            var bypass: UInt32 = 0
+            guard AudioUnitSetProperty(audioUnit, kAUVoiceIOProperty_BypassVoiceProcessing, kAudioUnitScope_Global, 0, &bypass, 4) == noErr,
+                  AudioUnitSetProperty(audioUnit, kAUVoiceIOProperty_VoiceProcessingEnableAGC, kAudioUnitScope_Global, 0, &enabled, 4) == noErr else {
+                failSetup()
+                return
+            }
         }
         
         var one: UInt32 = 1
         guard AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, 4) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         
         var audioStreamDescription = audioRecorderNativeStreamDescription(sampleRate: 48000)
         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &audioStreamDescription, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         
         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &audioStreamDescription, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         
@@ -413,20 +433,20 @@ final class ManagedAudioRecorderContext {
         callbackStruct.inputProc = rendererInputProc
         callbackStruct.inputProcRefCon = UnsafeMutableRawPointer(bitPattern: intptr_t(self.id))
         guard AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callbackStruct, UInt32(MemoryLayout<AURenderCallbackStruct>.size)) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         
         var zero: UInt32 = 1
         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_ShouldAllocateBuffer, kAudioUnitScope_Output, 0, &zero, 4) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         
         let _ = AudioUnitSetProperty(audioUnit, kAUVoiceIOProperty_MuteOutput, kAudioUnitScope_Global, 0, &zero, 4)
         
         guard AudioUnitInitialize(audioUnit) == noErr else {
-            AudioComponentInstanceDispose(audioUnit)
+            failSetup()
             return
         }
         

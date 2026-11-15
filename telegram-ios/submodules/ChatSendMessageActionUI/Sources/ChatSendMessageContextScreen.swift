@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import Display
@@ -20,6 +21,16 @@ import TelegramAnimatedStickerNode
 import AnimatedStickerNode
 import ChatInputTextNode
 import UndoUI
+
+func chatSendMessageScheduleParameters(effectId: Int64?, textIsAboveMedia: Bool) -> ChatSendMessageActionSheetController.SendParameters {
+    // Opening Schedule has not chosen sound yet. Its completion carries the full
+    // choice; ordinary send parameters must continue to have no sound override.
+    return ChatSendMessageActionSheetController.SendParameters(
+        effect: effectId.map { .init(id: $0) },
+        textIsAboveMedia: textIsAboveMedia,
+        notificationOverride: nil
+    )
+}
 
 func convertFrame(_ frame: CGRect, from fromView: UIView, to toView: UIView) -> CGRect {
     let sourceWindowFrame = fromView.convert(frame, to: nil)
@@ -554,6 +565,17 @@ final class ChatSendMessageContextScreenComponent: Component {
             switch component.params {
             case let.sendMessage(sendMessage):
                 if !reminders {
+                    if ClientSettings.shared.bool("chats.silentMessageByDefault") {
+                        items.append(.action(ContextMenuActionItem(id: AnyHashable("audible"), text: "Send with sound", icon: { theme in
+                            generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Menu/SilentIcon"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, _ in
+                            guard let self, let component = self.component else { return }
+                            self.animateOutToEmpty = true
+                            let parameters = ChatSendMessageActionSheetController.SendParameters(effect: self.selectedMessageEffect.map { .init(id: $0.id) }, textIsAboveMedia: self.mediaCaptionIsAbove, notificationOverride: false)
+                            component.sendMessage(.generic, parameters)
+                            self.environment?.controller()?.dismiss()
+                        })))
+                    }
                     items.append(.action(ContextMenuActionItem(
                         id: AnyHashable("silent"),
                         text: environment.strings.Conversation_SendMessage_SendSilently,
@@ -610,8 +632,8 @@ final class ChatSendMessageContextScreenComponent: Component {
                             }
                             self.animateOutToEmpty = true
                             
-                            let sendParameters = ChatSendMessageActionSheetController.SendParameters(
-                                effect: self.selectedMessageEffect.flatMap({ ChatSendMessageActionSheetController.SendParameters.Effect(id: $0.id) }),
+                            let sendParameters = chatSendMessageScheduleParameters(
+                                effectId: self.selectedMessageEffect?.id,
                                 textIsAboveMedia: self.mediaCaptionIsAbove
                             )
                             

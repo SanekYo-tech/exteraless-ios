@@ -13,8 +13,8 @@ final class MapperTests: XCTestCase {
     }
 
     func test_characterAttributes_roundTripThroughDict() {
-        // No link here: a link deliberately suppresses foreground/underline on read-back (covered by
-        // AttributedStringMapperLinkTests), so those fields are exercised here on an unlinked run.
+        // No link here: a link deliberately suppresses its accent foreground on read-back (covered
+        // by AttributedStringMapperLinkTests). Explicit underline survives in both cases.
         // Use a NON-default foreground (red) so it round-trips as explicit — an explicit color equal to the
         // theme's default would be stripped to nil (that behavior is covered by its own test below).
         let ca = CharacterAttributes(bold: true, italic: true, underline: true, strikethrough: true,

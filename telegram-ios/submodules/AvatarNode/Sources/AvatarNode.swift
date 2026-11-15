@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -35,11 +36,26 @@ public func generateDeletedAccountAvatarImage(size: CGSize) -> UIImage? {
     return generateAvatarImage(size: size, icon: deletedIcon, iconScale: size.width / 60.0, color: .blue, customColors: AvatarNode.grayscaleColors)
 }
 
-public enum AvatarNodeClipStyle {
+public enum AvatarNodeClipStyle: Equatable {
     case none
     case round
     case roundedRect
     case bubble
+    case exteralessRoundedRect(fraction: CGFloat)
+}
+
+/// The avatar renderer only needs a cached bitmap and its optional replacement
+/// stream. The shipping adapter below uses DirectMediaImageCache; local callers
+/// and offline fixtures can supply the same contract without an AccountContext.
+public protocol AvatarNodeImageCache: AnyObject {
+    func avatarImage(peer: PeerReference, resource: MediaResourceReference, immediateThumbnail: Data?, size: Int, synchronous: Bool) -> (image: UIImage?, loadSignal: Signal<UIImage?, NoError>?)?
+}
+
+extension DirectMediaImageCache: AvatarNodeImageCache {
+    public func avatarImage(peer: PeerReference, resource: MediaResourceReference, immediateThumbnail: Data?, size: Int, synchronous: Bool) -> (image: UIImage?, loadSignal: Signal<UIImage?, NoError>?)? {
+        guard let result = self.getAvatarImage(peer: peer, resource: resource, immediateThumbnail: immediateThumbnail, size: size, synchronous: synchronous) else { return nil }
+        return (result.image, result.loadSignal)
+    }
 }
 
 private class AvatarNodeParameters: NSObject {
@@ -192,13 +208,14 @@ public enum AvatarNodeExplicitIcon {
 
 private enum AvatarNodeState: Equatable {
     case empty
+    case image
     case peerAvatar(EnginePeer.Id, PeerColor?, [String], TelegramMediaImageRepresentation?, AvatarNodeClipStyle, CGRect?)
     case custom(letter: [String], explicitColorIndex: Int?, explicitIcon: AvatarNodeExplicitIcon?)
 }
 
 private func ==(lhs: AvatarNodeState, rhs: AvatarNodeState) -> Bool {
     switch (lhs, rhs) {
-        case (.empty, .empty):
+        case (.empty, .empty), (.image, .image):
             return true
         case let (.peerAvatar(lhsPeerId, lhsPeerNameColor, lhsLetters, lhsPhotoRepresentations, lhsClipStyle, lhsCutoutRect), .peerAvatar(rhsPeerId, rhsPeerNameColor, rhsLetters, rhsPhotoRepresentations, rhsClipStyle, rhsCutoutRect)):
             return lhsPeerId == rhsPeerId && lhsPeerNameColor == rhsPeerNameColor && lhsLetters == rhsLetters && lhsPhotoRepresentations == rhsPhotoRepresentations && lhsClipStyle == rhsClipStyle && lhsCutoutRect == rhsCutoutRect
@@ -347,21 +364,27 @@ public final class AvatarNode: ASDisplayNode {
     
     public final class ContentNode: ASDisplayNode {
         private struct Params: Equatable {
+            let cacheId: ObjectIdentifier?
             let peerId: EnginePeer.Id?
             let resourceId: String?
             let displayDimensions: CGSize
             let clipStyle: AvatarNodeClipStyle
+            let storeUnrounded: Bool
             
             init(
+                cacheId: ObjectIdentifier?,
                 peerId: EnginePeer.Id?,
                 resourceId: String?,
                 displayDimensions: CGSize,
-                clipStyle: AvatarNodeClipStyle
+                clipStyle: AvatarNodeClipStyle,
+                storeUnrounded: Bool
             ) {
+                self.cacheId = cacheId
                 self.peerId = peerId
                 self.resourceId = resourceId
                 self.displayDimensions = displayDimensions
                 self.clipStyle = clipStyle
+                self.storeUnrounded = storeUnrounded
             }
         }
         
@@ -382,7 +405,6 @@ public final class AvatarNode: ASDisplayNode {
         private var theme: PresentationTheme?
         private var overrideImage: AvatarNodeImageOverride?
         public let imageNode: ImageNode
-        private var imageNodeMask: UIImageView?
         public var editOverlayNode: AvatarEditOverlayNode?
         
         private let imageReadyDisposable = MetaDisposable()
@@ -393,6 +415,12 @@ public final class AvatarNode: ASDisplayNode {
         
         private var params: Params?
         private var loadDisposable = MetaDisposable()
+        private var imageGeneration: UInt64 = 0
+        fileprivate var exteralessDisplayDimensions = CGSize(width: 60, height: 60)
+        private let appearanceSettings: ClientSettings
+        fileprivate var appearancePolicy: AppearanceAvatarPolicy {
+            AppearanceAvatarPolicy(corners: self.appearanceSettings.integer("appearance.avatarCorners", default: 28), singleRadius: self.appearanceSettings.bool("appearance.singleCornerRadius"))
+        }
         
         var clipStyle: AvatarNodeClipStyle {
             if let params = self.params {
@@ -400,13 +428,15 @@ public final class AvatarNode: ASDisplayNode {
             } else if case let .peerAvatar(_, _, _, _, clipStyle, _) = self.state {
                 return clipStyle
             }
-            return .none
+            return self.parameters?.clipStyle ?? .none
         }
         
         public var badgeView: AvatarBadgeView? {
             didSet {
                 if self.badgeView !== oldValue {
-                    if let badgeView = self.badgeView, let parameters = self.parameters {
+                    if self.params != nil, let badgeView = self.badgeView, let currentImage = self.currentImage {
+                        badgeView.update(content: .image(currentImage))
+                    } else if let badgeView = self.badgeView, let parameters = self.parameters {
                         if parameters.hasImage {
                             if let currentImage = self.currentImage {
                                 badgeView.update(content: .image(currentImage))
@@ -437,8 +467,9 @@ public final class AvatarNode: ASDisplayNode {
             }
         }
         
-        public init(font: UIFont) {
+        public init(font: UIFont, appearanceSettings: ClientSettings = .shared) {
             self.font = font
+            self.appearanceSettings = appearanceSettings
             self.imageNode = ImageNode(enableHasImage: true, enableAnimatedTransition: true)
             
             super.init()
@@ -481,14 +512,33 @@ public final class AvatarNode: ASDisplayNode {
         
         public func updateSize(size: CGSize) {
             self.imageNode.frame = CGRect(origin: CGPoint(), size: size)
-            self.editOverlayNode?.frame = self.imageNode.frame
-            if let imageNodeMask = self.imageNodeMask {
-                imageNodeMask.frame = CGRect(origin: CGPoint(), size: size)
+            if let params = self.params {
+                params.clipStyle.applyExteralessFinalClip(to: self.imageNode.layer, size: size)
             }
+            self.editOverlayNode?.frame = self.imageNode.frame
             if !self.displaySuspended {
                 self.setNeedsDisplay()
                 self.editOverlayNode?.setNeedsDisplay()
             }
+        }
+
+        /// Invalidate before disposing: a result already queued on main must not
+        /// belong to the next renderer, even if its peer/resource tuple is reused.
+        private func clearImageSource() {
+            self.imageGeneration &+= 1
+            self.loadDisposable.set(nil)
+            self.imageNode.clearContents()
+            self.currentImage = nil
+            self.unroundedImage = nil
+            self.editOverlayNode?.isHidden = true
+        }
+
+        private func leaveImageBackend() {
+            guard self.params != nil else { return }
+            self.params = nil
+            self.state = .empty
+            self.imageNode.view.mask = nil
+            AvatarNodeClipStyle.none.applyExteralessFinalClip(to: self.imageNode.layer, size: self.imageNode.bounds.size)
         }
         
         public func playArchiveAnimation() {
@@ -595,6 +645,9 @@ public final class AvatarNode: ASDisplayNode {
             storeUnrounded: Bool = false,
             cutoutRect: CGRect? = nil
         ) {
+            let clipStyle = clipStyle.withExteralessShape(size: displayDimensions, policy: self.appearancePolicy)
+            self.exteralessDisplayDimensions = displayDimensions
+            self.leaveImageBackend()
             var synchronousLoad = synchronousLoad
             var representation: TelegramMediaImageRepresentation?
             var icon = AvatarNodeIcon.none
@@ -645,6 +698,8 @@ public final class AvatarNode: ASDisplayNode {
             
             let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), peer?.nameColor, peer?.displayLetters ?? [], representation, clipStyle, cutoutRect)
             if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme {
+                self.clearImageSource()
+                let imageGeneration = self.imageGeneration
                 self.state = updatedState
                 self.overrideImage = overrideImage
                 self.theme = theme
@@ -652,12 +707,13 @@ public final class AvatarNode: ASDisplayNode {
                 let parameters: AvatarNodeParameters
                 
                 if let peer = peer, let signal = peerAvatarImage(postbox: postbox, peerReference: PeerReference(peer), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: clipStyle, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
-                    self.contents = nil
                     self.displaySuspended = true
+                    self.contents = nil
                     self.imageReady.set(self.imageNode.contentReady)
                     self.imageNode.setSignal(signal |> beforeNext { [weak self] next in
-                        Queue.mainQueue().async {
-                            self?.unroundedImage = next?.1
+                        Queue.mainQueue().async { [weak self] in
+                            guard let self, self.imageGeneration == imageGeneration else { return }
+                            self.unroundedImage = next?.1
                         }
                     }
                     |> map { next -> UIImage? in
@@ -723,69 +779,76 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: CGSize = CGSize(width: 60.0, height: 60.0),
             storeUnrounded: Bool = false
         ) {
+            self.setPeerV2(imageCache: genericContext.imageCache as? AvatarNodeImageCache, peer: peer, clipStyle: clipStyle, synchronousLoad: synchronousLoad, displayDimensions: displayDimensions, storeUnrounded: storeUnrounded)
+        }
+
+        func setPeerV2(
+            imageCache: AvatarNodeImageCache?,
+            peer: EnginePeer?,
+            clipStyle: AvatarNodeClipStyle,
+            synchronousLoad: Bool,
+            displayDimensions: CGSize,
+            storeUnrounded: Bool
+        ) {
+            let clipStyle = clipStyle.withExteralessShape(size: displayDimensions, policy: self.appearancePolicy)
+            self.exteralessDisplayDimensions = displayDimensions
             let smallProfileImage = peer?.smallProfileImage
             let params = Params(
+                cacheId: imageCache.map { ObjectIdentifier($0) },
                 peerId: peer?.id,
                 resourceId: smallProfileImage?.resource.id.stringRepresentation,
                 displayDimensions: displayDimensions,
-                clipStyle: clipStyle
+                clipStyle: clipStyle,
+                storeUnrounded: storeUnrounded
             )
             if self.params == params {
                 return
             }
-            let previousSize = self.params?.displayDimensions
+            // Suspending the actual ASDisplayLayer cancels an in-flight legacy
+            // draw. Its raster/parameters must not survive behind a clipped photo.
+            self.displaySuspended = true
+            self.parameters = nil
+            self.state = .image
+            self.contents = nil
+            self.overrideImage = nil
+            self.theme = nil
+            self.clearImageSource()
+            let imageGeneration = self.imageGeneration
             self.params = params
-            
-            switch clipStyle {
-            case .none:
-                self.imageNode.clipsToBounds = false
-                self.imageNode.cornerRadius = 0.0
-            case .round:
-                self.imageNode.clipsToBounds = true
-                self.imageNode.cornerRadius = displayDimensions.height * 0.5
-            case .roundedRect:
-                self.imageNode.clipsToBounds = true
-                self.imageNode.cornerRadius = displayDimensions.height * 0.25
-            case .bubble:
-                break
+            self.imageNode.view.mask = nil
+            let size = self.imageNode.bounds.isEmpty ? displayDimensions : self.imageNode.bounds.size
+            clipStyle.applyExteralessFinalClip(to: self.imageNode.layer, size: size)
+
+            guard let imageCache, let peer, let smallProfileImage, let peerReference = PeerReference(peer),
+                  let result = imageCache.avatarImage(peer: peerReference, resource: MediaResourceReference.avatar(peer: peerReference, resource: smallProfileImage.resource), immediateThumbnail: peer.profileImageRepresentations.first?.immediateThumbnailData, size: Int(displayDimensions.width * UIScreenScale), synchronous: synchronousLoad) else {
+                self.imageReady.set(.single(true))
+                return
             }
-            
-            if case .bubble = clipStyle {
-                var updateMask = false
-                let imageNodeMask: UIImageView
-                if let current = self.imageNodeMask {
-                    imageNodeMask = current
-                    updateMask = previousSize != params.displayDimensions
-                } else {
-                    imageNodeMask = UIImageView()
-                    self.imageNodeMask = imageNodeMask
-                    self.imageNode.view.mask = imageNodeMask
-                    imageNodeMask.frame = self.imageNode.frame
-                    updateMask = true
-                }
-                if updateMask {
-                    imageNodeMask.image = AvatarNode.avatarBubbleMask(size: params.displayDimensions)
-                }
-            } else if self.imageNodeMask != nil {
-                self.imageNodeMask = nil
-                self.imageNode.view.mask = nil
+            guard self.imageGeneration == imageGeneration else { return }
+            self.applyCachedImage(result.image, storeUnrounded: storeUnrounded)
+            self.imageReady.set(.single(result.image != nil || result.loadSignal == nil))
+            guard self.imageGeneration == imageGeneration else { return }
+            if let loadSignal = result.loadSignal {
+                // Install a request-owned slot before start(), which may deliver
+                // synchronously and reenter through a ready observer.
+                let requestDisposable = MetaDisposable()
+                self.loadDisposable.set(requestDisposable)
+                requestDisposable.set((loadSignal |> deliverOnMainQueue).start(next: { [weak self] image in
+                    guard let self, self.imageGeneration == imageGeneration else { return }
+                    self.applyCachedImage(image, storeUnrounded: storeUnrounded)
+                    self.imageReady.set(.single(true))
+                }, completed: { [weak self] in
+                    guard let self, self.imageGeneration == imageGeneration else { return }
+                    self.imageReady.set(.single(true))
+                }).strict())
             }
-            
-            if let imageCache = genericContext.imageCache as? DirectMediaImageCache, let peer, let smallProfileImage = peer.smallProfileImage, let peerReference = PeerReference(peer) {
-                if let result = imageCache.getAvatarImage(peer: peerReference, resource: MediaResourceReference.avatar(peer: peerReference, resource: smallProfileImage.resource), immediateThumbnail: peer.profileImageRepresentations.first?.immediateThumbnailData, size: Int(displayDimensions.width * UIScreenScale), synchronous: synchronousLoad) {
-                    if let image = result.image {
-                        self.imageNode.contents = image.cgImage
-                    }
-                    if let loadSignal = result.loadSignal {
-                        self.loadDisposable.set((loadSignal |> deliverOnMainQueue).start(next: { [weak self] image in
-                            guard let self else {
-                                return
-                            }
-                            self.imageNode.contents = image?.cgImage
-                        }).strict())
-                    }
-                }
-            }
+        }
+
+        private func applyCachedImage(_ image: UIImage?, storeUnrounded: Bool) {
+            self.imageNode.contents = image?.cgImage
+            self.currentImage = image
+            self.unroundedImage = storeUnrounded ? image : nil
+            if let image { self.badgeView?.update(content: .image(image)) }
         }
         
         public func setPeer(
@@ -793,6 +856,7 @@ public final class AvatarNode: ASDisplayNode {
             account: Account? = nil,
             theme: PresentationTheme,
             peer: EnginePeer?,
+            overrideLetters: [String]? = nil,
             authorOfMessage: MessageReference? = nil,
             overrideImage: AvatarNodeImageOverride? = nil,
             emptyColor: UIColor? = nil,
@@ -802,6 +866,12 @@ public final class AvatarNode: ASDisplayNode {
             storeUnrounded: Bool = false,
             cutoutRect: CGRect? = nil
         ) {
+            let clipStyle = clipStyle.withExteralessShape(size: displayDimensions, policy: self.appearancePolicy)
+            let identity = peer.map { exteralessIdentityPresentation(account: account ?? genericContext.account, peer: $0) }
+            // Payload callers supply initials from their already-filtered title.
+            let displayLetters = overrideLetters ?? (identity?.letters ?? peer?.displayLetters ?? []).map { exteralessZalgoDisplayText($0) }
+            self.exteralessDisplayDimensions = displayDimensions
+            self.leaveImageBackend()
             var synchronousLoad = synchronousLoad
             var representation: TelegramMediaImageRepresentation?
             var icon = AvatarNodeIcon.none
@@ -850,8 +920,10 @@ public final class AvatarNode: ASDisplayNode {
                 representation = peer?.smallProfileImage
             }
             
-            let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), peer?.nameColor, peer?.displayLetters ?? [], representation, clipStyle, cutoutRect)
+            let updatedState: AvatarNodeState = .peerAvatar(peer?.id ?? EnginePeer.Id(0), identity?.nameColor, displayLetters, representation, clipStyle, cutoutRect)
             if updatedState != self.state || overrideImage != self.overrideImage || theme !== self.theme {
+                self.clearImageSource()
+                let imageGeneration = self.imageGeneration
                 self.state = updatedState
                 self.overrideImage = overrideImage
                 self.theme = theme
@@ -861,12 +933,13 @@ public final class AvatarNode: ASDisplayNode {
                 let account = account ?? genericContext.account
                 
                 if let peer = peer, let signal = peerAvatarImage(account: account, peerReference: PeerReference(peer), authorOfMessage: authorOfMessage, representation: representation, displayDimensions: displayDimensions, clipStyle: clipStyle, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: storeUnrounded, cutoutRect: cutoutRect) {
-                    self.contents = nil
                     self.displaySuspended = true
+                    self.contents = nil
                     self.imageReady.set(self.imageNode.contentReady)
                     self.imageNode.setSignal(signal |> beforeNext { [weak self] next in
-                        Queue.mainQueue().async {
-                            self?.unroundedImage = next?.1
+                        Queue.mainQueue().async { [weak self] in
+                            guard let self, self.imageGeneration == imageGeneration else { return }
+                            self.unroundedImage = next?.1
                         }
                     }
                     |> map { next -> UIImage? in
@@ -887,7 +960,7 @@ public final class AvatarNode: ASDisplayNode {
                         self.editOverlayNode?.isHidden = true
                     }
                     
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer.id, colors: calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer.id, nameColor: peer.nameColor, icon: icon, theme: theme), letters: peer.displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer.id, colors: calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer.id, nameColor: identity?.nameColor, icon: icon, theme: theme), letters: displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: true, clipStyle: clipStyle, cutoutRect: cutoutRect)
                 } else {
                     self.imageReady.set(.single(true))
                     self.displaySuspended = false
@@ -896,8 +969,8 @@ public final class AvatarNode: ASDisplayNode {
                     }
                     
                     self.editOverlayNode?.isHidden = true
-                    let colors = calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer?.id ?? EnginePeer.Id(0), nameColor: peer?.nameColor, icon: icon, theme: theme)
-                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: peer?.displayLetters ?? [], font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
+                    let colors = calculateAvatarColors(context: genericContext, explicitColorIndex: nil, peerId: peer?.id ?? EnginePeer.Id(0), nameColor: identity?.nameColor, icon: icon, theme: theme)
+                    parameters = AvatarNodeParameters(theme: theme, accountPeerId: account.peerId, peerId: peer?.id ?? EnginePeer.Id(0), colors: colors, letters: displayLetters, font: self.font, icon: icon, explicitColorIndex: nil, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
                     
                     if let badgeView = self.badgeView {
                         let badgeColor: UIColor
@@ -920,6 +993,9 @@ public final class AvatarNode: ASDisplayNode {
         }
         
         public func setCustomLetters(_ letters: [String], explicitColor: AvatarNodeColorOverride? = nil, icon: AvatarNodeExplicitIcon? = nil, cutoutRect: CGRect? = nil) {
+            let clipStyle = AvatarNodeClipStyle.round.withExteralessShape(size: CGSize(width: 60.0, height: 60.0), policy: self.appearancePolicy)
+            self.exteralessDisplayDimensions = CGSize(width: 60, height: 60)
+            self.leaveImageBackend()
             var explicitIndex: Int?
             if let explicitColor = explicitColor {
                 switch explicitColor {
@@ -928,14 +1004,15 @@ public final class AvatarNode: ASDisplayNode {
                 }
             }
             let updatedState: AvatarNodeState = .custom(letter: letters, explicitColorIndex: explicitIndex, explicitIcon: icon)
-            if updatedState != self.state {
+            if updatedState != self.state || self.parameters?.clipStyle != clipStyle {
+                self.clearImageSource()
                 self.state = updatedState
                 
                 let parameters: AvatarNodeParameters
                 if let icon = icon, case .phone = icon {
-                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .phoneIcon, theme: nil), letters: [], font: self.font, icon: .phoneIcon, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .phoneIcon, theme: nil), letters: [], font: self.font, icon: .phoneIcon, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
                 } else {
-                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .none, theme: nil), letters: letters, font: self.font, icon: .none, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: .round, cutoutRect: cutoutRect)
+                    parameters = AvatarNodeParameters(theme: nil, accountPeerId: nil, peerId: nil, colors: calculateAvatarColors(context: nil, explicitColorIndex: explicitIndex, peerId: nil, nameColor: nil, icon: .none, theme: nil), letters: letters, font: self.font, icon: .none, explicitColorIndex: explicitIndex, hasImage: false, clipStyle: clipStyle, cutoutRect: cutoutRect)
                 }
                 
                 self.displaySuspended = true
@@ -980,6 +1057,10 @@ public final class AvatarNode: ASDisplayNode {
                 } else if case .roundedRect = parameters.clipStyle {
                     context.beginPath()
                     context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: bounds.size.width, height: bounds.size.height), cornerRadius: floor(bounds.size.width * 0.25)).cgPath)
+                    context.clip()
+                } else if case let .exteralessRoundedRect(fraction) = parameters.clipStyle {
+                    context.beginPath()
+                    context.addPath(UIBezierPath(roundedRect: CGRect(origin: .zero, size: bounds.size), cornerRadius: min(bounds.width, bounds.height) * fraction).cgPath)
                     context.clip()
                 } else if case .bubble = parameters.clipStyle {
                     context.beginPath()
@@ -1191,6 +1272,8 @@ public final class AvatarNode: ASDisplayNode {
     }
     
     public private(set) var storyStats: StoryStats?
+    private var exteralessUnfilteredStoryStats: StoryStats?
+    private var exteralessStoryPolicyDisposable: Disposable?
     
     public var font: UIFont {
         get {
@@ -1231,9 +1314,12 @@ public final class AvatarNode: ASDisplayNode {
     public var imageNode: ImageNode {
         return self.contentNode.imageNode
     }
+
+    /// The actual raster/V2 shape, already resolved at its own display size.
+    public var resolvedClipStyle: AvatarNodeClipStyle { self.contentNode.clipStyle }
     
-    public init(font: UIFont) {
-        self.contentNode = ContentNode(font: font)
+    public init(font: UIFont, appearanceSettings: ClientSettings = .shared) {
+        self.contentNode = ContentNode(font: font, appearanceSettings: appearanceSettings)
         
         super.init()
         
@@ -1249,6 +1335,7 @@ public final class AvatarNode: ASDisplayNode {
     
     deinit {
         self.cancelLoading()
+        self.exteralessStoryPolicyDisposable?.dispose()
     }
     
     override public var frame: CGRect {
@@ -1319,6 +1406,7 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: displayDimensions,
             storeUnrounded: storeUnrounded
         )
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setPeerV2(
@@ -1345,6 +1433,13 @@ public final class AvatarNode: ASDisplayNode {
             displayDimensions: displayDimensions,
             storeUnrounded: storeUnrounded
         )
+        self.updateStoryIndicator(transition: .immediate)
+    }
+
+    /// Uses the same V2 image lifecycle/clip renderer as the AccountContext path.
+    public func setPeerV2(imageCache: AvatarNodeImageCache, peer: EnginePeer?, clipStyle: AvatarNodeClipStyle = .round, synchronousLoad: Bool = false, displayDimensions: CGSize = CGSize(width: 60, height: 60), storeUnrounded: Bool = false) {
+        self.contentNode.setPeerV2(imageCache: imageCache, peer: peer, clipStyle: clipStyle, synchronousLoad: synchronousLoad, displayDimensions: displayDimensions, storeUnrounded: storeUnrounded)
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setPeer(
@@ -1352,6 +1447,7 @@ public final class AvatarNode: ASDisplayNode {
         account: Account? = nil,
         theme: PresentationTheme,
         peer: EnginePeer?,
+        overrideLetters: [String]? = nil,
         authorOfMessage: MessageReference? = nil,
         overrideImage: AvatarNodeImageOverride? = nil,
         emptyColor: UIColor? = nil,
@@ -1366,6 +1462,7 @@ public final class AvatarNode: ASDisplayNode {
             account: account,
             theme: theme,
             peer: peer,
+            overrideLetters: overrideLetters,
             authorOfMessage: authorOfMessage,
             overrideImage: overrideImage,
             emptyColor: emptyColor,
@@ -1375,13 +1472,30 @@ public final class AvatarNode: ASDisplayNode {
             storeUnrounded: storeUnrounded,
             cutoutRect: cutoutRect
         )
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setCustomLetters(_ letters: [String], explicitColor: AvatarNodeColorOverride? = nil, icon: AvatarNodeExplicitIcon? = nil) {
         self.contentNode.setCustomLetters(letters, explicitColor: explicitColor, icon: icon)
+        self.updateStoryIndicator(transition: .immediate)
     }
     
     public func setStoryStats(storyStats: StoryStats?, presentationParams: StoryPresentationParams, transition: ComponentTransition) {
+        self.exteralessUnfilteredStoryStats = storyStats
+        if self.exteralessStoryPolicyDisposable == nil {
+            self.exteralessStoryPolicyDisposable = (exteralessDialogPolicyUpdates()
+            |> map { !$0.disableStories }
+            |> distinctUntilChanged
+            |> deliverOnMainQueue).start(next: { [weak self] enabled in
+                guard let self else { return }
+                let value = enabled ? self.exteralessUnfilteredStoryStats : nil
+                if self.storyStats != value {
+                    self.storyStats = value
+                    self.updateStoryIndicator(transition: .immediate)
+                }
+            })
+        }
+        let storyStats = exteralessDialogStoriesEnabled() ? storyStats : nil
         if self.storyStats != storyStats || self.storyPresentationParams != presentationParams {
             self.storyStats = storyStats
             self.storyPresentationParams = presentationParams
@@ -1417,17 +1531,20 @@ public final class AvatarNode: ASDisplayNode {
         public var lineWidth: CGFloat
         public var inactiveLineWidth: CGFloat
         public var forceRoundedRect: Bool
+        public var customCornerFraction: CGFloat?
         
         public init(
             colors: Colors,
             lineWidth: CGFloat,
             inactiveLineWidth: CGFloat,
-            forceRoundedRect: Bool =  false
+            forceRoundedRect: Bool = false,
+            customCornerFraction: CGFloat? = nil
         ) {
             self.colors = colors
             self.lineWidth = lineWidth
             self.inactiveLineWidth = inactiveLineWidth
             self.forceRoundedRect = forceRoundedRect
+            self.customCornerFraction = customCornerFraction
         }
     }
     
@@ -1483,7 +1600,8 @@ public final class AvatarNode: ASDisplayNode {
                         unseenCount: storyStats.unseenCount
                     ),
                     progress: mappedProgress,
-                    isRoundedRect: self.contentNode.clipStyle == .roundedRect || storyPresentationParams.forceRoundedRect
+                    isRoundedRect: self.resolvedStoryCornerFraction.map { $0 < 0.5 } ?? storyPresentationParams.forceRoundedRect,
+                    customCornerFraction: self.resolvedStoryCornerFraction
                 )),
                 environment: {},
                 containerSize: indicatorSize
@@ -1508,6 +1626,16 @@ public final class AvatarNode: ASDisplayNode {
         }
     }
     
+    public var resolvedStoryCornerFraction: CGFloat? {
+        guard let params = self.storyPresentationParams else { return self.resolvedClipStyle.exteralessResolvedCornerFraction }
+        if let fraction = params.customCornerFraction { return min(0.5, max(0, fraction)) }
+        if let fraction = self.resolvedClipStyle.exteralessCornerFraction { return fraction }
+        if params.forceRoundedRect {
+            return AvatarNodeClipStyle.roundedRect.withExteralessShape(size: self.contentNode.exteralessDisplayDimensions, policy: self.contentNode.appearancePolicy).exteralessResolvedCornerFraction
+        }
+        return self.resolvedClipStyle.exteralessResolvedCornerFraction
+    }
+
     public func cancelLoading() {
         for disposable in self.loadingStatuses.copyItems() {
             disposable.dispose()
@@ -1559,4 +1687,3 @@ public final class AvatarNode: ASDisplayNode {
         }
     }
 }
-

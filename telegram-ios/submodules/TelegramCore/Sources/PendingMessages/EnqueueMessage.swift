@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import PluginHooks
 import Postbox
 internal import TelegramApi
@@ -182,6 +183,33 @@ public enum EnqueueMessage {
             return .message(text: text, attributes: f(attributes), inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: localGroupingKey, correlationId: correlationId, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets)
         case let .forward(source, threadId, grouping, attributes, correlationId):
             return .forward(source: source, threadId: threadId, grouping: grouping, attributes: f(attributes), correlationId: correlationId)
+        }
+    }
+
+    /// nil leaves the message on the default path; false is an explicit audible send.
+    /// The empty flags attribute is intentional: absence and an explicit override differ.
+    public func withNotificationOverride(silent: Bool?) -> EnqueueMessage {
+        guard let silent else { return self }
+        return self.withUpdatedAttributes { attributes in
+            var attributes = attributes
+            let flags = attributes.compactMap { ($0 as? NotificationInfoMessageAttribute)?.flags }.reduce(NotificationInfoMessageAttributeFlags()) { $0.union($1) }
+            attributes.removeAll { $0 is NotificationInfoMessageAttribute }
+            var updated = flags
+            if silent { updated.insert(.muted) } else { updated.remove(.muted) }
+            attributes.append(NotificationInfoMessageAttribute(flags: updated))
+            return attributes
+        }
+    }
+
+    public func withLinkPreviewOverride(disabled: Bool?) -> EnqueueMessage {
+        guard let disabled else { return self }
+        return self.withUpdatedAttributes { attributes in
+            var attributes = attributes
+            var flags = attributes.compactMap { ($0 as? OutgoingContentInfoMessageAttribute)?.flags }.reduce(OutgoingContentInfoFlags()) { $0.union($1) }
+            attributes.removeAll { $0 is OutgoingContentInfoMessageAttribute }
+            if disabled { flags.insert(.disableLinkPreviews) } else { flags.remove(.disableLinkPreviews) }
+            attributes.append(OutgoingContentInfoMessageAttribute(flags: flags))
+            return attributes
         }
     }
     
@@ -729,8 +757,14 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
 }
 
 public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+    return enqueueMessagesWithAdmission(account: account, peerId: peerId, messages: messages) |> map { $0.messageIds }
+}
+
+public func enqueueMessagesWithAdmission(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
+    let messages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
+    let messages = exteralessDefaultSendNotifications(messages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
     guard PluginHookRouter.hasSubscribers(.sendMessage) else {
-        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages)
+        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
     }
 
     // The entire asynchronous prefix finishes before media work or any Postbox transaction.
@@ -756,29 +790,19 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
             }
             return decision
             |> map { result -> [(Int, EnqueueMessage)] in
-                switch result {
-                case .cancel:
-                    return accepted
-                case .keepOriginal:
-                    return accepted + [(index, message)]
-                case let .modify(patch), let .modifyFinal(patch):
-                    return accepted + [(index, pluginApplySendPatch(patch, to: message))]
-                }
+                guard let message = exteralessApplyPluginSendResult(result, to: message) else { return accepted }
+                return accepted + [(index, message)]
             }
         }
     }
     return prefix
-    |> mapToSignal { accepted -> Signal<[MessageId?], NoError> in
+    |> mapToSignal { accepted -> Signal<EnqueueMessagesResult, NoError> in
         if accepted.isEmpty {
-            return .single(Array<MessageId?>(repeating: nil, count: messages.count))
+            return .single(.rejected(count: messages.count, reason: .pluginCancelled))
         }
-        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: accepted.map { $0.1 })
-        |> map { ids -> [MessageId?] in
-            var result = Array<MessageId?>(repeating: nil, count: messages.count)
-            for i in 0 ..< min(ids.count, accepted.count) {
-                result[accepted[i].0] = ids[i]
-            }
-            return result
+        return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: accepted.map { $0.1 }, tlCommit: tlCommit)
+        |> map { result -> EnqueueMessagesResult in
+            return result.restoringSlots(count: messages.count, acceptedIndices: accepted.map { $0.0 })
         }
     }
 }
@@ -787,8 +811,25 @@ public func enqueueMessages(account: Account, peerId: PeerId, messages: [Enqueue
 /// Bypasses every plugin's send-message hook to prevent recursive hook entry and duplicate hook
 /// effects when a plugin sends from its own send callback. Uses the normal media transformation,
 /// Postbox enqueue and outgoing-message pipeline.
-public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
-    return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages)
+public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<[MessageId?], NoError> {
+    return enqueueMessagesFromPluginWithAdmission(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit) |> map { $0.messageIds }
+}
+
+public func enqueueMessagesFromPluginWithAdmission(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
+    let messages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
+    let messages = exteralessDefaultSendNotifications(messages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
+    return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
+}
+
+/// Value-only transformation used by both enqueue doors, before interception and media/DB work.
+/// Explicit notification attributes (including flags == []) always win. Resends retain their
+/// stored attributes because they use the transaction entry point, not this new-send wrapper.
+func exteralessDefaultSendNotifications(_ messages: [EnqueueMessage], defaultSilent: Bool) -> [EnqueueMessage] {
+    guard defaultSilent else { return messages }
+    return messages.map { message in
+        guard !message.attributes.contains(where: { $0 is NotificationInfoMessageAttribute }) else { return message }
+        return message.withNotificationOverride(silent: true)
+    }
 }
 
 private func pluginHookMessageId(_ id: MessageId) -> PluginHookMessageId {
@@ -845,11 +886,21 @@ private func pluginSendPayload(accountRecordId: Int64, peerId: PeerId, message: 
     }
 }
 
+func exteralessApplyPluginSendResult(_ result: PluginSendResult, to message: EnqueueMessage) -> EnqueueMessage? {
+    switch result {
+    case .cancel: return nil
+    case .keepOriginal: return message
+    case let .modify(patch), let .modifyFinal(patch): return pluginApplySendPatch(patch, to: message)
+    }
+}
+
+func exteralessPluginSendResultSlots(count: Int, acceptedIndices: [Int], ids: [MessageId?]) -> [MessageId?] {
+    return EnqueueMessagesResult.committed(messageIds: ids).restoringSlots(count: count, acceptedIndices: acceptedIndices).messageIds
+}
+
 private func pluginApplySendPatch(_ patch: PluginSendMessagePatch, to message: EnqueueMessage) -> EnqueueMessage {
     // The router validates even typed handler results against the immutable payload before delivery.
-    guard case let .message(text, attributes, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, correlationId, bubbleUpEmojiOrStickersets) = message else {
-        return message
-    }
+    let attributes = message.attributes
     var updatedAttributes: [MessageAttribute] = []
     var foundNotificationInfo = false
     var foundContentInfo = false
@@ -882,10 +933,26 @@ private func pluginApplySendPatch(_ patch: PluginSendMessagePatch, to message: E
     if let disabled = patch.disableLinkPreviews, !foundContentInfo {
         updatedAttributes.append(OutgoingContentInfoMessageAttribute(flags: disabled ? [.disableLinkPreviews] : []))
     }
-    return .message(text: patch.text ?? text, attributes: updatedAttributes, inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: localGroupingKey, correlationId: correlationId, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets)
+    switch message {
+    case let .message(text, _, inlineStickers, mediaReference, threadId, replyToMessageId, replyToStoryId, localGroupingKey, correlationId, bubbleUpEmojiOrStickersets):
+        return .message(text: patch.text ?? text, attributes: updatedAttributes, inlineStickers: inlineStickers, mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToMessageId, replyToStoryId: replyToStoryId, localGroupingKey: localGroupingKey, correlationId: correlationId, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets)
+    case .forward:
+        return message.withUpdatedAttributes { _ in updatedAttributes }
+    }
 }
 
-private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
+private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
+    guard !messages.isEmpty else { return .single(EnqueueMessagesResult(slots: [])) }
+    return ExteralessBotSendAuthorization.shared.check(account: account, peerId: peerId)
+    |> take(1)
+    |> mapToSignal { allowed -> Signal<EnqueueMessagesResult, NoError> in
+        guard allowed else { return .single(.rejected(count: messages.count, reason: .botAuthorizationDenied)) }
+        guard tlCommit?.allowsContinuation() ?? true else { return .single(.rejected(count: messages.count, reason: .cancelledBeforeCommit)) }
+        return enqueueMessagesWithPrivacyAuthorization(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
+    }
+}
+
+private func enqueueMessagesWithPrivacyAuthorization(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<EnqueueMessagesResult, NoError> {
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)
@@ -893,8 +960,19 @@ private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId,
         signal = .single(messages.map { (false, $0) })
     }
     return signal
-    |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
-        return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
+    |> mapToSignal { messages -> Signal<EnqueueMessagesResult, NoError> in
+        return account.postbox.transaction { transaction -> (EnqueueMessagesResult, [MessageId]) in
+            guard tlCommit?.beginCommit() ?? true else {
+                return (.rejected(count: messages.count, reason: .cancelledBeforeCommit), [])
+            }
+            let messages = exteralessPrivacyOutgoingMessages(transaction: transaction, account: account, peerId: peerId, messages: messages)
+            let rewrite = exteralessRewriteDeletedReplies(transaction: transaction, accountPeerId: account.peerId, messages: messages)
+            guard case let .success(messages) = rewrite else {
+                if case let .failure(error) = rewrite {
+                    ExteralessRetentionAccount.get(mediaBox: account.postbox.mediaBox)?.report(error)
+                }
+                return (.rejected(count: messages.count, reason: .retainedReplyUnavailable), [])
+            }
             var resultIds = Array<MessageId?>(repeating: nil, count: messages.count)
             var ephemeralMessageIds: [MessageId] = []
             var normalMessages: [(Bool, EnqueueMessage)] = []
@@ -920,13 +998,13 @@ private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId,
                 }
             }
 
-            return (resultIds, ephemeralMessageIds)
+            return (.committed(messageIds: resultIds), ephemeralMessageIds)
         }
-        |> map { resultIds, ephemeralMessageIds -> [MessageId?] in
+        |> mapToSignal { result, ephemeralMessageIds -> Signal<EnqueueMessagesResult, NoError> in
             for messageId in ephemeralMessageIds {
                 let _ = _internal_sendEphemeralOutgoingMessage(account: account, messageId: messageId).startStandalone()
             }
-            return resultIds
+            return nativeServicePublishEnqueuedMessages(account: account, messageIds: result.messageIds) |> map { _ in result }
         }
     }
 }

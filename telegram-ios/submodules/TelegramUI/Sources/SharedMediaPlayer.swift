@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import TelegramCore
@@ -13,6 +14,13 @@ import PeerMessagesMediaPlaylist
 private enum SharedMediaPlaybackItem: Equatable {
     case audio(MediaPlayer)
     case instantVideo(OverlayInstantVideoNode)
+
+    var endActionIdentity: ObjectIdentifier {
+        switch self {
+        case let .audio(player): return ObjectIdentifier(player)
+        case let .instantVideo(node): return ObjectIdentifier(node)
+        }
+    }
     
     var playbackStatus: Signal<MediaPlayerStatus, NoError> {
         switch self {
@@ -148,6 +156,7 @@ final class SharedMediaPlayer {
         return self.audioLevelPipe.signal()
     }
     private let audioLevelDisposable = MetaDisposable()
+    private let endActionGate = ExteralessPlayerEndActionGate()
     
     private var playbackItem: SharedMediaPlaybackItem? {
         didSet {
@@ -174,6 +183,7 @@ final class SharedMediaPlayer {
     var cancelled: (() -> Void)?
     
     private var inForegroundDisposable: Disposable?
+    private var isInForeground = true
     
     private var currentPrefetchItems: (SharedMediaPlaybackDataSource, SharedMediaPlaybackDataSource)?
     private let prefetchDisposable = MetaDisposable()
@@ -208,6 +218,11 @@ final class SharedMediaPlayer {
         |> deliverOnMainQueue).startStrict(next: { [weak self] state in
             if let strongSelf = self {
                 let previousPlaybackItem = strongSelf.playbackItem
+                let playlistItemChanged = !areSharedMediaPlaylistItemIdsEqual(state.item?.id, strongSelf.stateValue?.item?.id)
+                if playlistItemChanged || state.item?.playbackData != strongSelf.stateValue?.item?.playbackData {
+                    // Retire A before pausing/removing it, not after B is installed.
+                    strongSelf.endActionGate.invalidate()
+                }
                 strongSelf.updatePrefetchItems(item: state.item, previousItem: state.previousItem, nextItem: state.nextItem, ordering: state.order)
                 if state.item?.playbackData != strongSelf.stateValue?.item?.playbackData {
                     if let playbackItem = strongSelf.playbackItem {
@@ -223,7 +238,7 @@ final class SharedMediaPlayer {
                     if let item = state.item, let playbackData = item.playbackData {
                         let rateValue: Double
                         if case .music = playbackData.type {
-                            rateValue = 1.0
+                            rateValue = ChatPlaybackPolicy.storedSpeed(strongSelf.playbackRate.doubleValue)
                         } else {
                             rateValue = strongSelf.playbackRate.doubleValue
                         }
@@ -250,20 +265,7 @@ final class SharedMediaPlayer {
                     }
                     if let playbackItem = strongSelf.playbackItem {
                         playbackItem.setForceAudioToSpeaker(strongSelf.forceAudioToSpeaker)
-                        playbackItem.setActionAtEnd({
-                            Queue.mainQueue().async {
-                                if let strongSelf = self {
-                                    switch strongSelf.playlist.looping {
-                                        case .item:
-                                            strongSelf.playbackItem?.seek(0.0)
-                                            strongSelf.playbackItem?.play()
-                                        default:
-                                            strongSelf.scheduledPlaybackAction = .play
-                                            strongSelf.control(.next)
-                                    }
-                                }
-                            }
-                        })
+                        strongSelf.registerEndAction(for: playbackItem, type: state.item?.playbackData?.type)
                         switch playbackItem {
                             case .audio:
                                 break
@@ -271,7 +273,9 @@ final class SharedMediaPlayer {
                                 strongSelf.overlayMediaManager.controller?.addNode(node, customTransition: false)
                         }
                         
-                        if let scheduledPlaybackAction = strongSelf.scheduledPlaybackAction {
+                        if let pendingPlaybackAction = strongSelf.scheduledPlaybackAction {
+                            let pauseForBackground = strongSelf.shouldPauseInBackground(type: state.item?.playbackData?.type)
+                            let scheduledPlaybackAction: SharedMediaPlayerPlaybackControlAction = pauseForBackground ? .pause : pendingPlaybackAction
                             strongSelf.scheduledPlaybackAction = nil
                             let scheduledStartTime = strongSelf.scheduledStartTime
                             strongSelf.scheduledStartTime = nil
@@ -295,12 +299,17 @@ final class SharedMediaPlayer {
                                             }
                                     }
                                 case .pause:
+                                    if pauseForBackground, let scheduledStartTime { playbackItem.seek(scheduledStartTime) }
                                     playbackItem.pause()
                                 case .togglePlayPause:
                                     playbackItem.togglePlayPause()
                             }
                         }
                     }
+                } else if playlistItemChanged, let playbackItem = strongSelf.playbackItem {
+                    // Different playlist items may share an identical media source
+                    // and therefore reuse the same underlying native player.
+                    strongSelf.registerEndAction(for: playbackItem, type: state.item?.playbackData?.type)
                 }
                 
                 if strongSelf.currentPlayedToEnd != state.playedToEnd {
@@ -368,6 +377,17 @@ final class SharedMediaPlayer {
         |> deliverOnMainQueue).startStrict(next: { [weak self] value in
             self?._playbackStateValue = value
         })
+
+        self.inForegroundDisposable = (inForeground
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).startStrict(next: { [weak self] foreground in
+            guard let self else { return }
+            self.isInForeground = foreground
+            if self.shouldPauseInBackground(type: self.stateValue?.item?.playbackData?.type) {
+                self.scheduledPlaybackAction = .pause
+                self.playbackItem?.pause()
+            }
+        })
         
         if controlPlaybackWithProximity {
             self.proximityManagerIndex = DeviceProximityManager.shared().add { [weak self] value in
@@ -404,6 +424,7 @@ final class SharedMediaPlayer {
     }
     
     deinit {
+        self.endActionGate.invalidate()
         self.stateDisposable?.dispose()
         self.markItemAsPlayedDisposable.dispose()
         self.inForegroundDisposable?.dispose()
@@ -426,9 +447,34 @@ final class SharedMediaPlayer {
         }
     }
     
+    private func registerEndAction(for playbackItem: SharedMediaPlaybackItem, type: SharedMediaPlaybackDataType?) {
+        let identity = playbackItem.endActionIdentity
+        let isMusic = type == .music
+        playbackItem.setActionAtEnd(self.endActionGate.callback(identity: identity, enqueue: { action in
+            Queue.mainQueue().async { action() }
+        }, mode: { [weak self] in
+            guard let self, self.playbackItem?.endActionIdentity == identity else { return nil }
+            return ExteralessPlayerEndActionGate.mode(loopCurrentItem: self.playlist.looping == .item, isMusic: isMusic, stopAfterVoice: ClientSettings.shared.bool("chats.dontAutoPlayNextVoice"))
+        }, seekToStart: { [weak self] in
+            guard let item = self?.playbackItem, item.endActionIdentity == identity else { return }
+            item.seek(0.0)
+        }, play: { [weak self] in
+            guard let item = self?.playbackItem, item.endActionIdentity == identity else { return }
+            item.play()
+        }, stop: { [weak self] in
+            guard let self, let item = self.playbackItem, item.endActionIdentity == identity else { return }
+            self.scheduledPlaybackAction = nil
+            item.pause()
+        }, advance: { [weak self] in
+            guard let self, self.playbackItem?.endActionIdentity == identity else { return }
+            self.control(.next)
+        }))
+    }
+
     func control(_ action: SharedMediaPlayerControlAction) {
         switch action {
             case .next:
+                self.endActionGate.invalidate()
                 self.scheduledPlaybackAction = .play
                 self.playlist.control(.next)
             case .previous:
@@ -436,24 +482,31 @@ final class SharedMediaPlayer {
                 if let playbackStateValue = self._playbackStateValue, case let .item(item) = playbackStateValue, item.status.duration > threshold, item.status.timestamp > threshold {
                     self.control(.seek(0.0))
                 } else {
+                    self.endActionGate.invalidate()
                     self.scheduledPlaybackAction = .play
                     self.playlist.control(.previous)
                 }
             case let .playback(action):
+                self.endActionGate.invalidate()
                 if let playbackItem = self.playbackItem {
                     switch action {
                         case .play:
+                            self.registerEndAction(for: playbackItem, type: self.stateValue?.item?.playbackData?.type)
                             playbackItem.play()
                         case .pause:
                             playbackItem.pause()
+                            self.registerEndAction(for: playbackItem, type: self.stateValue?.item?.playbackData?.type)
                         case .togglePlayPause:
+                            self.registerEndAction(for: playbackItem, type: self.stateValue?.item?.playbackData?.type)
                             playbackItem.togglePlayPause()
                     }
                 } else {
                     self.scheduledPlaybackAction = action
                 }
             case let .seek(timestamp):
+                self.endActionGate.invalidate()
                 if let playbackItem = self.playbackItem {
+                    self.registerEndAction(for: playbackItem, type: self.stateValue?.item?.playbackData?.type)
                     playbackItem.seek(timestamp)
                 } else {
                     self.scheduledPlaybackAction = .play
@@ -478,6 +531,7 @@ final class SharedMediaPlayer {
     }
     
     func stop() {
+        self.endActionGate.invalidate()
         if let playbackItem = self.playbackItem {
             switch playbackItem {
                 case let .audio(player):
@@ -534,6 +588,15 @@ final class SharedMediaPlayer {
             } else {
                 self.prefetchDisposable.set(nil)
             }
+        }
+    }
+
+    private func shouldPauseInBackground(type: SharedMediaPlaybackDataType?) -> Bool {
+        guard !self.isInForeground else { return false }
+        switch type {
+        case .voice?: return ClientSettings.shared.bool("chats.pauseOnMinimizeVoice")
+        case .instantVideo?: return ClientSettings.shared.bool("chats.pauseOnMinimizeRound")
+        default: return false
         }
     }
 }

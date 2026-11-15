@@ -21,6 +21,7 @@ private final class PatternContentsTarget: MultiAnimationRenderTarget {
         self.imageUpdated = imageUpdated
         
         super.init()
+        self.performanceAnimationKind = .effect
     }
     
     required init(coder: NSCoder) {

@@ -242,14 +242,15 @@ public final class ChatMessageAttachedContentNode: ASDisplayNode {
                 }
             }
             
+            let identityAuthor = author.map { exteralessIdentityPresentation(account: context.account, peer: EnginePeer($0), surface: .reply) }
             let nameColors: PeerNameColors.Colors?
             var giftEmojiFileId: Int64?
-            switch author?.nameColor {
+            switch identityAuthor?.nameColor {
             case let .preset(nameColor):
                 nameColors = context.peerNameColors.get(nameColor, dark: presentationData.theme.theme.overallDarkAppearance)
             case let .collectible(collectibleColor):
                 nameColors = collectibleColor.peerNameColors(dark: presentationData.theme.theme.overallDarkAppearance)
-                if displayGiftIcon && displayLine && !isAd {
+                if displayGiftIcon && displayLine && !isAd && ExteralessIdentityPresentation.shared.policy.premiumItemEmojiInReplies {
                     giftEmojiFileId = collectibleColor.giftEmojiFileId
                 }
             default:
@@ -782,7 +783,8 @@ public final class ChatMessageAttachedContentNode: ASDisplayNode {
                                 hasAutoremove: message.isSelfExpiring,
                                 canViewReactionList: canViewMessageReactionList(message: EngineMessage(message)),
                                 animationCache: controllerInteraction.presentationContext.animationCache,
-                                animationRenderer: controllerInteraction.presentationContext.animationRenderer
+                                animationRenderer: controllerInteraction.presentationContext.animationRenderer,
+                                retention: EngineMessage(message).exteralessRetention
                             ))
                             statusLayoutAndContinue = statusLayoutAndContinueValue
                             actualWidth = max(actualWidth, statusLayoutAndContinueValue.0)
@@ -1599,7 +1601,7 @@ public final class ChatMessageAttachedContentNode: ASDisplayNode {
                             var pattern: MessageInlineBlockBackgroundView.Pattern?
                             if let _ = message.media.first(where: { $0 is TelegramMediaPoll }) {
                                 
-                            } else if let backgroundEmojiId = author?.backgroundEmojiId {
+                            } else if let backgroundEmojiId = identityAuthor?.backgroundEmojiId {
                                 pattern = MessageInlineBlockBackgroundView.Pattern(
                                     context: context,
                                     fileId: backgroundEmojiId,

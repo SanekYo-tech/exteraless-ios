@@ -647,6 +647,11 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
         if currentContent == content {
             let targetRange = selection.nsRange(in: content)
             let liveRange = self.editorView.composerSelectedRange
+            // A selected cell/caption/title/author has an EMPTY composer range. An unfocused echo
+            // while a picker is open must not move that real selection onto the flat text axis.
+            if liveRange.length == 0, self.editorView.selectedGlobalRange() != nil {
+                return
+            }
             // STALE-SELECTION GUARD (the double-tap "flash then deselect" fix).
             //
             // The editor reports a selection change to the host ASYNCHRONOUSLY (coalesced to the next runloop
@@ -912,6 +917,8 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
     public var canPasteMedia: (() -> Bool)? { didSet { self.editorView.canPasteMedia = canPasteMedia } }
     public var onPasteMedia: (() -> Bool)? { didSet { self.editorView.onPasteMedia = onPasteMedia } }
     public var pastedMarkdownFragmentParser: ((String) -> Document?)? { didSet { self.editorView.plainTextFragmentTransformer = self.pastedMarkdownFragmentParser } }
+    public var pastedLinkTargetTransformer: ((String) -> String)? { didSet { self.editorView.pastedLinkTargetTransformer = self.pastedLinkTargetTransformer } }
+    public var committedTextTransformer: ((String) -> String)? { didSet { self.editorView.committedTextTransformer = self.committedTextTransformer } }
 
     public func performFormatAction(_ action: ChatRichTextFormatAction) {
         switch action {
@@ -925,7 +932,7 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
         case .pullQuote: self.editorView.makePullQuote()
         case .code: self.editorView.makeCodeBlock()
         case .date:
-            // TODO: no timestamp-entity model in the editor (deferred). No-op for now.
+            // The host's date picker applies its timestamp through `applyRichTextLink`.
             break
         case .clearFormatting: self.editorView.clearInlineFormatting()
         }
@@ -937,7 +944,8 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
         case .bold, .strikethrough, .underline, .spoiler: return self.editorView.inlineFormatsReachSelection
         // Not over a mention, a date or a link (composer harness p23, `HarnessInlineCodeOverEntityTests`).
         case .monospace: return self.editorView.inlineCodeReachesSelection
-        case .quote, .pullQuote, .code, .date, .clearFormatting: return true
+        case .date: return self.editorView.linkReachesSelection
+        case .quote, .pullQuote, .code, .clearFormatting: return true
         }
     }
 
@@ -947,6 +955,133 @@ public final class RichTextEditorChatInputNode: ASDisplayNode, ChatRichTextInput
 
     public func currentRichTextLinkURL() -> String? { self.editorView.currentLink() }
     public func selectedRichText() -> String { self.editorView.selectedText() }
+
+    /// Core can splice inside one cell/caption, or replace a whole unit. A fragment replacement
+    /// entering a unit only in part cannot preserve its unselected content, so Translate is disabled
+    /// there rather than widening the user's range as clipboard Copy/Paste deliberately do.
+    public var canReplaceRichTextSelection: Bool {
+        guard !self.editorView.hasMarkedText, let range = self.editorView.selectedGlobalRange() else { return false }
+        return Self.canReplaceTextRange(range.from ..< range.to, in: self.editorView.document)
+    }
+
+    private static func canReplaceTextRange(_ range: Range<Int>, in document: Document) -> Bool {
+        func check(_ node: DocNode, start: Int) -> Bool {
+            let end = start + node.nodeSize
+            guard range.lowerBound < end, range.upperBound > start else { return true }
+            switch node {
+            case .mediaBlock:
+                return (range.lowerBound <= start && range.upperBound >= end)
+                    || document.captionTextFragment(globalFrom: range.lowerBound, globalTo: range.upperBound) != nil
+            case .table:
+                return (range.lowerBound <= start && range.upperBound >= end)
+                    || document.tableCellFragment(globalFrom: range.lowerBound, globalTo: range.upperBound) != nil
+            default:
+                var offset = start
+                if case .doc = node {} else { offset += 1 }
+                for child in node.children {
+                    if !check(child, start: offset) { return false }
+                    offset += child.nodeSize
+                }
+                return true
+            }
+        }
+        return !range.isEmpty && check(DocumentTree.build(from: document), start: 0)
+    }
+
+    /// A single-use lease over the editor's real selection, not the lossy composer range. The
+    /// attributed text is a read-only input to a text service; it is never a replacement draft.
+    public final class SelectionSnapshot {
+        public let text: NSAttributedString
+        fileprivate let owner: ObjectIdentifier
+        fileprivate let document: Document
+        fileprivate let range: Range<Int>
+        fileprivate let documentRevision: UInt64
+        fileprivate let selectionRevision: UInt64
+        fileprivate var consumed = false
+
+        fileprivate init(owner: RichTextEditorChatInputNode, document: Document, range: Range<Int>, text: NSAttributedString) {
+            self.owner = ObjectIdentifier(owner)
+            self.document = document
+            self.range = range
+            self.text = NSAttributedString(attributedString: text)
+            self.documentRevision = owner.editorView.documentRevision
+            self.selectionRevision = owner.editorView.selectionRevision
+        }
+    }
+
+    public func captureRichTextSelection() -> SelectionSnapshot? {
+        guard !self.editorView.hasMarkedText,
+              let range = self.editorView.selectedGlobalRange(), range.from < range.to else { return nil }
+        let document = self.editorView.document
+        // Copy exactly the covered text nodes. Clipboard extraction deliberately widens a whole
+        // quote's body to its author and a table to its unit; a text service must not do either.
+        // `runs(for:)` and DocumentTree are the existing kernel coordinates, including every owned
+        // line and nested cell. No geometry or composer-flat offset participates in this read.
+        var blocks: [Block] = []
+        func visit(_ node: DocNode, start: Int) {
+            if case let .text(length, ref) = node {
+                let from = max(range.from, start), to = min(range.to, start + length)
+                guard from <= to, start <= range.to, start + length >= range.from,
+                      let runs = document.runs(for: ref) else { return }
+                let selected = sliceRuns(runs, fromUTF16: from - start, toUTF16: to - start)
+                if case .code = ref {
+                    blocks.append(.code(CodeBlock(id: .generate(), runs: selected)))
+                } else {
+                    blocks.append(.paragraph(ParagraphBlock(id: .generate(), runs: selected)))
+                }
+                return
+            }
+            var offset = start
+            for child in node.children {
+                let size = child.nodeSize
+                if offset <= range.to, offset + size >= range.from {
+                    visit(child, start: offset + (child.isLeaf ? 0 : 1))
+                }
+                offset += size
+            }
+        }
+        visit(DocumentTree.build(from: document), start: 0)
+        let content = chatInputContent(fromDocument: Document(blocks: blocks),
+            resolveEmoji: { [weak self] in self?.resolveEmojiRef($0) },
+            resolveMedia: { [weak self] in self?.resolveMediaID($0) })
+        let text = attributedString(from: content)
+        guard text.length > 0 else { return nil }
+        return SelectionSnapshot(owner: self, document: document, range: range.from ..< range.to, text: text)
+    }
+
+    public func isRichTextSelectionCurrent(_ selection: SelectionSnapshot) -> Bool {
+        guard !selection.consumed, selection.owner == ObjectIdentifier(self), !self.editorView.hasMarkedText,
+              selection.documentRevision == self.editorView.documentRevision,
+              selection.selectionRevision == self.editorView.selectionRevision,
+              let range = self.editorView.selectedGlobalRange(),
+              selection.range == (range.from ..< range.to) else { return false }
+        return selection.document == self.editorView.document
+    }
+
+    /// The picker completion's link command. `nil` removes the marker in the same native undo step.
+    @discardableResult
+    public func applyRichTextLink(_ url: String?, to selection: SelectionSnapshot) -> Bool {
+        guard self.isRichTextSelectionCurrent(selection),
+              url == nil || self.editorView.linkReachesSelection else { return false }
+        selection.consumed = true
+        self.applyRichTextLink(url)
+        return true
+    }
+
+    /// A text-service result replaces only the captured Core range; cells and owned lines remain
+    /// in their containers. The editor's `replaceRange` supplies the caret and the single undo step.
+    @discardableResult
+    public func replaceRichTextSelection(_ selection: SelectionSnapshot, with text: NSAttributedString) -> Bool {
+        guard self.isRichTextSelectionCurrent(selection),
+              Self.canReplaceTextRange(selection.range, in: selection.document) else { return false }
+        let replacement = document(fromChatInputContent: chatInputContent(from: text),
+            registerEmoji: { [weak self] fileId, file in self?.registerEmojiRef(fileId: fileId, file: file) ?? EmojiRef(id: String(fileId), instanceID: BlockID.generate().rawValue, altText: nil) },
+            registerMedia: { [weak self] in self?.registerMediaValue($0) ?? "" })
+        selection.consumed = true
+        self.editorView.replaceRange(from: selection.range.lowerBound, to: selection.range.upperBound, with: replacement)
+        return true
+    }
+
     public func applyRichTextLink(_ url: String?) {
         if let url, !url.isEmpty {
             self.editorView.setLink(url)

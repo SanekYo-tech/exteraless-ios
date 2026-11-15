@@ -226,11 +226,13 @@ public final class HorizontalTabsComponent: Component {
             public let text: String
             public let entities: [MessageTextEntity]
             public let enableAnimations: Bool
+            public let accessibilityTitle: String?
             
-            public init(text: String, entities: [MessageTextEntity], enableAnimations: Bool) {
+            public init(text: String, entities: [MessageTextEntity], enableAnimations: Bool, accessibilityTitle: String? = nil) {
                 self.text = text
                 self.entities = entities
                 self.enableAnimations = enableAnimations
+                self.accessibilityTitle = accessibilityTitle
             }
         }
         
@@ -863,6 +865,13 @@ public final class HorizontalTabsComponent: Component {
                 let itemFrame = itemView.frame
                 
                 if let itemRegularView = itemView.regularView.view, let itemSelectedView = itemView.selectedView.view {
+                    // The selected lens copy is visual-only. The regular copy
+                    // retains the full folder label and the actual selection.
+                    itemSelectedView.isAccessibilityElement = false
+                    itemSelectedView.accessibilityElementsHidden = true
+                    if itemRegularView.isAccessibilityElement {
+                        itemRegularView.accessibilityTraits = tabId == component.selectedTab ? [.button, .selected] : .button
+                    }
                     if itemRegularView.superview == nil {
                         self.scrollView.addSubview(itemRegularView)
                         self.selectedScrollView.addSubview(itemSelectedView)
@@ -1179,9 +1188,24 @@ private final class ItemComponent: Component {
         @objc private func deleteButtonPressed() {
             self.component?.tab.deleteAction?()
         }
+
+        override func accessibilityActivate() -> Bool {
+            guard let component = self.component, component.editing == nil else { return false }
+            component.tab.action()
+            return true
+        }
         
         func update(component: ItemComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             self.component = component
+            if case let .title(title) = component.tab.content, let accessibilityTitle = title.accessibilityTitle {
+                self.isAccessibilityElement = component.editing == nil
+                self.accessibilityLabel = accessibilityTitle
+                self.accessibilityValue = component.tab.badge?.title
+            } else {
+                self.isAccessibilityElement = false
+                self.accessibilityLabel = nil
+                self.accessibilityValue = nil
+            }
             
             self.containerView.isGestureEnabled = component.editing == nil
             self.tapRecognizer?.isEnabled = component.editing == nil

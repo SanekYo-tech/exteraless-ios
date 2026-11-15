@@ -223,6 +223,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
     private var titleStatusIcon: ChatTitleCredibilityIcon = .none
     
     private var presenceManager: PeerPresenceStatusManager?
+    private var exteralessPrivacyDisposable: Disposable?
     
     private var pointerInteraction: PointerInteraction?
     
@@ -296,10 +297,10 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                 } else if peerView.peerId.isAnonymousSavedMessages {
                                     segments = [.text(0, NSAttributedString(string: self.strings.ChatList_AuthorHidden, font: titleFont, textColor: titleTheme.rootController.navigationBar.primaryTextColor))]
                                 } else {
-                                    if !peerView.isContact, let user = peer as? TelegramUser, !user.flags.contains(.isSupport), user.botInfo == nil, let phone = user.phone, !phone.isEmpty {
+                                    if !peerView.isContact, exteralessIdentityPeerKey(EnginePeer(peer)).flatMap({ ExteralessIdentityPresentation.shared.state(account: self.context.account)?.alias(for: $0) }) == nil, let user = peer as? TelegramUser, !user.flags.contains(.isSupport), user.botInfo == nil, let phone = user.phone, !phone.isEmpty {
                                         segments = [.text(0, NSAttributedString(string: formatPhoneNumber(context: self.context, number: phone), font: titleFont, textColor: titleTheme.rootController.navigationBar.primaryTextColor))]
                                     } else {
-                                        segments = [.text(0, NSAttributedString(string: EnginePeer(peer).displayTitle(strings: self.strings, displayOrder: self.nameDisplayOrder), font: titleFont, textColor: titleTheme.rootController.navigationBar.primaryTextColor))]
+                                        segments = [.text(0, NSAttributedString(string: EnginePeer(peer).exteralessDisplayTitle(account: self.context.account, strings: self.strings, displayOrder: self.nameDisplayOrder), font: titleFont, textColor: titleTheme.rootController.navigationBar.primaryTextColor))]
                                     }
                                 }
                                 if peer.id != self.context.account.peerId {
@@ -308,9 +309,9 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                         titleCredibilityIcon = .fake
                                     } else if peer.isScam {
                                         titleCredibilityIcon = .scam
-                                    } else if !hidePeerStatus, let emojiStatus = peer.emojiStatus {
+                                    } else if !hidePeerStatus, let emojiStatus = exteralessIdentityPresentation(account: self.context.account, peer: EnginePeer(peer)).emojiStatus {
                                         titleStatusIcon = .emojiStatus(emojiStatus)
-                                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                                    } else if exteralessIdentityPresentation(account: self.context.account, peer: EnginePeer(peer)).premiumBadge && !premiumConfiguration.isPremiumDisabled {
                                         titleCredibilityIcon = .premium
                                     }
                                     
@@ -572,15 +573,15 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                     }
                 } else {
                     if inputActivities.items.count > 1 {
-                        let peerTitle = inputActivities.items[0].peer.compactDisplayTitle
+                        let peerTitle = inputActivities.items[0].peer.exteralessCompactDisplayTitle(account: self.context.account)
                         if inputActivities.items.count == 2 {
-                            let secondPeerTitle = inputActivities.items[1].peer.compactDisplayTitle
+                            let secondPeerTitle = inputActivities.items[1].peer.exteralessCompactDisplayTitle(account: self.context.account)
                             stringValue = self.strings.Chat_MultipleTypingPair(peerTitle, secondPeerTitle).string
                         } else {
                             stringValue = self.strings.Chat_MultipleTypingMore(peerTitle, String(inputActivities.items.count - 1)).string
                         }
                     } else if let item = inputActivities.items.first {
-                        stringValue = item.peer.compactDisplayTitle
+                        stringValue = item.peer.exteralessCompactDisplayTitle(account: self.context.account)
                     }
                 }
                 let color = titleTheme.rootController.navigationBar.accentTextColor
@@ -683,7 +684,7 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
                                     }
                                 } else if let channel = peer as? TelegramChannel {
                                     if channel.isForumOrMonoForum, customTitle != nil {
-                                        let string = NSAttributedString(string: EnginePeer(peer).displayTitle(strings: self.strings, displayOrder: self.nameDisplayOrder), font: subtitleFont, textColor: titleTheme.rootController.navigationBar.secondaryTextColor)
+                                        let string = NSAttributedString(string: EnginePeer(peer).exteralessDisplayTitle(account: self.context.account, strings: self.strings, displayOrder: self.nameDisplayOrder), font: subtitleFont, textColor: titleTheme.rootController.navigationBar.secondaryTextColor)
                                         state = .info(string, .generic)
                                     } else if let cachedChannelData = peerView.cachedData as? CachedChannelData, let memberCount = onlineMemberCount.total ?? cachedChannelData.participantsSummary.memberCount {
                                         if memberCount == 0 {
@@ -749,6 +750,12 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
             }
         }
         
+        if exteralessShowGhostStatus(), case .online = self.networkState, case let .info(text, kind) = state {
+            let value = NSMutableAttributedString(attributedString: NSAttributedString(string: "👻 ", font: subtitleFont, textColor: titleTheme.rootController.navigationBar.secondaryTextColor))
+            value.append(text)
+            state = .info(value, kind)
+            self.accessibilityValue = "Ghost mode. \(text.string)"
+        }
         if self.activityNode.transitionToState(state, animation: enableAnimation ? .slide : .none) {
             if !self.manualLayout, let size = self.validLayout {
                 let _ = self.updateLayout(availableSize: size, transition: enableAnimation ? .animated(duration: 0.3, curve: .spring) : .immediate)
@@ -812,6 +819,9 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
         self.presenceManager = PeerPresenceStatusManager(update: { [weak self] in
             let _ = self?.updateStatus()
         })
+        self.exteralessPrivacyDisposable = (exteralessPrivacySettingsChanges() |> deliverOnMainQueue).start(next: { [weak self] in
+            let _ = self?.updateStatus(enableAnimation: false)
+        })
         
         self.button.addTarget(self, action: #selector(self.buttonPressed), forControlEvents: [.touchUpInside])
         self.button.highligthedChanged = { [weak self] highlighted in
@@ -842,6 +852,10 @@ public final class ChatTitleView: UIView, NavigationBarTitleView {
     
     required public init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        self.exteralessPrivacyDisposable?.dispose()
     }
     
     override public func layoutSubviews() {

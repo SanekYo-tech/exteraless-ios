@@ -271,18 +271,28 @@ func openChatMessageImpl(_ params: OpenChatMessageParams) -> Bool {
                                 }
                                 controller.dismiss()
                                 
-                                presentDocumentPreviewController(rootController: rootController, theme: presentationData.theme, strings: presentationData.strings, postbox: params.context.account.postbox, file: file, canShare: canShare)
+                                presentDocumentPreviewController(rootController: rootController, theme: presentationData.theme, strings: presentationData.strings, account: params.context.account, file: file, canShare: canShare)
                             }
                             params.navigationController?.pushViewController(controller)
                         } else {
-                            presentDocumentPreviewController(rootController: rootController, theme: presentationData.theme, strings: presentationData.strings, postbox: params.context.account.postbox, file: file, canShare: canShare)
+                            presentDocumentPreviewController(rootController: rootController, theme: presentationData.theme, strings: presentationData.strings, account: params.context.account, file: file, canShare: canShare)
                         }
+                    }
+                    let proceedWithNativeServices = {
+                        let handled = MainActor.assumeIsolated {
+                            NativeServiceOpenHooks.shared.interceptFile(
+                                context: params.context, file: file, messageId: params.message.id,
+                                place: params.navigationController?.topViewController is ChatController ? "ChatActivity" : "UNKNOWN",
+                                exportAllowed: !params.message.isCopyProtected() && !params.copyProtected && params.message.secretMediaDuration == nil,
+                                original: proceed)
+                        }
+                        if !handled { proceed() }
                     }
                     if file.mimeType.contains("image/svg") {
                         let presentationData = params.context.sharedContext.currentPresentationData.with { $0 }
-                        params.present(textAlertController(context: params.context, title: nil, text: presentationData.strings.OpenFile_PotentiallyDangerousContentAlert, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}), TextAlertAction(type: .defaultAction, title: presentationData.strings.OpenFile_Proceed, action: { proceed() })] ), nil, .window(.root))
+                        params.present(textAlertController(context: params.context, title: nil, text: presentationData.strings.OpenFile_PotentiallyDangerousContentAlert, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}), TextAlertAction(type: .defaultAction, title: presentationData.strings.OpenFile_Proceed, action: { proceedWithNativeServices() })] ), nil, .window(.root))
                     } else {
-                        proceed()
+                        proceedWithNativeServices()
                     }
                 }
                 return true

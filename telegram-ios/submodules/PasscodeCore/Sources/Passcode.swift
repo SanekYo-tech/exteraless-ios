@@ -509,6 +509,38 @@ public final class PasscodeCredentialStore: @unchecked Sendable {
         }
     }
 
+    /// Checks the ordinary credential first, under the native credential/attempt
+    /// lock. An alternate app-unlock proof never creates a settings/resource session.
+    public func verifyAppUnlock(_ code: String, reference: PasscodeCredentialReference? = nil, alternative: () throws -> Bool) throws -> PasscodeSession? {
+        return try self.serialized {
+            guard let record = try self.load(), let kind = record.kind, let salt = record.salt,
+                  let iterations = record.iterations, let wrapped = record.wrappedKey else {
+                throw PasscodeError.authenticationRequired
+            }
+            if let reference, reference.id != record.id { throw PasscodeError.staleAuthorization }
+            var attempts = try self.attempts()
+            let remaining = Int(max(0, min(60, ceil(attempts.deadline - self.clock().uptime))))
+            guard remaining == 0 else { throw PasscodeError.cooldown(remaining) }
+            var kek = try PasscodeCrypto.derive(code: kind.normalize(code), deviceSecret: self.deviceSecret(), salt: salt, iterations: iterations)
+            defer { kek.resetBytes(in: 0 ..< kek.count) }
+            let key: Data
+            do {
+                key = try PasscodeCrypto.open(wrapped, key: kek, context: "credential.v1:\(record.id):\(kind.rawValue)")
+            } catch {
+                if try alternative() {
+                    try self.storage.remove("attempts")
+                    return nil
+                }
+                attempts.count = min(1_000_000, attempts.count + 1)
+                attempts.deadline = attempts.count >= 6 ? self.clock().uptime + 60 : 0
+                try self.storage.write(JSONEncoder().encode(attempts), account: "attempts", biometric: false)
+                throw PasscodeError.invalidCode
+            }
+            try self.storage.remove("attempts")
+            return PasscodeSession(credentialId: record.id, revision: record.revision, key: key, scope: .appUnlock, authentication: .passcode)
+        }
+    }
+
     public func validate(_ session: PasscodeSession, scope: PasscodeSession.Scope? = nil, requireAvailable: Bool = true) throws {
         try self.serialized {
             if let scope { try session.require(scope: scope) }

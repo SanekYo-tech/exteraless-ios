@@ -389,6 +389,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                 needsShareButton = false
             }
             
+            if exteralessHideChannelShare(message: EngineMessage(item.message)) { needsShareButton = false }
             var layoutInsets = layoutConstants.instantVideo.insets
             if dateHeaderAtBottom.hasDate && dateHeaderAtBottom.hasTopic {
                 layoutInsets.top += layoutConstants.timestampDateAndTopicHeaderHeight
@@ -571,7 +572,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                 forwardSource = resolvedForwardInfo.source
                 forwardAuthorSignature = resolvedForwardInfo.authorSignature
                 let availableWidth = max(60.0, availableContentWidth - normalDisplaySize.width + 6.0)
-                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
+                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, item.message.forwardInfo?.date, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
             }
             
             if replyInfoApply != nil || viaBotApply != nil || forwardInfoSizeApply != nil {
@@ -598,7 +599,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
             }
             
             let reactions: ReactionsMessageAttribute
-            if shouldDisplayInlineDateReactions(message: EngineMessage(item.message), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions) {
+            if exteralessHideMessageReactions(message: EngineMessage(item.message)) || shouldDisplayInlineDateReactions(message: EngineMessage(item.message), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions) {
                 reactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
             } else {
                 reactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -645,6 +646,7 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
                     strongSelf.contextSourceNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.containerNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
+                    strongSelf.contextSourceNode.contentNode.alpha = exteralessRetentionOpacity(messages: [EngineMessage(item.message)])
                     strongSelf.messageAccessibilityArea.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     
                     strongSelf.appliedParams = params
@@ -953,6 +955,14 @@ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureReco
         switch recognizer.state {
         case .ended:
             if let (gesture, location) = recognizer.lastRecognizedGestureAndLocation {
+                if case .doubleTap = gesture, let item = self.item, exteralessPerformDoubleTap(message: EngineMessage(item.message), accountPeerId: item.context.account.peerId, host: item.controllerInteraction.chatControllerNode() as? ExteralessChatMessageActionHost, openMenu: {
+                    item.controllerInteraction.openMessageContextMenu(item.message, false, self, self.bounds, nil, nil)
+                }, reply: {
+                    if case .reply = item.controllerInteraction.canSetupReply(item.message) { item.controllerInteraction.setupReply(item.message.id) }
+                }) {
+                    self.containerNode.cancelGesture()
+                    return
+                }
                 if let action = self.gestureRecognized(gesture: gesture, location: location, recognizer: nil) {
                     if case .doubleTap = gesture {
                         self.containerNode.cancelGesture()

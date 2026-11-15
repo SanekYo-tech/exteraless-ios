@@ -32,6 +32,8 @@ final class WrappedFunctionDescription: CustomStringConvertible {
     }
     
     var description: String {
+        let context = MTRequestLogContext.context(payload: nil, methodName: self.desc.name)
+        if context.containsCredentials { return context.metadataDescription(nil) }
         return apiFunctionDescription(of: self.desc)
     }
     
@@ -48,6 +50,8 @@ final class WrappedShortFunctionDescription: CustomStringConvertible {
     }
     
     var description: String {
+        let context = MTRequestLogContext.context(payload: nil, methodName: self.desc.name)
+        if context.containsCredentials { return context.metadataDescription(nil) }
         return apiShortFunctionDescription(of: self.desc)
     }
     
@@ -599,6 +603,14 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
                 }
             }
 
+            #if os(iOS)
+            if !Bundle.main.bundlePath.hasSuffix(".appex"), #available(iOS 15.0, *) {
+                ExteralessNetworkResolverRuntime.shared.register(context: context)
+                context.makeTcpConnectionInterface = { delegate, delegateQueue in
+                    ExteralessNetworkResolverRuntime.shared.makeConnection(delegate: delegate, queue: delegateQueue)
+                }
+            }
+            #endif
             let baseTcpConnectionInterfaceFactory = context.makeTcpConnectionInterface
             let isAppExtension = Bundle.main.bundlePath.hasSuffix(".appex")
             let initialActiveServer = proxySettings?.effectiveActiveServer
@@ -660,7 +672,7 @@ func initializedNetwork(accountId: AccountRecordId, arguments: NetworkInitializa
             #endif
             
             if !supplementary {
-                context.setDiscoverBackupAddressListSignal(MTBackupAddressSignals.fetchBackupIps(testingEnvironment, currentContext: context, additionalSource: wrappedAdditionalSource, phoneNumber: phoneNumber, mainDatacenterId: datacenterId))
+                context.setDiscoverBackupAddressListSignal(ExteralessNetworkBackupDNS.backupSignal(context: context, testing: testingEnvironment, additionalSource: wrappedAdditionalSource, phoneNumber: phoneNumber, datacenterId: datacenterId))
                 let externalRequestVerificationStream = arguments.externalRequestVerificationStream
                 context.setExternalRequestVerification({ nonce in
                     return MTSignal(generator: { subscriber in
@@ -1383,14 +1395,36 @@ public final class Network: NSObject {
         let requestService = self.requestService
         let accountRecordId = self.accountRecordId
         let datacenterId = self.datacenterId
-        return Signal { [requestService] subscriber in
-            let hasPluginRequestSubscribers = PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest)
+        return Signal { [weak self, requestService] subscriber in
+            guard let self else {
+                let error: MTRpcError = MTRpcError(errorCode: 401, errorDescription: "ACCOUNT_CONTEXT_RELEASED")
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
+            if let transformed = exteralessTransformedRequestWithAdditionalInfo(network: self, data: data,
+                info: info, tag: tag, automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError) {
+                return transformed.start(next: { subscriber.putNext($0) },
+                    error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+            }
+            guard exteralessTLCanExecuteRequest(network: self, description: data.0) else {
+                let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_EXECUTION_REVOKED")
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
             let requestPayload = data.1.makeData()
+            if let error = exteralessPrivacyRequestError(network: self, description: data.0, body: requestPayload) {
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
+            exteralessPrivacyWillSubmit(network: self, description: data.0)
+            let hasPluginRequestSubscribers = !exteralessClientAPIRequestContainsIdentity(data.0)
+                && (PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest))
             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: true) : nil
             let request = NetworkEngineRequest(
                 payload: requestPayload,
-                metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag),
+                metadata: WrappedRequestMetadata(metadata: exteralessClientAPIRequestLogMetadata(data.0), tag: tag),
                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
+                logContext: .context(payload: requestPayload, methodName: data.0.name),
                 parse: { response in
                     if let result = data.2.parse(Buffer(data: response)) {
                         if PluginHookRouter.hasSubscribers(.postRequest), pluginHookMetadata != nil {
@@ -1413,7 +1447,8 @@ public final class Network: NSObject {
                         subscriber.putNext(.progress(progress, Int32(clamping: packetSize)))
                     }
                 },
-                completed: { result in
+                completed: { [weak self] result in
+                    if let self { exteralessPrivacyDidComplete(network: self, description: data.0) }
                     switch result {
                     case let .success(response):
                         if let result = (response.result as! BoxedMessage).body as? T {
@@ -1441,14 +1476,36 @@ public final class Network: NSObject {
         let requestService = self.requestService
         let accountRecordId = self.accountRecordId
         let datacenterId = self.datacenterId
-        return Signal { [requestService] subscriber in
-            let hasPluginRequestSubscribers = PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest)
+        return Signal { [weak self, requestService] subscriber in
+            guard let self else {
+                let error: MTRpcError = MTRpcError(errorCode: 401, errorDescription: "ACCOUNT_CONTEXT_RELEASED")
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
+            if let transformed = exteralessTransformedRequest(network: self, data: data, tag: tag,
+                automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError) {
+                return transformed.start(next: { subscriber.putNext($0) },
+                    error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+            }
+            guard exteralessTLCanExecuteRequest(network: self, description: data.0) else {
+                let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_EXECUTION_REVOKED")
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
             let requestPayload = data.1.makeData()
+            if let error = exteralessPrivacyRequestError(network: self, description: data.0, body: requestPayload) {
+                subscriber.putError(error)
+                return EmptyDisposable
+            }
+            exteralessPrivacyWillSubmit(network: self, description: data.0)
+            let hasPluginRequestSubscribers = !exteralessClientAPIRequestContainsIdentity(data.0)
+                && (PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest))
             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: false) : nil
             let request = NetworkEngineRequest(
                 payload: requestPayload,
-                metadata: WrappedRequestMetadata(metadata: WrappedFunctionDescription(data.0), tag: tag),
+                metadata: WrappedRequestMetadata(metadata: exteralessClientAPIRequestLogMetadata(data.0), tag: tag),
                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
+                logContext: .context(payload: requestPayload, methodName: data.0.name),
                 parse: { response in
                     if let result = data.2.parse(Buffer(data: response)) {
                         if PluginHookRouter.hasSubscribers(.postRequest), pluginHookMetadata != nil {
@@ -1463,7 +1520,8 @@ public final class Network: NSObject {
                 dependsOn: networkRequestDependency(tag: tag),
                 acknowledged: nil,
                 progress: nil,
-                completed: { result in
+                completed: { [weak self] result in
+                    if let self { exteralessPrivacyDidComplete(network: self, description: data.0) }
                     switch result {
                     case let .success(response):
                         if let result = (response.result as! BoxedMessage).body as? T {
@@ -1575,7 +1633,7 @@ func networkRequestErrorPolicy(automaticFloodWait: Bool, onFloodWaitError: ((Str
     }
 }
 
-private func networkRequestDependency(tag: NetworkRequestDependencyTag?) -> ((WrappedRequestMetadata) -> Bool)? {
+func networkRequestDependency(tag: NetworkRequestDependencyTag?) -> ((WrappedRequestMetadata) -> Bool)? {
     guard let tag = tag else {
         return nil
     }

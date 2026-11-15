@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -1160,11 +1161,18 @@ public class ChatScheduleTimeScreen: ViewControllerComponentContainer {
         completion: @escaping (Result) -> Void
     ) {
         self.completion = completion
+        let effectiveCurrentTime: Int32?
+        switch mode {
+        case .scheduledMessages, .reminders:
+            effectiveCurrentTime = ChatComposerPolicy.initialScheduleTime(current: currentTime ?? suggestedTime, now: Date().timeIntervalSince1970, minutes: ClientSettings.shared.integer("chats.defaultScheduledTime", default: 10))
+        case .format, .poll, .search:
+            effectiveCurrentTime = currentTime
+        }
         
         super.init(context: context, component: ChatScheduleTimeScreenComponent(
             context: context,
             mode: mode,
-            currentTime: currentTime,
+            currentTime: effectiveCurrentTime,
             currentRepeatPeriod: currentRepeatPeriod,
             suggestedTime: suggestedTime,
             minimalTime: minimalTime,

@@ -160,7 +160,21 @@ public func updateProxySettingsInteractively(transaction: AccountManagerModifier
     var hasChanges = false
     transaction.updateSharedData(SharedDataKeys.proxySettings, { current in
         let previous = current?.get(ProxySettings.self) ?? ProxySettings.defaultSettings
-        let updated = f(previous)
+        var updated = f(previous)
+        // Names are local metadata, not a second connection identity. Link imports
+        // and editor saves must not duplicate a renamed proxy or lose its name.
+        var servers: [ProxyServerSettings] = []
+        for server in updated.servers {
+            if let index = servers.firstIndex(where: { $0.hasSameConnection(as: server) }) {
+                if let name = server.displayName { servers[index] = servers[index].withUpdatedDisplayName(name) }
+            } else {
+                servers.append(server)
+            }
+        }
+        updated.servers = servers
+        if let active = updated.activeServer, let canonical = servers.first(where: { $0.hasSameConnection(as: active) }) {
+            updated.activeServer = canonical
+        }
         hasChanges = previous != updated
         return PreferencesEntry(updated)
     })

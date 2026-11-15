@@ -190,10 +190,11 @@ public class ContactsController: ViewController {
             if let strongSelf = self {
                 let previousTheme = strongSelf.presentationData.theme
                 let previousStrings = strongSelf.presentationData.strings
+                let previousDateTimeFormat = strongSelf.presentationData.dateTimeFormat
                 
                 strongSelf.presentationData = presentationData
                 
-                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings {
+                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousDateTimeFormat != presentationData.dateTimeFormat {
                     strongSelf.updateThemeAndStrings()
                 }
             }

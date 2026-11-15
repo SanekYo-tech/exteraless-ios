@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import SwiftSignalKit
 import MtProtoKit
 
@@ -67,14 +68,20 @@ public struct NetworkEngineResponse {
 
 /// A failed request. `error` carries the `rpc_error` code and text exactly as received,
 /// or an error synthesized by the engine (for example `500 TL_PARSING_ERROR`).
-public struct NetworkEngineRequestFailure: Error {
+public struct NetworkEngineRequestFailure: Error, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
     public let error: MTRpcError
     public let info: NetworkEngineResponseInfo
+    public let logContext: MTRequestLogContext
     
-    public init(error: MTRpcError, info: NetworkEngineResponseInfo) {
+    public init(error: MTRpcError, info: NetworkEngineResponseInfo, logContext: MTRequestLogContext = .redactedUnattributed()) {
         self.error = error
         self.info = info
+        self.logContext = logContext
     }
+
+    public var description: String { logContext.errorDescription(code: error.errorCode, text: error.errorDescription) }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: ["error": description, "info": info] as [String: Any]) }
 }
 
 /// One RPC call. Built by TelegramCore and executed by a `NetworkEngineRequestService`.
@@ -85,6 +92,10 @@ public final class NetworkEngineRequest {
     public let metadata: WrappedRequestMetadata
     /// Short description used for logging.
     public let shortMetadata: WrappedRequestShortMetadata
+    /// Immutable logging-only context. Exact constructor/name recognition cannot
+    /// be downgraded by supplied metadata, logging settings or a retry.
+    public let logContext: MTRequestLogContext
+    public var logShortDescription: String { logContext.metadataDescription(shortMetadata) }
     /// Parses the body of `rpc_result` (after gzip unwrapping). A nil result must complete the
     /// request with `500 TL_PARSING_ERROR` and clear the auth key's `apiInitializationHash`.
     public let parse: (Data) -> Any?
@@ -107,6 +118,7 @@ public final class NetworkEngineRequest {
         payload: Data,
         metadata: WrappedRequestMetadata,
         shortMetadata: WrappedRequestShortMetadata,
+        logContext: MTRequestLogContext? = nil,
         parse: @escaping (Data) -> Any?,
         options: NetworkEngineRequestOptions,
         shouldContinueAfterError: @escaping (NetworkEngineErrorContext) -> Bool,
@@ -118,6 +130,8 @@ public final class NetworkEngineRequest {
         self.payload = payload
         self.metadata = metadata
         self.shortMetadata = shortMetadata
+        let inferred = MTRequestLogContext.context(payload: payload, methodName: shortMetadata.functionName)
+        self.logContext = inferred.merging(logContext ?? inferred)
         self.parse = parse
         self.options = options
         self.shouldContinueAfterErrorImpl = shouldContinueAfterError
@@ -140,6 +154,7 @@ public final class NetworkEngineRequest {
             payload: payload,
             metadata: WrappedRequestMetadata(metadata: name, tag: nil),
             shortMetadata: WrappedRequestShortMetadata(shortMetadata: name),
+            logContext: .context(payload: payload, methodName: name),
             parse: parse,
             options: NetworkEngineRequestOptions(),
             shouldContinueAfterError: shouldContinueAfterError,
@@ -155,17 +170,37 @@ public final class NetworkEngineRequest {
     public func shouldContinueAfterError(_ context: NetworkEngineErrorContext) -> Bool {
         let result = self.shouldContinueAfterErrorImpl(context)
         if let telemetry = self.telemetry {
-            telemetry.errorHandled(request: self, context: context, retried: result)
+            // Telemetry is another logging sink; the retry policy above gets raw text.
+            let loggedContext = self.logContext.containsCredentials ? NetworkEngineErrorContext(
+                floodWaitSeconds: context.floodWaitSeconds,
+                floodWaitErrorText: context.floodWaitErrorText.map { _ in self.logContext.redactedErrorCategory },
+                internalServerErrorCount: context.internalServerErrorCount
+            ) : context
+            telemetry.errorHandled(request: self, context: loggedContext, retried: result)
         }
         return result
     }
     
     /// Called by the engine exactly once, unless the request is cancelled first.
     public func completed(_ result: Result<NetworkEngineResponse, NetworkEngineRequestFailure>) {
+        let result = self.classifiedCompletion(result)
+        if case let .failure(failure) = result, ClientSettings.shared.bool("tools.showRPCError") {
+            ToolsRPCFailureBuffer.shared.record(method: self.logContext.containsCredentials ? nil : self.shortMetadata.functionName,
+                code: failure.error.errorCode)
+        }
         if let telemetry = self.telemetry, let info = self.telemetryInfo {
-            telemetry.completed(request: self, info: info, result: result)
+            let logged: Result<NetworkEngineResponse, NetworkEngineRequestFailure>
+            if case let .failure(failure) = result, self.logContext.containsCredentials {
+                logged = .failure(NetworkEngineRequestFailure(error: MTRpcError(errorCode: failure.error.errorCode, errorDescription: self.logContext.redactedErrorCategory), info: failure.info, logContext: self.logContext))
+            } else { logged = result }
+            telemetry.completed(request: self, info: info, result: logged)
         }
         self.completedImpl(result)
+    }
+
+    private func classifiedCompletion(_ result: Result<NetworkEngineResponse, NetworkEngineRequestFailure>) -> Result<NetworkEngineResponse, NetworkEngineRequestFailure> {
+        guard case let .failure(failure) = result else { return result }
+        return .failure(NetworkEngineRequestFailure(error: failure.error, info: failure.info, logContext: self.logContext))
     }
     
     deinit {

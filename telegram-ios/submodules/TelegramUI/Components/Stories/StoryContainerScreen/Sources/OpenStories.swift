@@ -8,6 +8,7 @@ import AvatarNode
 
 public extension StoryContainerScreen {
     static func openArchivedStories(context: AccountContext, parentController: ViewController, avatarNode: AvatarNode, sharedProgressDisposable: MetaDisposable?) {
+        guard exteralessDialogStoriesEnabled() else { return }
         let storyContent = StoryContentContextImpl(context: context, isHidden: true, focusedPeerId: nil, singlePeer: false)
         let signal = storyContent.state
         |> take(1)
@@ -24,6 +25,7 @@ public extension StoryContainerScreen {
         }
         |> deliverOnMainQueue
         |> map { [weak parentController, weak avatarNode] _ -> Void in
+            guard exteralessDialogStoriesEnabled() else { return }
             var transitionIn: StoryContainerScreen.TransitionIn?
             if let avatarNode {
                 transitionIn = StoryContainerScreen.TransitionIn(
@@ -173,6 +175,7 @@ public extension StoryContainerScreen {
         setProgress: @escaping (Signal<Never, NoError>) -> Void,
         completion: @escaping (StoryContainerScreen) -> Void = { _ in }
     ) {
+        guard exteralessDialogStoriesEnabled() else { return }
         let storyContent = StoryContentContextImpl(context: context, isHidden: isHidden, focusedPeerId: peerId, focusedStoryId: focusOnId, singlePeer: singlePeer, fixedOrder: initialOrder)
         let signal = storyContent.state
         |> take(1)
@@ -196,6 +199,7 @@ public extension StoryContainerScreen {
         }
         |> deliverOnMainQueue
         |> map { [weak parentController] state -> Void in
+            guard exteralessDialogStoriesEnabled() else { return }
             if state.slice == nil {
                 return
             }

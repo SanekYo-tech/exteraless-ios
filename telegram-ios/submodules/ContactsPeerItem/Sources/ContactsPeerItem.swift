@@ -946,6 +946,8 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                 titleAttributedString = NSAttributedString(string: title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
             case let .peer(peer, chatPeer):
                 if let peer = peer {
+                    let identityPeer = exteralessIdentityPresentation(account: item.context.account, peer: peer)
+                    let identityDisplayOrder: PresentationPersonNameOrder = identityPeer.localNameOrder.map { $0.rawValue == 0 ? .lastFirst : .firstLast } ?? item.displayOrder
                     let textColor: UIColor
                     if case .secretChat = chatPeer {
                         textColor = item.presentationData.theme.chatList.secretTitleColor
@@ -963,9 +965,11 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                             titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_Replies, font: titleBoldFont, textColor: textColor)
                         } else if peer.id.isAnonymousSavedMessages {
                             titleAttributedString = NSAttributedString(string: item.presentationData.strings.ChatList_AuthorHidden, font: titleBoldFont, textColor: textColor)
+                        } else if let name = identityPeer.localAlias {
+                            titleAttributedString = NSAttributedString(string: name, font: titleBoldFont, textColor: textColor)
                         } else if let firstName = user.firstName, let lastName = user.lastName, !firstName.isEmpty, !lastName.isEmpty {
                             let string = NSMutableAttributedString()
-                            switch item.displayOrder {
+                            switch identityDisplayOrder {
                             case .firstLast:
                                 string.append(NSAttributedString(string: firstName, font: item.sortOrder == .firstLast ? titleBoldFont : titleFont, textColor: textColor))
                                 string.append(NSAttributedString(string: " ", font: titleFont, textColor: textColor))
@@ -984,12 +988,15 @@ public class ContactsPeerItemNode: ItemListRevealOptionsItemNode {
                             titleAttributedString = NSAttributedString(string: item.presentationData.strings.User_DeletedAccount, font: titleBoldFont, textColor: textColor)
                         }
                     } else if case let .legacyGroup(group) = peer {
-                        titleAttributedString = NSAttributedString(string: group.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
+                        titleAttributedString = NSAttributedString(string: identityPeer.localAlias ?? group.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
                     } else if case let .channel(channel) = peer {
-                        titleAttributedString = NSAttributedString(string: channel.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
+                        titleAttributedString = NSAttributedString(string: identityPeer.localAlias ?? channel.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
                     } else if case let .community(community) = peer {
-                        titleAttributedString = NSAttributedString(string: community.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
+                        titleAttributedString = NSAttributedString(string: identityPeer.localAlias ?? community.title, font: titleBoldFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor)
                     }
+                    // Apply the existing UTF-16 attributed projector AFTER the
+                    // local alias/order and native first/last font composition.
+                    titleAttributedString = titleAttributedString.map { exteralessZalgoDisplayText($0) }
                     
                     switch item.status {
                     case .none:

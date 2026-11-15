@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -2391,6 +2392,7 @@ public class CameraScreenImpl: ViewController, CameraScreen {
         private let context: AccountContext
         private let cameraImpl: CameraImpl
         fileprivate var camera: CameraProtocol?
+        private let toolsZoomControl = ExteralessCameraZoomControl(frame: .zero)
         private let updateState: ActionSlot<CameraState>
         private let toggleCameraPositionAction: ActionSlot<Void>
         fileprivate let dismissCollageSelection: ActionSlot<Void>
@@ -3007,6 +3009,7 @@ public class CameraScreenImpl: ViewController, CameraScreen {
             self.captureStartTimestamp = CACurrentMediaTime()
             
             self.camera = camera
+            self.toolsZoomControl.bind(camera)
             
             if isNew && self.hasAppeared {
                 self.maybePresentTooltips()
@@ -3887,6 +3890,19 @@ public class CameraScreenImpl: ViewController, CameraScreen {
                 let componentFrame = CGRect(origin: .zero, size: componentSize)
                 transition.setFrame(view: componentView, frame: componentFrame)
             }
+
+            if self.toolsZoomControl.superview == nil {
+                self.containerView.insertSubview(self.toolsZoomControl, belowSubview: self.transitionDimView)
+            }
+            let toolsZoomWidth = min(320.0, max(0.0, layout.size.width - layout.safeInsets.left - layout.safeInsets.right - 32.0))
+            transition.setFrame(view: self.toolsZoomControl, frame: CGRect(x: (layout.size.width - toolsZoomWidth) / 2.0,
+                y: max(topInset + 64.0, layout.size.height - max(bottomInset, layout.intrinsicInsets.bottom) - 202.0), width: toolsZoomWidth, height: 88.0))
+            let toolsZoomAccess: Bool
+            if case .allowed = self.cameraAuthorizationStatus { toolsZoomAccess = true } else { toolsZoomAccess = false }
+            let toolsZoomHolding: Bool
+            if case .holding = self.cameraState.recording { toolsZoomHolding = true } else { toolsZoomHolding = false }
+            self.toolsZoomControl.visibilityAllowed = toolsZoomAccess && !toolsZoomHolding && self.cameraIsActive && !self.hasGallery
+                && !self.cameraState.isCollageEnabled && ClientSettings.shared.bool("tools.zoomSlider", default: true)
 
             transition.setPosition(view: self.backgroundView, position: CGPoint(x: layout.size.width / 2.0, y: layout.size.height / 2.0))
             transition.setBounds(view: self.backgroundView, bounds: CGRect(origin: .zero, size: layout.size))

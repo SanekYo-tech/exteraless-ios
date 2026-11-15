@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 internal import TelegramApi
 import Postbox
 import SwiftSignalKit
@@ -22,7 +23,8 @@ private final class AccountPresenceManagerImpl {
         self.queue = queue
         self.network = network
         
-        self.shouldKeepOnlinePresenceDisposable = (shouldKeepOnlinePresence
+        self.shouldKeepOnlinePresenceDisposable = (combineLatest(shouldKeepOnlinePresence, exteralessPrivacySettingsChanges())
+        |> map { requested, _ in PrivacyPolicy.current.reportOnline(requested: requested) }
         |> distinctUntilChanged
         |> deliverOn(self.queue)).start(next: { [weak self] value in
             guard let `self` = self else {
@@ -57,7 +59,7 @@ private final class AccountPresenceManagerImpl {
         } else {
             self.onlineTimer?.invalidate()
             self.onlineTimer = nil
-            request = self.network.request(Api.functions.account.updateStatus(offline: .boolTrue))
+            request = exteralessExplicitReadRequest(network: self.network, Api.functions.account.updateStatus(offline: .boolTrue))
         }
         self.isPerformingUpdate.set(true)
         self.currentRequestDisposable.set((request

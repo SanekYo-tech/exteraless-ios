@@ -253,8 +253,7 @@ func managedReadReactionOrPollVoteActions(postbox: Postbox, network: Network, st
 
 private func synchronizeConsumeMessageContents(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
-        return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
-            |> map(Optional.init)
+        return exteralessReadMessageContents(network: network, peerId: id.peerId, ids: [id.id])
             |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
                 return .single(nil)
             }
@@ -288,7 +287,7 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
             }
     } else if id.peerId.namespace == Namespaces.Peer.CloudChannel {
         if let peer = transaction.getPeer(id.peerId), let inputChannel = apiInputChannel(peer) {
-            return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
+            return exteralessReadChannelMessageContents(network: network, peerId: id.peerId, channel: inputChannel, ids: [id.id])
                 |> `catch` { _ -> Signal<Api.Bool, NoError> in
                     return .single(.boolFalse)
                 } |> mapToSignal { result -> Signal<Void, NoError> in
@@ -322,8 +321,7 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, postbox
 
 private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, id: MessageId) -> Signal<Void, NoError> {
     if id.peerId.namespace == Namespaces.Peer.CloudUser || id.peerId.namespace == Namespaces.Peer.CloudGroup {
-        return network.request(Api.functions.messages.readMessageContents(id: [id.id]))
-        |> map(Optional.init)
+        return exteralessReadMessageContents(network: network, peerId: id.peerId, ids: [id.id])
         |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
             return .single(nil)
         }
@@ -365,7 +363,7 @@ private func synchronizeReadMessageReactionsOrPollVotes(transaction: Transaction
         }
     } else if id.peerId.namespace == Namespaces.Peer.CloudChannel {
         if let peer = transaction.getPeer(id.peerId), let inputChannel = apiInputChannel(peer) {
-            return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: [id.id]))
+            return exteralessReadChannelMessageContents(network: network, peerId: id.peerId, channel: inputChannel, ids: [id.id])
             |> `catch` { _ -> Signal<Api.Bool, NoError> in
                 return .single(.boolFalse)
             }

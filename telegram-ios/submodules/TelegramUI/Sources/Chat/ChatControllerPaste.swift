@@ -38,10 +38,7 @@ extension ChatControllerImpl {
                                 }
                                 present(controller, mediaPickerContext)
                             }, updateMediaPickerContext: { _ in }, completion: { [weak self] fromGallery, signals, silentPosting, scheduleTime, parameters, getAnimatedTransitionSource, completion in
-                                if !inputText.string.isEmpty {
-                                    self?.clearInputText()
-                                }
-                                self?.enqueueMediaMessages(fromGallery: fromGallery, signals: signals, silentPosting: silentPosting, scheduleTime: scheduleTime, parameters: parameters, getAnimatedTransitionSource: getAnimatedTransitionSource, completion: completion)
+                                self?.enqueueMediaMessages(fromGallery: fromGallery, signals: signals, silentPosting: silentPosting, scheduleTime: scheduleTime, parameters: parameters, getAnimatedTransitionSource: getAnimatedTransitionSource, clearInput: !inputText.string.isEmpty, completion: completion)
                             })
                         }
                     },
@@ -55,14 +52,15 @@ extension ChatControllerImpl {
     }
     
     func enqueueGifData(_ data: Data) {
+        let capturedOperation = self.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
+        let replyMessageSubject = self.presentationInterfaceState.interfaceState.replyMessageSubject
         self.enqueueMediaMessageDisposable.set((legacyEnqueueGifMessage(account: self.context.account, data: data) |> deliverOnMainQueue).startStrict(next: { [weak self] message in
             if let strongSelf = self {
                 strongSelf.presentPaidMessageAlertIfNeeded(completion: { [weak self] postpone in
                     guard let strongSelf = self else {
                         return
                     }
-                    let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
-                    strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
+                    let operation = strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
                         if let strongSelf = self {
                             strongSelf.chatDisplayNode.collapseInput()
                             
@@ -70,22 +68,23 @@ extension ChatControllerImpl {
                                 $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil) }
                             })
                         }
-                    }, nil)
-                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) })
+                    }, nil, operation: capturedOperation)
+                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) }, postpone: postpone, operation: operation)
                 })
             }
         }))
     }
     
     func enqueueVideoData(_ data: Data) {
+        let capturedOperation = self.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
+        let replyMessageSubject = self.presentationInterfaceState.interfaceState.replyMessageSubject
         self.enqueueMediaMessageDisposable.set((legacyEnqueueGifMessage(account: self.context.account, data: data) |> deliverOnMainQueue).startStrict(next: { [weak self] message in
             if let strongSelf = self {
                 strongSelf.presentPaidMessageAlertIfNeeded(completion: { [weak self] postpone in
                     guard let strongSelf = self else {
                         return
                     }
-                    let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
-                    strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
+                    let operation = strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
                         if let strongSelf = self {
                             strongSelf.chatDisplayNode.collapseInput()
                             
@@ -93,14 +92,16 @@ extension ChatControllerImpl {
                                 $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil) }
                             })
                         }
-                    }, nil)
-                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) })
+                    }, nil, operation: capturedOperation)
+                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) }, postpone: postpone, operation: operation)
                 })
             }
         }))
     }
     
     func enqueueStickerImage(_ image: UIImage, isMemoji: Bool) {
+        let capturedOperation = self.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
+        let replyMessageSubject = self.presentationInterfaceState.interfaceState.replyMessageSubject
         let size = image.size.aspectFitted(CGSize(width: 512.0, height: 512.0))
         self.enqueueMediaMessageDisposable.set((convertToWebP(image: image, targetSize: size, targetBoundingSize: size, quality: 0.9) |> deliverOnMainQueue).startStrict(next: { [weak self] data in
             if let strongSelf = self, !data.isEmpty {
@@ -119,8 +120,7 @@ extension ChatControllerImpl {
                     guard let strongSelf = self else {
                         return
                     }
-                    let replyMessageSubject = strongSelf.presentationInterfaceState.interfaceState.replyMessageSubject
-                    strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
+                    let operation = strongSelf.chatDisplayNode.setupSendActionOnViewUpdate({
                         if let strongSelf = self {
                             strongSelf.chatDisplayNode.collapseInput()
                             
@@ -128,22 +128,23 @@ extension ChatControllerImpl {
                                 $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil) }
                             })
                         }
-                    }, nil)
-                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) }, postpone: postpone)
+                    }, nil, operation: capturedOperation)
+                    strongSelf.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) }, postpone: postpone, operation: operation)
                 })
             }
         }))
     }
     
     func enqueueStickerFile(_ file: TelegramMediaFile) {
+        let capturedOperation = self.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
+        let replyMessageSubject = self.presentationInterfaceState.interfaceState.replyMessageSubject
         let message = EnqueueMessage.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: file), threadId: self.chatLocation.threadId, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])
         
         self.presentPaidMessageAlertIfNeeded(completion: { [weak self] postpone in
             guard let self else {
                 return
             }
-            let replyMessageSubject = self.presentationInterfaceState.interfaceState.replyMessageSubject
-            self.chatDisplayNode.setupSendActionOnViewUpdate({ [weak self] in
+            let operation = self.chatDisplayNode.setupSendActionOnViewUpdate({ [weak self] in
                 if let strongSelf = self {
                     strongSelf.chatDisplayNode.collapseInput()
                     
@@ -151,8 +152,8 @@ extension ChatControllerImpl {
                         $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil) }
                     })
                 }
-            }, nil)
-            self.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) })
+            }, nil, operation: capturedOperation)
+            self.sendMessages([message].map { $0.withUpdatedReplyToMessageId(replyMessageSubject?.subjectModel) }, postpone: postpone, operation: operation)
             
             Queue.mainQueue().after(3.0) {
                 if let message = self.chatDisplayNode.historyNode.lastVisbleMesssage(), let file = message.media.first(where: { $0 is TelegramMediaFile }) as? TelegramMediaFile, file.isSticker {

@@ -80,7 +80,7 @@ func textInputAccessoryPanel(
                 interfaceInteraction?.setupEditMessage(nil, { _ in })
             }
         )))
-    } else if let urlPreview = chatPresentationInterfaceState.urlPreview, !chatPresentationInterfaceState.interfaceState.composeDisableUrlPreviews.contains(urlPreview.url) {
+    } else if let urlPreview = chatPresentationInterfaceState.urlPreview, !exteralessComposeLinkPreviewsDisabled(chatPresentationInterfaceState, url: urlPreview.url) {
         var previousTapTimestamp: Double?
         return AnyComponentWithIdentity(id: "linkPreview", component: AnyComponent(ChatInputMessageAccessoryPanel(
             context: context,
@@ -290,7 +290,7 @@ func accessoryPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceS
     if let editMessage = chatPresentationInterfaceState.interfaceState.editMessage, chatPresentationInterfaceState.interfaceState.postSuggestionState == nil {
         let _ = editMessage
         return nil
-    } else if let urlPreview = chatPresentationInterfaceState.urlPreview, !chatPresentationInterfaceState.interfaceState.composeDisableUrlPreviews.contains(urlPreview.url) {
+    } else if let urlPreview = chatPresentationInterfaceState.urlPreview, !exteralessComposeLinkPreviewsDisabled(chatPresentationInterfaceState, url: urlPreview.url) {
         if let previewPanelNode = currentPanel as? WebpagePreviewAccessoryPanelNode {
             previewPanelNode.interfaceInteraction = interfaceInteraction
             previewPanelNode.replaceWebpage(url: urlPreview.url, webpage: urlPreview.webPage)

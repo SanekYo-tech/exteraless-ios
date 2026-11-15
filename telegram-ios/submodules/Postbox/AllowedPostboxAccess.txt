@@ -223,7 +223,6 @@ submodules/TelegramUI/Sources/HorizontalStickerGridItem.swift
 submodules/TelegramUI/Sources/InChatPrefetchManager.swift
 submodules/TelegramUI/Sources/LargeEmojiAlertScreen.swift
 submodules/TelegramUI/Sources/NotificationContentContext.swift
-submodules/TelegramUI/Sources/OpenChatMessage.swift
 submodules/TelegramUI/Sources/OpenResolvedUrl.swift
 submodules/TelegramUI/Sources/OverlayAudioPlayerController.swift
 submodules/TelegramUI/Sources/OverlayInstantVideoNode.swift

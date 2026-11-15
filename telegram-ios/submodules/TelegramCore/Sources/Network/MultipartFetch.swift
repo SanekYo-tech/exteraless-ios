@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Postbox
 import SwiftSignalKit
 internal import TelegramApi
@@ -572,7 +573,13 @@ private final class MultipartFetchManager {
             }
         }
         
-        if isStory {
+        let toolsDownloadLevel = ClientSettings.shared.integer("tools.downloadSpeedBoost")
+        let toolsBudget = ToolsDownloadPolicy.budget(level: toolsDownloadLevel, size: size, isStory: isStory,
+            encrypted: encryptionKey != nil, native: ToolsDownloadBudget(partBytes: 512 * 1024, parallelParts: 8))
+        if !isStory, encryptionKey == nil, let size, size > 512 * 1024, toolsDownloadLevel > 0 {
+            self.defaultPartSize = toolsBudget.partBytes
+            self.parallelParts = toolsBudget.parallelParts
+        } else if isStory {
             self.defaultPartSize = 512 * 1024
             if let size = size, size > self.defaultPartSize {
                 self.parallelParts = 4

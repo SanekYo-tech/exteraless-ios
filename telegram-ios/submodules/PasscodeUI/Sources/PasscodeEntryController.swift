@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import Display
+import ExteralessCore
 import AsyncDisplayKit
 import SwiftSignalKit
 import TelegramCore
@@ -64,6 +65,7 @@ public final class PasscodeEntryController: ViewController {
     private var authenticationLifecycle: PasscodeEntryLifecycle
     private var authenticationContext: LAContext?
     private var checkingCode = false
+    private var extrasAttempt: HiddenAccountAttempt?
     private var cooldownRequestId: UInt64 = 0
     private let authenticationDismissal = PasscodeAuthenticationDismissal()
     private var removingController = false
@@ -113,6 +115,7 @@ public final class PasscodeEntryController: ViewController {
                 return
             }
             if strongSelf.authenticationLifecycle.updateApplicationInForeground(value) {
+                strongSelf.cancelExtrasAttempt()
                 strongSelf.skipNextBiometricsRequest = false
                 strongSelf.authenticationContext?.invalidate()
                 strongSelf.authenticationContext = nil
@@ -140,6 +143,9 @@ public final class PasscodeEntryController: ViewController {
     }
     
     deinit {
+        if let extrasAttempt = self.extrasAttempt {
+            ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt)
+        }
         self.presentationDataDisposable?.dispose()
         self.biometricsDisposable.dispose()
         self.biometricAuthenticationDisposable.dispose()
@@ -229,8 +235,25 @@ public final class PasscodeEntryController: ViewController {
         }
     }
 
+    private func cancelExtrasAttempt() {
+        if let extrasAttempt = self.extrasAttempt {
+            ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt)
+            self.extrasAttempt = nil
+        }
+    }
+
     private func verifyCode(_ code: String) {
         guard !self.checkingCode, self.authenticationLifecycle.canAuthenticate else { return }
+        let routeExtras = self.applicationBindings.isMainApp && self.authenticationScope == .appUnlock
+            && self.authenticated == nil && self.completed == nil && self.arguments.displayAppLock
+            && ExteralessHiddenAccounts.shared.requiresUnlockRouting
+        let extrasAttempt = routeExtras ? ExteralessHiddenAccounts.shared.beginAppUnlockAttempt(explicitPasscodeEntry: true) : nil
+        if routeExtras && extrasAttempt == nil {
+            self.controllerNode.resetInput()
+            self.controllerNode.updateCredentialError(true)
+            return
+        }
+        self.extrasAttempt = extrasAttempt
         self.checkingCode = true
         self.cooldownRequestId &+= 1
         self.controllerNode.updateCredentialError(false)
@@ -240,7 +263,8 @@ public final class PasscodeEntryController: ViewController {
         let scope = self.authenticationScope
         let lifetime = self.authenticationLifetime
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result: Result<PasscodeSession, Error> = Result {
+            var extrasAuthorization: HiddenAccountAuthorization?
+            let result: Result<PasscodeSession?, Error> = Result {
                 switch challenge {
                 case let .numericalPassword(value):
                     _ = try PasscodeCredentialStore.shared.migrateLegacy(code: value, kind: value.count == 6 ? .digits6 : .digits4)
@@ -249,17 +273,57 @@ public final class PasscodeEntryController: ViewController {
                 case .none, .secured: break
                 }
                 let reference = passcodeCredentialReference(from: challenge)
+                if let extrasAttempt {
+                    return try PasscodeCredentialStore.shared.verifyAppUnlock(code, reference: reference) {
+                        extrasAuthorization = ExteralessHiddenAccounts.shared.authorizeAlternativeAppUnlock(attempt: extrasAttempt, code: code)
+                        return extrasAuthorization != nil
+                    }
+                }
                 return try PasscodeCredentialStore.shared.verify(code, reference: reference, scope: scope, lifetime: lifetime)
             }
+            if let extrasAttempt, case .success(.some(_)) = result {
+                extrasAuthorization = ExteralessHiddenAccounts.shared.authorizeOrdinaryAppUnlock(attempt: extrasAttempt)
+            }
+            let finalExtrasAuthorization = extrasAuthorization
             DispatchQueue.main.async {
                 guard let self, self.authenticationLifecycle.acceptsResult(generation: generation) else {
-                    if case let .success(session) = result { session.invalidate() }
+                    if case let .success(session) = result { session?.invalidate() }
+                    if let extrasAttempt { ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt) }
                     return
                 }
                 self.checkingCode = false
                 self.controllerNode.isUserInteractionEnabled = true
+                if let extrasAttempt, case let .success(session) = result {
+                    session?.invalidate()
+                    guard self.extrasAttempt === extrasAttempt, let authorization = finalExtrasAuthorization else {
+                        ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt)
+                        if self.extrasAttempt === extrasAttempt { self.extrasAttempt = nil }
+                        self.controllerNode.resetInput()
+                        self.controllerNode.updateCredentialError(true)
+                        return
+                    }
+                    self.checkingCode = true
+                    self.controllerNode.isUserInteractionEnabled = false
+                    ExteralessHiddenAccountUnlock.complete(authorization) { [weak self] success in
+                        guard let self, self.authenticationLifecycle.acceptsResult(generation: generation), self.extrasAttempt === extrasAttempt else {
+                            ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt)
+                            return
+                        }
+                        self.checkingCode = false
+                        self.controllerNode.isUserInteractionEnabled = true
+                        self.extrasAttempt = nil
+                        if success {
+                            self.appLockContext.unlock()
+                        } else {
+                            ExteralessHiddenAccounts.shared.policy.cancel(extrasAttempt)
+                            self.controllerNode.resetInput()
+                            self.controllerNode.animateError()
+                        }
+                    }
+                    return
+                }
                 switch result {
-                case let .success(session):
+                case let .success(.some(session)):
                     if self.authenticated != nil {
                         self.finishAuthentication(.success(session))
                     } else {
@@ -274,7 +338,12 @@ public final class PasscodeEntryController: ViewController {
                             isMainApp ? settings.withUpdatedBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState) : settings.withUpdatedShareBiometricsDomainState(LocalAuth.evaluatedPolicyDomainState)
                         }).start()
                     }
+                case .success(nil):
+                    self.cancelExtrasAttempt()
+                    self.controllerNode.resetInput()
+                    self.controllerNode.updateCredentialError(true)
                 case let .failure(error):
+                    self.cancelExtrasAttempt()
                     switch error as? PasscodeError ?? .unavailable {
                     case .invalidCode:
                         self.controllerNode.animateError()
@@ -384,7 +453,7 @@ public final class PasscodeEntryController: ViewController {
     }
     
     public func requestBiometrics(force: Bool = false) {
-        guard self.authenticationLifecycle.canAuthenticate else { return }
+        guard !self.checkingCode, self.authenticationLifecycle.canAuthenticate else { return }
         if self.authenticateBiometrics != nil {
             guard case .enabled = self.biometrics else { return }
             self.requestSecureBiometrics()
@@ -438,6 +507,42 @@ public final class PasscodeEntryController: ViewController {
             }
             
             if result {
+                if strongSelf.applicationBindings.isMainApp && strongSelf.authenticationScope == .appUnlock
+                    && strongSelf.authenticated == nil && strongSelf.completed == nil && strongSelf.arguments.displayAppLock
+                    && ExteralessHiddenAccounts.shared.requiresUnlockRouting {
+                    strongSelf.hasOngoingBiometricsRequest = false
+                    guard let attempt = ExteralessHiddenAccounts.shared.beginAppUnlockAttempt(explicitPasscodeEntry: false) else {
+                        strongSelf.controllerNode.resetInput()
+                        strongSelf.controllerNode.updateCredentialError(true)
+                        return
+                    }
+                    guard let authorization = ExteralessHiddenAccounts.shared.authorizeBiometricUnlock(attempt: attempt) else {
+                        ExteralessHiddenAccounts.shared.policy.cancel(attempt)
+                        strongSelf.controllerNode.resetInput()
+                        strongSelf.controllerNode.updateCredentialError(true)
+                        return
+                    }
+                    strongSelf.extrasAttempt = attempt
+                    strongSelf.checkingCode = true
+                    strongSelf.controllerNode.isUserInteractionEnabled = false
+                    ExteralessHiddenAccountUnlock.complete(authorization) { [weak self] success in
+                        guard let self, self.authenticationLifecycle.acceptsResult(generation: generation), self.extrasAttempt === attempt else {
+                            ExteralessHiddenAccounts.shared.policy.cancel(attempt)
+                            return
+                        }
+                        self.checkingCode = false
+                        self.controllerNode.isUserInteractionEnabled = true
+                        self.extrasAttempt = nil
+                        if success {
+                            self.appLockContext.unlock()
+                        } else {
+                            ExteralessHiddenAccounts.shared.policy.cancel(attempt)
+                            self.controllerNode.resetInput()
+                            self.controllerNode.animateError()
+                        }
+                    }
+                    return
+                }
                 strongSelf.controllerNode.animateSuccess()
                 
                 if strongSelf.completed != nil {
@@ -507,6 +612,7 @@ public final class PasscodeEntryController: ViewController {
     }
 
     private func stopAuthentication() {
+        self.cancelExtrasAttempt()
         self.authenticationLifecycle.dismiss()
         self.biometricPresentationFallback = nil
         self.authenticationContext?.invalidate()

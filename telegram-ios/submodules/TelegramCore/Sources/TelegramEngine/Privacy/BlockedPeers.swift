@@ -20,7 +20,7 @@ func _internal_requestUpdatePeerIsBlocked(account: Account, peerId: PeerId, isBl
                 }
                 |> mapToSignal { result -> Signal<Void, NoError> in
                     return account.postbox.transaction { transaction -> Void in
-                        if result != nil {
+                        if result == .boolTrue {
                             transaction.updatePeerCachedData(peerIds: Set([peerId]), update: { _, current in
                                 let previous: CachedUserData
                                 if let current = current as? CachedUserData {
@@ -30,6 +30,7 @@ func _internal_requestUpdatePeerIsBlocked(account: Account, peerId: PeerId, isBl
                                 }
                                 return previous.withUpdatedIsBlocked(isBlocked)
                             })
+                            exteralessFilterBlockedPeerChanged(transaction: transaction, account: account, peerId: peerId, blocked: isBlocked)
                         }
                     }
                 }

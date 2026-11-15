@@ -2,8 +2,8 @@ import Foundation
 import Postbox
 
 /// The server's copy of a message the account already stores, keeping what the server's copy does not carry:
-/// the outgoing live-location tag, the stored Incoming flag, a translation while the text and entities are
-/// unchanged, a resolved fact check over a pending one with the same hash, and unlocked paid media.
+/// the outgoing live-location tag, the stored Incoming flag, a translation while the server revision and
+/// plain/rich source are unchanged, a resolved fact check over a pending one with the same hash, and unlocked paid media.
 /// (`SeedConfiguration.mergeMessageAttributes`, which Postbox applies to every update, keeps the rest.)
 /// Used by edit updates and by feed pages, which refresh posts the account may already store.
 func mergedServerMessageUpdate(previous previousMessage: Message, updated message: StoreMessage) -> StoreMessage {
@@ -19,7 +19,7 @@ func mergedServerMessageUpdate(previous previousMessage: Message, updated messag
         updatedFlags.remove(.Incoming)
     }
 
-    if previousMessage.text == message.text {
+    if exteralessAITranslationSourceUnchanged(previous: previousMessage, updated: message) {
         let previousEntities = previousMessage.textEntitiesAttribute?.entities ?? []
         let updatedEntities = (message.attributes.first(where: { $0 is TextEntitiesMessageAttribute }) as? TextEntitiesMessageAttribute)?.entities ?? []
         if previousEntities == updatedEntities, let translation = previousMessage.attributes.first(where: { $0 is TranslationMessageAttribute }) as? TranslationMessageAttribute {
@@ -27,6 +27,11 @@ func mergedServerMessageUpdate(previous previousMessage: Message, updated messag
                 updatedAttributes.append(translation)
             }
         }
+    } else {
+        // Invalidate payloads, not the server's fresh summary eligibility.
+        // A rich-only edit can keep its preview while the server revision changes.
+        // The Seed rich-cache merge checks that same revision before restoring full content.
+        updatedAttributes = exteralessAIInvalidateDerivedAttributes(updatedAttributes)
     }
 
     if let previousFactCheckAttribute = previousMessage.attributes.first(where: { $0 is FactCheckMessageAttribute }) as? FactCheckMessageAttribute, let updatedFactCheckAttribute = message.attributes.first(where: { $0 is FactCheckMessageAttribute }) as? FactCheckMessageAttribute {

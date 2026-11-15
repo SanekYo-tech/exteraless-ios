@@ -82,7 +82,7 @@ func managedSynchronizePinnedChatsOperations(postbox: Postbox, network: Network,
                     if let entry = entry {
                         if let operation = entry.contents as? SynchronizePinnedChatsOperation {
                             if tag == OperationLogTags.SynchronizePinnedChats {
-                                return synchronizePinnedChats(transaction: transaction, postbox: postbox, network: network, accountPeerId: accountPeerId, stateManager: stateManager, groupId: PeerGroupId(rawValue: Int32(entry.peerId.id._internalGetInt64Value())), operation: operation)
+                                return synchronizePinnedChats(transaction: transaction, postbox: postbox, network: network, accountPeerId: accountPeerId, stateManager: stateManager, groupId: PeerGroupId(rawValue: Int32(entry.peerId.id._internalGetInt64Value())), operation: operation, operationIndex: entry.tagLocalIndex)
                             } else if tag == OperationLogTags.SynchronizePinnedSavedChats {
                                 return synchronizePinnedSavedChats(transaction: transaction, postbox: postbox, network: network, accountPeerId: accountPeerId, stateManager: stateManager, operation: operation)
                             }
@@ -112,7 +112,11 @@ func managedSynchronizePinnedChatsOperations(postbox: Postbox, network: Network,
     }
 }
 
-private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, network: Network, accountPeerId: PeerId, stateManager: AccountStateManager, groupId: PeerGroupId, operation: SynchronizePinnedChatsOperation) -> Signal<Void, NoError> {
+private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, network: Network, accountPeerId: PeerId, stateManager: AccountStateManager, groupId: PeerGroupId, operation: SynchronizePinnedChatsOperation, operationIndex: Int32) -> Signal<Void, NoError> {
+    // Keep one policy generation across the request and response: changing the
+    // toggle in flight must never send the local overflow as server pins.
+    let preserveAdditionalLocalPins = groupId == .root && exteralessDialogPolicy().unlimitedPinnedDialogs
+    let dialogPinSync = exteralessBeginDialogPinSync(transaction: transaction, accountPeerId: accountPeerId, groupId: groupId, operationIndex: operationIndex, enabled: preserveAdditionalLocalPins)
     let initialRemoteItemIds = operation.previousItemIds
     let initialRemoteItemIdsWithoutSecretChats = initialRemoteItemIds.filter { item in
         switch item {
@@ -132,6 +136,11 @@ private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, 
     |> retryRequestIfNotFrozen
     |> mapToSignal { dialogs -> Signal<Void, NoError> in
         guard let dialogs else {
+            if let dialogPinSync {
+                return postbox.transaction { transaction in
+                    exteralessCompleteDialogPinSync(transaction: transaction, accountPeerId: accountPeerId, sync: dialogPinSync, localOrder: dialogPinSync.localOrder, acknowledgedServerOrder: nil, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs)
+                }
+            }
             return .complete()
         }
         return postbox.transaction { transaction -> Signal<Void, NoError> in
@@ -221,8 +230,18 @@ private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, 
                 resultingItemIds = localItemIds.filter { !remotelyRemovedItemIds.contains($0) }
                 resultingItemIds.append(contentsOf: remoteItemIds.filter { !locallyRemovedFromRemoteItemIds.contains($0) && !resultingItemIds.contains($0) })
             }
+            let nativeResultingItemIds = resultingItemIds
             
             return postbox.transaction { transaction -> Signal<Void, NoError> in
+                let resultingItemIds: [PinnedItemId]
+                if let dialogPinSync {
+                    guard let resolved = exteralessResolveDialogPinSync(transaction: transaction, accountPeerId: accountPeerId, sync: dialogPinSync, remoteOrder: remoteItemIds, nativeResult: nativeResultingItemIds, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs) else {
+                        return .complete()
+                    }
+                    resultingItemIds = resolved
+                } else {
+                    resultingItemIds = nativeResultingItemIds
+                }
                 updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
                 
                 transaction.setPinnedItemIds(groupId: groupId, itemIds: resultingItemIds)
@@ -264,17 +283,26 @@ private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, 
                     }
                 }
                 
-                if remoteItemIds == resultingItemIds {
+                let serverItemIds = exteralessDialogServerPinOrder(transaction: transaction, accountPeerId: accountPeerId, groupId: groupId, itemIds: resultingItemIds)
+                if remoteItemIds == serverItemIds {
+                    if let dialogPinSync {
+                        exteralessCompleteDialogPinSync(transaction: transaction, accountPeerId: accountPeerId, sync: dialogPinSync, localOrder: resultingItemIds, acknowledgedServerOrder: remoteItemIds, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs, appliedInCurrentTransaction: true)
+                    }
                     return .complete()
                 } else {
                     var inputDialogPeers: [Api.InputDialogPeer] = []
-                    for itemId in resultingItemIds {
+                    var encodedItemIds: [PinnedItemId] = []
+                    for itemId in serverItemIds {
                         switch itemId {
                             case let .peer(peerId):
                                 if let peer = transaction.getPeer(peerId), let inputDialogPeer = apiInputDialogPeer(peer) {
                                     inputDialogPeers.append(inputDialogPeer)
+                                    encodedItemIds.append(itemId)
                                 }
                         }
+                    }
+                    if let dialogPinSync {
+                        guard exteralessRecordDialogPinRequest(transaction: transaction, sync: dialogPinSync, localOrder: resultingItemIds, serverOrder: encodedItemIds) != nil else { return .complete() }
                     }
                     
                     return network.request(Api.functions.messages.reorderPinnedDialogs(flags: 1 << 0, folderId: groupId.rawValue, order: inputDialogPeers))
@@ -283,6 +311,9 @@ private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, 
                     }
                     |> mapToSignal { result -> Signal<Void, NoError> in
                         return postbox.transaction { transaction -> Void in
+                            if let dialogPinSync {
+                                exteralessCompleteDialogPinSync(transaction: transaction, accountPeerId: accountPeerId, sync: dialogPinSync, localOrder: resultingItemIds, acknowledgedServerOrder: result == .boolTrue ? encodedItemIds : nil, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs)
+                            }
                         }
                     }
                 }

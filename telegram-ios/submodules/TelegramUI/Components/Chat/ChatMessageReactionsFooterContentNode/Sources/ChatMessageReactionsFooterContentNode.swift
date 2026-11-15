@@ -136,14 +136,14 @@ public final class MessageReactionButtonsNode: ASDisplayNode {
         }
         
         var totalReactionCount: Int = 0
-        for reaction in reactions.reactions {
+        for reaction in exteralessIdentityVisibleReactions(reactions.reactions) {
             totalReactionCount += Int(reaction.count)
         }
         
         let isTag = message.areReactionsTags(accountPeerId: context.account.peerId)
         
         var hadStars = false
-        var mappedReactions = reactions.reactions.map { reaction in
+        var mappedReactions = exteralessIdentityVisibleReactions(reactions.reactions).map { reaction in
             var centerAnimation: TelegramMediaFile?
             var animationFileId: Int64?
             

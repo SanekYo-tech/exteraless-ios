@@ -29,22 +29,27 @@ private enum ExternalShareItem {
     case text(String)
     case url(URL)
     case image(UIImage)
-    case file(URL, String, String)
+    case file(URL, String, String, (() -> Void)?)
 }
 
 private enum ExternalShareItemStatus {
     case progress
     case done(ExternalShareItem)
+    case failed
 }
 
 private enum ExternalShareResourceStatus {
     case progress
     case done(MediaResourceData)
+    case failed
 }
 
-private func collectExternalShareResource(postbox: Postbox, resourceReference: MediaResourceReference, statsCategory: MediaResourceStatsCategory) -> Signal<ExternalShareResourceStatus, NoError> {
+private func collectExternalShareResource(postbox: Postbox, resourceReference: MediaResourceReference, statsCategory: MediaResourceStatsCategory, failed: (() -> Void)? = nil) -> Signal<ExternalShareResourceStatus, NoError> {
     return Signal { subscriber in
-        let fetched = fetchedMediaResource(mediaBox: postbox.mediaBox, userLocation: .other, userContentType: .other, reference: resourceReference, statsCategory: statsCategory).start()
+        let disposed = Atomic(value: false)
+        let fetched = fetchedMediaResource(mediaBox: postbox.mediaBox, userLocation: .other, userContentType: .other, reference: resourceReference, statsCategory: statsCategory).start(error: { _ in
+            if !disposed.with({ $0 }), let failed { failed(); subscriber.putNext(.failed); subscriber.putCompletion() }
+        })
         let data = postbox.mediaBox.resourceData(resourceReference.resource, option: .complete(waitUntilFetchStatus: false)).start(next: { value in
             if value.complete {
                 subscriber.putNext(.done(value))
@@ -54,6 +59,7 @@ private func collectExternalShareResource(postbox: Postbox, resourceReference: M
         })
         
         return ActionDisposable {
+            _ = disposed.swap(true)
             fetched.dispose()
             data.dispose()
         }
@@ -63,6 +69,7 @@ private func collectExternalShareResource(postbox: Postbox, resourceReference: M
 private enum ExternalShareItemsState {
     case progress
     case done([ExternalShareItem])
+    case failed
 }
 
 private struct CollectableExternalShareItem {
@@ -73,7 +80,112 @@ private struct CollectableExternalShareItem {
     let mediaReference: AnyMediaReference?
 }
 
-private func collectExternalShareItems(strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, engine: TelegramEngine, postbox: Postbox, collectableItems: [CollectableExternalShareItem], takeOne: Bool = true) -> Signal<ExternalShareItemsState, NoError> {
+/// Only permitted flows use lazy activity items. UIKit receives the real bytes/URL at its
+/// item-request boundary, not an irrevocable array when a share sheet was first constructed.
+/// The reference also retains the source validator after the Share controller disappears.
+final class ExteralessShareActivityItem: NSObject, UIActivityItemSource {
+    private let value: Any
+    private let reference: ExteralessContentExportPermitReference
+    private let accountId: Int64
+
+    init(value: Any, reference: ExteralessContentExportPermitReference, accountId: Int64) {
+        self.value = value
+        self.reference = reference
+        self.accountId = accountId
+        super.init()
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        if self.value is UIImage { return UIImage() }
+        if let url = self.value as? URL {
+            if url.isFileURL {
+                return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("exteraless-share-placeholder").appendingPathExtension(url.pathExtension)
+            }
+            return URL(string: "about:blank")!
+        }
+        return "" as NSString
+    }
+
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        guard let permit = self.reference.permit, permit.allows(accountId: self.accountId, operation: .exportPreparation) else { return nil }
+        // A nil activity is UIKit preparing a preview, not an accepted export destination.
+        guard activityType != nil else { return self.activityViewControllerPlaceholderItem(activityViewController) }
+        var result: Any?
+        permit.perform(accountId: self.accountId, operation: .exportEffect) { result = self.value }
+        return result
+    }
+}
+
+private func exteralessShareTemporaryFile(name: String, permit: ExteralessContentExportPermit?, accountId: Int64, write: (URL) throws -> Void) -> (url: URL, cleanup: (() -> Void)?)? {
+    let directory = NSTemporaryDirectory() + "\(UUID())"
+    let url = URL(fileURLWithPath: directory + "/" + name.replacingOccurrences(of: "/", with: "_"))
+    let cleanup = { let _ = try? FileManager.default.removeItem(atPath: directory) }
+    var written = false
+    func prepare() {
+        // Registration and write share the admission lock. Revocation cannot run cleanup
+        // first and then let a delayed resource callback recreate the exported file.
+        permit?.addOwnedCleanup { cleanup() }
+        let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: directory), withIntermediateDirectories: true, attributes: nil)
+        if let _ = try? write(url) { written = true }
+    }
+    if let permit {
+        guard permit.perform(accountId: accountId, operation: .exportPreparation, prepare) else { return nil }
+    } else { prepare() }
+    return written ? (url, permit == nil ? nil : cleanup) : nil
+}
+
+func exteralessShareAwaitActivity(appeared: Signal<Bool, NoError>, permit: ExteralessContentExportPermit, accountId: Int64, timeoutInterval: Double = 10, present: @escaping () -> Bool) -> Signal<ShareExternalState, NoError> {
+    return permit.guardSignal(accountId: accountId, operation: .exportPreparation, {
+        appeared |> filter { $0 } |> then(.single(false)) |> take(1)
+        |> timeout(timeoutInterval, queue: .mainQueue(), alternate: .single(false)) |> deliverOnMainQueue
+    }) |> mapToSignal { ready -> Signal<ShareExternalState, NoError> in
+        guard ready, permit.allows(accountId: accountId), present(), permit.allows(accountId: accountId) else {
+            permit.revoke()
+            return .complete()
+        }
+        return .single(.done)
+    }
+}
+
+/// The existing Core commit gate is a native transaction adapter, not an export grant.
+/// Its final beginCommit predicate consults the SAME inherited permit after hooks/media/
+/// authorization waits. Rejected/partial/empty results never become Share .done.
+func exteralessShareEnqueue(reference: ExteralessContentExportPermitReference, accountId: Int64, enqueue: @escaping (ExteralessTLEnqueueCommit) -> Signal<EnqueueMessagesResult, NoError>) -> Signal<[EngineMessage.Id?], ShareControllerError> {
+    return Signal { subscriber in
+        guard let permit = reference.permit, permit.allows(accountId: accountId) else {
+            reference.permit?.revoke()
+            subscriber.putError(.generic)
+            return EmptyDisposable
+        }
+        let native = MetaDisposable()
+        let revocation = MetaDisposable()
+        let commit = ExteralessTLEnqueueCommit(canCommit: {
+            reference.permit === permit && permit.allows(accountId: accountId)
+        }, cancelProvisional: { permit.revoke() })
+        // Bind before starting: a cached/synchronous source can reach completion immediately.
+        commit.bindCancellation { native.dispose() }
+        revocation.set(permit.onRevocation { commit.cancelSubscriber() })
+        func finish(_ result: EnqueueMessagesResult?) {
+            guard let deliver = commit.complete(track: { _ in }) else { return }
+            revocation.dispose()
+            guard deliver else { return }
+            guard let result, result.allEnqueued, permit.allows(accountId: accountId) else {
+                permit.revoke()
+                subscriber.putError(.generic)
+                return
+            }
+            subscriber.putNext(result.messageIds)
+            subscriber.putCompletion()
+        }
+        if commit.allowsContinuation() {
+            native.set((enqueue(commit) |> deliverOnMainQueue).start(next: { result in finish(result) }, completed: { finish(nil) }))
+        } else { finish(nil) }
+        return ActionDisposable { commit.cancelSubscriber(); revocation.dispose() }
+    }
+}
+
+private func collectExternalShareItems(strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, engine: TelegramEngine, postbox: Postbox, collectableItems: [CollectableExternalShareItem], takeOne: Bool = true, exportPermit: ExteralessContentExportPermit? = nil, exportAccountId: Int64 = 0) -> Signal<ExternalShareItemsState, NoError> {
+    guard exportPermit?.allows(accountId: exportAccountId, operation: .exportPreparation) ?? true else { return .complete() }
     var signals: [Signal<ExternalShareItemStatus, NoError>] = []
     let authorsPeerIds = collectableItems.compactMap { $0.author }
     let authorsPromise = Promise<[PeerId: String]>()
@@ -90,12 +202,15 @@ private func collectExternalShareItems(strings: PresentationStrings, dateTimeFor
     authorsPromise.set(peerTitles)
     for item in collectableItems {
         if let mediaReference = item.mediaReference, let file = mediaReference.media as? TelegramMediaFile {
-            signals.append(collectExternalShareResource(postbox: postbox, resourceReference: mediaReference.resourceReference(file.resource), statsCategory: statsCategoryForFileWithAttributes(file.attributes))
+            signals.append(collectExternalShareResource(postbox: postbox, resourceReference: mediaReference.resourceReference(file.resource), statsCategory: statsCategoryForFileWithAttributes(file.attributes), failed: exportPermit.map { permit in { permit.revoke() } })
                 |> mapToSignal { next -> Signal<ExternalShareItemStatus, NoError> in
                     switch next {
                         case .progress:
                             return .single(.progress)
+                        case .failed:
+                            return .single(.failed)
                         case let .done(data):
+                            guard exportPermit?.allows(accountId: exportAccountId, operation: .exportPreparation) ?? true else { return .complete() }
                             if file.isSticker, !file.isAnimatedSticker, let dimensions = file.dimensions {
                                 return chatMessageSticker(postbox: postbox, userLocation: .other, file: file, small: false, fetched: true, onlyFullSize: true)
                                 |> map { f -> ExternalShareItemStatus in
@@ -103,7 +218,8 @@ private func collectExternalShareItems(strings: PresentationStrings, dateTimeFor
                                     if let image = context?.generateImage() {
                                         return .done(.image(image))
                                     } else {
-                                        return .progress
+                                        exportPermit?.revoke()
+                                        return exportPermit == nil ? .progress : .failed
                                     }
                                 }
                             } else {
@@ -117,35 +233,38 @@ private func collectExternalShareItems(strings: PresentationStrings, dateTimeFor
                                 } else {
                                     fileName = "file"
                                 }
-                                let randomDirectory = UUID()
-                                let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
-                                let fileDirectory = NSTemporaryDirectory() + "\(randomDirectory)"
-                                let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: fileDirectory), withIntermediateDirectories: true, attributes: nil)
-                                let filePath = fileDirectory + "/\(safeFileName)"
-                                if let _ = try? FileManager.default.copyItem(at: URL(fileURLWithPath: data.path), to: URL(fileURLWithPath: filePath)) {
-                                    return .single(.done(.file(URL(fileURLWithPath: filePath), fileName, file.mimeType)))
+                                if let temporary = exteralessShareTemporaryFile(name: fileName, permit: exportPermit, accountId: exportAccountId, write: { url in
+                                    try FileManager.default.copyItem(at: URL(fileURLWithPath: data.path), to: url)
+                                }) {
+                                    return .single(.done(.file(temporary.url, fileName, file.mimeType, temporary.cleanup)))
                                 } else {
-                                    return .single(.progress)
+                                    exportPermit?.revoke()
+                                    return .single(exportPermit == nil ? .progress : .failed)
                                 }
                             }
                     }
             })
         } else if let mediaReference = item.mediaReference, let image = mediaReference.media as? TelegramMediaImage, let largest = largestImageRepresentation(image.representations) {
-            signals.append(collectExternalShareResource(postbox: postbox, resourceReference: mediaReference.resourceReference(largest.resource), statsCategory: .image)
+            signals.append(collectExternalShareResource(postbox: postbox, resourceReference: mediaReference.resourceReference(largest.resource), statsCategory: .image, failed: exportPermit.map { permit in { permit.revoke() } })
             |> map { next -> ExternalShareItemStatus in
                 switch next {
                     case .progress:
                         return .progress
+                    case .failed:
+                        return .failed
                     case let .done(data):
+                        guard exportPermit?.allows(accountId: exportAccountId, operation: .exportPreparation) ?? true else { return .progress }
                         guard let fileData = try? Data(contentsOf: URL(fileURLWithPath: data.path)) else {
-                            return .progress
+                            exportPermit?.revoke()
+                            return exportPermit == nil ? .progress : .failed
                         }
                         if let image = UIImage(data: fileData) {
                             return .done(.image(image))
                         } else {
+                            if let exportPermit { exportPermit.revoke(); return .failed }
                             #if DEBUG
                             if "".isEmpty {
-                                return .done(.file(URL(fileURLWithPath: data.path), "image.bin", "application/octet-stream"))
+                                return .done(.file(URL(fileURLWithPath: data.path), "image.bin", "application/octet-stream", nil))
                             }
                             #endif
                             return .progress
@@ -192,15 +311,11 @@ private func collectExternalShareItems(strings: PresentationStrings, dateTimeFor
             if let vCard = contactData.serializedVCard() {
                 let fullName = [contact.firstName, contact.lastName].filter { !$0.isEmpty }.joined(separator: " ")
                 let fileName = "\(fullName).vcf"
-                let randomDirectory = UUID()
-                let safeFileName = fileName.replacingOccurrences(of: "/", with: "_")
-                let fileDirectory = NSTemporaryDirectory() + "\(randomDirectory)"
-                let _ = try? FileManager.default.createDirectory(at: URL(fileURLWithPath: fileDirectory), withIntermediateDirectories: true, attributes: nil)
-                let filePath = fileDirectory + "/\(safeFileName)"
+                guard exportPermit?.allows(accountId: exportAccountId, operation: .exportPreparation) ?? true else { return .complete() }
                 let vCardData = vCard.data(using: .utf8)
-                if let _ = try? vCardData?.write(to: URL(fileURLWithPath: filePath)) {
-                    signals.append(.single(.done(.file(URL(fileURLWithPath: filePath), fileName, "text/x-vcard"))))
-                }
+                if let file = exteralessShareTemporaryFile(name: fileName, permit: exportPermit, accountId: exportAccountId, write: { url in try vCardData?.write(to: url) }) {
+                    signals.append(.single(.done(.file(file.url, fileName, "text/x-vcard", file.cleanup))))
+                } else if let exportPermit { exportPermit.revoke(); return .single(.failed) }
             }
         }
         if let url = item.url, let parsedUrl = URL(string: url) {
@@ -247,6 +362,8 @@ private func collectExternalShareItems(strings: PresentationStrings, dateTimeFor
                     return .progress
                 case let .done(item):
                     items.append(item)
+                case .failed:
+                    return .failed
             }
         }
         return .done(items)
@@ -318,6 +435,50 @@ public final class ShareControllerSwitchableAccount: Equatable {
 }
 
 public final class ShareController: ViewController {
+    override public func present(_ controller: ViewController, in context: PresentationContextType, with arguments: Any? = nil, blockInteraction: Bool = false, completion: @escaping () -> Void = {}) {
+        if let permit = self.exteralessExportPermit {
+            permit.presentWhenReady(controller, accountId: self.currentContext.accountId.int64, from: self) { [weak self] controller in
+                self?.presentOwnedReady(controller, in: context, with: arguments, blockInteraction: blockInteraction, completion: completion)
+            }
+        } else {
+            super.present(controller, in: context, with: arguments, blockInteraction: blockInteraction, completion: completion)
+        }
+    }
+
+    private func presentOwnedReady(_ controller: ViewController, in context: PresentationContextType, with arguments: Any?, blockInteraction: Bool, completion: @escaping () -> Void) {
+        super.present(controller, in: context, with: arguments, blockInteraction: blockInteraction, completion: completion)
+    }
+
+    private func exportAllowed(_ operation: ExteralessContentExportPermit.Operation = .exportEffect) -> Bool {
+        guard let permit = self.exteralessExportPermit else { return true }
+        var subject = self.subject
+        if let values = self.segmentedValues, self.isNodeLoaded { subject = values[self.controllerNode.selectedSegmentedIndex].subject }
+        let ids: Set<EngineMessage.Id>?
+        switch subject {
+        case let .messages(messages): ids = Set(messages.map(\.id))
+        case let .media(.message(message, _), _): ids = message.id.map { Set([$0]) }
+        default: ids = nil
+        }
+        let allowed = permit.allows(accountId: self.currentContext.accountId.int64, messageIds: ids, operation: operation)
+        if !allowed { permit.revoke() }
+        return allowed
+    }
+
+    var contentExportAccountId: Int64 { self.currentContext.accountId.int64 }
+
+    private func enqueueForShare(context: ShareControllerAppAccountContext, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], ShareControllerError> {
+        guard self.exteralessExportPermit != nil else {
+            return enqueueMessages(account: context.context.account, peerId: peerId, messages: messages) |> castError(ShareControllerError.self)
+        }
+        return exteralessShareEnqueue(reference: self.exteralessExportPermitReference, accountId: context.accountId.int64, enqueue: { commit in
+            enqueueMessagesWithAdmission(account: context.context.account, peerId: peerId, messages: messages, tlCommit: commit)
+        })
+    }
+
+    private func permittedSignal<T, E>(_ source: @autoclosure @escaping () -> Signal<T, E>, operation: ExteralessContentExportPermit.Operation = .exportEffect) -> Signal<T, E> {
+        guard let permit = self.exteralessExportPermit else { return source() }
+        return permit.guardSignal(accountId: self.currentContext.accountId.int64, operation: operation, source)
+    }
     private var controllerNode: ShareControllerNode {
         return self.displayNode as! ShareControllerNode
     }
@@ -469,7 +630,7 @@ public final class ShareController: ViewController {
                     self.actionIsMediaSaving = true
                     self.defaultAction = ShareControllerAction(title: self.presentationData.strings.Gallery_SaveImage, action: { [weak self] in
                         self?.saveToCameraRoll(representations: representations)
-                        self?.actionCompleted?()
+                        if self?.exteralessExportPermit == nil { self?.actionCompleted?() }
                     })
                 }
             case let .media(mediaReference, _):
@@ -490,9 +651,10 @@ public final class ShareController: ViewController {
                                 |> take(1)
                                 |> deliverOnMainQueue).start(next: { [weak self] fetchStatus in
                                     if let strongSelf = self {
+                                        guard strongSelf.exportAllowed() else { return }
                                         if case .Local = fetchStatus {
                                             strongSelf.saveToCameraRoll(mediaReference: mediaReference, completion: nil)
-                                            strongSelf.actionCompleted?()
+                                            if strongSelf.exteralessExportPermit == nil { strongSelf.actionCompleted?() }
                                         } else {
                                             strongSelf.saveToCameraRoll(mediaReference: mediaReference, completion: {
                                             })
@@ -501,7 +663,7 @@ public final class ShareController: ViewController {
                                 })
                             } else {
                                 strongSelf.saveToCameraRoll(mediaReference: mediaReference, completion: nil)
-                                strongSelf.actionCompleted?()
+                                if strongSelf.exteralessExportPermit == nil { strongSelf.actionCompleted?() }
                             }
                         }
                     })
@@ -521,6 +683,7 @@ public final class ShareController: ViewController {
                             guard let strongSelf = self else {
                                 return
                             }
+                            if strongSelf.exteralessExportPermit != nil { return } // The guarded Node owns its success dismissal.
                             strongSelf.controllerNode.animateOut(shared: false, completion: {
                                 self?.presentingViewController?.dismiss(animated: false, completion: nil)
                             })
@@ -549,13 +712,16 @@ public final class ShareController: ViewController {
                                 guard let strongSelf = self else {
                                     return
                                 }
-                                let _ = (_internal_exportMessageLink(postbox: strongSelf.currentContext.stateManager.postbox, network: strongSelf.currentContext.stateManager.network, peerId: chatPeer.id, messageId: message.id)
+                                let permit = strongSelf.exteralessExportPermit
+                                let accountId = strongSelf.currentContext.accountId.int64
+                                let _ = (strongSelf.permittedSignal(_internal_exportMessageLink(postbox: strongSelf.currentContext.stateManager.postbox, network: strongSelf.currentContext.stateManager.network, peerId: chatPeer.id, messageId: message.id), operation: .exportPreparation)
                                 |> map { result -> String? in
                                     return result
                                 }
                                 |> deliverOnMainQueue).start(next: { link in
                                     if let link = link {
-                                        UIPasteboard.general.string = link
+                                        if let permit { permit.perform(accountId: accountId, messageIds: [message.id], operation: .exportEffect) { UIPasteboard.general.string = link } }
+                                        else { UIPasteboard.general.string = link }
                                     }
                                 })
                                 strongSelf.controllerNode.cancel?()
@@ -630,12 +796,21 @@ public final class ShareController: ViewController {
             mediaParameters = parameters
         }
         
+        let exportReference = self.exteralessExportPermitReference
+        let exportAccountId = self.currentContext.accountId.int64
+        let actionIsMediaSaving = self.actionIsMediaSaving
+        let guardedDefaultAction = self.defaultAction.map { action in
+            ShareControllerAction(title: action.title, action: {
+                if let permit = exportReference.permit { permit.perform(accountId: exportAccountId, operation: actionIsMediaSaving ? .exportPreparation : .exportEffect, action.action) }
+                else { action.action() }
+            })
+        }
         self.displayNode = ShareControllerNode(
             controller: self,
             environment: self.environment,
             presentationData: self.presentationData,
             presetText: self.presetText,
-            defaultAction: self.defaultAction,
+            defaultAction: guardedDefaultAction,
             mediaParameters: mediaParameters,
             requestLayout: { [weak self] transition in
                 self?.requestLayout(
@@ -673,7 +848,10 @@ public final class ShareController: ViewController {
         self.controllerNode.completed = self.completed
         self.controllerNode.enqueued = self.enqueued
         self.controllerNode.present = { [weak self] c in
-            self?.presentInGlobalOverlay(c)
+            guard let self else { return }
+            if let permit = self.exteralessExportPermit {
+                permit.presentWhenReady(c, accountId: self.currentContext.accountId.int64, from: self, present: { [weak self] c in self?.presentInGlobalOverlay(c) })
+            } else { self.presentInGlobalOverlay(c) }
         }
         self.controllerNode.dismiss = { [weak self] shared in
             self?.dismissed?(shared)
@@ -691,6 +869,7 @@ public final class ShareController: ViewController {
             guard let strongSelf = self else {
                 return false
             }
+            guard strongSelf.exportAllowed() else { return false }
             
             var subject = strongSelf.subject
             if let segmentedValues = strongSelf.segmentedValues {
@@ -939,6 +1118,11 @@ public final class ShareController: ViewController {
             guard let self else {
                 return .complete()
             }
+            guard self.exportAllowed() else { return .fail(.generic) }
+            if let permit = self.exteralessExportPermit {
+                guard self.currentContext is ShareControllerAppAccountContext else { permit.revoke(); return .fail(.generic) }
+                return self.shareLegacy(text: text, peerIds: peerIds, topicIds: topicIds, showNames: showNames, silently: silently)
+            }
             
             var useLegacy = false
             if self.environment.isMainApp {
@@ -958,6 +1142,9 @@ public final class ShareController: ViewController {
         }
         self.controllerNode.shareExternal = { [weak self] _ in
             if let strongSelf = self, let currentContext = strongSelf.currentContext as? ShareControllerAppAccountContext {
+                let permit = strongSelf.exteralessExportPermit
+                let accountId = strongSelf.currentContext.accountId.int64
+                guard strongSelf.exportAllowed(.exportPreparation) else { return .complete() }
                 var collectableItems: [CollectableExternalShareItem] = []
                 var subject = strongSelf.subject
                 if let segmentedValues = strongSelf.segmentedValues {
@@ -1038,12 +1225,22 @@ public final class ShareController: ViewController {
                     case .fromExternal:
                         break
                 }
-                return (collectExternalShareItems(strings: strongSelf.presentationData.strings, dateTimeFormat: strongSelf.presentationData.dateTimeFormat, nameOrder: strongSelf.presentationData.nameDisplayOrder, engine: currentContext.context.engine, postbox: strongSelf.currentContext.stateManager.postbox, collectableItems: collectableItems, takeOne: !strongSelf.immediateExternalShare)
-                |> deliverOnMainQueue)
-                |> map { state in
+                let collection = strongSelf.permittedSignal(collectExternalShareItems(strings: strongSelf.presentationData.strings, dateTimeFormat: strongSelf.presentationData.dateTimeFormat, nameOrder: strongSelf.presentationData.nameDisplayOrder, engine: currentContext.context.engine, postbox: strongSelf.currentContext.stateManager.postbox, collectableItems: collectableItems, takeOne: !strongSelf.immediateExternalShare, exportPermit: permit, exportAccountId: accountId), operation: .exportPreparation)
+                let finiteCollection: Signal<ExternalShareItemsState, NoError>
+                if permit != nil {
+                    finiteCollection = .single(.progress) |> then(collection |> filter { state in
+                        if case .progress = state { return false }; return true
+                    } |> then(.single(.failed)) |> take(1))
+                } else { finiteCollection = collection }
+                return (finiteCollection |> deliverOnMainQueue)
+                |> mapToSignal { state -> Signal<ShareExternalState, NoError> in
+                    guard permit?.allows(accountId: accountId, operation: .exportPreparation) ?? true else { return .complete() }
                     switch state {
                         case .progress:
-                            return .preparing
+                            return .single(.preparing)
+                        case .failed:
+                            permit?.revoke()
+                            return .complete()
                         case let .done(items):
                             if let strongSelf = self, !items.isEmpty {
                                 strongSelf._ready.set(.single(true))
@@ -1059,66 +1256,32 @@ public final class ShareController: ViewController {
                                                 activityItems.append(text as NSString)
                                             case let .image(image):
                                                 activityItems.append(image)
-                                            case let .file(url, _, _):
+                                            case let .file(url, _, _, _):
                                                 activityItems.append(url)
                                         }
                                     }
                                 }
                                 
-                                let activities: [UIActivity]? = nil
+                                let cleanup = items.compactMap { item -> (() -> Void)? in
+                                    if case let .file(_, _, _, cleanup) = item { return cleanup }
+                                    return nil
+                                }
+                                let suppliedItems = activityItems
+                                if let permit {
+                                    return exteralessShareAwaitActivity(appeared: strongSelf.didAppearPromise.get(), permit: permit, accountId: accountId, present: { [weak self] in
+                                        guard let self else { return false }
+                                        return self.presentExternalActivity(items: suppliedItems, subject: subject, context: currentContext, permit: permit, accountId: accountId, cleanup: cleanup)
+                                    })
+                                }
                                 let _ = (strongSelf.didAppearPromise.get()
                                 |> filter { $0 }
                                 |> take(1)
                                 |> deliverOnMainQueue).start(next: { [weak self] _ in
-                                    let activityController = UIActivityViewController(activityItems: activityItems, applicationActivities: activities)
-                                    if let strongSelf = self, let window = strongSelf.view.window, let rootViewController = window.rootViewController {
-                                        activityController.popoverPresentationController?.sourceView = window
-                                        activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
-                                        rootViewController.present(activityController, animated: true, completion: nil)
-                                        
-                                        final class DeinitWatcher: NSObject {
-                                            let f: () -> Void
-                                            
-                                            init(_ f: @escaping () -> Void) {
-                                                self.f = f
-                                            }
-                                            
-                                            deinit {
-                                                f()
-                                            }
-                                        }
-                                        
-                                        let watchDisposable = MetaDisposable()
-                                        objc_setAssociatedObject(activityController, &ObjCKey_DeinitWatcher, DeinitWatcher {
-                                            watchDisposable.dispose()
-                                        }, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-                                        
-                                        if case let .messages(messages) = subject {
-                                            watchDisposable.set((currentContext.context.engine.data.subscribe(
-                                                EngineDataMap(messages.map { TelegramEngine.EngineData.Item.Messages.Message(id: $0.id) })
-                                            )
-                                            |> deliverOnMainQueue).start(next: { [weak activityController] currentMessages in
-                                                guard let activityController else {
-                                                    return
-                                                }
-                                                var allFound = true
-                                                for message in messages {
-                                                    if let value = currentMessages[message.id], value != nil {
-                                                    } else {
-                                                        allFound = false
-                                                        break
-                                                    }
-                                                }
-                                                
-                                                if !allFound {
-                                                    activityController.presentingViewController?.dismiss(animated: true)
-                                                }
-                                            }))
-                                        }
-                                    }
+                                    _ = self?.presentExternalActivity(items: suppliedItems, subject: subject, context: currentContext, permit: nil, accountId: accountId, cleanup: [])
                                 })
                             }
-                            return .done
+                            if let permit { permit.revoke(); return .complete() }
+                            return .single(.done)
                     }
                 }
             } else {
@@ -1129,6 +1292,7 @@ public final class ShareController: ViewController {
             guard let strongSelf = self else {
                 return
             }
+            guard strongSelf.exteralessExportPermit == nil else { return }
             strongSelf.controllerNode.animateOut(shared: false, completion: {})
             
             let presentationData = strongSelf.environment.presentationData
@@ -1171,6 +1335,7 @@ public final class ShareController: ViewController {
             
             self.forEachController { c in
                 if let c = c as? UndoOverlayController {
+                    if let permit = self.exteralessExportPermit, c.exteralessExportPermit !== permit { return true }
                     c.dismiss()
                 }
                 return true
@@ -1212,7 +1377,7 @@ public final class ShareController: ViewController {
         self.peersDisposable.set((self.peers.get()
         |> deliverOnMainQueue).start(next: { [weak self] next in
             if let strongSelf = self {
-                strongSelf.controllerNode.updatePeers(context: strongSelf.currentContext, switchableAccounts: strongSelf.switchableAccounts, peers: next.0, accountPeer: next.1, defaultAction: strongSelf.defaultAction)
+                strongSelf.controllerNode.updatePeers(context: strongSelf.currentContext, switchableAccounts: strongSelf.switchableAccounts, peers: next.0, accountPeer: next.1, defaultAction: guardedDefaultAction)
             }
         }))
         self._ready.set(self.controllerNode.ready.get())
@@ -1222,7 +1387,58 @@ public final class ShareController: ViewController {
         super.loadView()
     }
     
+    private func presentExternalActivity(items: [Any], subject: ShareControllerSubject, context: ShareControllerAppAccountContext, permit: ExteralessContentExportPermit?, accountId: Int64, cleanup: [() -> Void]) -> Bool {
+        if let permit {
+            guard self.currentContext.accountId.int64 == accountId, permit.allows(accountId: accountId) else { return false }
+        }
+        guard let window = self.view.window, let rootViewController = window.rootViewController else { return false }
+        let suppliedItems: [Any]
+        if permit != nil {
+            let reference = self.exteralessExportPermitReference
+            suppliedItems = items.map { ExteralessShareActivityItem(value: $0, reference: reference, accountId: accountId) }
+        } else { suppliedItems = items }
+        let activityController = UIActivityViewController(activityItems: suppliedItems, applicationActivities: nil)
+        activityController.popoverPresentationController?.sourceView = window
+        activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+        if let permit {
+            activityController.completionWithItemsHandler = { _, completed, _, error in
+                for clean in cleanup { clean() }
+                if !completed || error != nil { permit.revoke() }
+            }
+            guard permit.perform(accountId: accountId, operation: .presentation, current: {
+                permit.own(activityController, presented: true, from: self)
+            }, { rootViewController.present(activityController, animated: true, completion: nil) }) else { return false }
+        } else { rootViewController.present(activityController, animated: true, completion: nil) }
+
+        final class DeinitWatcher: NSObject {
+            let f: () -> Void
+            init(_ f: @escaping () -> Void) { self.f = f }
+            deinit { self.f() }
+        }
+        let watchDisposable = MetaDisposable()
+        objc_setAssociatedObject(activityController, &ObjCKey_DeinitWatcher, DeinitWatcher {
+            watchDisposable.dispose()
+            for clean in cleanup { clean() }
+        }, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        if case let .messages(messages) = subject {
+            watchDisposable.set((context.context.engine.data.subscribe(EngineDataMap(messages.map { TelegramEngine.EngineData.Item.Messages.Message(id: $0.id) }))
+            |> deliverOnMainQueue).start(next: { [weak activityController] currentMessages in
+                guard let activityController else { return }
+                let allFound = messages.allSatisfy { (currentMessages[$0.id] ?? nil) != nil }
+                if !allFound {
+                    if let permit { permit.revoke() }
+                    else { activityController.presentingViewController?.dismiss(animated: true) }
+                }
+            }))
+        }
+        return true
+    }
+
     private func shareModern(text: String, peerIds: [EnginePeer.Id], topicIds: [EnginePeer.Id: Int64], showNames: Bool, silently: Bool) -> Signal<ShareState, ShareControllerError> {
+        if let permit = self.exteralessExportPermit {
+            guard self.currentContext is ShareControllerAppAccountContext else { permit.revoke(); return .fail(.generic) }
+            return self.shareLegacy(text: text, peerIds: peerIds, topicIds: topicIds, showNames: showNames, silently: silently)
+        }
         return self.currentContext.stateManager.postbox.combinedView(
             keys: peerIds.map { peerId in
                 return PostboxViewKey.peer(peerId: peerId, components: [])
@@ -1254,6 +1470,7 @@ public final class ShareController: ViewController {
             guard let strongSelf = self else {
                 return .complete()
             }
+            guard strongSelf.exportAllowed() else { return .complete() }
             
             var shareSignals: [Signal<StandaloneSendMessageStatus, StandaloneSendMessagesError>] = []
             var subject = strongSelf.subject
@@ -1833,7 +2050,7 @@ public final class ShareController: ViewController {
             let account = strongSelf.currentContext
             let queue = Queue.mainQueue()
             //var displayedError = false
-            return combineLatest(queue: queue, shareSignals)
+            return strongSelf.permittedSignal(combineLatest(queue: queue, shareSignals))
             |> `catch` { error -> Signal<[StandaloneSendMessageStatus], ShareControllerError> in
                 Queue.mainQueue().async {
                     let _ = (account.stateManager.postbox.combinedView(keys: [PostboxViewKey.basicPeer(error.peerId)])
@@ -1908,8 +2125,9 @@ public final class ShareController: ViewController {
             guard let strongSelf = self, let currentContext = strongSelf.currentContext as? ShareControllerAppAccountContext else {
                 return .complete()
             }
+            guard strongSelf.exportAllowed() else { return .complete() }
             
-            var shareSignals: [Signal<[MessageId?], NoError>] = []
+            var shareSignals: [Signal<[MessageId?], ShareControllerError>] = []
             var subject = strongSelf.subject
             if let segmentedValues = strongSelf.segmentedValues {
                 let selectedValue = segmentedValues[strongSelf.controllerNode.selectedSegmentedIndex]
@@ -1972,7 +2190,7 @@ public final class ShareController: ViewController {
                         messages.append(.message(text: url, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     }
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .text(string):
                 for peerId in peerIds {
@@ -2006,7 +2224,7 @@ public final class ShareController: ViewController {
                     }
                     messages.append(.message(text: string, attributes: [], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .quote(string, url):
                 for peerId in peerIds {
@@ -2043,7 +2261,7 @@ public final class ShareController: ViewController {
                     let entities = generateChatInputTextEntities(attributedText)
                     messages.append(.message(text: attributedText.string, attributes: [TextEntitiesMessageAttribute(entities: entities)], inlineStickers: [:], mediaReference: nil, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .image(representations):
                 for peerId in peerIds {
@@ -2074,7 +2292,7 @@ public final class ShareController: ViewController {
                     var messages: [EnqueueMessage] = []
                     messages.append(.message(text: text, attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaImage(imageId: MediaId(namespace: Namespaces.Media.LocalImage, id: Int64.random(in: Int64.min ... Int64.max)), representations: representations.map({ $0.representation }), immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])), threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .media(mediaReference, mediaParameters):
                 var forwardSourceMessageId: EngineMessage.Id?
@@ -2168,7 +2386,7 @@ public final class ShareController: ViewController {
                         messages.append(.message(text: sendTextAsCaption ? text : "", attributes: attributes, inlineStickers: [:], mediaReference: mediaReference, threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     }
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .mapMedia(media):
                 for peerId in peerIds {
@@ -2202,7 +2420,7 @@ public final class ShareController: ViewController {
                     }
                     messages.append(.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: media), threadId: threadId, replyToMessageId: replyToMessageId.flatMap { EngineMessageReplySubject(messageId: $0, quote: nil, innerSubject: nil) }, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: []))
                     messages = transformMessages(messages, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messages))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messages))
                 }
             case let .messages(messages):
                 for peerId in peerIds {
@@ -2297,9 +2515,10 @@ public final class ShareController: ViewController {
                         messagesToEnqueue.append(.forward(source: message.id, threadId: threadId, grouping: .auto, attributes: [], correlationId: correlationId))
                     }
                     messagesToEnqueue = transformMessages(messagesToEnqueue, showNames: showNames, silently: silently, sendPaidMessageStars: requiresStars[peerId])
-                    shareSignals.append(enqueueMessages(account: currentContext.context.account, peerId: peerId, messages: messagesToEnqueue))
+                    shareSignals.append(strongSelf.enqueueForShare(context: currentContext, peerId: peerId, messages: messagesToEnqueue))
                 }
             case let .fromExternal(_, f):
+                if let permit = strongSelf.exteralessExportPermit { permit.revoke(); return .fail(.generic) }
                 return f(peerIds, topicIds, requiresStars, text, currentContext, silently)
                 |> map { state -> ShareState in
                     switch state {
@@ -2315,8 +2534,11 @@ public final class ShareController: ViewController {
             let account = currentContext.context.account
             let queue = Queue.mainQueue()
             var displayedError = false
-            return combineLatest(queue: queue, shareSignals)
-            |> castError(ShareControllerError.self)
+            if let permit = strongSelf.exteralessExportPermit, peerIds.isEmpty || shareSignals.count != peerIds.count {
+                permit.revoke()
+                return .fail(.generic)
+            }
+            return strongSelf.permittedSignal(combineLatest(queue: queue, shareSignals))
             |> mapToSignal { messageIdSets -> Signal<ShareState, ShareControllerError> in
                 var statuses: [Signal<(MessageId, PendingMessageStatus?, PendingMessageFailureReason?), ShareControllerError>] = []
                 for messageIds in messageIdSets {
@@ -2330,6 +2552,10 @@ public final class ShareController: ViewController {
                 }
                 return combineLatest(queue: queue, statuses)
                 |> mapToSignal { statuses -> Signal<ShareState, ShareControllerError> in
+                    if let permit = strongSelf.exteralessExportPermit, statuses.contains(where: { $0.2 != nil }) {
+                        permit.revoke()
+                        return .fail(.generic)
+                    }
                     var hasStatuses = false
                     for (id, status, error) in statuses {
                         if let error = error {
@@ -2394,14 +2620,19 @@ public final class ShareController: ViewController {
     }
     
     private func saveToCameraRoll(messages: [Message], completion: @escaping () -> Void) {
+        guard self.exportAllowed() else { return }
         guard let accountContext = self.currentContext as? ShareControllerAppAccountContext else {
             return
         }
         let context = accountContext.context
+        let permit = self.exteralessExportPermit
+        let reference = self.exteralessExportPermitReference
         
         let signals: [Signal<Float, NoError>] = messages.compactMap { message -> Signal<Float, NoError>? in
             if let media = message.effectiveMedia.first {
-                return SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: media))
+                return SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: media), exportPermit: permit, exportReference: permit == nil ? nil : reference, presentForExport: { [weak self] controller, arguments in
+                    self?.present(controller, in: .window(.root), with: arguments)
+                })
             } else {
                 return nil
             }
@@ -2417,29 +2648,45 @@ public final class ShareController: ViewController {
                 return total
             }
             self.controllerNode.transitionToProgressWithValue(signal: total, completion: completion)
-        }
+        } else { permit?.revoke() }
     }
     
     private func saveToCameraRoll(representations: [ImageRepresentationWithReference]) {
+        guard self.exportAllowed() else { return }
         guard let accountContext = self.currentContext as? ShareControllerAppAccountContext else {
             return
         }
         let context = accountContext.context
         
         let media = TelegramMediaImage(imageId: MediaId(namespace: 0, id: 0), representations: representations.map({ $0.representation }), immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
-        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: .standalone(media: media)) |> map(Optional.init), dismissImmediately: true, completion: {})
+        let permit = self.exteralessExportPermit
+        let signal = SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: .standalone(media: media), exportPermit: permit, exportReference: permit == nil ? nil : self.exteralessExportPermitReference, presentForExport: { [weak self] controller, arguments in
+            self?.present(controller, in: .window(.root), with: arguments)
+        })
+        self.controllerNode.transitionToProgressWithValue(signal: signal |> map(Optional.init), dismissImmediately: true, completion: { [weak self] in
+            if permit != nil { self?.actionCompleted?() }
+        })
     }
     
     private func saveToCameraRoll(mediaReference: AnyMediaReference, completion: (() -> Void)?) {
+        guard self.exportAllowed() else { return }
         guard let accountContext = self.currentContext as? ShareControllerAppAccountContext else {
             return
         }
         let context = accountContext.context
         
-        self.controllerNode.transitionToProgressWithValue(signal: SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: mediaReference) |> map(Optional.init), dismissImmediately: completion == nil, completion: completion ?? {})
+        let permit = self.exteralessExportPermit
+        let signal = SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .other, mediaReference: mediaReference, exportPermit: permit, exportReference: permit == nil ? nil : self.exteralessExportPermitReference, presentForExport: { [weak self] controller, arguments in
+            self?.present(controller, in: .window(.root), with: arguments)
+        })
+        self.controllerNode.transitionToProgressWithValue(signal: signal |> map(Optional.init), dismissImmediately: completion == nil, completion: { [weak self] in
+            completion?()
+            if permit != nil { self?.actionCompleted?() }
+        })
     }
     
     private func switchToAccount(account: ShareControllerAccountContext, animateIn: Bool) {
+        if let permit = self.exteralessExportPermit, !permit.allows(accountId: account.accountId.int64, operation: .presentation) { return }
         self.currentContext = account
         self.accountActiveDisposable.set(self.environment.setAccountUserInterfaceInUse(id: account.accountId))
         

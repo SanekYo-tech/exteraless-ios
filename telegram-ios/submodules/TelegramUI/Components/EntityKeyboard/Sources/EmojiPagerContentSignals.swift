@@ -9,6 +9,7 @@ import MultiAnimationRenderer
 import TelegramNotices
 import FlatBuffers
 import FlatSerialization
+import ExteralessCore
 
 public extension EmojiPagerContentComponent {    
     private static func hasPremium(context: AccountContext, chatPeerId: EnginePeer.Id?, premiumIfSavedMessages: Bool) -> Signal<Bool, NoError> {
@@ -202,7 +203,9 @@ public extension EmojiPagerContentComponent {
         let emojiItems: Signal<EmojiPagerContentComponent, NoError> = combineLatest(
             context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: orderedItemListCollectionIds, namespaces: [Namespaces.ItemCollection.CloudEmojiPacks], aroundIndex: nil, count: 10000000),
             forceHasPremium ? .single(true) : hasPremium(context: context, chatPeerId: chatPeerId, premiumIfSavedMessages: premiumIfSavedMessages),
-            context.account.viewTracker.featuredEmojiPacks(),
+            exteralessStickerPolicy() |> mapToSignal { policy in
+                return policy.hideTrending ? .single([]) : context.account.viewTracker.featuredEmojiPacks()
+            },
             availableReactions,
             searchCategories,
             iconStatusEmoji,
@@ -803,6 +806,7 @@ public extension EmojiPagerContentComponent {
                             case let .custom(file):
                                 topReactionItems.append(EmojiComponentReactionItem(reaction: .custom(file.fileId.id), file: file))
                             case .stars:
+                                guard ExteralessIdentityPresentation.shared.policy.premiumItemStarInReactions else { continue }
                                 if let reaction = availableReactions?.reactions.first(where: { $0.value == .stars }) {
                                     topReactionItems.append(EmojiComponentReactionItem(reaction: .stars, file: reaction.selectAnimation))
                                 }
@@ -976,6 +980,7 @@ public extension EmojiPagerContentComponent {
                                     icon = .none
                                 }
                             case .stars:
+                                guard ExteralessIdentityPresentation.shared.policy.premiumItemStarInReactions else { continue }
                                 if existingIds.contains(.stars) {
                                     continue
                                 }
@@ -1044,6 +1049,7 @@ public extension EmojiPagerContentComponent {
                             case let .custom(file):
                                 topReactionItems.append(EmojiComponentReactionItem(reaction: .custom(file.fileId.id), file: file))
                             case .stars:
+                                guard ExteralessIdentityPresentation.shared.policy.premiumItemStarInReactions else { continue }
                                 if let reaction = availableReactions?.reactions.first(where: { $0.value == .stars }) {
                                     topReactionItems.append(EmojiComponentReactionItem(reaction: .stars, file: reaction.selectAnimation))
                                 } else {
@@ -1723,16 +1729,32 @@ public extension EmojiPagerContentComponent {
             }
         }
         
+        let localFavorites: Signal<[SavedStickerItem], NoError>
+        if stickerOrderedItemListCollectionIds.contains(Namespaces.OrderedItemList.CloudSavedStickers) {
+            localFavorites = exteralessLocalFavoriteStickerItems(engine: context.engine)
+            |> `catch` { _ -> Signal<[SavedStickerItem], NoError> in
+                Logger.shared.log("ExteralessFavorites", "Local favorite storage unavailable")
+                return .single([])
+            }
+        } else {
+            localFavorites = .single([])
+        }
+
         return combineLatest(
             context.account.postbox.itemCollectionsView(orderedItemListCollectionIds: stickerOrderedItemListCollectionIds, namespaces: stickerNamespaces, aroundIndex: nil, count: 10000000),
             hasPremium(context: context, chatPeerId: chatPeerId, premiumIfSavedMessages: false),
-            hasTrending ? context.account.viewTracker.featuredStickerPacks() : .single([]),
+            exteralessStickerPolicy() |> mapToSignal { policy in
+                return hasTrending && !policy.hideTrending ? context.account.viewTracker.featuredStickerPacks() : .single([])
+            },
             context.engine.data.get(TelegramEngine.EngineData.Item.ItemCache.Item(collectionId: Namespaces.CachedItemCollection.featuredStickersConfiguration, id: ValueBoxKey(length: 0))),
             ApplicationSpecificNotice.dismissedTrendingStickerPacks(accountManager: context.sharedContext.accountManager),
             peerSpecificPack,
-            searchCategories
+            searchCategories,
+            exteralessRecentStickerItems(engine: context.engine),
+            exteralessStickerPolicy(),
+            localFavorites
         )
-        |> map { view, hasPremium, featuredStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories -> EmojiPagerContentComponent in
+        |> map { view, hasPremium, featuredStickerPacks, featuredStickersConfiguration, dismissedTrendingStickerPacks, peerSpecificPack, searchCategories, localRecentStickers, stickerPolicy, localFavoriteStickers -> EmojiPagerContentComponent in
             let hasPremium = forceHasPremium || hasPremium
             struct ItemGroup {
                 var supergroupId: AnyHashable
@@ -1853,12 +1875,17 @@ public extension EmojiPagerContentComponent {
                 }
             }
             
-            if let savedStickers = savedStickers {
+            let cloudFavoriteStickers = savedStickers?.items.compactMap { $0.contents.get(SavedStickerItem.self) } ?? []
+            let favorites: [(item: SavedStickerItem, reference: FileMediaReference)]
+            do {
+                favorites = try exteralessStickerPickerFavorites(cloud: cloudFavoriteStickers, local: localFavoriteStickers)
+            } catch {
+                Logger.shared.log("ExteralessFavorites", "Local favorite projection unavailable")
+                favorites = cloudFavoriteStickers.map { ($0, .savedSticker(media: $0.file._parse())) }
+            }
+            if !favorites.isEmpty {
                 let groupId = "saved"
-                for item in savedStickers.items {
-                    guard let item = item.contents.get(SavedStickerItem.self) else {
-                        continue
-                    }
+                for (item, reference) in favorites {
                     if isPremiumDisabled && item.file.isPremiumSticker {
                         continue
                     }
@@ -1868,14 +1895,15 @@ public extension EmojiPagerContentComponent {
                         tintMode = .primary
                     }
                     
-                    let animationData = EntityKeyboardAnimationData(file: item.file, partialReference: .savedSticker)
+                    let animationData = EntityKeyboardAnimationData(file: item.file, partialReference: reference.partial)
                     let resultItem = EmojiPagerContentComponent.Item(
                         animationData: animationData,
                         content: .animation(animationData),
                         itemFile: item.file,
                         subgroupId: nil,
                         icon: .none,
-                        tintMode: tintMode
+                        tintMode: tintMode,
+                        fileReference: reference
                     )
                     
                     if let groupIndex = itemGroupIndexById[groupId] {
@@ -1888,12 +1916,9 @@ public extension EmojiPagerContentComponent {
             }
             
             var addedCreateStickerButton = false
-            if let recentStickers = recentStickers {
+            if recentStickers != nil {
                 let groupId = "recent"
-                for item in recentStickers.items {
-                    guard let item = item.contents.get(RecentMediaItem.self) else {
-                        continue
-                    }
+                for item in localRecentStickers {
                     if isPremiumDisabled && item.media.isPremiumSticker {
                         continue
                     }
@@ -1917,11 +1942,17 @@ public extension EmojiPagerContentComponent {
                         itemGroups[groupIndex].items.append(resultItem)
                     } else {
                         itemGroupIndexById[groupId] = itemGroups.count
-                        itemGroups.append(ItemGroup(supergroupId: groupId, id: groupId, title: strings.Stickers_FrequentlyUsed, subtitle: nil, actionButtonTitle: nil, isPremiumLocked: false, isFeatured: false, displayPremiumBadges: false, hasEdit: false, headerItem: nil, items: [resultItem]))
+                        itemGroups.append(ItemGroup(supergroupId: groupId, id: groupId, title: strings.Stickers_FrequentlyUsed, subtitle: nil, actionButtonTitle: nil, isPremiumLocked: false, isFeatured: false, displayPremiumBadges: false, hasEdit: hasAdd && stickerPolicy.compactCreator, headerItem: nil, items: [resultItem]))
                     }
                 }
                 
-                if hasAdd && !addedCreateStickerButton, let groupIndex = itemGroupIndexById[groupId] {
+                if hasAdd && stickerPolicy.compactCreator {
+                    if itemGroupIndexById[groupId] == nil {
+                        itemGroupIndexById[groupId] = itemGroups.count
+                        itemGroups.append(ItemGroup(supergroupId: groupId, id: groupId, title: strings.Stickers_FrequentlyUsed, subtitle: nil, actionButtonTitle: nil, isPremiumLocked: false, isFeatured: false, displayPremiumBadges: false, hasEdit: true, headerItem: nil, items: []))
+                    }
+                    addedCreateStickerButton = true
+                } else if hasAdd && !addedCreateStickerButton, let groupIndex = itemGroupIndexById[groupId] {
                     let resultItem = EmojiPagerContentComponent.Item(
                         animationData: nil,
                         content: .icon(.add),
@@ -1936,7 +1967,7 @@ public extension EmojiPagerContentComponent {
             }
               
             var avatarPeer: EnginePeer?
-            if let peerSpecificPack = peerSpecificPack {
+            if let peerSpecificPack = peerSpecificPack, !stickerPolicy.hideGroupPack {
                 avatarPeer = peerSpecificPack.peer
                 
                 var processedIds = Set<MediaId>()

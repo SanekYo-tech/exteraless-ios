@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -94,6 +95,7 @@ public final class SliderComponent: Component {
     public let displaysBorderOnTracking: Bool
     public let useLegacyKnob: Bool
     public let isTrackingUpdated: ((Bool) -> Void)?
+    private let appearanceStyle: Int
     
     public init(
         content: Content,
@@ -121,9 +123,11 @@ public final class SliderComponent: Component {
         self.displaysBorderOnTracking = displaysBorderOnTracking
         self.useLegacyKnob = useLegacyKnob
         self.isTrackingUpdated = isTrackingUpdated
+        self.appearanceStyle = ClientSettings.shared.integer("appearance.sliderStyle", default: 2)
     }
     
     public static func ==(lhs: SliderComponent, rhs: SliderComponent) -> Bool {
+        if lhs.appearanceStyle != rhs.appearanceStyle || lhs.useNative != rhs.useNative { return false }
         if lhs.content != rhs.content {
             return false
         }
@@ -166,11 +170,13 @@ public final class SliderComponent: Component {
         private let nativeTrackBackgroundView = UIView()
         private let nativeTrackForegroundView = UIView()
         private var sliderView: TGPhotoEditorSliderView?
+        private var materialKnob: (color: UIColor, image: UIImage?)?
         
         private var component: SliderComponent?
         private weak var state: EmptyComponentState?
         
         public var hitTestTarget: UIView? {
+            if let nativeSliderView = self.nativeSliderView { return nativeSliderView }
             return self.sliderView
         }
         
@@ -189,6 +195,7 @@ public final class SliderComponent: Component {
         })!
                 
         public func cancelGestures() {
+            self.nativeSliderView?.cancelTracking(with: nil)
             if let sliderView = self.sliderView, let gestureRecognizers = sliderView.gestureRecognizers {
                 for gestureRecognizer in gestureRecognizers {
                     if gestureRecognizer.isEnabled {
@@ -204,9 +211,18 @@ public final class SliderComponent: Component {
             self.state = state
             
             let size = CGSize(width: availableSize.width, height: 44.0)
+            let explicitGeometry = component.knobSize != nil || component.trackHeight != nil || component.useLegacyKnob
+            let material: Bool
+            switch component.content {
+            case let .continuous(value):
+                material = AppearanceControlPolicy.usesMaterialSlider(style: component.appearanceStyle, explicitGeometry: explicitGeometry, lowerBound: Double(value.range.lowerBound), startValue: Double(value.startValue), minimumValue: value.minValue.map(Double.init))
+            case let .discrete(value):
+                material = AppearanceControlPolicy.usesMaterialSlider(style: component.appearanceStyle, explicitGeometry: explicitGeometry, lowerBound: 0, startValue: 0, minimumValue: value.minValue.map(Double.init))
+            }
             
-            if #available(iOS 26.0, *), component.useNative {
+            if #available(iOS 26.0, *), component.useNative && !material {
                 if let sliderView = self.sliderView {
+                    self.cancelGestures()
                     self.sliderView = nil
                     sliderView.removeFromSuperview()
                 }
@@ -291,6 +307,7 @@ public final class SliderComponent: Component {
                 self.nativeTrackBackgroundView.frame = CGRect()
                 self.nativeTrackForegroundView.frame = CGRect()
                 if let nativeSliderView = self.nativeSliderView {
+                    self.cancelGestures()
                     self.nativeSliderView = nil
                     nativeSliderView.removeFromSuperview()
                 }
@@ -344,7 +361,9 @@ public final class SliderComponent: Component {
                     self.sliderView = sliderView
                     self.addSubview(sliderView)
                 }
-                if let trackHeight = component.trackHeight {
+                if material {
+                    sliderView.lineSize = 8.0
+                } else if let trackHeight = component.trackHeight {
                     sliderView.lineSize = trackHeight
                 } else if let knobSize = component.knobSize {
                     sliderView.lineSize = knobSize + 4.0
@@ -357,7 +376,20 @@ public final class SliderComponent: Component {
                 sliderView.trackColor = component.trackForegroundColor
                 sliderView.isUserInteractionEnabled = component.isEnabled
                 sliderView.alpha = component.isEnabled ? (component.useLegacyKnob ? 1.3 : 1.0) : 0.3
-                if let knobSize = component.knobSize {
+                sliderView.dotSize = material ? 0.0 : 5.0
+                if material {
+                    let color = component.knobColor ?? component.trackForegroundColor
+                    if self.materialKnob?.color != color {
+                        let image = generateImage(CGSize(width: 40, height: 40), rotatedContext: { size, context in
+                            context.clear(CGRect(origin: .zero, size: size))
+                            context.setFillColor(color.cgColor)
+                            context.addPath(UIBezierPath(roundedRect: CGRect(x: 18.5, y: 8, width: 3, height: 24), cornerRadius: 1.5).cgPath)
+                            context.fillPath()
+                        })
+                        self.materialKnob = (color, image)
+                    }
+                    sliderView.knobImage = self.materialKnob?.image
+                } else if let knobSize = component.knobSize {
                     sliderView.knobImage = generateImage(CGSize(width: 40.0, height: 40.0), rotatedContext: { size, context in
                         context.clear(CGRect(origin: CGPoint(), size: size))
                         context.setShadow(offset: CGSize(width: 0.0, height: -3.0), blur: 12.0, color: UIColor(white: 0.0, alpha: 0.25).cgColor)

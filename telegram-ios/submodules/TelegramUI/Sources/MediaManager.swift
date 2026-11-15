@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import SwiftSignalKit
 import AVFoundation
 import MobileCoreServices
@@ -363,7 +364,7 @@ public final class MediaManagerImpl: NSObject, MediaManager {
                     nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = next.duration as NSNumber
                     switch next.status {
                         case .playing:
-                            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 1.0 as NSNumber
+                            nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = next.baseRate as NSNumber
                         case .buffering, .paused:
                             nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = 0.0 as NSNumber
                     }
@@ -425,7 +426,7 @@ public final class MediaManagerImpl: NSObject, MediaManager {
                     if let item = state.item as? MessageMediaPlaylistItem {
                         var storedState: MediaPlaybackStoredState?
                         if state.status.timestamp > 5.0 && state.status.timestamp < state.status.duration - 5.0 {
-                            storedState = MediaPlaybackStoredState(timestamp: state.status.timestamp, playbackRate: state.status.baseRate > 1.0 ? .x2 : .x1)
+                            storedState = MediaPlaybackStoredState(timestamp: state.status.timestamp, playbackRate: AudioPlaybackRate(ChatPlaybackPolicy.storedSpeed(state.status.baseRate)))
                         }
                         let _ = updateMediaPlaybackStoredStateInteractively(engine: TelegramEngine(account: account), messageId: item.message.id, state: storedState).startStandalone()
                     }
@@ -523,6 +524,7 @@ public final class MediaManagerImpl: NSObject, MediaManager {
                                     continueInstantVideoLoopAfterFinish = playlist.context.sharedContext.energyUsageSettings.autoplayVideo
                                     controlPlaybackWithProximity = playlist.context.sharedContext.currentMediaInputSettings.with({ $0.enableRaiseToSpeak })
                                 }
+                                controlPlaybackWithProximity = controlPlaybackWithProximity && !ClientSettings.shared.bool("chats.disableProximityEvents")
                                 
                                 let voiceMediaPlayer = SharedMediaPlayer(context: context, mediaManager: strongSelf, inForeground: strongSelf.inForeground, engine: context.engine, audioSession: strongSelf.audioSession, overlayMediaManager: strongSelf.overlayMediaManager, playlist: playlist, initialOrder: .reversed, initialLooping: .none, initialPlaybackRate: settings.voicePlaybackRate, playerIndex: nextPlayerIndex, controlPlaybackWithProximity: controlPlaybackWithProximity, type: type, continueInstantVideoLoopAfterFinish: continueInstantVideoLoopAfterFinish)
                                 strongSelf.voiceMediaPlayer = voiceMediaPlayer
@@ -558,7 +560,8 @@ public final class MediaManagerImpl: NSObject, MediaManager {
                                 strongSelf.musicMediaPlayer?.control(control)
                             } else {
                                 strongSelf.musicMediaPlayer?.stop()
-                                let musicMediaPlayer = SharedMediaPlayer(context: context, mediaManager: strongSelf, inForeground: strongSelf.inForeground, engine: context.engine, audioSession: strongSelf.audioSession, overlayMediaManager: strongSelf.overlayMediaManager, playlist: playlist, initialOrder: settings.order, initialLooping: settings.looping, initialPlaybackRate: storedState?.playbackRate ?? .x1, playerIndex: nextPlayerIndex, controlPlaybackWithProximity: false, type: type, continueInstantVideoLoopAfterFinish: true)
+                                let musicRate = AudioPlaybackRate(ChatPlaybackPolicy.musicSpeed(ClientSettings.shared.double("chats.musicPlaybackSpeed", default: 1.0)))
+                                let musicMediaPlayer = SharedMediaPlayer(context: context, mediaManager: strongSelf, inForeground: strongSelf.inForeground, engine: context.engine, audioSession: strongSelf.audioSession, overlayMediaManager: strongSelf.overlayMediaManager, playlist: playlist, initialOrder: settings.order, initialLooping: settings.looping, initialPlaybackRate: storedState?.playbackRate ?? musicRate, playerIndex: nextPlayerIndex, controlPlaybackWithProximity: false, type: type, continueInstantVideoLoopAfterFinish: true)
                                 strongSelf.musicMediaPlayer = musicMediaPlayer
                                 strongSelf.musicListenTracker = MusicListenTracker(engine: context.engine)
                                 musicMediaPlayer.cancelled = { [weak musicMediaPlayer] in

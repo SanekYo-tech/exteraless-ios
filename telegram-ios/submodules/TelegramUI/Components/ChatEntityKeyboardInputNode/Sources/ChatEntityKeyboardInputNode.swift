@@ -31,6 +31,7 @@ import Pasteboard
 import EntityKeyboardGifContent
 import LegacyMessageInputPanelInputView
 import GlassBackgroundComponent
+import ExteralessCore
 
 private let keyboardCornerRadius: CGFloat = 30.0
 
@@ -50,7 +51,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
         let sendSticker: (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [ItemCollectionId]) -> Bool
         let sendEmoji: (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void
         let sendGif: (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool
-        let sendBotContextResultAsGif: (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool, Bool) -> Bool
+        let sendBotContextResultAsGif: (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool?, Bool) -> Bool
         let editGif: (FileMediaReference, Bool) -> Void
         let updateChoosingSticker: (Bool) -> Void
         let switchToTextInput: () -> Void
@@ -68,7 +69,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
             sendSticker: @escaping (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [ItemCollectionId]) -> Bool,
             sendEmoji: @escaping (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void,
             sendGif: @escaping (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool,
-            sendBotContextResultAsGif: @escaping (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool, Bool) -> Bool,
+            sendBotContextResultAsGif: @escaping (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool?, Bool) -> Bool,
             editGif: @escaping (FileMediaReference, Bool) -> Void,
             updateChoosingSticker: @escaping (Bool) -> Void,
             switchToTextInput: @escaping () -> Void,
@@ -476,6 +477,8 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     private weak var currentUndoOverlayController: UndoOverlayController?
 
     private var choosingStickerDisposable: Disposable?
+    private let lockedEmojiDisposable = MetaDisposable()
+    private var lockedEmojiGeneration: UInt64 = 0
     private var scrollingStickersGridPromise = Promise<Bool>(false)
     private var previewingStickersPromise = ValuePromise<Bool>(false)
     private var choosingSticker: Signal<Bool, NoError> {
@@ -727,6 +730,10 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                         }
 
                         if file.isPremiumEmoji && !hasPremium && groupId != AnyHashable("peerSpecific") && !forceHasPremium {
+                            if let chatPeerId, StickerPolicy().canUploadLockedEmoji(mimeType: file.mimeType, isPremium: hasPremium, isSavedMessages: chatPeerId == context.account.peerId, isGroupEmoji: groupId == AnyHashable("peerSpecific")),
+                               strongSelf.sendLockedEmojiAsSticker(file, peerId: chatPeerId) {
+                                return
+                            }
                             var animateInAsReplacement = false
                             if let currentUndoOverlayController = strongSelf.currentUndoOverlayController {
                                 currentUndoOverlayController.dismissWithCommitActionAndReplacementAnimation()
@@ -1287,7 +1294,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                         }
 
                         let reference: FileMediaReference
-                        if groupId == AnyHashable("saved") {
+                        if let itemReference = item.fileReference {
+                            reference = itemReference
+                        } else if groupId == AnyHashable("saved") {
                             reference = .savedSticker(media: file)
                         } else if groupId == AnyHashable("recent") {
                             reference = .recentSticker(media: file)
@@ -1408,6 +1417,10 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                 }
             },
             editAction: { [weak interaction] groupId in
+                if groupId == AnyHashable("recent") {
+                    interaction?.openStickerEditor()
+                    return
+                }
                 guard let collectionId = groupId.base as? ItemCollectionId else {
                     return
                 }
@@ -1685,7 +1698,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                 }
 
                 if let (collection, result) = item.contextResult {
-                    let _ = interaction.sendBotContextResultAsGif(collection, result, view, rect, false, false)
+                    let _ = interaction.sendBotContextResultAsGif(collection, result, view, rect, nil, false)
                 } else {
                     let _ = interaction.sendGif(item.file, view, rect, false, false)
                 }
@@ -1728,7 +1741,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
         }
 
         if self.currentInputData.gifs != nil {
-            let hasRecentGifs = context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudRecentGifs))
+            let hasRecentGifs = exteralessSavedGifItems(engine: context.engine)
             |> map { savedGifs -> Bool in
                 return !savedGifs.isEmpty
             }
@@ -1749,7 +1762,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
             })
         }
 
-        self.choosingStickerDisposable = (self.choosingSticker
+        self.choosingStickerDisposable = (combineLatest(self.choosingSticker, exteralessStickerPolicy())
+        |> map { choosing, policy in choosing && !policy.hideChoosingActivity }
+        |> distinctUntilChanged
         |> deliverOnMainQueue).start(next: { [weak self] value in
             if let self {
                 self.interaction?.updateChoosingSticker(value)
@@ -1763,6 +1778,55 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
         self.emojiSearchDisposable.dispose()
         self.stickerSearchDisposable.dispose()
         self.choosingStickerDisposable?.dispose()
+        self.lockedEmojiDisposable.dispose()
+    }
+
+    private func sendLockedEmojiAsSticker(_ file: TelegramMediaFile, peerId: EnginePeer.Id) -> Bool {
+        guard let state = self.currentState, state.isVisible, state.interfaceState.interfaceState.editMessage == nil else { return false }
+        if let channel = state.interfaceState.renderedPeer?.peer as? TelegramChannel,
+           channel.hasBannedPermission(.banSendStickers) != nil,
+           (state.interfaceState.boostsToUnrestrict ?? 0) <= 0 {
+            self.showStickerError("Stickers are restricted in this chat.")
+            return true
+        }
+        if let group = state.interfaceState.renderedPeer?.peer as? TelegramGroup, group.hasBannedPermission(.banSendStickers) {
+            self.showStickerError("Stickers are restricted in this chat.")
+            return true
+        }
+        if case .customChatContents = state.interfaceState.subject { return false }
+        self.lockedEmojiGeneration &+= 1
+        let generation = self.lockedEmojiGeneration
+        self.lockedEmojiDisposable.set((exteralessPrepareEmojiSticker(engine: self.context.engine, peerId: peerId, file: file)
+        |> deliverOnMainQueue).start(next: { [weak self] uploaded in
+            guard let self, self.lockedEmojiGeneration == generation, let current = self.currentState,
+                  current.isVisible, current.interfaceState.chatLocation == state.interfaceState.chatLocation,
+                  current.interfaceState.subject == state.interfaceState.subject,
+                  current.interfaceState.interfaceState == state.interfaceState.interfaceState,
+                  StickerPolicy().sendLockedEmojiAsSticker else { return }
+            if let channel = current.interfaceState.renderedPeer?.peer as? TelegramChannel,
+               channel.hasBannedPermission(.banSendStickers) != nil, (current.interfaceState.boostsToUnrestrict ?? 0) <= 0 {
+                self.showStickerError("Stickers are restricted in this chat.")
+                return
+            }
+            if let group = current.interfaceState.renderedPeer?.peer as? TelegramGroup, group.hasBannedPermission(.banSendStickers) {
+                self.showStickerError("Stickers are restricted in this chat.")
+                return
+            }
+            let scheduled = current.interfaceState.subject == .scheduledMessages
+            // Keep the draft; the native callback owns fee/slow-mode checks,
+            // schedule picker, reply/thread and enqueue semantics.
+            let _ = self.interaction?.sendSticker(.standalone(media: uploaded), false, scheduled, nil, false, nil, nil, nil, [])
+        }, error: { [weak self] error in
+            guard let self, self.lockedEmojiGeneration == generation, self.currentState?.isVisible == true else { return }
+            self.showStickerError(error.localizedDescription)
+        }))
+        return true
+    }
+
+    private func showStickerError(_ text: String) {
+        let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: self.context.sharedContext.currentPresentationData.with { $0 }.strings.Common_OK, style: .default))
+        self.context.sharedContext.applicationBindings.presentNativeController(alert)
     }
 
     private func reloadGifContext() {
@@ -1812,6 +1876,10 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
     }
 
     public override func updateLayout(width: CGFloat, leftInset: CGFloat, rightInset: CGFloat, bottomInset: CGFloat, standardInputHeight: CGFloat, inputHeight: CGFloat, maximumHeight: CGFloat, inputPanelHeight: CGFloat, transition: ContainedViewLayoutTransition, interfaceState: ChatPresentationInterfaceState, layoutMetrics: LayoutMetrics, deviceMetrics: DeviceMetrics, isVisible: Bool, isExpanded: Bool) -> (CGFloat, CGFloat) {
+        if !isVisible || self.currentState?.interfaceState.chatLocation != interfaceState.chatLocation {
+            self.lockedEmojiGeneration &+= 1
+            self.lockedEmojiDisposable.set(nil)
+        }
         self.currentState = (width, leftInset, rightInset, bottomInset, standardInputHeight, inputHeight, maximumHeight, inputPanelHeight, interfaceState, layoutMetrics, deviceMetrics, isVisible, isExpanded)
 
         let innerTransition: ComponentTransition
@@ -2223,7 +2291,9 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
             canSaveGif = false
         }
 
-        let _ = (self.context.engine.stickers.isGifSaved(id: file.media.fileId)
+        let _ = (exteralessSavedGifItems(engine: self.context.engine)
+        |> take(1)
+        |> map { items in items.contains(where: { $0.media.fileId == file.media.fileId }) }
         |> deliverOnMainQueue).start(next: { [weak self] isGifSaved in
             guard let strongSelf = self else {
                 return
@@ -2247,7 +2317,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                     if isSaved {
                         let _ = self.interaction?.sendGif(file, sourceView, sourceRect, false, false)
                     } else if let (collection, result) = contextResult {
-                        let _ = self.interaction?.sendBotContextResultAsGif(collection, result, sourceView, sourceRect, false, false)
+                        let _ = self.interaction?.sendBotContextResultAsGif(collection, result, sourceView, sourceRect, nil, false)
                     }
                 }
             })))
@@ -2315,11 +2385,12 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                     f(.dismissWithoutContent)
 
                     if let self {
-                        let _ = removeSavedGif(postbox: self.context.account.postbox, mediaId: file.media.fileId).start()
+                        let _ = (exteralessToggleGifSaved(engine: self.context.engine, fileReference: file, saved: false)
+                        |> deliverOnMainQueue).start(error: { [weak self] error in self?.showStickerError(error.localizedDescription) })
                     }
                 })))
             } else if canSaveGif && !isGifSaved {
-                items.append(.action(ContextMenuActionItem(text: presentationData.strings.Preview_SaveGif, icon: { theme in
+                items.append(.action(ContextMenuActionItem(text: StickerPolicy().localGifs ? "Save GIF on This Device" : presentationData.strings.Preview_SaveGif, icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Save"), color: theme.actionSheet.primaryTextColor)
                 }, action: { [weak self] _, f in
                     f(.dismissWithoutContent)
@@ -2330,15 +2401,17 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
 
                     let context = strongSelf.context
                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                    let _ = (toggleGifSaved(account: context.account, fileReference: file, saved: true)
+                    let _ = (exteralessToggleGifSaved(engine: context.engine, fileReference: file, saved: true)
                     |> deliverOnMainQueue).start(next: { [weak self]  result in
                         guard let strongSelf = self else {
                             return
                         }
                         switch result {
-                            case .generic:
+                            case .local:
+                                strongSelf.interaction?.presentController(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: "GIF saved on this device", customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
+                            case .cloud(.generic):
                                 strongSelf.interaction?.presentController(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: presentationData.strings.Gallery_GifSaved, customUndoText: nil, timeout: nil), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), nil)
-                            case let .limitExceeded(limit, premiumLimit):
+                            case let .cloud(.limitExceeded(limit, premiumLimit)):
                                 let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
                                 let text: String
                                 if limit == premiumLimit || premiumConfiguration.isPremiumDisabled {
@@ -2359,7 +2432,7 @@ public final class ChatEntityKeyboardInputNode: ChatInputNode {
                                     return false
                                 }), nil)
                         }
-                    })
+                    }, error: { [weak self] error in self?.showStickerError(error.localizedDescription) })
                 })))
             }
 
@@ -2772,6 +2845,43 @@ public final class EmojiContentPeekBehaviorImpl: EmojiContentPeekBehavior {
         self.present = present
     }
 
+    private func localFavoriteAction(file: TelegramMediaFile, isLocal: Bool?, interaction: Interaction) -> ContextMenuItem {
+        let title: String
+        if let isLocal {
+            title = isLocal ? "Remove Local Favorite" : "Keep Local Favorite"
+        } else {
+            title = "Local Favorites Unavailable"
+        }
+        return .action(ContextMenuActionItem(text: title, icon: { theme in
+            generateTintedImage(image: UIImage(bundleImageName: isLocal == true ? "Chat/Context Menu/Unfave" : "Chat/Context Menu/Fave"), color: theme.contextMenu.primaryColor)
+        }, action: { [weak self] _, completion in
+            completion(.default)
+            guard let self else { return }
+            guard let isLocal else {
+                self.localFavoriteError("Local favorite storage could not be read. The existing data was preserved.")
+                return
+            }
+            let context = self.context
+            let _ = (exteralessSetLocalFavoriteSticker(engine: context.engine, file: file, saved: !isLocal)
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] changed in
+                guard let self, self.context === context else { return }
+                let text: String
+                if isLocal { text = changed ? "Local favorite removed" : "This sticker is not kept locally" }
+                else { text = changed ? "Sticker kept in local favorites" : "Sticker is already kept locally" }
+                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                interaction.presentGlobalOverlayController(UndoOverlayController(presentationData: presentationData, content: .sticker(context: context, file: file, loop: true, title: nil, text: text, undoText: nil, customAction: nil), elevatedLayout: false, action: { _ in false }), nil)
+            }, error: { [weak self] error in
+                self?.localFavoriteError(error.localizedDescription)
+            })
+        }))
+    }
+
+    private func localFavoriteError(_ text: String) {
+        let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: self.context.sharedContext.currentPresentationData.with { $0 }.strings.Common_OK, style: .default))
+        self.context.sharedContext.applicationBindings.presentNativeController(alert)
+    }
+
     private func presentStickerPackActionOverlay(_ actions: [StickerPackScreenActionResult], interaction: Interaction) {
         guard let action = actions.first else {
             return
@@ -2974,6 +3084,14 @@ public final class EmojiContentPeekBehaviorImpl: EmojiContentPeekBehavior {
                         sendPaidMessageStars = .single(nil)
                     }
 
+                    let isLocalFavorite: Signal<Bool?, NoError> = exteralessLocalFavoriteStickers(engine: context.engine)
+                    |> take(1)
+                    |> map { snapshot -> Bool? in snapshot.local.contains(where: { $0.id == file.fileId.id }) }
+                    |> `catch` { _ -> Signal<Bool?, NoError> in
+                        Logger.shared.log("ExteralessFavorites", "Local favorite state unavailable")
+                        return .single(nil)
+                    }
+
                     return combineLatest(
                         context.engine.stickers.isStickerSaved(id: file.fileId),
                         context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: accountPeerId)) |> map { peer -> Bool in
@@ -2983,10 +3101,11 @@ public final class EmojiContentPeekBehaviorImpl: EmojiContentPeekBehavior {
                             }
                             return hasPremium
                         },
-                        sendPaidMessageStars
+                        sendPaidMessageStars,
+                        isLocalFavorite
                     )
                     |> deliverOnMainQueue
-                    |> map { [weak itemLayer] isStarred, hasPremium, sendPaidMessageStars -> (UIView, CGRect, PeekControllerContent)? in
+                    |> map { [weak itemLayer] isStarred, hasPremium, sendPaidMessageStars, isLocalFavorite -> (UIView, CGRect, PeekControllerContent)? in
                         guard let strongSelf = self, let itemLayer = itemLayer else {
                             return nil
                         }
@@ -2996,8 +3115,10 @@ public final class EmojiContentPeekBehaviorImpl: EmojiContentPeekBehavior {
                         let isLocked = file.isPremiumSticker && !hasPremium
 
                         if let interaction = strongSelf.interaction {
+                            let pickerReference = (itemLayer as? EmojiKeyboardItemLayer)?.item.fileReference
                             let sendSticker: (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?) -> Void = { fileReference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer in
-                                let _ = interaction.sendSticker(fileReference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer, bubbleUpEmojiOrStickersets)
+                                let reference = pickerReference.flatMap { $0.media.fileId == fileReference.media.fileId ? $0.withMedia(fileReference.media) : nil } ?? fileReference
+                                let _ = interaction.sendSticker(reference, silentPosting, schedule, query, clearInput, sourceView, sourceRect, sourceLayer, bubbleUpEmojiOrStickersets)
                             }
 
                             if let chatPeerId = strongSelf.chatPeerId, !isLocked {
@@ -3062,6 +3183,8 @@ public final class EmojiContentPeekBehaviorImpl: EmojiContentPeekBehavior {
                                     })
                                 }))
                             )
+
+                            menuItems.append(strongSelf.localFavoriteAction(file: file, isLocal: isLocalFavorite, interaction: interaction))
 
                             if !file.isPremiumSticker {
                                 menuItems.append(.action(ContextMenuActionItem(text: presentationData.strings.Stickers_EditSticker, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Draw"), color: theme.contextMenu.primaryColor) }, action: { [weak self] _, f in

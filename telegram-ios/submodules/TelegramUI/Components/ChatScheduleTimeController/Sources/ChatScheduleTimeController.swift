@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -42,7 +43,12 @@ public final class ChatScheduleTimeController: ViewController {
         self.context = context
         self.mode = mode
         self.style = style
-        self.currentTime = currentTime != scheduleWhenOnlineTimestamp ? currentTime : nil
+        switch mode {
+        case .scheduledMessages, .reminders:
+            self.currentTime = ChatComposerPolicy.initialScheduleTime(current: currentTime, now: Date().timeIntervalSince1970, minutes: ClientSettings.shared.integer("chats.defaultScheduledTime", default: 10))
+        case .suggestPost:
+            self.currentTime = currentTime != scheduleWhenOnlineTimestamp ? currentTime : nil
+        }
         self.minimalTime = minimalTime
         self.dismissByTapOutside = dismissByTapOutside
         self.completion = completion

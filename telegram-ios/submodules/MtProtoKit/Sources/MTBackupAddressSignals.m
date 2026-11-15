@@ -307,9 +307,13 @@ MTAtomic *sharedFetchConfigKeychains() {
 }
 
 + (MTSignal * _Nonnull)fetchBackupIps:(bool)isTestingEnvironment currentContext:(MTContext * _Nonnull)currentContext additionalSource:(MTSignal * _Nullable)additionalSource phoneNumber:(NSString * _Nullable)phoneNumber mainDatacenterId:(NSInteger)mainDatacenterId {
+    return [self fetchBackupIps:isTestingEnvironment currentContext:currentContext additionalSource:additionalSource phoneNumber:phoneNumber mainDatacenterId:mainDatacenterId primarySource:nil];
+}
+
++ (MTSignal * _Nonnull)fetchBackupIps:(bool)isTestingEnvironment currentContext:(MTContext * _Nonnull)currentContext additionalSource:(MTSignal * _Nullable)additionalSource phoneNumber:(NSString * _Nullable)phoneNumber mainDatacenterId:(NSInteger)mainDatacenterId primarySource:(MTSignal * _Nullable)primarySource {
     __weak MTContext *weakCurrentContext = currentContext;
     NSMutableArray *signals = [[NSMutableArray alloc] init];
-    [signals addObject:[self fetchBackupIpsResolveGoogle:isTestingEnvironment phoneNumber:phoneNumber currentContext:currentContext addressOverride:currentContext.apiEnvironment.accessHostOverride]];
+    [signals addObject:primarySource ?: [self fetchBackupIpsResolveGoogle:isTestingEnvironment phoneNumber:phoneNumber currentContext:currentContext addressOverride:currentContext.apiEnvironment.accessHostOverride]];
     if (additionalSource != nil) {
         [signals addObject:[additionalSource mapToSignal:^MTSignal *(MTBackupDatacenterData *datacenterData) {
             if (![datacenterData isKindOfClass:[MTBackupDatacenterData class]]) {

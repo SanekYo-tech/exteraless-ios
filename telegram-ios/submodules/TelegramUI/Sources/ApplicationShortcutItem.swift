@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramPresentationData
 import DeviceAccess
@@ -10,6 +11,8 @@ enum ApplicationShortcutItemType: String {
     case savedMessages
     case account
     case appIcon
+    case toolsGhostMode = "app.exteraless.action.TOGGLE_GHOST_MODE"
+    case toolsSafeMode = "app.exteraless.action.TOGGLE_SAFE_MODE"
 }
 
 struct ApplicationShortcutItem: Equatable {
@@ -35,12 +38,24 @@ extension ApplicationShortcutItem {
                 icon = UIApplicationShortcutIcon(templateImageName: "Shortcuts/Account")
             case .appIcon:
                 icon = UIApplicationShortcutIcon(templateImageName: "Shortcuts/AppIcon")
+            case .toolsGhostMode:
+                icon = UIApplicationShortcutIcon(systemImageName: "eye.slash")
+            case .toolsSafeMode:
+                icon = UIApplicationShortcutIcon(systemImageName: "shield")
         }
         return UIApplicationShortcutItem(type: self.type.rawValue, localizedTitle: self.title, localizedSubtitle: self.subtitle, icon: icon, userInfo: nil)
     }
 }
 
 func applicationShortcutItems(strings: PresentationStrings, otherAccountName: String?) -> [ApplicationShortcutItem] {
+    if ClientSettings.shared.bool("tools.quickToggles") {
+        return [
+            ApplicationShortcutItem(type: .toolsGhostMode, title: "Toggle Ghost mode", subtitle: nil),
+            ApplicationShortcutItem(type: .toolsSafeMode, title: "Toggle Plugin safe mode", subtitle: nil),
+            ApplicationShortcutItem(type: .search, title: strings.Common_Search, subtitle: nil),
+            ApplicationShortcutItem(type: .compose, title: strings.Compose_NewMessage, subtitle: nil)
+        ]
+    }
     if let otherAccountName = otherAccountName {
         return [
             ApplicationShortcutItem(type: .search, title: strings.Common_Search, subtitle: nil),

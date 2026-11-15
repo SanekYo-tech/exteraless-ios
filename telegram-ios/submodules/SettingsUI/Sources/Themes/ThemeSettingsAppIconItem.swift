@@ -377,24 +377,24 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
                         }
                         imageNode.lockNode.image = strongSelf.lockImage
                         
-                        if let image = UIImage(named: icon.imageName, in: getAppBundle(), compatibleWith: nil) {
+                        if let image = UIImage(named: icon.imageName, in: getAppBundle(), compatibleWith: nil) ?? (icon.isDefault ? UIImage(named: "BlueIcon", in: getAppBundle(), compatibleWith: nil) : nil) {
                             let selected = icon.name == item.currentIconName
 
                             var name = "Icon"
                             var bordered = true
                             switch icon.name {
-                                case "BlueIcon":
+                                case "Default", "Blue", "BlueIcon":
                                     name = item.strings.Appearance_AppIconDefault
-                                case "BlackIcon":
+                                case "Black", "BlackIcon":
                                     name = item.strings.Appearance_AppIconDefaultX
-                                case "BlueClassicIcon":
+                                case "BlueClassic", "BlueClassicIcon":
                                     name = item.strings.Appearance_AppIconClassic
-                                case "BlackClassicIcon":
+                                case "BlackClassic", "BlackClassicIcon":
                                     name = item.strings.Appearance_AppIconClassicX
-                                case "BlueFilledIcon":
+                                case "BlueFilled", "BlueFilledIcon":
                                     name = item.strings.Appearance_AppIconFilled
                                     bordered = false
-                                case "BlackFilledIcon":
+                                case "BlackFilled", "BlackFilledIcon":
                                     name = item.strings.Appearance_AppIconFilledX
                                     bordered = false
                                 case "WhiteFilled":
@@ -435,4 +435,3 @@ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
         self.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, removeOnCompletion: false)
     }
 }
-

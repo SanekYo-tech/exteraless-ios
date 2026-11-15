@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import SwiftSignalKit
@@ -173,6 +174,9 @@ public func normalizeTranslationLanguage(_ code: String) -> String {
 }
 
 public func canTranslateChats(context: AccountContext) -> Bool {
+    let policy = AITranslationPolicy()
+    if !policy.autoEnabled { return false }
+    if policy.provider != .telegram { return true }
     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     var chatTranslationAvailable = true
     switch translationConfiguration.auto {

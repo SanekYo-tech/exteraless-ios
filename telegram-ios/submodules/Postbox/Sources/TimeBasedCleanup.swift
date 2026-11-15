@@ -337,6 +337,7 @@ private final class TimeBasedCleanupImpl {
     private let generalPaths: [String]
     private let totalSizeBasedPath: String
     private let shortLivedPaths: [String]
+    private let evictResourceFiles: ([String], () -> Void) -> Bool
     
     private var scheduledTouches = Set<String>()
     private var scheduledTouchesTimer: SignalKitTimer?
@@ -348,7 +349,7 @@ private final class TimeBasedCleanupImpl {
     private let scanQueue = Queue(name: "TimeBasedCleanupScan", qos: .background)
     private let scanDelay: Double
     
-    init(queue: Queue, storageBox: StorageBox, cacheStorageBox: StorageBox, generalPaths: [String], totalSizeBasedPath: String, shortLivedPaths: [String], scanDelay: Double) {
+    init(queue: Queue, storageBox: StorageBox, cacheStorageBox: StorageBox, generalPaths: [String], totalSizeBasedPath: String, shortLivedPaths: [String], scanDelay: Double, evictResourceFiles: @escaping ([String], () -> Void) -> Bool) {
         self.queue = queue
         self.storageBox = storageBox
         self.cacheStorageBox = cacheStorageBox
@@ -356,6 +357,7 @@ private final class TimeBasedCleanupImpl {
         self.totalSizeBasedPath = totalSizeBasedPath
         self.shortLivedPaths = shortLivedPaths
         self.scanDelay = scanDelay
+        self.evictResourceFiles = evictResourceFiles
     }
     
     deinit {
@@ -387,6 +389,7 @@ private final class TimeBasedCleanupImpl {
         let storageBox = self.storageBox
         let cacheStorageBox = self.cacheStorageBox
         let scanQueue = self.scanQueue
+        let evictResourceFiles = self.evictResourceFiles
         let scanOnce = Signal<Never, NoError> { subscriber in
             let cancelled = Atomic<Bool>(value: false)
             let isCancelled: () -> Bool = {
@@ -524,24 +527,26 @@ private final class TimeBasedCleanupImpl {
                         if isCancelled() {
                             return false
                         }
-                        remainingSize -= size
-                        
-                        // Every path here is a hard link to the same inode; all of them
-                        // must go for the space to be released.
-                        for filePath in filePaths {
-                            unlink(filePath)
-                            removedGeneralLimitCount += 1
-                            
-                            if (filePath as NSString).deletingLastPathComponent == totalSizeBasedPath {
-                                let fileName = (filePath as NSString).lastPathComponent
-                                if !fileName.hasSuffix("_partial.meta"), let idData = MediaBox.idForFileName(name: fileName).data(using: .utf8), !unlinkedResourceIdSet.contains(idData) {
-                                    unlinkedResourceIdSet.insert(idData)
-                                    unlinkedResourceIds.append(idData)
+                        let removed = evictResourceFiles(filePaths) {
+                            // Every path here is a hard link to the same inode. Keep admission
+                            // and this unlink group share a gate; skipped bytes are not "freed".
+                            for filePath in filePaths {
+                                unlink(filePath)
+                                removedGeneralLimitCount += 1
+
+                                if (filePath as NSString).deletingLastPathComponent == totalSizeBasedPath {
+                                    let fileName = (filePath as NSString).lastPathComponent
+                                    if !fileName.hasSuffix("_partial.meta"), let idData = MediaBox.idForFileName(name: fileName).data(using: .utf8), !unlinkedResourceIdSet.contains(idData) {
+                                        unlinkedResourceIdSet.insert(idData)
+                                        unlinkedResourceIds.append(idData)
+                                    }
+                                } else {
+                                    didUnlinkCacheFile(filePath)
                                 }
-                            } else {
-                                didUnlinkCacheFile(filePath)
                             }
                         }
+                        if !removed { return true }
+                        remainingSize -= size
                         
                         if remainingSize <= Int64(bytesLimit) {
                             return false
@@ -615,10 +620,10 @@ final class TimeBasedCleanup {
     private let queue = Queue()
     private let impl: QueueLocalObject<TimeBasedCleanupImpl>
     
-    init(storageBox: StorageBox, cacheStorageBox: StorageBox, generalPaths: [String], totalSizeBasedPath: String, shortLivedPaths: [String], scanDelay: Double = 10.0) {
+    init(storageBox: StorageBox, cacheStorageBox: StorageBox, generalPaths: [String], totalSizeBasedPath: String, shortLivedPaths: [String], scanDelay: Double = 10.0, evictResourceFiles: @escaping ([String], () -> Void) -> Bool = { _, remove in remove(); return true }) {
         let queue = self.queue
         self.impl = QueueLocalObject(queue: self.queue, generate: {
-            return TimeBasedCleanupImpl(queue: queue, storageBox: storageBox, cacheStorageBox: cacheStorageBox, generalPaths: generalPaths, totalSizeBasedPath: totalSizeBasedPath, shortLivedPaths: shortLivedPaths, scanDelay: scanDelay)
+            return TimeBasedCleanupImpl(queue: queue, storageBox: storageBox, cacheStorageBox: cacheStorageBox, generalPaths: generalPaths, totalSizeBasedPath: totalSizeBasedPath, shortLivedPaths: shortLivedPaths, scanDelay: scanDelay, evictResourceFiles: evictResourceFiles)
         })
     }
     

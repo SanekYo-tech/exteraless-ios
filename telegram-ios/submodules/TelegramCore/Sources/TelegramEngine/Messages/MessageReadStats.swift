@@ -15,10 +15,10 @@ public final class MessageReadStats {
 }
 
 func _internal_messageReadStats(account: Account, id: MessageId) -> Signal<MessageReadStats?, NoError> {
-    return account.postbox.transaction { transaction -> Peer? in
-        return transaction.getPeer(id.peerId)
+    return account.postbox.transaction { transaction -> (Peer?, Int32?) in
+        return (transaction.getPeer(id.peerId), exteralessObservedReadDate(transaction: transaction, messageId: id).readAt)
     }
-    |> mapToSignal { peer -> Signal<MessageReadStats?, NoError> in
+    |> mapToSignal { peer, observedReadAt -> Signal<MessageReadStats?, NoError> in
         guard let peer, let inputPeer = apiInputPeer(peer) else {
             return .single(nil)
         }
@@ -34,6 +34,9 @@ func _internal_messageReadStats(account: Account, id: MessageId) -> Signal<Messa
             }
             |> map { result -> MessageReadStats? in
                 guard let result else {
+                    if let observedReadAt {
+                        return MessageReadStats(reactionCount: 0, peers: [EnginePeer(peer)], readTimestamps: [peer.id: observedReadAt])
+                    }
                     return MessageReadStats(reactionCount: 0, peers: [], readTimestamps: [:])
                 }
                 switch result {

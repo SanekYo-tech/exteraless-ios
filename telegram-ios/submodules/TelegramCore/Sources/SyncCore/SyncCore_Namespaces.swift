@@ -171,6 +171,9 @@ public struct Namespaces {
         public static let feed: Int8 = 60
         public static let shareThemeBackdrops: Int8 = 61
         public static let cachedUniqueStarGifts: Int8 = 62
+        /// Shared Exteraless account-local state. Domains use disjoint key
+        /// prefixes and remove only their own rows, never this whole collection.
+        public static let exteralessLocalState: Int8 = 63
     }
     
     public struct UnorderedItemList {

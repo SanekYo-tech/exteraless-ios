@@ -474,7 +474,7 @@ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContent
                             actionTitle = item.presentationData.strings.Conversation_OpenChatFolder
                         case "telegram_story":
                             if let story = webpage.story, let peer = item.message.peers[story.storyId.peerId] {
-                                title = EnginePeer(peer).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                title = EnginePeer(peer).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                                 subtitle = nil
                             }
                             actionTitle = item.presentationData.strings.Chat_OpenStory

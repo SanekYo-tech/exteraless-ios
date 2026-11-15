@@ -391,6 +391,7 @@ public final class AccountStateManager {
         
         let updateConfigRequested: (() -> Void)?
         let isPremiumUpdated: (() -> Void)?
+        private let retentionScope: Disposable?
         
         init(
             queue: Queue,
@@ -405,7 +406,8 @@ public final class AccountStateManager {
             auxiliaryMethods: AccountAuxiliaryMethods,
             updateConfigRequested: (() -> Void)?,
             isPremiumUpdated: (() -> Void)?,
-            messagesRemovedContext: MessagesRemovedContext
+            messagesRemovedContext: MessagesRemovedContext,
+            retentionScope: Disposable?
         ) {
             self.queue = queue
             self.accountPeerId = accountPeerId
@@ -420,6 +422,7 @@ public final class AccountStateManager {
             self.updateConfigRequested = updateConfigRequested
             self.isPremiumUpdated = isPremiumUpdated
             self.messagesRemovedContext = messagesRemovedContext
+            self.retentionScope = retentionScope
         }
         
         deinit {
@@ -429,6 +432,7 @@ public final class AccountStateManager {
             self.appliedQtsDisposable.dispose()
             self.reportMessageDeliveryDisposable.dispose()
             self.updateEmojiGameInfoDisposable.dispose()
+            self.retentionScope?.dispose()
         }
         
         public func reset() {
@@ -777,6 +781,9 @@ public final class AccountStateManager {
                     
                     return result
                 }
+                |> afterNext { value in
+                    if value != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
+                }
                 |> deliverOn(self.queue)).start(next: { [weak self] finalState in
                     guard let strongSelf = self else {
                         return
@@ -926,6 +933,9 @@ public final class AccountStateManager {
                                                     return (nil, nil, false, false)
                                                 }
                                             }
+                                            |> afterNext { value in
+                                                if value.finalStatte != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
+                                            }
                                         }
                                     }
                                 }
@@ -1067,6 +1077,9 @@ public final class AccountStateManager {
                                 }
                                 return result
                             }
+                        }
+                        |> afterNext { value in
+                            if value != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
                         }
                         |> map({ ($0, finalState) })
                         |> deliverOn(queue)
@@ -1228,6 +1241,8 @@ public final class AccountStateManager {
                 }
                 
                 let signal = self.postbox.transaction { transaction -> [([Message], PeerGroupId, Bool, MessageHistoryThreadData?)] in
+                    nativeServicePublishCommittedMessages(postbox: self.postbox, transaction: transaction,
+                        messageIds: events.addedIncomingMessageIds)
                     var messageList: [([Message], PeerGroupId, Bool, MessageHistoryThreadData?)] = []
                     
                     for id in events.addedIncomingMessageIds {
@@ -1372,6 +1387,9 @@ public final class AccountStateManager {
                     
                     return result
                 }
+                |> afterNext { value in
+                    if value != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
+                }
                 |> map({ ($0, finalState) })
                 |> deliverOn(self.queue)
                 
@@ -1424,6 +1442,9 @@ public final class AccountStateManager {
                     Logger.shared.log("State", "replayFinalState took \(deltaTime)s")
                 }
                 return result
+            }
+            |> afterNext { value in
+                if value != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
             }
             |> map({ ($0, finalState) })
             |> deliverOn(self.queue)
@@ -1522,6 +1543,9 @@ public final class AccountStateManager {
                                             } else {
                                                 return (nil, nil, false)
                                             }
+                                        }
+                                        |> afterNext { value in
+                                            if value.finalStatte != nil { ExteralessFilteringRuntime.shared.invalidatePresentations() }
                                         }
                                     }
                                 }
@@ -2123,7 +2147,8 @@ public final class AccountStateManager {
         addIsContactUpdates: @escaping ([(PeerId, Bool)]) -> Void,
         shouldKeepOnlinePresence: Signal<Bool, NoError>,
         peerInputActivityManager: PeerInputActivityManager?,
-        auxiliaryMethods: AccountAuxiliaryMethods
+        auxiliaryMethods: AccountAuxiliaryMethods,
+        retentionScope: Disposable? = nil
     ) {
         let queue = Queue(name: "AccountStateManager")
         
@@ -2155,7 +2180,8 @@ public final class AccountStateManager {
                 isPremiumUpdated: {
                     isPremiumUpdatedImpl?()
                 },
-                messagesRemovedContext: messagesRemovedContext
+                messagesRemovedContext: messagesRemovedContext,
+                retentionScope: retentionScope
             )
         })
         

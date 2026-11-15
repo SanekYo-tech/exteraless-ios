@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import TelegramCore
@@ -233,7 +234,7 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
             }
         
             var shortcuts: Signal<[ShortcutMessageList.Item], NoError> = .single([])
-            if let user = peer as? TelegramUser, user.botInfo == nil {
+            if let user = peer as? TelegramUser, user.botInfo == nil || ClientSettings.shared.bool("chats.showQuickReplyInBotCommands") {
                 context.account.viewTracker.keepQuickRepliesApproximatelyUpdated()
                 
                 shortcuts = context.engine.accountData.shortcutMessageList(onlyRemote: true)
@@ -259,7 +260,7 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
                     return false
                 }
                 var sortedCommands = filteredCommands.map(ChatInputTextCommand.command)
-                if !shortcuts.isEmpty && sortedCommands.isEmpty {
+                if !shortcuts.isEmpty && (sortedCommands.isEmpty || ClientSettings.shared.bool("chats.showQuickReplyInBotCommands")) {
                     for shortcut in shortcuts {
                         sortedCommands.append(.shortcut(shortcut))
                     }
@@ -567,13 +568,15 @@ func urlPreviewStateForInputText(_ inputText: NSAttributedString?, context: Acco
         let detectedUrls = detectUrls(inputText)
         if detectedUrls != (currentQuery?.detectedUrls ?? []) {
             if !detectedUrls.isEmpty {
-                return (UrlPreviewState(detectedUrls: detectedUrls), webpagePreview(account: context.account, urls: detectedUrls, forPeerId: forPeerId)
+                let requestUrls = ClientSettings.shared.bool("chats.fixLinkPreview", default: true) ? detectedUrls.map(ChatPreviewLinkRules.previewURL) : detectedUrls
+                return (UrlPreviewState(detectedUrls: detectedUrls), webpagePreview(account: context.account, urls: requestUrls, forPeerId: forPeerId)
                 |> mapToSignal { result -> Signal<(TelegramMediaWebpage, String)?, NoError> in
                     guard case let .result(webpageResult) = result else {
                         return .complete()
                     }
                     if let webpageResult {
-                        return .single((webpageResult.webpage, webpageResult.sourceUrl))
+                        let originalUrl = requestUrls.firstIndex(of: webpageResult.sourceUrl).map { detectedUrls[$0] } ?? webpageResult.sourceUrl
+                        return .single((webpageResult.webpage, originalUrl))
                     } else {
                         return .single(nil)
                     }

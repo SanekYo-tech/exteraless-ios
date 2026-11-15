@@ -1,5 +1,7 @@
 import UIKit
 import PasscodeCore
+import ExteralessCore
+import Display
 import TelegramUI
 import BuildConfig
 import ShareExtensionContext
@@ -44,6 +46,32 @@ class ShareRootController: UIViewController {
             }
             
             let rootPath = appGroupUrl.path + "/telegram-data"
+            do {
+                try ExteralessFontFamily.prepare()
+                try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+                try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
+                    + AppearanceMonetPolicy.definitions
+                    + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions
+                    + CoreAppearanceFontFamilyPolicy.definitions)
+                try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+                let exteralessDirectory = URL(fileURLWithPath: rootPath, isDirectory: true).appendingPathComponent("exteraless", isDirectory: true)
+                try ChatTrackingRulesStore.shared.configure(overrideURL: exteralessDirectory.appendingPathComponent("adguard_url_tracking.txt"), bundledURL: Bundle.main.url(forResource: "adguard_url_tracking", withExtension: "txt"))
+                try ExteralessAccountRetentionEnvironment.shared.configure(ExteralessRetentionProcessConfiguration(
+                    role: .shareExtension, snapshot: ClientSettings.shared.readSnapshot(), durabilityRootURL: appGroupUrl))
+                try ExteralessHiddenAccounts.shared.configure(basePath: rootPath,
+                    accessGroup: PasscodeEnvironment.shared.sharedAccessGroup(), isMainApp: false,
+                    keychainScope: PasscodeEnvironment.shared.keychainScope, durabilityRootURL: appGroupUrl)
+                try ExteralessHiddenAccounts.shared.reload()
+                let configuration = ClientAPIConfigurationStore(settings: .shared, settingsSecrets: ClientSecrets.systemStore(),
+                    vault: ClientAPIVault(storage: ClientAPIKeychain.storage(accessGroup: try PasscodeEnvironment.shared.sharedAccessGroup())))
+                try ExteralessClientAPIEnvironment.shared.configure(builtinApiId: buildConfig.apiId,
+                    builtinApiHash: buildConfig.apiHash, configuration: configuration)
+            } catch {
+                ExteralessAccountRetentionEnvironment.shared.setUnavailable()
+                let message = (error as? ClientAPIError)?.errorDescription ?? "Unable to prepare account privacy and API settings."
+                self.extensionContext?.cancelRequest(withError: NSError(domain: "ExteralessClientPreparation", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
+                return
+            }
             
             let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
             let encryptionParameters: (Data, Data) = (deviceSpecificEncryptionParameters.key, deviceSpecificEncryptionParameters.salt)

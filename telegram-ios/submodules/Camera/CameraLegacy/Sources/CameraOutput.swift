@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import AVFoundation
 import UIKit
 import Display
@@ -179,7 +180,7 @@ final class CameraOutput: NSObject {
     func configureVideoStabilization() {
         if let videoDataOutputConnection = self.videoOutput.connection(with: .video) {
             if videoDataOutputConnection.isVideoStabilizationSupported {
-                videoDataOutputConnection.preferredVideoStabilizationMode = .standard
+                videoDataOutputConnection.preferredVideoStabilizationMode = ClientSettings.shared.bool("tools.cameraStabilization") ? .standard : .off
             }
         }
     }
@@ -237,7 +238,7 @@ final class CameraOutput: NSObject {
         )
 #else
         let uniqueId = settings.uniqueID
-        let photoCapture = PhotoCaptureContext(ciContext: self.ciContext, settings: settings, orientation: orientation, mirror: mirror)
+        let photoCapture = PhotoCaptureContext(ciContext: self.ciContext, settings: settings, orientation: orientation, mirror: mirror && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
         let _ = self.photoCaptureRequests.modify { dict in
             var dict = dict
             dict[uniqueId] = photoCapture

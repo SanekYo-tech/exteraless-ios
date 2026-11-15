@@ -101,8 +101,9 @@ private func regeneratingIDs(_ blocks: [Block]) -> [Block] {
             // regeneration is a pure passthrough — else this drops every item past the first (mirrors the Task-7
             // fix in DocumentCanvasView+Editing.swift, which hit the same legacy-single-item-init trap).
             return .media(MediaBlock(id: .generate(), items: m.items,
-                                     displayWidth: m.displayWidth, alignment: m.alignment,
-                                     caption: regeneratingRunIdentities(m.caption)))
+                                      displayWidth: m.displayWidth, alignment: m.alignment,
+                                      displayMode: m.displayMode,
+                                      caption: regeneratingRunIdentities(m.caption)))
         case .buttonRow(let r):
             // Regenerate the row id only. A `ButtonRef` carries no `BlockID` of its own (a pill is
             // identified positionally, by its index in the row), so the buttons pass through wholesale.

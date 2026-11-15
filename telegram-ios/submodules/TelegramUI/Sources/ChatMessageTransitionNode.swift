@@ -1370,6 +1370,12 @@ public final class ChatMessageTransitionNodeImpl: ASDisplayNode, ChatMessageTran
         self.currentPendingItems = [correlationId: (source, initiated)]
         self.listNode.setCurrentSendAnimationCorrelationIds(Set([correlationId]))
     }
+
+    func cancelPending(correlationIds: Set<Int64>) {
+        guard !correlationIds.isEmpty else { return }
+        for id in correlationIds { self.currentPendingItems.removeValue(forKey: id) }
+        self.listNode.setCurrentSendAnimationCorrelationIds(Set(self.currentPendingItems.keys))
+    }
     
     func add(grouped: [(correlationId: Int64, source: Source, initiated: () -> Void)]) {
         var currentPendingItems: [Int64: (Source, () -> Void)] = [:]

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -184,6 +185,8 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     private let shareButton: GlassButtonView
     private let tagButton: GlassButtonView
     private let tagEditButton: GlassButtonView
+    private let moreButton = GlassButtonView()
+    private let leftActionButton = GlassButtonView()
     
     private let reactionOverlayContainer: ChatMessageSelectionInputPanelNodeViewForOverlayContent
     
@@ -250,6 +253,15 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.shareButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
+        self.moreButton.icon = "Chat/Input/Accessory Panels/MessageSelectionAction"
+        self.moreButton.isAccessibilityElement = true
+        self.moreButton.accessibilityLabel = "Selection actions"
+        self.leftActionButton.icon = "Chat/Context Menu/Reply"
+        self.leftActionButton.isAccessibilityElement = true
+        self.view.addSubview(self.moreButton)
+        self.view.addSubview(self.leftActionButton)
+        self.moreButton.button.addTarget(self, action: #selector(self.exteralessMorePressed), for: .touchUpInside)
+        self.leftActionButton.button.addTarget(self, action: #selector(self.exteralessLeftPressed), for: .touchUpInside)
         
         self.viewForOverlayContent = self.reactionOverlayContainer
         
@@ -298,6 +310,14 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     
     @objc private func deleteButtonPressed() {
         self.interfaceInteraction?.deleteSelectedMessages(self.deleteButton)
+    }
+
+    @objc private func exteralessMorePressed() {
+        (self.interfaceInteraction?.chatController() as? ExteralessChatSelectionActions)?.exteralessPresentSelectionActions(ids: self.selectedMessages, source: self.moreButton)
+    }
+
+    @objc private func exteralessLeftPressed() {
+        (self.interfaceInteraction?.chatController() as? ExteralessChatSelectionActions)?.exteralessPerformLeftSelectionAction(ids: self.selectedMessages)
     }
     
     @objc private func reportButtonPressed() {
@@ -526,7 +546,17 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             tagButton = self.tagEditButton
         }
         
-        let buttons: [GlassButtonView]
+        self.forwardButton.isHidden = !ChatMenuPolicy.enabled("ActionBarButtonForward")
+        self.shareButton.isHidden = !ChatMenuPolicy.enabled("showShareMessages")
+        if interfaceState.reportReason == nil && !ChatMenuPolicy.enabled("showReport") { self.reportButton.isHidden = true }
+        let hasHost = self.interfaceInteraction?.chatController() is ExteralessChatSelectionActions
+        self.moreButton.isHidden = !hasHost
+        self.leftActionButton.isHidden = !hasHost
+        self.moreButton.isEnabled = !self.selectedMessages.isEmpty
+        self.leftActionButton.isEnabled = !self.selectedMessages.isEmpty
+        let left = ChatMenuPolicy.leftAction(rawValue: ClientSettings.shared.integer("chats.leftBottomButton"), canForward: self.actions?.options.contains(.forward) == true && self.actions?.isCopyProtected != true, canSelectBetween: self.selectedMessages.count >= 2)
+        self.leftActionButton.accessibilityLabel = ["Forward without sender", "Reply", "Save to Saved Messages", "Share", "Select between", "Forward without caption"][left]
+        var buttons: [GlassButtonView]
         if self.reportButton.isHidden {
             if let tagButton {
                 buttons = [
@@ -578,10 +608,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             }
         }
         
+        buttons = buttons.filter { !$0.isHidden }
+        if hasHost { buttons.insert(self.leftActionButton, at: 0); buttons.append(self.moreButton) }
         let buttonSize = CGSize(width: 40.0, height: 40.0)
         
         let availableWidth = width - leftInset - rightInset
-        let spacing: CGFloat = floor((availableWidth - buttonSize.width * CGFloat(buttons.count)) / CGFloat(buttons.count - 1))
+        let spacing: CGFloat = buttons.count > 1 ? max(0, floor((availableWidth - buttonSize.width * CGFloat(buttons.count)) / CGFloat(buttons.count - 1))) : 0
         var offset: CGFloat = leftInset
         for i in 0 ..< buttons.count {
             let button = buttons[i]

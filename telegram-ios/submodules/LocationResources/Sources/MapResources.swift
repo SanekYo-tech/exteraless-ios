@@ -4,6 +4,7 @@ import Display
 import TelegramCore
 import MapKit
 import SwiftSignalKit
+import ExteralessCore
 
 public struct MapSnapshotMediaResourceId {
     public let latitude: Double
@@ -20,17 +21,19 @@ public struct MapSnapshotMediaResourceId {
     }
 }
 
-public class MapSnapshotMediaResource {
+public final class MapSnapshotMediaResource: @unchecked Sendable {
     public let latitude: Double
     public let longitude: Double
     public let width: Int32
     public let height: Int32
+    public let scope: MapPreviewScope
     
-    public init(latitude: Double, longitude: Double, width: Int32, height: Int32) {
+    public init(latitude: Double, longitude: Double, width: Int32, height: Int32, scope: MapPreviewScope = .other) {
         self.latitude = latitude
         self.longitude = longitude
         self.width = width
         self.height = height
+        self.scope = scope
     }
     
     public var id: EngineMediaResource.Id {
@@ -66,58 +69,8 @@ private func adjustGMapLatitude(_ latitude: Double, offset: Int, zoom: Int) -> D
     return yToLatitude(latitudeToY(latitude) + t)
 }
 
-private func fetchMapSnapshotResource(resource: MapSnapshotMediaResource) -> Signal<EngineMediaResource.Fetch.Result, EngineMediaResource.Fetch.Error> {
-    return Signal { subscriber in
-        let disposable = MetaDisposable()
-        
-        Queue.concurrentDefaultQueue().async {
-            let options = MKMapSnapshotter.Options()
-            let latitude = adjustGMapLatitude(resource.latitude, offset: -10, zoom: 15)
-            options.region = MKCoordinateRegion(center: CLLocationCoordinate2DMake(latitude, resource.longitude), span: MKCoordinateSpan(latitudeDelta: 0.003, longitudeDelta: 0.003))
-            options.mapType = .standard
-            options.pointOfInterestFilter = .excludingAll
-            options.showsBuildings = true
-            options.size = CGSize(width: CGFloat(resource.width + 1), height: CGFloat(resource.height + 10))
-            options.scale = 2.0
-            let snapshotter = MKMapSnapshotter(options: options)
-            snapshotter.start(with: DispatchQueue.global(), completionHandler: { result, error in
-                if let image = result?.image {
-                    if let data = image.jpegData(compressionQuality: 0.9) {
-                        let tempFile = EngineTempBox.shared.tempFile(fileName: "image.jpg")
-                        if let _ = try? data.write(to: URL(fileURLWithPath: tempFile.path), options: .atomic) {
-                            subscriber.putNext(.moveTempFile(file: tempFile))
-                            subscriber.putCompletion()
-                        }
-                    }
-                }
-            })
-            disposable.set(ActionDisposable {
-                snapshotter.cancel()
-            })
-        }
-        
-        return disposable
-    }
-}
-
 public func chatMapSnapshotData(engine: TelegramEngine, resource: MapSnapshotMediaResource) -> Signal<Data?, NoError> {
-    return Signal<Data?, NoError> { subscriber in
-        let dataDisposable = engine.resources.custom(
-            id: resource.id.stringRepresentation,
-            fetch: EngineMediaResource.Fetch {
-                return fetchMapSnapshotResource(resource: resource)
-            },
-            cacheTimeout: .shortLived
-        ).start(next: { next in
-            if next.availableSize != 0 {
-                subscriber.putNext(next.availableSize == 0 ? nil : try? Data(contentsOf: URL(fileURLWithPath: next.path), options: []))
-            }
-        }, error: subscriber.putError, completed: subscriber.putCompletion)
-        
-        return ActionDisposable {
-            dataDisposable.dispose()
-        }
-    }
+    return exteralessMapSnapshotData(accountId: engine.account.id.int64, resource: resource, adjustedLatitude: adjustGMapLatitude(resource.latitude, offset: -10, zoom: 15))
 }
 
 public func chatMapSnapshotImage(engine: TelegramEngine, resource: MapSnapshotMediaResource) -> Signal<(TransformImageArguments) -> DrawingContext?, NoError> {

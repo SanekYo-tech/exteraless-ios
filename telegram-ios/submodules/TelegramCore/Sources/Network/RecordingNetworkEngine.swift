@@ -71,22 +71,29 @@ private final class RecordingUpdateSink: NetworkEngineUpdateSink {
     }
 }
 
-private final class RecordingNetworkEngineSession: NetworkEngineSession {
+private final class RecordingNetworkEngineSession: NetworkEngineSession, ExteralessPillPassivePingSource {
+    private struct PassiveReadState {
+        var epoch = 0
+        var paused = false
+        var retired = false
+    }
     private let session: NetworkEngineSession
     private let service: RecordingRequestService
     private let role: NetworkTelemetryRole
     private let telemetry: NetworkTelemetry
     private let delegate: RecordingSessionDelegate?
+    private let passiveReadState = Atomic<PassiveReadState>(value: PassiveReadState())
 
     init(session: NetworkEngineSession, engine: NetworkEngine, role: NetworkTelemetryRole, telemetry: NetworkTelemetry, delegate: RecordingSessionDelegate?) {
         self.session = session
         self.role = role
         self.telemetry = telemetry
-        session.observeConnectionDrops { [weak telemetry] drop in
-            telemetry?.connectionDropped(role: role, drop)
-        }
         self.delegate = delegate
         self.service = RecordingRequestService(service: session.requestService, engine: engine, role: role, datacenterId: session.datacenterId, telemetry: telemetry)
+        session.observeConnectionDrops { [weak self, weak telemetry] drop in
+            self?.invalidatePassiveRead()
+            telemetry?.connectionDropped(role: role, drop)
+        }
     }
 
     var datacenterId: Int {
@@ -98,6 +105,12 @@ private final class RecordingNetworkEngineSession: NetworkEngineSession {
     }
 
     func setPaused(_ paused: Bool) {
+        _ = self.passiveReadState.modify { value in
+            var value = value
+            if value.paused != paused { value.epoch &+= 1 }
+            value.paused = paused
+            return value
+        }
         if self.role == .main {
             self.telemetry.setSuspended(paused)
         }
@@ -120,10 +133,12 @@ private final class RecordingNetworkEngineSession: NetworkEngineSession {
     }
 
     func stop() {
+        self.retirePassiveRead()
         self.session.stop()
     }
 
     func movePendingRequests(to service: NetworkEngineRequestService, deadline: Double, completion: @escaping () -> Void) {
+        self.retirePassiveRead()
         self.session.movePendingRequests(to: service, deadline: deadline, completion: completion)
     }
 
@@ -133,6 +148,33 @@ private final class RecordingNetworkEngineSession: NetworkEngineSession {
 
     func serverActivity(_ reply: @escaping (NetworkEngineServerActivity?) -> Void) {
         self.session.serverActivity(reply)
+    }
+
+    private func invalidatePassiveRead() {
+        _ = self.passiveReadState.modify { value in
+            var value = value; value.epoch &+= 1; return value
+        }
+    }
+
+    private func retirePassiveRead() {
+        _ = self.passiveReadState.modify { value in
+            var value = value; value.epoch &+= 1; value.retired = true; return value
+        }
+    }
+
+    func exteralessPillPassivePingSnapshot(_ reply: @escaping (ExteralessPillPassivePingSample?) -> Void) {
+        let ticket = ExteralessPassivePingReply(reply)
+        let initial = self.passiveReadState.with { $0 }
+        guard self.role == .main, !initial.paused, !initial.retired,
+              let source = self.session as? ExteralessPillPassivePingSource else {
+            ticket.complete(nil)
+            return
+        }
+        source.exteralessPillPassivePingSnapshot { [weak self] sample in
+            guard let self else { ticket.complete(nil); return }
+            let current = self.passiveReadState.with { $0 }
+            ticket.complete(!current.paused && !current.retired && current.epoch == initial.epoch ? sample : nil)
+        }
     }
 }
 

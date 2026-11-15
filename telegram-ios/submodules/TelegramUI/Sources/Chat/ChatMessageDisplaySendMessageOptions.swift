@@ -271,7 +271,7 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                     }
                     switch mode {
                     case .generic:
-                        selfController.controllerInteraction?.sendCurrentMessage(false, parameters?.effect.flatMap(ChatSendMessageEffect.init))
+                        selfController.controllerInteraction?.sendCurrentMessage(parameters?.notificationOverride, parameters?.effect.flatMap(ChatSendMessageEffect.init))
                     case .silently:
                         selfController.controllerInteraction?.sendCurrentMessage(true, parameters?.effect.flatMap(ChatSendMessageEffect.init))
                     case .whenOnline:

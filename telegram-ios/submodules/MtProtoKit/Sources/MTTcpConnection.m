@@ -1040,6 +1040,7 @@ struct ctr_state {
             [_socket setUsageCalculationInfo:_usageCalculationInfo];
             
             NSString *addressIp = _scheme.address.ip;
+            bool interfaceResolvesHostnames = [_socket respondsToSelector:@selector(resolvesHostnames)] && [_socket resolvesHostnames];
             MTSignal *resolveSignal = [MTSignal single:[[MTTcpConnectionData alloc] initWithIp:addressIp port:_scheme.address.port isSocks:false]];
             
             if (_isWebProxy) {
@@ -1063,7 +1064,7 @@ struct ctr_state {
                     isHostname = false;
                 }
                 
-                if (isHostname) {
+                if (isHostname && !interfaceResolvesHostnames) {
                     int32_t port = _socksPort;
                     resolveSignal = [[MTDNS resolveHostnameUniversal:_socksIp port:port] map:^id(NSString *resolvedIp) {
                         return [[MTTcpConnectionData alloc] initWithIp:resolvedIp port:port isSocks:true];
@@ -1081,7 +1082,7 @@ struct ctr_state {
                     isHostname = false;
                 }
                 
-                if (isHostname) {
+                if (isHostname && !interfaceResolvesHostnames) {
                     int32_t port = _mtpPort;
                     resolveSignal = [[MTDNS resolveHostnameUniversal:_mtpIp port:port] map:^id(NSString *resolvedIp) {
                         return [[MTTcpConnectionData alloc] initWithIp:resolvedIp port:port isSocks:false];

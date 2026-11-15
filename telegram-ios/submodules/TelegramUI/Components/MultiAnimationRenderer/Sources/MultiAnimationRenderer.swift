@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Display
@@ -20,6 +21,16 @@ open class MultiAnimationRenderTarget: SimpleLayer {
 
     public let deinitCallbacks = Bag<() -> Void>()
     public let updateStateCallbacks = Bag<() -> Void>()
+
+    private lazy var performanceGate = ToolsPerformanceAnimationGate(kind: self.performanceAnimationKind) { [weak self] in
+        guard let self else { return }
+        for callback in self.updateStateCallbacks.copyItems() { callback() }
+    }
+    public var performanceAnimationKind: ToolsPerformancePolicy.AnimationKind = .emoji {
+        didSet { self.performanceGate.update(kind: self.performanceAnimationKind) }
+    }
+    public var performanceAllowsAnimation: Bool { self.performanceGate.allowsAnimation }
+    public var performanceAllowsEffects: Bool { self.performanceGate.allowsEffects }
 
     public final var shouldBeAnimating: Bool = false {
         didSet {
@@ -57,6 +68,7 @@ open class MultiAnimationRenderTarget: SimpleLayer {
         }
 
         self.id = layer.id
+        self.performanceAnimationKind = layer.performanceAnimationKind
 
         super.init(layer: layer)
     }

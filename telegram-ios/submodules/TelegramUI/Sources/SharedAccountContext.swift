@@ -148,12 +148,13 @@ private struct AccountAttributes: Equatable {
 
 private enum AddedAccountResult {
     case upgrading(Float)
+    case retentionRecovery(AccountRecordId)
     case ready(AccountRecordId, Account?, Int32, AccountInitialData)
 }
 
 private enum AddedAccountsResult {
     case upgrading(Float)
-    case ready([(AccountRecordId, Account?, Int32, AccountInitialData)])
+    case ready([(AccountRecordId, Account?, Int32, AccountInitialData)], recovering: Set<AccountRecordId>)
 }
 
 private var testHasInstance = false
@@ -194,6 +195,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return self.activeAccountsPromise.get()
     }
     private let managedAccountDisposables = DisposableDict<AccountRecordId>()
+    private let accountRecordsDisposable = MetaDisposable()
+    private let accountDifferenceDisposable = MetaDisposable()
     private let activeAccountsWithInfoPromise = Promise<(primary: AccountRecordId?, accounts: [AccountWithInfo])>()
     public var activeAccountsWithInfo: Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> {
         return self.activeAccountsWithInfoPromise.get()
@@ -270,6 +273,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     private var inAppNotificationSettingsDisposable: Disposable?
     
     public var currentAutomaticMediaDownloadSettings: MediaAutoDownloadSettings
+    private let _nativeAutomaticMediaDownloadSettings = Promise<MediaAutoDownloadSettings>()
     private let _automaticMediaDownloadSettings = Promise<MediaAutoDownloadSettings>()
     public var automaticMediaDownloadSettings: Signal<MediaAutoDownloadSettings, NoError> {
         return self._automaticMediaDownloadSettings.get()
@@ -313,7 +317,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     private var invalidatedApsToken: Data?
     
-    private let energyUsageAutomaticDisposable = MetaDisposable()
+    private var toolsPerformanceEnergy: ExteralessToolsPerformanceEnergy?
+    private let toolsPerformanceForegroundDisposable = MetaDisposable()
     private var webProxyCarrierHost: WebProxyCarrierWindowHost?
     
     init(mainWindow: Window1?, sharedContainerPath: String, basePath: String, encryptionParameters: EngineValueBoxEncryptionParameters, accountManager: AccountManager<TelegramAccountManagerTypes>, appLockContext: AppLockContext, notificationController: NotificationContainerController?, applicationBindings: TelegramApplicationBindings, initialPresentationDataAndSettings: InitialPresentationDataAndSettings, networkArguments: NetworkInitializationArguments, hasInAppPurchases: Bool, rootPath: String, legacyBasePath: String?, apsNotificationToken: Signal<Data?, NoError>, voipNotificationToken: Signal<Data?, NoError>, firebaseSecretStream: Signal<[String: String], NoError>, setNotificationCall: @escaping (PresentationCall?) -> Void, navigateToChat: @escaping (AccountRecordId, EnginePeer.Id, EngineMessage.Id?, Bool) -> Void, displayUpgradeProgress: @escaping (Float?) -> Void = { _ in }, appDelegate: AppDelegate?, testingEnvironment: Bool = false) {
@@ -389,7 +394,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             updatedPresentationData(accountManager: self.accountManager, applicationInForeground: self.applicationBindings.applicationInForeground, systemUserInterfaceStyle: mainWindow?.systemUserInterfaceStyle ?? .single(.light))
         )
         self._presentationData.set(presentationData)
-        self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
+        self._nativeAutomaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
                 let autodownloadSettings: AutodownloadSettings = sharedData.entries[SharedDataKeys.autodownloadSettings]?.get(AutodownloadSettings.self) ?? .defaultSettings
@@ -557,26 +562,26 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }).start()
         })
         
-        self.automaticMediaDownloadSettingsDisposable.set(self._automaticMediaDownloadSettings.get().start(next: { [weak self] next in
-            if let strongSelf = self {
-                strongSelf.currentAutomaticMediaDownloadSettings = next
-                
-                if automaticEnergyUsageShouldBeOnNow(settings: next) {
-                    strongSelf.energyUsageSettings = EnergyUsageSettings.powerSavingDefault
-                } else {
-                    strongSelf.energyUsageSettings = next.energyUsageSettings
-                }
-                strongSelf.energyUsageAutomaticDisposable.set((automaticEnergyUsageShouldBeOn(settings: next)
-                |> deliverOnMainQueue).start(next: { value in
-                    if let strongSelf = self {
-                        if value {
-                            strongSelf.energyUsageSettings = EnergyUsageSettings.powerSavingDefault
-                        } else {
-                            strongSelf.energyUsageSettings = next.energyUsageSettings
-                        }
-                    }
-                }))
+        self.toolsPerformanceEnergy = MainActor.assumeIsolated {
+            ExteralessToolsPerformanceEnergy(settings: self.currentAutomaticMediaDownloadSettings,
+                isInForeground: UIApplication.shared.applicationState != .background) { [weak self] effective, _ in
+                guard let self else { return }
+                // Commit the shared getter before download-settings subscribers run.
+                self.energyUsageSettings = effective.energyUsageSettings
+                self._automaticMediaDownloadSettings.set(.single(effective))
             }
+        }
+        self.automaticMediaDownloadSettingsDisposable.set((self._nativeAutomaticMediaDownloadSettings.get()
+        |> deliverOnMainQueue).start(next: { [weak self] next in
+            guard let self else { return }
+            // The native settings UI edits this unprojected source, not a tier ceiling.
+            self.currentAutomaticMediaDownloadSettings = next
+            MainActor.assumeIsolated { self.toolsPerformanceEnergy?.update(settings: next) }
+        }))
+        self.toolsPerformanceForegroundDisposable.set((applicationBindings.applicationInForeground
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] inForeground in
+            MainActor.assumeIsolated { self?.toolsPerformanceEnergy?.update(isInForeground: inForeground) }
         }))
         
         self.currentAutodownloadSettingsDisposable.set(self._autodownloadSettings.get().start(next: { [weak self] next in
@@ -587,8 +592,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         let startTime = CFAbsoluteTimeGetCurrent()
         
-        let differenceDisposable = MetaDisposable()
-        let _ = (accountManager.accountRecords()
+        self.accountRecordsDisposable.set((accountManager.accountRecords()
         |> map { view -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool)?) in
             print("SharedAccountContextImpl: records appeared in \(CFAbsoluteTimeGetCurrent() - startTime)")
             
@@ -652,9 +656,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
             return true
         })
-        |> deliverOnMainQueue).start(next: { primaryId, records, authRecord in
+        |> deliverOnMainQueue).start(next: { [weak self] primaryId, records, authRecord in
+            guard let self else { return }
             var addedSignals: [Signal<AddedAccountResult, NoError>] = []
-            var addedAuthSignal: Signal<UnauthorizedAccount?, NoError> = .single(nil)
+            var addedAuthSignal: Signal<(UnauthorizedAccount?, Bool), NoError> = .single((nil, false))
             for (id, attributes) in records {
                 if self.activeAccountsValue?.accounts.firstIndex(where: { $0.0 == id}) == nil {
                     addedSignals.append(accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: id, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: attributes.isSupportUser, rootPath: rootPath, beginWithTestingEnvironment: attributes.isTestingEnvironment, backupData: attributes.backupData, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
@@ -674,6 +679,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                                 }
                             case let .upgrading(progress):
                                 return .single(.upgrading(progress))
+                            case .retentionRecovery:
+                                return .single(.retentionRecovery(id))
                             default:
                                 return .single(.ready(id, nil, attributes.sortIndex, (nil, nil, nil, EngineAvailableColorOptions(hash: 0, options: []), EngineAvailableColorOptions(hash: 0, options: []))))
                         }
@@ -682,14 +689,16 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
             if let authRecord = authRecord, authRecord.0 != self.activeAccountsValue?.currentAuth?.id {
                 addedAuthSignal = accountWithId(accountManager: accountManager, networkArguments: networkArguments, id: authRecord.0, encryptionParameters: encryptionParameters, supplementary: !applicationBindings.isMainApp, isSupportUser: false, rootPath: rootPath, beginWithTestingEnvironment: authRecord.1, backupData: nil, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround))
-                |> mapToSignal { result -> Signal<UnauthorizedAccount?, NoError> in
+                |> mapToSignal { result -> Signal<(UnauthorizedAccount?, Bool), NoError> in
                     switch result {
                         case let .unauthorized(account):
-                            return .single(account)
+                            return .single((account, false))
                         case .upgrading:
                             return .complete()
+                        case .retentionRecovery:
+                            return .single((nil, true))
                         default:
-                            return .single(nil)
+                            return .single((nil, false))
                     }
                 }
             }
@@ -697,6 +706,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             let mappedAddedAccounts = combineLatest(queue: .mainQueue(), addedSignals)
             |> map { results -> AddedAccountsResult in
                 var readyAccounts: [(AccountRecordId, Account?, Int32, AccountInitialData)] = []
+                var recoveringAccountIds = Set<AccountRecordId>()
                 var totalProgress: Float = 0.0
                 var hasItemsWithProgress = false
                 for result in results {
@@ -707,26 +717,33 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         case let .upgrading(progress):
                             hasItemsWithProgress = true
                             totalProgress += progress
+                        case let .retentionRecovery(id):
+                            recoveringAccountIds.insert(id)
+                            totalProgress += 1.0
                     }
                 }
                 if hasItemsWithProgress, !results.isEmpty {
                     return .upgrading(totalProgress / Float(results.count))
                 } else {
-                    return .ready(readyAccounts)
+                    return .ready(readyAccounts, recovering: recoveringAccountIds)
                 }
             }
             
-            differenceDisposable.set((combineLatest(queue: .mainQueue(), mappedAddedAccounts, addedAuthSignal)
-            |> deliverOnMainQueue).start(next: { mappedAddedAccounts, authAccount in
+            self.accountDifferenceDisposable.set((combineLatest(queue: .mainQueue(), mappedAddedAccounts, addedAuthSignal)
+            |> deliverOnMainQueue).start(next: { [weak self] mappedAddedAccounts, authResult in
+                guard let self else { return }
+                let (authAccount, authRecovery) = authResult
                 print("SharedAccountContextImpl: accounts processed in \(CFAbsoluteTimeGetCurrent() - startTime)")
                 
                 var addedAccounts: [(AccountRecordId, Account?, Int32, AccountInitialData)] = []
+                let recoveringAccountIds: Set<AccountRecordId>
                 switch mappedAddedAccounts {
                     case let .upgrading(progress):
                         self.displayUpgradeProgress(progress)
                         return
-                    case let .ready(value):
+                    case let .ready(value, recovering):
                         addedAccounts = value
+                        recoveringAccountIds = recovering
                 }
                 
                 self.displayUpgradeProgress(nil)
@@ -742,9 +759,17 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     let isTestingEnvironment: Bool
                 }
                 
-                var existingAccountPeerKeys = Set<AccountPeerKey>()
+                var existingAccountPeerKeys = Set(self.activeAccountsValue!.accounts.map {
+                    AccountPeerKey(peerId: $0.1.account.peerId, isTestingEnvironment: $0.1.account.testingEnvironment)
+                })
                 for accountRecord in addedAccounts {
                     if let account = accountRecord.1 {
+                        // Another factory can recover while a healthy account is
+                        // already installed. combineLatest replays that same object.
+                        if self.activeAccountsValue?.accounts.contains(where: { $0.1.account === account }) == true {
+                            existingAccountPeerKeys.insert(AccountPeerKey(peerId: account.peerId, isTestingEnvironment: account.testingEnvironment))
+                            continue
+                        }
                         if existingAccountPeerKeys.contains(AccountPeerKey(peerId: account.peerId, isTestingEnvironment: account.testingEnvironment)) {
                             let _ = accountManager.transaction({ transaction in
                                 transaction.updateRecord(accountRecord.0, { _ in
@@ -795,7 +820,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     }
                 }
                 if primary == nil && !self.activeAccountsValue!.accounts.isEmpty {
-                    primary = self.activeAccountsValue!.accounts.first?.1
+                    if !recoveringAccountIds.isEmpty || authRecovery {
+                        primary = self.activeAccountsValue!.accounts.first(where: {
+                            !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity($0.1.account))
+                        })?.1
+                    } else {
+                        primary = self.activeAccountsValue!.accounts.first?.1
+                    }
                 }
                 if primary !== self.activeAccountsValue!.primary {
                     hadUpdates = true
@@ -819,14 +850,16 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     self.performAccountSettingsImportIfNecessary()
                 }
                 
-                if self.activeAccountsValue!.primary == nil && self.activeAccountsValue!.currentAuth == nil {
+                if self.activeAccountsValue!.primary == nil && self.activeAccountsValue!.currentAuth == nil
+                    && recoveringAccountIds.isEmpty && !authRecovery {
                     self.beginNewAuth(testingEnvironment: self.testingEnvironment)
                 }
             }))
-        })
+        }))
         
-        self.activeAccountsWithInfoPromise.set(self.activeAccountContexts
-        |> mapToSignal { primary, accounts, _ -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+        self.activeAccountsWithInfoPromise.set(combineLatest(self.activeAccountContexts, ExteralessHiddenAccounts.shared.changes)
+        |> mapToSignal { activeAccounts, _ -> Signal<(primary: AccountRecordId?, accounts: [AccountWithInfo]), NoError> in
+            let (primary, accounts, _) = activeAccounts
             return combineLatest(accounts.map { _, context, _ -> Signal<AccountWithInfo?, NoError> in
                 return context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
                 |> map { peer -> AccountWithInfo? in
@@ -844,7 +877,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                         accountsWithInfoResult.append(info)
                     }
                 }
-                return (primary?.account.id, accountsWithInfoResult)
+                return (primary?.account.id, exteralessPrivacyExtrasVisibleAccounts(accountsWithInfoResult))
             }
         })
         
@@ -1124,9 +1157,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     deinit {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
+        self.accountRecordsDisposable.dispose()
+        self.accountDifferenceDisposable.dispose()
         self.registeredNotificationTokensDisposable.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
+        self.toolsPerformanceForegroundDisposable.dispose()
+        MainActor.assumeIsolated { self.toolsPerformanceEnergy?.dispose() }
         self.currentAutodownloadSettingsDisposable.dispose()
         self.inAppNotificationSettingsDisposable?.dispose()
         self.mediaInputSettingsDisposable?.dispose()
@@ -1785,6 +1822,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     }
     
     public func switchToAccount(id: AccountRecordId, fromSettingsController settingsController: ViewController? = nil, withChatListController chatListController: ViewController? = nil) {
+        guard let target = self.activeAccountsValue?.accounts.first(where: { $0.0 == id })?.1,
+              ExteralessHiddenAccounts.shared.canSelect(exteralessPrivacyExtrasIdentity(target.account)) else {
+            return
+        }
         if self.activeAccountsValue?.primary?.account.id == id {
             return
         }
@@ -4857,6 +4898,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     public func makeTextProcessingScreen(
         context: AccountContext,
+        capability: ExteralessAIProcessingCapability,
         theme: PresentationTheme?,
         mode: TextProcessingScreenMode,
         inputText: ComposedRichMessage,
@@ -4865,6 +4907,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     ) async -> ViewController {
         return await TextProcessingScreen(
             context: context,
+            capability: capability,
             theme: theme,
             mode: mode,
             inputText: inputText,

@@ -50,6 +50,10 @@
 /// never be given the carrier, and a WEB proxy connection must never fall back to a socket.
 - (bool)isWebProxyCarrier;
 
+/// The injected interface resolves and races the original hostname itself.
+/// WEB carriers retain their independent no-DNS branch in MTTcpConnection.
+- (bool)resolvesHostnames;
+
 @end
 
 

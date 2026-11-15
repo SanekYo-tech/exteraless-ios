@@ -1068,6 +1068,9 @@ static BOOL TGIDDirectionIsBackward(UITextDirection direction) {
                                               combineItemAttributedStrings:itemStrings
                                                                   forRange:textRange];
     NSAttributedString *result = [self tgid_pastedTextInDestinationTerms:imported];
+    if (self.tgid_pastedTextTransformer != nil) {
+        result = self.tgid_pastedTextTransformer(result);
+    }
     if (self.tgid_pasteWillLandHandler != nil) {
         self.tgid_pasteWillLandHandler();
     }
@@ -1207,6 +1210,11 @@ static BOOL TGIDDirectionIsBackward(UITextDirection direction) {
 }
 
 - (void)insertText:(NSString *)text {
+    UITextRange *target = self.markedTextRange ?: self.selectedTextRange;
+    NSRange committedRange = [self id_NSRangeForTextRange:target];
+    if (self.tgid_committedTextTransformer != nil && committedRange.location != NSNotFound) {
+        text = self.tgid_committedTextTransformer(committedRange, text);
+    }
     NSString *forwarded = [self tgid_textThroughGate:text replacing:[self id_NSRangeForTextRange:self.selectedTextRange]];
     if (forwarded == nil) {
         return;
@@ -1368,6 +1376,9 @@ static BOOL TGIDDirectionIsBackward(UITextDirection direction) {
 
 - (void)replaceRange:(UITextRange *)range withText:(NSString *)text {
     NSRange replaced = [self id_NSRangeForTextRange:range];
+    if (self.markedTextRange == nil && self.tgid_committedTextTransformer != nil && replaced.location != NSNotFound) {
+        text = self.tgid_committedTextTransformer(replaced, text);
+    }
     NSString *forwarded = [self tgid_textThroughGate:text replacing:replaced];
     if (forwarded == nil) {
         return;

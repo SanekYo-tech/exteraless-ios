@@ -5,24 +5,45 @@ import TelegramUIPreferences
 //import PhoneNumberFormat
 
 public extension EnginePeer {
+    func exteralessDisplayTitle(account: Account, strings: PresentationStrings, displayOrder: PresentationPersonNameOrder) -> String {
+        return self.exteralessDisplayTitle(identity: exteralessIdentityPresentation(account: account, peer: self), strings: strings, displayOrder: displayOrder)
+    }
+
+    func exteralessCompactDisplayTitle(account: Account) -> String {
+        return self.exteralessCompactDisplayTitle(identity: exteralessIdentityPresentation(account: account, peer: self))
+    }
+
+    /// The same final formatter is used with an immutable account-scoped snapshot
+    /// by layout code and loginless native fixtures. Filtering is after alias and
+    /// name-order composition, never a mutation of the peer or stored alias.
+    func exteralessDisplayTitle(identity: ExteralessPeerIdentityPresentation, strings: PresentationStrings, displayOrder: PresentationPersonNameOrder) -> String {
+        if let name = identity.name { return exteralessZalgoDisplayText(name) }
+        return self.displayTitle(strings: strings, displayOrder: displayOrder)
+    }
+
+    func exteralessCompactDisplayTitle(identity: ExteralessPeerIdentityPresentation) -> String {
+        if let name = identity.compactName { return exteralessZalgoDisplayText(name) }
+        return self.compactDisplayTitle
+    }
+
     var compactDisplayTitle: String {
         switch self {
         case let .user(user):
             if let firstName = user.firstName, !firstName.isEmpty {
-                return firstName
+                return exteralessZalgoDisplayText(firstName)
             } else if let lastName = user.lastName, !lastName.isEmpty {
-                return lastName
+                return exteralessZalgoDisplayText(lastName)
             } else if let _ = user.phone {
                 return "" //formatPhoneNumber("+\(phone)")
             } else {
                 return "Deleted Account"
             }
         case let .legacyGroup(group):
-            return group.title
+            return exteralessZalgoDisplayText(group.title)
         case let .channel(channel):
-            return channel.title
+            return exteralessZalgoDisplayText(channel.title)
         case let .community(community):
-            return community.title
+            return exteralessZalgoDisplayText(community.title)
         case .secretChat:
             return ""
         }
@@ -38,26 +59,26 @@ public extension EnginePeer {
                 if let lastName = user.lastName, !lastName.isEmpty {
                     switch displayOrder {
                     case .firstLast:
-                        return "\(firstName) \(lastName)"
+                        return exteralessZalgoDisplayText("\(firstName) \(lastName)")
                     case .lastFirst:
-                        return "\(lastName) \(firstName)"
+                        return exteralessZalgoDisplayText("\(lastName) \(firstName)")
                     }
                 } else {
-                    return firstName
+                    return exteralessZalgoDisplayText(firstName)
                 }
             } else if let lastName = user.lastName, !lastName.isEmpty {
-                return lastName
+                return exteralessZalgoDisplayText(lastName)
             } else if let _ = user.phone {
                 return "" //formatPhoneNumber("+\(phone)")
             } else {
                 return strings.User_DeletedAccount
             }
         case let .legacyGroup(group):
-            return group.title
+            return exteralessZalgoDisplayText(group.title)
         case let .channel(channel):
-            return channel.title
+            return exteralessZalgoDisplayText(channel.title)
         case let .community(community):
-            return community.title
+            return exteralessZalgoDisplayText(community.title)
         case .secretChat:
             return ""
         }

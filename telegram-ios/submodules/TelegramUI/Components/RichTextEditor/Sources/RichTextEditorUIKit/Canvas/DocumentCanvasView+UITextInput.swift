@@ -103,6 +103,7 @@ extension DocumentCanvasView: UITextInput {
     ///    RAW `from`/`to` (not the `min`/`max` pair below) keeps the two spellings identical argument
     ///    for argument; `legacyPlainText` orders them itself.
     func legacyReplace(globalFrom: Int, globalTo: Int, text: String) {
+        let text = transformedCommittedText(text, from: min(globalFrom, globalTo))
         var lo = min(globalFrom, globalTo)
         var hi = max(globalFrom, globalTo)
         // PHASE 0b / TASK 9d — found by the differential oracle against stock UIKit, where all 9
@@ -145,6 +146,15 @@ extension DocumentCanvasView: UITextInput {
         if let original = autocorrectOriginal, isSpellCheckingEnabled {
             applyCorrectionFlag(global: NSRange(location: lo, length: (text as NSString).length), original: original)
         }
+    }
+
+    private func transformedCommittedText(_ text: String, from: Int) -> String {
+        guard let transform = committedTextTransformer, text.utf16.count > 1,
+              let (region, local) = leafRegion(containingGlobal: from),
+              !(activeStack(at: from)?.box is CodeBlockBox) else { return text }
+        if case .codeLanguage = region.ref { return text }
+        if mapper.characterAttributes(from: typingAttributeDict(region: region, atLocal: local)).inlineCode { return text }
+        return transform(text)
     }
 
     func typingAttributeDict(region: LeafTextRegion, atLocal location: Int) -> [NSAttributedString.Key: Any] {
@@ -534,6 +544,7 @@ extension DocumentCanvasView: UIKeyInput {
     /// `default:` early return. A bracket added at the backend would double every one of them
     /// (measured: six recorded events became ten for the sibling `replace` witness).
     func legacyInsertText(_ text: String) {
+        let text = transformedCommittedText(text, from: markedRange?.from ?? selFrom)
         imageObjectDeletePending = nil   // a non-delete edit cancels a pending structural-media delete
         // A committing keystroke while composing: replace the WHOLE marked range with `text`, then
         // finalize the composition as one undo step. (The system delivers a confirming char this way.)

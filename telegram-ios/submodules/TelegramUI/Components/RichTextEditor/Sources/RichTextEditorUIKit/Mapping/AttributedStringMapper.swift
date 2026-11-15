@@ -304,7 +304,8 @@ public struct AttributedStringMapper {
             dict[.link] = link
             // Visible styling is render-derived from the link and suppressed on read-back (see
             // characterAttributes(from:)), mirroring the rtInlineCode precedent — so it never
-            // contaminates the model's foreground/underline fields. If a run is also inline-code, the
+            // contaminates the model's foreground field. An explicit underline above is authored.
+            // If a run is also inline-code, the
             // code font/background win visually; both flags still round-trip independently.
             dict[.foregroundColor] = theme.accent
             // No underline: reference design shows links as accent-colored text only.
@@ -421,7 +422,9 @@ public struct AttributedStringMapper {
             ca.foreground = (rgba == styleDefault) ? nil : rgba
         }
         if !isCode, let bg = dict[.backgroundColor] as? UIColor { ca.highlight = bg.rgba }
-        if !hasLink, let u = dict[.underlineStyle] as? Int, u != 0 { ca.underline = true }
+        // Link rendering itself adds no underlineStyle attribute. A stored underline is authored
+        // (also on a mention/date marker) and must survive adding or removing that link.
+        if let u = dict[.underlineStyle] as? Int, u != 0 { ca.underline = true }
         if let s = dict[.strikethroughStyle] as? Int, s != 0 { ca.strikethrough = true }
         if let link = dict[.link] as? String { ca.link = link }
         else if let url = dict[.link] as? URL { ca.link = url.absoluteString }

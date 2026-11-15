@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -9,8 +10,8 @@ import ChatListTitleView
 import NavigationBarComponent
 
 /// The chat list's title (`ChatListTitleView`: network status, lock, emoji status) as a row-filling
-/// `NavigationBarComponent` title. While the stories are collapsed into the title (`sideContentFraction` 1), it
-/// slides left to keep clear of the right buttons.
+/// `NavigationBarComponent` title. Its content and hit testing stay in the lane
+/// between native navigation actions, including collapsed stories and narrow rows.
 final class ChatListTitleComponent: Component {
     typealias EnvironmentType = NavigationBarTitleEnvironment
 
@@ -52,11 +53,14 @@ final class ChatListTitleComponent: Component {
     }
 
     final class View: UIView {
+        private let snow = ExteralessSnowView(settingKey: "appearance.actionBarDecoration")
         private(set) var titleView: ChatListTitleView?
         private var component: ChatListTitleComponent?
+        private var titleHitLane = CGRect.zero
 
         override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-            guard let titleView = self.titleView else {
+            guard !self.isHidden, self.alpha > 0.01, self.isUserInteractionEnabled,
+                  self.titleHitLane.contains(point), let titleView = self.titleView, !titleView.isHidden else {
                 return nil
             }
             return titleView.hitTest(self.convert(point, to: titleView), with: event)
@@ -64,7 +68,14 @@ final class ChatListTitleComponent: Component {
 
         func update(component: ChatListTitleComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<NavigationBarTitleEnvironment>, transition: ComponentTransition) -> CGSize {
             self.component = component
-            let rightButtonsExtent = environment[NavigationBarTitleEnvironment.self].value.rightButtonsExtent
+            if self.snow.superview == nil { self.insertSubview(self.snow, at: 0) }
+            self.snow.frame = CGRect(origin: .zero, size: availableSize)
+            self.snow.update(color: component.theme.overallDarkAppearance ? UIColor.white.withAlphaComponent(0.55) : component.theme.list.itemAccentColor.withAlphaComponent(0.4), maximumParticles: 8)
+            let titleEnvironment = environment[NavigationBarTitleEnvironment.self].value
+            let lane = AppearancePresentationPolicy.titleLane(width: Double(availableSize.width), leftButtons: Double(titleEnvironment.leftButtonsExtent), rightButtons: Double(titleEnvironment.rightButtonsExtent))
+            let centered = AppearanceControlPolicy.centersHeader(enabled: ClientSettings.shared.bool("appearance.centerActionBarTitle"), scope: ClientSettings.shared.integer("appearance.centerActionBarTitleType", default: 1), isSettings: false)
+            self.titleHitLane = CGRect(x: CGFloat(lane.origin), y: 0, width: CGFloat(lane.width), height: availableSize.height)
+            let leadingAlignment: NSTextAlignment = self.effectiveUserInterfaceLayoutDirection == .rightToLeft ? .right : .left
 
             var titleTransition = transition
             let titleView: ChatListTitleView
@@ -81,8 +92,8 @@ final class ChatListTitleComponent: Component {
             titleView.theme = component.theme
             titleView.strings = component.strings
             titleView.setTitle(component.title, animated: false)
-            let titleContentRect = titleView.updateLayoutInternal(size: availableSize, transition: transition.containedViewLayoutTransition)
-            let centerContentOffsetX = -max(0.0, titleContentRect.maxX - 2.0 - (availableSize.width - rightButtonsExtent))
+            let laneSize = CGSize(width: CGFloat(lane.width), height: availableSize.height)
+            let titleContentRect = titleView.updateLayoutInternal(size: laneSize, transition: transition.containedViewLayoutTransition, alignment: centered ? .center : leadingAlignment)
 
             titleView.openStatusSetup = { [weak self] sourceView in
                 guard let self else {
@@ -97,13 +108,13 @@ final class ChatListTitleComponent: Component {
                 self.component?.toggleIsLocked()
             }
 
-            let titleOffset: CGFloat
-            if component.title.activity {
-                titleOffset = 0.0
-            } else {
-                titleOffset = centerContentOffsetX * component.sideContentFraction
+            var titleOffset = CGFloat(lane.origin)
+            if centered {
+                let desired = availableSize.width * 0.5 - titleContentRect.midX
+                titleOffset = max(CGFloat(lane.origin) - titleContentRect.minX, min(desired, CGFloat(lane.origin + lane.width) - titleContentRect.maxX))
             }
-            titleTransition.setFrame(view: titleView, frame: CGRect(origin: CGPoint(x: titleOffset, y: 0.0), size: availableSize))
+            titleView.isHidden = lane.width < 44
+            titleTransition.setFrame(view: titleView, frame: CGRect(origin: CGPoint(x: titleOffset, y: 0.0), size: laneSize))
 
             return availableSize
         }

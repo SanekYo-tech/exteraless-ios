@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Postbox
@@ -18,6 +19,10 @@ public struct PresentationDateTimeFormat: Equatable {
     public let requiresFullYear: Bool
     public let decimalSeparator: String
     public let groupingSeparator: String
+    public let showSeconds: Bool
+    public let identityCalendar: IdentityDatePolicy
+    // Copied into native list/chat presentation values, including async caches.
+    public let identityRevision: UInt64
     
     public init() {
         self.timeFormat = .regular
@@ -27,9 +32,12 @@ public struct PresentationDateTimeFormat: Equatable {
         self.requiresFullYear = false
         self.decimalSeparator = "."
         self.groupingSeparator = "."
+        self.showSeconds = false
+        self.identityCalendar = IdentityDatePolicy()
+        self.identityRevision = 0
     }
-    
-    public init(timeFormat: PresentationTimeFormat, dateFormat: PresentationDateFormat, dateSeparator: String, dateSuffix: String, requiresFullYear: Bool, decimalSeparator: String, groupingSeparator: String) {
+
+    public init(timeFormat: PresentationTimeFormat, dateFormat: PresentationDateFormat, dateSeparator: String, dateSuffix: String, requiresFullYear: Bool, decimalSeparator: String, groupingSeparator: String, showSeconds: Bool = false, identityCalendar: IdentityDatePolicy = IdentityDatePolicy(), identityRevision: UInt64 = 0) {
         self.timeFormat = timeFormat
         self.dateFormat = dateFormat
         self.dateSeparator = dateSeparator
@@ -37,6 +45,9 @@ public struct PresentationDateTimeFormat: Equatable {
         self.requiresFullYear = requiresFullYear
         self.decimalSeparator = decimalSeparator
         self.groupingSeparator = groupingSeparator
+        self.showSeconds = showSeconds
+        self.identityCalendar = identityCalendar
+        self.identityRevision = identityRevision
     }
 }
 
@@ -194,9 +205,10 @@ private func currentDateTimeFormat() -> PresentationDateTimeFormat {
         dateFormat = .dayFirst
     }
 
+    let identityFormatting = ExteralessIdentityPresentation.shared.formattingSnapshot
     let decimalSeparator = locale.decimalSeparator ?? "."
     let groupingSeparator = locale.groupingSeparator ?? ""
-    return PresentationDateTimeFormat(timeFormat: timeFormat, dateFormat: dateFormat, dateSeparator: dateSeparator, dateSuffix: dateSuffix, requiresFullYear: requiresFullYear, decimalSeparator: decimalSeparator, groupingSeparator: groupingSeparator)
+    return PresentationDateTimeFormat(timeFormat: timeFormat, dateFormat: dateFormat, dateSeparator: dateSeparator, dateSuffix: dateSuffix, requiresFullYear: requiresFullYear, decimalSeparator: decimalSeparator, groupingSeparator: groupingSeparator, showSeconds: ClientSettings.shared.bool("appearance.showSeconds"), identityCalendar: identityFormatting.calendar, identityRevision: identityFormatting.revision)
 }
 
 private func currentPersonNameSortOrder() -> PresentationPersonNameOrder {
@@ -723,7 +735,10 @@ public func chatServiceBackgroundColor(wallpaper: TelegramWallpaper, mediaBox: M
 }
 
 public func updatedPresentationData(accountManager: AccountManager<TelegramAccountManagerTypes>, applicationInForeground: Signal<Bool, NoError>, systemUserInterfaceStyle: Signal<WindowUserInterfaceStyle, NoError>) -> Signal<PresentationData, NoError> {
-    return combineLatest(accountManager.sharedData(keys: [SharedDataKeys.localizationSettings, ApplicationSpecificSharedDataKeys.presentationThemeSettings, ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]), systemUserInterfaceStyle)
+    // File-backed theme loading belongs only to native preference/style changes.
+    // Appearance/Identity invalidation is applied to the latest completed value
+    // below, outside this mapToSignal, so it cannot resubscribe theme I/O.
+    let nativePresentationData = combineLatest(accountManager.sharedData(keys: [SharedDataKeys.localizationSettings, ApplicationSpecificSharedDataKeys.presentationThemeSettings, ApplicationSpecificSharedDataKeys.contactSynchronizationSettings]), systemUserInterfaceStyle)
     |> mapToSignal { sharedData, systemUserInterfaceStyle -> Signal<PresentationData, NoError> in
         let themeSettings: PresentationThemeSettings
         if let current = sharedData.entries[ApplicationSpecificSharedDataKeys.presentationThemeSettings]?.get(PresentationThemeSettings.self) {
@@ -842,6 +857,7 @@ public func updatedPresentationData(accountManager: AccountManager<TelegramAccou
             }
         }
     }
+    return exteralessAppearancePresentationData(native: nativePresentationData, updates: exteralessAppearanceUpdates(), dateTimeFormat: currentDateTimeFormat)
 }
 
 private func resolveFontSize(settings: PresentationThemeSettings) -> (chat: PresentationFontSize, lists: PresentationFontSize) {

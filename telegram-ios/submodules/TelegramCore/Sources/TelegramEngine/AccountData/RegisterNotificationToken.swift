@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import SwiftSignalKit
 import Postbox
 internal import TelegramApi
@@ -18,6 +19,11 @@ func _internal_unregisterNotificationToken(account: Account, token: Data, type: 
             mappedType = 9
     }
     return account.network.request(Api.functions.account.unregisterDevice(tokenType: mappedType, token: hexString(token), otherUids: otherAccountUserIds.map({ $0._internalGetInt64Value() })))
+    |> afterNext { result in
+        if result == .boolTrue {
+            PrivacyNotificationDiagnostics.shared.recordRegistration(accountId: account.id.int64, transport: mappedType == 1 ? .apns : .voip, state: .unregistered)
+        }
+    }
     |> retryRequest
     |> ignoreValues
 }
@@ -41,14 +47,21 @@ func _internal_registerNotificationToken(account: Account, token: Data, type: No
         if excludeMutedChats {
             flags |= 1 << 0
         }
+        let transport: PrivacyNotificationTransport = mappedType == 1 ? .apns : .voip
+        PrivacyNotificationDiagnostics.shared.recordRegistration(accountId: account.id.int64, transport: transport, state: .registering, sandbox: sandbox)
         return account.network.request(Api.functions.account.registerDevice(flags: flags, tokenType: mappedType, token: hexString(token), appSandbox: sandbox ? .boolTrue : .boolFalse, secret: Buffer(data: keyData), otherUids: otherAccountUserIds.map({ $0._internalGetInt64Value() })))
-        |> map { _ -> Bool in
+        |> map { result -> Bool in
+            PrivacyNotificationDiagnostics.shared.recordRegistration(accountId: account.id.int64, transport: transport, state: result == .boolTrue ? .registered : .failed(code: 0), sandbox: sandbox)
+            // Legacy Bool means "do not invalidate the APNs token", not registration
+            // success. SharedAccountContext rotates the token when this is false.
             return true
         }
         |> `catch` { error -> Signal<Bool, NoError> in
             if error.errorDescription == "TOKEN_WAS_INVALIDATED" {
+                PrivacyNotificationDiagnostics.shared.recordRegistration(accountId: account.id.int64, transport: transport, state: .invalidated, sandbox: sandbox)
                 return .single(false)
             } else {
+                PrivacyNotificationDiagnostics.shared.recordRegistration(accountId: account.id.int64, transport: transport, state: .failed(code: error.errorCode), sandbox: sandbox)
                 return .single(true)
             }
         }

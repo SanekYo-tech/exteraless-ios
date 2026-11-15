@@ -81,49 +81,53 @@ public func fetchedMediaResource(
     preferBackgroundReferenceRevalidation: Bool = false,
     continueInBackground: Bool = false
 ) -> Signal<FetchResourceSourceType, FetchResourceError> {
-    var isRandomAccessAllowed = true
-    switch reference {
-    case let .media(media, _):
-        if let file = media.media as? TelegramMediaFile {
-            if file.fileId.namespace == Namespaces.Media.CloudSecretFile {
-                isRandomAccessAllowed = false
+    func nativeServiceOriginalFetch() -> Signal<FetchResourceSourceType, FetchResourceError> {
+        var isRandomAccessAllowed = true
+        switch reference {
+        case let .media(media, _):
+            if let file = media.media as? TelegramMediaFile {
+                if file.fileId.namespace == Namespaces.Media.CloudSecretFile {
+                    isRandomAccessAllowed = false
+                }
             }
+        default:
+            break
         }
-    default:
-        break
-    }
-    
-    let location = MediaResourceStorageLocation(userLocation: userLocation, reference: reference)
-    
-    var ranges = ranges
-    
-    if let rangesValue = ranges, rangesValue.count == 1, rangesValue[0].0 == 0 ..< Int64.max {
-        ranges = nil
-    }
-    
-    if let ranges = ranges {
-        let signals = ranges.map { (range, priority) -> Signal<Void, FetchResourceError> in
-            return mediaBox.fetchedResourceData(reference.resource, in: range, priority: priority, parameters: MediaResourceFetchParameters(
+
+        let location = MediaResourceStorageLocation(userLocation: userLocation, reference: reference)
+
+        var ranges = ranges
+
+        if let rangesValue = ranges, rangesValue.count == 1, rangesValue[0].0 == 0 ..< Int64.max {
+            ranges = nil
+        }
+
+        if let ranges = ranges {
+            let signals = ranges.map { (range, priority) -> Signal<Void, FetchResourceError> in
+                return mediaBox.fetchedResourceData(reference.resource, in: range, priority: priority, parameters: MediaResourceFetchParameters(
+                    tag: TelegramMediaResourceFetchTag(statsCategory: statsCategory, userContentType: userContentType),
+                    info: TelegramCloudMediaResourceFetchInfo(reference: reference, preferBackgroundReferenceRevalidation: preferBackgroundReferenceRevalidation, continueInBackground: continueInBackground),
+                    location: location,
+                    contentType: userContentType,
+                    isRandomAccessAllowed: isRandomAccessAllowed
+                ))
+            }
+            return combineLatest(signals)
+            |> ignoreValues
+            |> map { _ -> FetchResourceSourceType in }
+            |> then(.single(.local))
+        } else {
+            return mediaBox.fetchedResource(reference.resource, parameters: MediaResourceFetchParameters(
                 tag: TelegramMediaResourceFetchTag(statsCategory: statsCategory, userContentType: userContentType),
                 info: TelegramCloudMediaResourceFetchInfo(reference: reference, preferBackgroundReferenceRevalidation: preferBackgroundReferenceRevalidation, continueInBackground: continueInBackground),
                 location: location,
                 contentType: userContentType,
                 isRandomAccessAllowed: isRandomAccessAllowed
-            ))
+            ), implNext: reportResultStatus)
         }
-        return combineLatest(signals)
-        |> ignoreValues
-        |> map { _ -> FetchResourceSourceType in }
-        |> then(.single(.local))
-    } else {
-        return mediaBox.fetchedResource(reference.resource, parameters: MediaResourceFetchParameters(
-            tag: TelegramMediaResourceFetchTag(statsCategory: statsCategory, userContentType: userContentType),
-            info: TelegramCloudMediaResourceFetchInfo(reference: reference, preferBackgroundReferenceRevalidation: preferBackgroundReferenceRevalidation, continueInBackground: continueInBackground),
-            location: location,
-            contentType: userContentType,
-            isRandomAccessAllowed: isRandomAccessAllowed
-        ), implNext: reportResultStatus)
     }
+    return nativeServiceTrackMediaFetch(mediaBox: mediaBox, reference: reference,
+        signal: nativeServiceOriginalFetch())
 }
 
 enum RevalidateMediaReferenceError {

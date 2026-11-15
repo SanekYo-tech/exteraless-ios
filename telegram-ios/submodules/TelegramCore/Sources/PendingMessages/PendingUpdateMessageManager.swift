@@ -170,8 +170,22 @@ public final class PendingUpdateMessageManager {
     }
     
     public func add(messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute? = nil, invertMediaAttribute: InvertMediaMessageAttribute? = nil, disableUrlPreview: Bool = false) {
-        self.impl.with { impl in
-            impl.add(messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview)
+        let _ = self.addWithAdmission(messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview, expectedStableVersion: nil, token: PendingMessageUpdateAdmissionToken()).startStandalone()
+    }
+
+    public func addWithAdmission(messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute? = nil, invertMediaAttribute: InvertMediaMessageAttribute? = nil, disableUrlPreview: Bool = false, expectedStableVersion: UInt32?, token: PendingMessageUpdateAdmissionToken) -> Signal<PendingMessageUpdateAdmission, NoError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+            self.impl.with { impl in
+                let source = impl.postbox.transaction { transaction -> Bool in
+                    guard let message = transaction.getMessage(messageId) else { return false }
+                    return expectedStableVersion == nil || message.stableVersion == expectedStableVersion
+                }
+                disposable.set(admitPendingMessageUpdate(sourceMatches: source, token: token, queue: impl.queue, install: {
+                    impl.add(messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview)
+                }).start(next: { subscriber.putNext($0) }, completed: { subscriber.putCompletion() }))
+            }
+            return ActionDisposable { token.cancel(); disposable.dispose() }
         }
     }
     

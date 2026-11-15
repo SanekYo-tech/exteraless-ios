@@ -119,6 +119,10 @@ func managedSynchronizeViewStoriesOperations(postbox: Postbox, network: Network,
 }
 
 private func pushStoriesAreSeen(postbox: Postbox, network: Network, stateManager: AccountStateManager, peer: Peer, operation: SynchronizeViewStoriesOperation) -> Signal<Void, NoError> {
+    guard exteralessAllowsStoryRead(network: network, peerId: peer.id) else {
+        // Completion lets managedSynchronizeViewStoriesOperations consume its log row.
+        return .single(())
+    }
     guard let inputPeer = apiInputPeer(peer) else {
         return .complete()
     }

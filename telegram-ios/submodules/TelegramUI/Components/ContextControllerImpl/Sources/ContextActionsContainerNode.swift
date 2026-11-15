@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -53,7 +54,9 @@ private enum ContextItemNode {
 
 private final class InnerActionsContainerNode: ASDisplayNode {
     private let blurBackground: Bool
-    private let presentationData: PresentationData
+    private var presentationData: PresentationData
+    private var appearanceObservation: ClientSettingsObservation?
+    private let appearanceRequestLayout: () -> Void
     private let containerNode: ASDisplayNode
     private var effectView: UIVisualEffectView?
     private var itemNodes: [ContextItemNode]
@@ -81,6 +84,7 @@ private final class InnerActionsContainerNode: ASDisplayNode {
     
     init(presentationData: PresentationData, items: [ContextMenuItem], getController: @escaping () -> ContextControllerProtocol?, actionSelected: @escaping (ContextMenuActionResult) -> Void, requestLayout: @escaping () -> Void, feedbackTap: @escaping () -> Void, blurBackground: Bool) {
         self.presentationData = presentationData
+        self.appearanceRequestLayout = requestLayout
         self.feedbackTap = feedbackTap
         self.blurBackground = blurBackground
         
@@ -178,9 +182,21 @@ private final class InnerActionsContainerNode: ASDisplayNode {
         }
         self.view.addGestureRecognizer(gesture)
         gesture.isEnabled = self.panSelectionGestureEnabled
+        self.appearanceObservation = ClientSettings.shared.observe { [weak self] keys in
+            guard keys.contains("appearance.glassMessageMenu") else { return }
+            DispatchQueue.main.async { [weak self] in self?.appearanceRequestLayout() }
+        }
     }
+
+    deinit { self.appearanceObservation?.cancel() }
     
     func updateLayout(widthClass: ContainerViewLayoutSizeClass, constrainedWidth: CGFloat, constrainedHeight: CGFloat, minimalWidth: CGFloat?, transition: ContainedViewLayoutTransition) -> CGSize {
+        let glassEnabled = ClientSettings.shared.bool("appearance.glassMessageMenu", default: true)
+        if !glassEnabled, let effectView = self.effectView {
+            self.effectView = nil
+            effectView.removeFromSuperview()
+        }
+        self.containerNode.backgroundColor = glassEnabled ? self.presentationData.theme.contextMenu.backgroundColor : self.presentationData.theme.contextMenu.backgroundColor.blitOver(self.presentationData.theme.list.plainBackgroundColor, alpha: 1.0)
         var minActionsWidth: CGFloat = 250.0
         if let minimalWidth = minimalWidth, minimalWidth > minActionsWidth {
             minActionsWidth = minimalWidth
@@ -194,7 +210,7 @@ private final class InnerActionsContainerNode: ASDisplayNode {
                 effectView.removeFromSuperview()
             }
         case .regular:
-            if self.effectView == nil {
+            if self.effectView == nil && glassEnabled {
                 let effectView: UIVisualEffectView
                 if #available(iOS 13.0, *) {
                     if self.presentationData.theme.rootController.keyboardColor == .dark {
@@ -291,6 +307,7 @@ private final class InnerActionsContainerNode: ASDisplayNode {
     }
     
     func updateTheme(presentationData: PresentationData) {
+        self.presentationData = presentationData
         for itemNode in self.itemNodes {
             switch itemNode {
             case let .action(action):
@@ -304,7 +321,7 @@ private final class InnerActionsContainerNode: ASDisplayNode {
             }
         }
         
-        self.containerNode.backgroundColor = presentationData.theme.contextMenu.backgroundColor
+        self.containerNode.backgroundColor = ClientSettings.shared.bool("appearance.glassMessageMenu", default: true) ? presentationData.theme.contextMenu.backgroundColor : presentationData.theme.contextMenu.backgroundColor.blitOver(presentationData.theme.list.plainBackgroundColor, alpha: 1.0)
     }
     
     func actionNode(at point: CGPoint) -> ContextActionNodeProtocol? {
@@ -606,6 +623,7 @@ final class InnerTextSelectionTipContainerNode: ASDisplayNode {
             background.container.update(size: size, isDark: self.presentationData.theme.overallDarkAppearance, transition: transition)
             transition.setFrame(view: background.container, frame: CGRect(origin: CGPoint(), size: size))
             
+            background.background.exteralessOpaqueFillColor = ClientSettings.shared.bool("appearance.glassMessageMenu", default: true) ? nil : self.presentationData.theme.contextMenu.backgroundColor.blitOver(self.presentationData.theme.list.plainBackgroundColor, alpha: 1.0)
             background.background.update(size: size, cornerRadius: min(30.0, size.height * 0.5), isDark: self.presentationData.theme.overallDarkAppearance, tintColor: .init(kind: .panel), transition: transition)
             transition.setFrame(view: background.background, frame: CGRect(origin: CGPoint(), size: size))
         }

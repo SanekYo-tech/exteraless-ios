@@ -327,6 +327,18 @@ private final class MtProtoKitPendingRequests {
     }
 }
 
+/// The shipping adapter's payload/logging setup, also usable by a canned-error
+/// fixture without constructing an account, MTContext or network session.
+func mtProtoKitRequestForEngineRequest(_ request: NetworkEngineRequest) -> MTRequest {
+    let mtRequest = MTRequest(logContext: request.logContext)
+    let parse = request.parse
+    mtRequest.setPayload(request.payload, metadata: request.metadata, shortMetadata: request.shortMetadata, responseParser: { response in
+        guard let response else { return nil }
+        return parse(response)
+    })
+    return mtRequest
+}
+
 private final class MtProtoKitRequestService: NetworkEngineRequestService {
     private let requestService: MTRequestMessageService
     private let pendingRequests = MtProtoKitPendingRequests()
@@ -402,7 +414,7 @@ private final class MtProtoKitRequestService: NetworkEngineRequestService {
     }
     
     func add(_ request: NetworkEngineRequest) -> Disposable {
-        let mtRequest = MTRequest()
+        let mtRequest = mtProtoKitRequestForEngineRequest(request)
         let internalId: Any! = mtRequest.internalId
         let key = ObjectIdentifier(mtRequest)
         let pendingRequests = self.pendingRequests
@@ -410,14 +422,6 @@ private final class MtProtoKitRequestService: NetworkEngineRequestService {
         if let target = pendingRequests.insert(pending, key: key) {
             return target.add(request)
         }
-        
-        let parse = request.parse
-        mtRequest.setPayload(request.payload, metadata: request.metadata, shortMetadata: request.shortMetadata, responseParser: { response in
-            guard let response = response else {
-                return nil
-            }
-            return parse(response)
-        })
         
         mtRequest.dependsOnPasswordEntry = false
         mtRequest.needsTimeoutTimer = request.options.needsTimeoutTimer

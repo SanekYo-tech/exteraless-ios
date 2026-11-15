@@ -427,7 +427,7 @@ open class ItemListRevealOptionsItemNode: ListViewItemNode, ASGestureRecognizerD
         return node.containsActionPoint(node.view.convert(point, from: self.view))
     }
 
-    private func canBeginReveal(at point: CGPoint, direction: CGFloat) -> Bool {
+    open func canBeginReveal(at point: CGPoint, direction: CGFloat) -> Bool {
         guard self.validLayout != nil, self.motion.state != .filling, !self.deliveringAction, !self.containsAction(at: point) else { return false }
         if self.isRevealOptionsActive && (abs(self.motion.body.value) >= 0.1 || abs(self.motion.body.velocity) >= 5) { return true }
         return direction > 0 ? !self.revealOptions.left.isEmpty : !self.revealOptions.right.isEmpty

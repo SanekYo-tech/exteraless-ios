@@ -565,6 +565,9 @@ public func isAutodownloadEnabledForAnyPeerType(category: MediaAutoDownloadCateg
 }
 
 public func shouldDownloadMediaAutomatically(settings: MediaAutoDownloadSettings, peerType: MediaAutoDownloadPeerType, networkType: MediaAutoDownloadNetworkType, authorPeerId: EnginePeer.Id? = nil, contactsPeerIds: Set<EnginePeer.Id> = Set(), media: EngineMedia?, isStory: Bool = false, isAd: Bool = false) -> Bool {
+    if case let .file(file)? = media, !exteralessToolsAllowsAutomaticFileDownload(fileName: file.fileName) {
+        return false
+    }
     if isAd {
         return true
     }
@@ -602,6 +605,9 @@ public func shouldDownloadMediaAutomatically(settings: MediaAutoDownloadSettings
 }
 
 public func shouldPredownloadMedia(settings: MediaAutoDownloadSettings, peerType: MediaAutoDownloadPeerType, networkType: MediaAutoDownloadNetworkType, media: EngineMedia) -> Bool {
+    if case let .file(file) = media, !exteralessToolsAllowsAutomaticFileDownload(fileName: file.fileName) {
+        return false
+    }
     if #available(iOSApplicationExtension 10.3, *) {
         if (networkType == .cellular && !settings.cellular.enabled) || (networkType == .wifi && !settings.wifi.enabled) {
             return false

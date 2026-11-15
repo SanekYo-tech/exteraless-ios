@@ -976,13 +976,13 @@ public final class EngineMessageReactionListContext {
         return Signal { subscriber in
             let disposable = MetaDisposable()
             self.impl.with { impl in
-                disposable.set(impl.statePromise.get().start(next: { state in
-                    subscriber.putNext(State(
+                disposable.set(combineLatest(queue: self.queue, impl.statePromise.get(), ExteralessFilteringRuntime.shared.changes).start(next: { state, _ in
+                    subscriber.putNext(exteralessFilterReactionList(account: impl.account, message: impl.message, state: State(
                         hasOutgoingReaction: state.hasOutgoingReaction,
                         totalCount: state.totalCount,
                         items: state.items,
                         canLoadMore: state.canLoadMore
-                    ))
+                    )))
                 }))
             }
             return disposable

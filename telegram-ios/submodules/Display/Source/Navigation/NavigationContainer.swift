@@ -747,6 +747,32 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
     }
     
     public var shouldAnimateDisappearance: Bool = false
+
+    /// Retires only this container's presentation ownership. The navigation
+    /// controller retains the exact controller stack and reparents its nodes.
+    func retireForContentLayoutChange() {
+        self.statusBarStyleUpdated = nil
+        self.isReadyUpdated = nil
+        self.controllerRemoved = { _ in }
+        self.requestFilterController = { _ in }
+        self.shouldAnimateDisappearance = false
+        if self.interactivePop != nil {
+            self.interactivePopEnded(translation: 0, velocity: 0, isCancelled: true)
+        }
+        self.panRecognizer?.isEnabled = false
+        self.state.transition?.coordinator.performCompletion(completion: {})
+        self.endLingeringNavigationBarTransition()
+        self.state.pending?.disposable.dispose()
+        self.state.pending = nil
+        self.state.top?.value.statusBar.alphaUpdated = nil
+        self.state.top = nil
+        self.state.transition = nil
+        self.interactivePop = nil
+        self.additionalKeyboardLeftEdgeOffset = 0
+        self.syncKeyboard(leftEdge: 0, transition: .immediate)
+        self.keyboardViewManager = nil
+        self.controllers = []
+    }
     
     private func topTransition(from fromValue: Child?, to toValue: Child?, transitionType: PendingChild.TransitionType, layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
         if case .animated = transition, let fromValue = fromValue, let toValue = toValue {

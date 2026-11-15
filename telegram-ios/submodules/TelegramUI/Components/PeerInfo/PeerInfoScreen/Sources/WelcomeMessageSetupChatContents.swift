@@ -38,8 +38,13 @@ final class WelcomeMessageSetupChatContents: ChatCustomContentsProtocol {
         }
 
         func enqueueMessages(messages: [EnqueueMessage]) {
-            let _ = (TelegramCore.enqueueWelcomeMessages(account: self.context.account, peerId: self.peerId, messages: messages)
-            |> deliverOn(self.queue)).startStandalone()
+            let _ = self.enqueueMessagesWithAdmission(messages: messages).startStandalone()
+        }
+
+        func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError> {
+            return TelegramCore.enqueueWelcomeMessages(account: self.context.account, peerId: self.peerId, messages: messages)
+            |> map { EnqueueMessagesResult.committed(messageIds: $0) }
+            |> deliverOn(self.queue)
         }
 
         func deleteMessages(ids: [EngineMessage.Id]) {
@@ -81,6 +86,12 @@ final class WelcomeMessageSetupChatContents: ChatCustomContentsProtocol {
     func enqueueMessages(messages: [EnqueueMessage]) {
         self.impl.with { impl in
             impl.enqueueMessages(messages: messages)
+        }
+    }
+
+    func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError> {
+        return self.impl.signalWith { impl, subscriber in
+            impl.enqueueMessagesWithAdmission(messages: messages).start(next: subscriber.putNext, completed: subscriber.putCompletion)
         }
     }
 

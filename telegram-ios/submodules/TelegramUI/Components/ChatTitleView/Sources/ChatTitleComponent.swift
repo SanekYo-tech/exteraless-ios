@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -232,7 +233,7 @@ public final class ChatNavigationBarTitleView: UIView, NavigationBarGlassPillTit
         let transition = ComponentTransition(transition)
         
         if let contentData = self.contentData {
-            let displayBackground: Bool = true
+            let displayBackground = !ClientSettings.shared.bool("appearance.newChatHeaderStyle")
             
             let titleSize = self.title.update(
                 transition: transition,
@@ -627,7 +628,7 @@ public final class ChatTitleComponent: Component {
                                 content: .text(component.strings.ChatList_AuthorHidden)
                             )]
                         } else {
-                            if !peerView.isContact, let user = peer as? TelegramUser, !user.flags.contains(.isSupport), user.botInfo == nil, let phone = user.phone, !phone.isEmpty {
+                            if !peerView.isContact, exteralessIdentityPeerKey(EnginePeer(peer)).flatMap({ ExteralessIdentityPresentation.shared.state(account: component.context.account)?.alias(for: $0) }) == nil, let user = peer as? TelegramUser, !user.flags.contains(.isSupport), user.botInfo == nil, let phone = user.phone, !phone.isEmpty {
                                 titleSegments = [AnimatedTextComponent.Item(
                                     id: AnyHashable(0),
                                     isUnbreakable: true,
@@ -637,7 +638,7 @@ public final class ChatTitleComponent: Component {
                                 titleSegments = [AnimatedTextComponent.Item(
                                     id: AnyHashable(0),
                                     isUnbreakable: true,
-                                    content: .text(EnginePeer(peer).displayTitle(strings: component.strings, displayOrder: component.nameDisplayOrder))
+                                    content: .text(EnginePeer(peer).exteralessDisplayTitle(account: component.context.account, strings: component.strings, displayOrder: component.nameDisplayOrder))
                                 )]
                             }
                         }
@@ -647,9 +648,9 @@ public final class ChatTitleComponent: Component {
                                 titleCredibilityIcon = .fake
                             } else if peer.isScam {
                                 titleCredibilityIcon = .scam
-                            } else if !hidePeerStatus, let emojiStatus = peer.emojiStatus {
+                            } else if !hidePeerStatus && !ClientSettings.shared.bool("appearance.hideActionBarStatus"), let emojiStatus = exteralessIdentityPresentation(account: component.context.account, peer: EnginePeer(peer)).emojiStatus {
                                 titleStatusIcon = .emojiStatus(emojiStatus)
-                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                            } else if !ClientSettings.shared.bool("appearance.hideActionBarStatus") && exteralessIdentityPresentation(account: component.context.account, peer: EnginePeer(peer)).premiumBadge && !premiumConfiguration.isPremiumDisabled {
                                 titleCredibilityIcon = .premium
                             }
                             
@@ -895,15 +896,15 @@ public final class ChatTitleComponent: Component {
                         }
                     } else {
                         if inputActivities.items.count > 1 {
-                            let peerTitle = inputActivities.items[0].peer.compactDisplayTitle
+                            let peerTitle = inputActivities.items[0].peer.exteralessCompactDisplayTitle(account: component.context.account)
                             if inputActivities.items.count == 2 {
-                                let secondPeerTitle = inputActivities.items[1].peer.compactDisplayTitle
+                                let secondPeerTitle = inputActivities.items[1].peer.exteralessCompactDisplayTitle(account: component.context.account)
                                 stringValue = component.strings.Chat_MultipleTypingPair(peerTitle, secondPeerTitle).string
                             } else {
                                 stringValue = component.strings.Chat_MultipleTypingMore(peerTitle, String(inputActivities.items.count - 1)).string
                             }
                         } else if let item = inputActivities.items.first {
-                            stringValue = item.peer.compactDisplayTitle
+                            stringValue = item.peer.exteralessCompactDisplayTitle(account: component.context.account)
                         }
                     }
                     let color = component.theme.rootController.navigationBar.accentTextColor
@@ -1004,7 +1005,7 @@ public final class ChatTitleComponent: Component {
                                 }
                             } else if let channel = peer as? TelegramChannel {
                                 if channel.isForumOrMonoForum, customTitle != nil {
-                                    let string = NSAttributedString(string: EnginePeer(peer).displayTitle(strings: component.strings, displayOrder: component.nameDisplayOrder), font: subtitleFont, textColor: component.theme.chat.inputPanel.inputControlColor)
+                                    let string = NSAttributedString(string: EnginePeer(peer).exteralessDisplayTitle(account: component.context.account, strings: component.strings, displayOrder: component.nameDisplayOrder), font: subtitleFont, textColor: component.theme.chat.inputPanel.inputControlColor)
                                     state = .info(string, .generic)
                                 } else if let cachedChannelData = peerView.cachedData as? CachedChannelData, let memberCount = onlineMemberCount.total ?? cachedChannelData.participantsSummary.memberCount {
                                     if memberCount == 0 {

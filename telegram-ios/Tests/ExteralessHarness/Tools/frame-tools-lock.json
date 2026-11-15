@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "source": "eugeneware/ffmpeg-static b6.1.1 release asset SHA-256 digests; PyPI Pillow 11.3.0",
+  "architecture": "darwin-arm64",
+  "binaries": [
+    {
+      "name": "ffmpeg",
+      "filename": "ffmpeg-darwin-arm64.gz",
+      "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-darwin-arm64.gz",
+      "sha256": "8923876afa8db5585022d7860ec7e589af192f441c56793971276d450ed3bbfa",
+      "size": 19246198,
+      "binary_sha256": "a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584",
+      "binary_size": 45568216
+    },
+    {
+      "name": "ffprobe",
+      "filename": "ffprobe-darwin-arm64.gz",
+      "url": "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffprobe-darwin-arm64.gz",
+      "sha256": "d986a8ec7b030899fe66a8a288ed809a3543338705a3ce178cfb85869c5d80be",
+      "size": 19207077,
+      "binary_sha256": "bb2db6f5d8cef919da12fbf592119a987202a8c060a886f3cab091f9cab90b64",
+      "binary_size": 45528808
+    }
+  ]
+}

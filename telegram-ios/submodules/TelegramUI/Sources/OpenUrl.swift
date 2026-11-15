@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Display
 import TelegramCore
 import SwiftSignalKit
@@ -357,6 +358,25 @@ private func makeTelegramUrl(_ path: String, queryItems: [URLQueryItem] = []) ->
 }
 
 func openExternalUrlImpl(context: AccountContext, urlContext: OpenURLContext, url: String, forceExternal: Bool, presentationData: PresentationData, navigationController: NavigationController?, dismissInput: @escaping () -> Void) {
+    if let parsed = URL(string: url), exteralessPrivacyExtrasIsRecoveryRoute(parsed) {
+        MainActor.assumeIsolated {
+            if let parent = navigationController?.topViewController as? ViewController {
+                _ = exteralessPrivacyExtrasOpenRecoveryURL(context: context, url: parsed, parent: parent)
+            }
+        }
+        return
+    }
+    let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
+    let original = {
+        openExternalUrlAfterNativeServices(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)
+    }
+    if let parsed = canonicalExternalUrl(from: url), MainActor.assumeIsolated({
+        NativeServiceOpenHooks.shared.interceptURL(context: context, url: parsed, original: original)
+    }) { return }
+    original()
+}
+
+private func openExternalUrlAfterNativeServices(context: AccountContext, urlContext: OpenURLContext, url: String, forceExternal: Bool, presentationData: PresentationData, navigationController: NavigationController?, dismissInput: @escaping () -> Void) {
     // A login part hides the host a link opens (see `externalUrlWithLoginPart`). Every external link leaves through
     // here, whoever opens it, so here it is confirmed, unless a prompt that showed the real host was just accepted.
     if let loginPartUrl = externalUrlWithLoginPart(url), !consumeLoginPartConfirmation(loginPartUrl) {
@@ -369,6 +389,13 @@ func openExternalUrlImpl(context: AccountContext, urlContext: OpenURLContext, ur
                 openCheckedExternalUrl(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)
             }
         )
+        context.sharedContext.presentGlobalController(controller, nil)
+        return
+    }
+    if ClientSettings.shared.bool("chats.confirmAllLinks") && !ChatLinkConfirmationLedger.shared.consume(url) {
+        let controller = openLinkConfirmationController(context: context, presentationData: presentationData, updatedPresentationData: .single(presentationData), displayUrl: url, open: {
+            openCheckedExternalUrl(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)
+        })
         context.sharedContext.presentGlobalController(controller, nil)
         return
     }

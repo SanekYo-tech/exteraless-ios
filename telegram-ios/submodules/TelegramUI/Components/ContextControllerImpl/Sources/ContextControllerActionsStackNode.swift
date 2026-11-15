@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -1483,6 +1484,7 @@ public final class ContextControllerActionsStackNodeImpl: ASDisplayNode, Context
         var cancelItemSelectionGesture: (() -> Void)?
         
         private var panRecognizer: InteractiveTransitionGestureRecognizer?
+        private var appearanceObservation: ClientSettingsObservation?
         
         var isNavigationEnabled: Bool = false {
             didSet {
@@ -1509,7 +1511,13 @@ public final class ContextControllerActionsStackNodeImpl: ASDisplayNode, Context
             panRecognizer.delegate = self.wrappedGestureRecognizerDelegate
             self.view.addGestureRecognizer(panRecognizer)
             self.panRecognizer = panRecognizer
+            self.appearanceObservation = ClientSettings.shared.observe { [weak self] keys in
+                guard keys.contains("appearance.glassMessageMenu") else { return }
+                DispatchQueue.main.async { [weak self] in self?.requestUpdate?(.immediate) }
+            }
         }
+
+        deinit { self.appearanceObservation?.cancel() }
         
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             if otherGestureRecognizer is ItemSelectionRecognizer {
@@ -1573,6 +1581,7 @@ public final class ContextControllerActionsStackNodeImpl: ASDisplayNode, Context
             transition.setBounds(view: self.contentContainer, bounds: CGRect(origin: CGPoint(), size: size))
             self.backgroundContainer.nativeBlurRadius = glassBlurRadius
             self.contentContainer.nativeBlurRadius = glassBlurRadius
+            self.contentContainer.exteralessOpaqueFillColor = ClientSettings.shared.bool("appearance.glassMessageMenu", default: true) ? nil : presentationData.theme.contextMenu.backgroundColor.blitOver(presentationData.theme.list.plainBackgroundColor, alpha: 1.0)
             self.contentContainer.update(size: size, cornerRadius: min(30.0, size.height * 0.5), isDark: presentationData.theme.overallDarkAppearance, tintColor: GlassBackgroundView.TintColor(kind: usesClearGlass ? .custom(style: .clear, color: .clear) : .panel), transition: transition)
         }
     }

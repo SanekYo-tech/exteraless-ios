@@ -5,6 +5,7 @@
 @class MTContext;
 @class MTRequest;
 @class MTApiEnvironment;
+@class MTRpcError;
 
 @class MTRequestMessageService;
 
@@ -27,6 +28,10 @@
 @property (nonatomic, copy) void (^didReceiveSoftAuthResetError)(void);
 
 - (instancetype)initWithContext:(MTContext *)context;
+
+/// Shipping response-log formatter, before error handling/completion. Exposed for
+/// bounded native fixtures without constructing an account or a transport.
++ (NSString * _Nonnull)responseLogDescriptionForRequest:(MTRequest * _Nonnull)request result:(id _Nullable)result error:(MTRpcError * _Nullable)error NS_SWIFT_NAME(responseLogDescription(request:result:error:));
 
 - (void)addRequest:(MTRequest *)request;
 - (void)removeRequestByInternalId:(id)internalId;

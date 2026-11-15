@@ -123,8 +123,12 @@ final class AutomaticBusinessMessageSetupChatContents: ChatCustomContentsProtoco
         }
         
         func enqueueMessages(messages: [EnqueueMessage]) {
+            let _ = self.enqueueMessagesWithAdmission(messages: messages).startStandalone()
+        }
+
+        func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError> {
             let threadId = self.shortcutId.flatMap(Int64.init)
-            let _ = (TelegramCore.enqueueMessages(account: self.context.account, peerId: self.context.account.peerId, messages: messages.map { message in
+            return (TelegramCore.enqueueMessagesWithAdmission(account: self.context.account, peerId: self.context.account.peerId, messages: messages.map { message in
                 return message.withUpdatedThreadId(threadId).withUpdatedAttributes { attributes in
                     var attributes = attributes
                     attributes.removeAll(where: { $0 is OutgoingQuickReplyMessageAttribute })
@@ -132,14 +136,14 @@ final class AutomaticBusinessMessageSetupChatContents: ChatCustomContentsProtoco
                     return attributes
                 }
             })
-            |> deliverOn(self.queue)).startStandalone(next: { [weak self] result in
+            |> deliverOn(self.queue)) |> afterNext { [weak self] result in
                 guard let self else {
                     return
                 }
                 if self.shortcutId != nil {
                     return
                 }
-                for id in result {
+                for id in result.messageIds {
                     if let id {
                         let pendingMessage = PendingMessageContext()
                         self.pendingMessages.append(pendingMessage)
@@ -163,7 +167,7 @@ final class AutomaticBusinessMessageSetupChatContents: ChatCustomContentsProtoco
                         }))
                     }
                 }
-            })
+            }
         }
 
         func deleteMessages(ids: [EngineMessage.Id]) {
@@ -224,6 +228,12 @@ final class AutomaticBusinessMessageSetupChatContents: ChatCustomContentsProtoco
     func enqueueMessages(messages: [EnqueueMessage]) {
         self.impl.with { impl in
             impl.enqueueMessages(messages: messages)
+        }
+    }
+
+    func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError> {
+        return self.impl.signalWith { impl, subscriber in
+            impl.enqueueMessagesWithAdmission(messages: messages).start(next: subscriber.putNext, completed: subscriber.putCompletion)
         }
     }
 

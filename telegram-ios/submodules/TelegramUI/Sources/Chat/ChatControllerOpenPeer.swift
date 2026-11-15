@@ -465,7 +465,11 @@ extension ChatControllerImpl {
 
         let presentationData = self.presentationData
         
-        let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
+        let pluginItems = ExteralessPluginMenuEntry.updating(
+            items: .single(ContextController.Items(content: .list(items))), context: self.context,
+            placement: "CHAT_ACTION_MENU",
+            peer: self.presentationInterfaceState.renderedPeer?.chatMainPeer.map(EnginePeer.init), source: self)
+        let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: self, sourceView: sourceView)), items: pluginItems, gesture: gesture)
         self.presentInGlobalOverlay(contextController)
     }
 }

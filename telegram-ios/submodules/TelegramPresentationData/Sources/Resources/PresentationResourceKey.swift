@@ -413,7 +413,7 @@ public enum PresentationResourceParameterKey: Hashable {
     
     case chatBubbleMediaCorner(incoming: Bool, mainRadius: CGFloat, inset: CGFloat)
     
-    case chatPrincipalThemeEssentialGraphics(hasWallpaper: Bool, bubbleCorners: PresentationChatBubbleCorners)
+    case chatPrincipalThemeEssentialGraphics(hasWallpaper: Bool, bubbleCorners: PresentationChatBubbleCorners, removeTail: Bool)
     case chatPrincipalThemeAdditionalGraphics(isCustomWallpaper: Bool, bubbleCorners: PresentationChatBubbleCorners)
     
     case chatBubbleLamp(incoming: Bool)

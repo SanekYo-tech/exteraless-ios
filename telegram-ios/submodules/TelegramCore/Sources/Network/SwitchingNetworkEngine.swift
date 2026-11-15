@@ -89,6 +89,7 @@ private struct SwitchingState {
     var currentService: NetworkEngineRequestService?
     var currentDelegate: SwitchingSessionDelegate?
     var generation = 0
+    var passivePingEpoch = 0
     var draining: [Int: NetworkEngineSession] = [:]
     var isPaused = true
     var isOnline = false
@@ -117,6 +118,7 @@ private final class SwitchingCore {
         self.state.pointee.current = session
         self.state.pointee.currentService = session.requestService
         self.state.pointee.currentDelegate = sessionDelegate
+        self.observePassivePingDrops(session, generation: 0)
     }
 
     deinit {
@@ -154,6 +156,7 @@ private final class SwitchingCore {
         }
         let previousGeneration = generation - 1
         self.state.pointee.generation = generation
+        self.state.pointee.passivePingEpoch &+= 1
         self.state.pointee.current = replacement
         self.state.pointee.currentService = replacement.requestService
         self.state.pointee.currentDelegate = sessionDelegate
@@ -165,6 +168,7 @@ private final class SwitchingCore {
         self.lock.unlock()
 
         self.delegateBox?.setGeneration(generation)
+        self.observePassivePingDrops(replacement, generation: generation)
         for sink in sinks {
             replacement.addUpdateSink(sink)
         }
@@ -220,6 +224,7 @@ private final class SwitchingCore {
             self.lock.unlock()
             return
         }
+        if self.state.pointee.isPaused != paused { self.state.pointee.passivePingEpoch &+= 1 }
         self.state.pointee.isPaused = paused
         let sessions = (self.state.pointee.current.map { [$0] } ?? []) + Array(self.state.pointee.draining.values)
         self.lock.unlock()
@@ -269,6 +274,37 @@ private final class SwitchingCore {
         session.serverActivity(reply)
     }
 
+    private func observePassivePingDrops(_ session: NetworkEngineSession, generation: Int) {
+        session.observeConnectionDrops { [weak self, weak session] _ in
+            guard let self, let session else { return }
+            self.lock.lock()
+            if self.state.pointee.generation == generation && self.state.pointee.current === session {
+                self.state.pointee.passivePingEpoch &+= 1
+            }
+            self.lock.unlock()
+        }
+    }
+
+    func exteralessPillPassivePingSnapshot(_ reply: @escaping (ExteralessPillPassivePingSample?) -> Void) {
+        let ticket = ExteralessPassivePingReply(reply)
+        guard case .main = self.role else { ticket.complete(nil); return }
+        self.lock.lock()
+        let session = self.state.pointee.isStopped || self.state.pointee.isPaused ? nil : self.state.pointee.current
+        let generation = self.state.pointee.generation
+        let epoch = self.state.pointee.passivePingEpoch
+        self.lock.unlock()
+        guard let session, let source = session as? ExteralessPillPassivePingSource else { ticket.complete(nil); return }
+        source.exteralessPillPassivePingSnapshot { [weak self, weak session] sample in
+            guard let self, let session else { ticket.complete(nil); return }
+            self.lock.lock()
+            let current = !self.state.pointee.isStopped && !self.state.pointee.isPaused
+                && self.state.pointee.current === session && self.state.pointee.generation == generation
+                && self.state.pointee.passivePingEpoch == epoch
+            self.lock.unlock()
+            ticket.complete(current ? sample : nil)
+        }
+    }
+
     func stop() {
         self.lock.lock()
         if self.state.pointee.isStopped {
@@ -276,6 +312,7 @@ private final class SwitchingCore {
             return
         }
         self.state.pointee.isStopped = true
+        self.state.pointee.passivePingEpoch &+= 1
         let sessions = (self.state.pointee.current.map { [$0] } ?? []) + Array(self.state.pointee.draining.values)
         self.state.pointee.current = nil
         self.state.pointee.currentService = nil
@@ -317,7 +354,7 @@ private final class SwitchingRequestService: NetworkEngineRequestService {
     }
 }
 
-final class SwitchingNetworkSession: NetworkEngineSession {
+final class SwitchingNetworkSession: NetworkEngineSession, ExteralessPillPassivePingSource {
     let datacenterId: Int
     let requestService: NetworkEngineRequestService
     private let core: SwitchingCore
@@ -354,6 +391,10 @@ final class SwitchingNetworkSession: NetworkEngineSession {
 
     func serverActivity(_ reply: @escaping (NetworkEngineServerActivity?) -> Void) {
         self.core.serverActivity(reply)
+    }
+
+    func exteralessPillPassivePingSnapshot(_ reply: @escaping (ExteralessPillPassivePingSample?) -> Void) {
+        self.core.exteralessPillPassivePingSnapshot(reply)
     }
 
     func stop() {

@@ -152,6 +152,7 @@ public final class BlockedPeersContext {
     public func updatePeerIds(_ peerIds: [EnginePeer.Id]) -> Signal<Never, BlockedPeersContextAddError> {
         assert(Queue.mainQueue().isCurrent())
         
+        let account = self.account
         let network = self.account.network
         let subject = self.subject
         let currentPeers = self._state.peers
@@ -222,8 +223,18 @@ public final class BlockedPeersContext {
             |> mapError { _ -> BlockedPeersContextAddError in
                 return .generic
             }
-            |> mapToSignal { _ -> Signal<Never, BlockedPeersContextAddError> in
-                return .complete()
+            |> mapToSignal { result -> Signal<Never, BlockedPeersContextAddError> in
+                guard result == .boolTrue else { return .fail(.generic) }
+                guard case .blocked = subject else { return .complete() }
+                let blockedIds = Set(peers.map(\.id))
+                let changedIds = blockedIds.union(currentPeers.map(\.peerId))
+                return account.postbox.transaction { transaction -> Void in
+                    for peerId in changedIds {
+                        exteralessFilterBlockedPeerChanged(transaction: transaction, account: account, peerId: peerId, blocked: blockedIds.contains(peerId))
+                    }
+                }
+                |> castError(BlockedPeersContextAddError.self)
+                |> ignoreValues
             }
         }
     }
@@ -231,6 +242,7 @@ public final class BlockedPeersContext {
     public func add(peerId: PeerId) -> Signal<Never, BlockedPeersContextAddError> {
         assert(Queue.mainQueue().isCurrent())
         
+        let account = self.account
         let postbox = self.account.postbox
         let network = self.account.network
         let subject = self.subject
@@ -252,7 +264,8 @@ public final class BlockedPeersContext {
             |> mapError { _ -> BlockedPeersContextAddError in
                 return .generic
             }
-            |> mapToSignal { _ -> Signal<Peer?, BlockedPeersContextAddError> in
+            |> mapToSignal { result -> Signal<Peer?, BlockedPeersContextAddError> in
+                guard result == .boolTrue else { return .fail(.generic) }
                 return postbox.transaction { transaction -> Peer? in
                     if peerId.namespace == Namespaces.Peer.CloudUser {
                         transaction.updatePeerCachedData(peerIds: Set([peerId]), update: { _, current in
@@ -270,6 +283,9 @@ public final class BlockedPeersContext {
                                 return previous.withUpdatedIsBlocked(true)
                             }
                         })
+                    }
+                    if case .blocked = subject {
+                        exteralessFilterBlockedPeerChanged(transaction: transaction, account: account, peerId: peerId, blocked: true)
                     }
                     
                     return transaction.getPeer(peerId)
@@ -303,6 +319,7 @@ public final class BlockedPeersContext {
     
     public func remove(peerId: PeerId) -> Signal<Never, BlockedPeersContextRemoveError> {
         assert(Queue.mainQueue().isCurrent())
+        let account = self.account
         let postbox = self.account.postbox
         let network = self.account.network
         let subject = self.subject
@@ -324,7 +341,8 @@ public final class BlockedPeersContext {
             |> mapError { _ -> BlockedPeersContextRemoveError in
                 return .generic
             }
-            |> mapToSignal { value in
+            |> mapToSignal { result -> Signal<Peer?, BlockedPeersContextRemoveError> in
+                guard result == .boolTrue else { return .fail(.generic) }
                 return postbox.transaction { transaction -> Peer? in
                     if peerId.namespace == Namespaces.Peer.CloudUser {
                         transaction.updatePeerCachedData(peerIds: Set([peerId]), update: { _, current in
@@ -342,6 +360,9 @@ public final class BlockedPeersContext {
                                 return previous.withUpdatedIsBlocked(false)
                             }
                         })
+                    }
+                    if case .blocked = subject {
+                        exteralessFilterBlockedPeerChanged(transaction: transaction, account: account, peerId: peerId, blocked: false)
                     }
                     return transaction.getPeer(peerId)
                 }

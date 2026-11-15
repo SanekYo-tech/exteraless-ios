@@ -215,7 +215,7 @@ final class InstantPageImageNode: ASDisplayNode, InstantPageNode, InstantPageExt
                     break
                 }
             }
-            let resource = MapSnapshotMediaResource(latitude: map.latitude, longitude: map.longitude, width: Int32(dimensions.width), height: Int32(dimensions.height))
+            let resource = MapSnapshotMediaResource(latitude: map.latitude, longitude: map.longitude, width: Int32(dimensions.width), height: Int32(dimensions.height), scope: .instantPage)
             self.imageNode.setSignal(chatMapSnapshotImage(engine: context.engine, resource: resource))
         } else if case let .webpage(webPage) = media.media, case let .Loaded(content) = webPage.content, let image = content.image {
             let imageReference = imageReferenceForMedia?(image) ?? ImageMediaReference.webPage(webPage: WebpageReference(webPage), media: image)

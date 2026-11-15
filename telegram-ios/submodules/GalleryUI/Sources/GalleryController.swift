@@ -18,6 +18,13 @@ import UndoUI
 import TranslateUI
 import UrlWhitelist
 
+@MainActor
+private func exteralessGalleryCopy(_ text: String, permit: ExteralessContentExportPermit?, accountId: Int64) -> Bool {
+    if let permit { return permit.perform(accountId: accountId, operation: .exportEffect) { UIPasteboard.general.string = text } }
+    UIPasteboard.general.string = text
+    return true
+}
+
 private func tagsForMessage(_ message: Message) -> MessageTags? {
     //TODO:rewrite to take all media (effectiveMedia returns all rich-text media; we stop at the first)
     for media in message.effectiveMedia {
@@ -775,7 +782,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
     
     private var screenCaptureEventsDisposable: Disposable?
     
-    private let generateStoreAfterDownload: ((Message, TelegramMediaFile) -> (() -> Void)?)?
+    private var generateStoreAfterDownload: ((Message, TelegramMediaFile) -> (() -> Void)?)?
     
     public var centralItemUpdated: ((MessageId) -> Void)?
     public var onDidAppear: (() -> Void)?
@@ -835,6 +842,18 @@ public class GalleryController: ViewController, StandalonePresentableController,
         self.titleView = GalleryTitleView(context: context, presentationData: self.presentationData)
         
         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
+        let originalStoreAfterDownload = self.generateStoreAfterDownload
+        let exportPermitReference = self.exteralessExportPermitReference
+        let exportAccountId = context.account.id.int64
+        self.generateStoreAfterDownload = { message, file in
+            guard let original = originalStoreAfterDownload?(message, file) else { return nil }
+            return {
+                if let permit = exportPermitReference.permit {
+                    guard permit.allows(accountId: exportAccountId, messageIds: [message.id]) else { return }
+                    permit.perform(accountId: exportAccountId, operation: .exportEffect, original)
+                } else { original() }
+            }
+        }
         
         let backItem = UIBarButtonItem(backButtonAppearanceWithTitle: self.presentationData.strings.Common_Back, target: self, action: #selector(self.donePressed))
         self.navigationItem.leftBarButtonItem = backItem
@@ -1038,7 +1057,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                     sendSticker: strongSelf.actionInteraction?.sendSticker,
                                     present: { [weak strongSelf] c, a in
                                         if let strongSelf {
-                                            strongSelf.presentInGlobalOverlay(c, with: a)
+                                            strongSelf.exteralessPresentInGlobalOverlay(c, with: a)
                                         }
                                     }
                                 ) {
@@ -1185,6 +1204,9 @@ public class GalleryController: ViewController, StandalonePresentableController,
         
         openActionOptionsImpl = { [weak self] action, message in
             if let strongSelf = self {
+                let flowPermit = strongSelf.exteralessExportPermit
+                let flowAccountId = strongSelf.context.account.id.int64
+                guard flowPermit?.allows(accountId: flowAccountId, messageIds: [message.id], operation: .presentation) ?? true else { return }
                 var presentationData = strongSelf.presentationData
                 if !presentationData.theme.overallDarkAppearance {
                     presentationData = presentationData.withUpdated(theme: defaultDarkColorPresentationTheme)
@@ -1240,7 +1262,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                         }
                         items.append(ActionSheetButtonItem(title: canAddToReadingList ? presentationData.strings.ShareMenu_CopyShareLink : presentationData.strings.Conversation_ContextMenuCopy, color: .accent, action: { [weak actionSheet, weak self] in
                             actionSheet?.dismissAnimated()
-                            UIPasteboard.general.string = cleanUrl
+                            guard exteralessGalleryCopy(cleanUrl, permit: flowPermit, accountId: flowAccountId) else { return }
                             
                             let content: UndoOverlayContent
                             if isPhoneNumber {
@@ -1252,13 +1274,14 @@ public class GalleryController: ViewController, StandalonePresentableController,
                             } else {
                                 content = .copy(text: presentationData.strings.Conversation_TextCopied)
                             }
-                            self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                            self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                         }))
                         if canAddToReadingList {
                             items.append(ActionSheetButtonItem(title: presentationData.strings.Conversation_AddToReadingList, color: .accent, action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                                 if let link = URL(string: url) {
-                                    let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil)
+                                    if let permit = flowPermit { permit.perform(accountId: flowAccountId, operation: .exportEffect) { let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil) } }
+                                    else { let _ = try? SSReadingList.default()?.addItem(with: link, title: nil, previewText: nil) }
                                 }
                             }))
                         }
@@ -1267,7 +1290,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                 actionSheet?.dismissAnimated()
                             })
                         ])])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case let .peerMention(peerId, mention):
                         let actionSheet = ActionSheetController(presentationData: presentationData)
                         var items: [ActionSheetItem] = []
@@ -1290,10 +1313,10 @@ public class GalleryController: ViewController, StandalonePresentableController,
                         if !mention.isEmpty {
                             items.append(ActionSheetButtonItem(title: strongSelf.presentationData.strings.Conversation_LinkDialogCopy, color: .accent, action: { [weak actionSheet, weak self] in
                                 actionSheet?.dismissAnimated()
-                                UIPasteboard.general.string = mention
+                                guard exteralessGalleryCopy(mention, permit: flowPermit, accountId: flowAccountId) else { return }
                                 
                                 let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_UsernameCopied)
-                                self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                                self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                             }))
                         }
                         actionSheet.setItemGroups([ActionSheetItemGroup(items: items), ActionSheetItemGroup(items: [
@@ -1301,7 +1324,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                 actionSheet?.dismissAnimated()
                             })
                         ])])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case let .textMention(mention):
                         let actionSheet = ActionSheetController(presentationData: presentationData)
                         actionSheet.setItemGroups([ActionSheetItemGroup(items: [
@@ -1315,34 +1338,34 @@ public class GalleryController: ViewController, StandalonePresentableController,
                             }),
                             ActionSheetButtonItem(title: strongSelf.presentationData.strings.Conversation_LinkDialogCopy, color: .accent, action: { [weak actionSheet, weak self] in
                                 actionSheet?.dismissAnimated()
-                                UIPasteboard.general.string = mention
+                                guard exteralessGalleryCopy(mention, permit: flowPermit, accountId: flowAccountId) else { return }
                                 
                                 let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_TextCopied)
-                                self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                                self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                             })
                         ]), ActionSheetItemGroup(items: [
                             ActionSheetButtonItem(title: strongSelf.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                             })
                         ])])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case let .botCommand(command):
                         let actionSheet = ActionSheetController(presentationData: presentationData)
                         var items: [ActionSheetItem] = []
                         items.append(ActionSheetTextItem(title: command))
                         items.append(ActionSheetButtonItem(title: strongSelf.presentationData.strings.Conversation_LinkDialogCopy, color: .accent, action: { [weak actionSheet, weak self] in
                             actionSheet?.dismissAnimated()
-                            UIPasteboard.general.string = command
+                            guard exteralessGalleryCopy(command, permit: flowPermit, accountId: flowAccountId) else { return }
                             
                             let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_TextCopied)
-                            self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                            self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                         }))
                         actionSheet.setItemGroups([ActionSheetItemGroup(items: items), ActionSheetItemGroup(items: [
                             ActionSheetButtonItem(title: strongSelf.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
                                 actionSheet?.dismissAnimated()
                             })
                         ])])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case let .hashtag(peerName, hashtag):
                         let actionSheet = ActionSheetController(presentationData: presentationData)
                         actionSheet.setItemGroups([ActionSheetItemGroup(items: [
@@ -1356,10 +1379,10 @@ public class GalleryController: ViewController, StandalonePresentableController,
                             }),
                             ActionSheetButtonItem(title: strongSelf.presentationData.strings.Conversation_LinkDialogCopy, color: .accent, action: { [weak actionSheet, weak self] in
                                 actionSheet?.dismissAnimated()
-                                UIPasteboard.general.string = hashtag
+                                guard exteralessGalleryCopy(hashtag, permit: flowPermit, accountId: flowAccountId) else { return }
                                 
                                 let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_HashtagCopied)
-                                self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                                self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                             })
                         ]), ActionSheetItemGroup(items: [
                                 ActionSheetButtonItem(title: strongSelf.presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
@@ -1367,7 +1390,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                 })
                             ])
                         ])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case let .timecode(timecode, text):
                         let isCopyLink: Bool
                         if message.id.namespace == Namespaces.Message.Cloud, let _ = message.peers[message.id.peerId] as? TelegramChannel, !(message.media.first is TelegramMediaAction) {
@@ -1388,6 +1411,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                             }),
                             ActionSheetButtonItem(title: isCopyLink ? strongSelf.presentationData.strings.Conversation_ContextMenuCopyLink : strongSelf.presentationData.strings.Conversation_LinkDialogCopy, color: .accent, action: { [weak actionSheet, weak self] in
                                 actionSheet?.dismissAnimated()
+                                guard flowPermit?.allows(accountId: flowAccountId, operation: .exportPreparation) ?? true else { return }
                                 if isCopyLink, let channel = message.peers[message.id.peerId] as? TelegramChannel {
                                     let _ = (context.engine.messages.exportMessageLink(peerId: message.id.peerId, messageId: message.id, isThread: false)
                                     |> map { result -> String? in
@@ -1395,7 +1419,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                     }
                                     |> deliverOnMainQueue).start(next: { link in
                                         if let link = link {
-                                            UIPasteboard.general.string = link + "?t=\(Int32(timecode))"
+                                            guard exteralessGalleryCopy(link + "?t=\(Int32(timecode))", permit: flowPermit, accountId: flowAccountId) else { return }
                                             
                                             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                                             
@@ -1411,20 +1435,20 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                                 } else {
                                                     content = .linkCopied(title: nil, text: presentationData.strings.Conversation_LinkCopied)
                                                 }
-                                                self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                                                self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                                             })
                                         } else {
-                                            UIPasteboard.general.string = text
+                                            guard exteralessGalleryCopy(text, permit: flowPermit, accountId: flowAccountId) else { return }
                                             
                                             let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_TextCopied)
-                                            self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+                                            self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
                                         }
                                     })
                                 } else {
-                                    UIPasteboard.general.string = text
+                                    guard exteralessGalleryCopy(text, permit: flowPermit, accountId: flowAccountId) else { return }
                                 
                                     let content: UndoOverlayContent = .copy(text: presentationData.strings.Conversation_TextCopied)
-                                    self?.present(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                                    self?.exteralessPresent(UndoOverlayController(presentationData: presentationData, content: content, elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
                                 }
                             })
                         ]), ActionSheetItemGroup(items: [
@@ -1433,7 +1457,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                 })
                             ])
                         ])
-                        strongSelf.present(actionSheet, in: .window(.root))
+                        strongSelf.exteralessPresent(actionSheet, in: .window(.root))
                     case .ad:
                         break
                 }
@@ -1526,19 +1550,51 @@ public class GalleryController: ViewController, StandalonePresentableController,
         })
     }
     
+    private func exteralessPresentInGlobalOverlay(_ controller: ViewController, with arguments: Any?) {
+        if let permit = self.exteralessExportPermit {
+            permit.presentWhenReady(controller, accountId: self.context.account.id.int64, from: self, present: { [weak self] controller in self?.presentInGlobalOverlay(controller, with: arguments) })
+        } else { self.presentInGlobalOverlay(controller, with: arguments) }
+    }
+
+    private func exteralessPresent(_ controller: ViewController, in location: PresentationContextType, with arguments: Any? = nil, blockInteraction: Bool = false) {
+        self.present(controller, in: location, with: arguments, blockInteraction: blockInteraction)
+    }
+
+    override public func present(_ controller: ViewController, in location: PresentationContextType, with arguments: Any? = nil, blockInteraction: Bool = false, completion: @escaping () -> Void = {}) {
+        if let permit = self.exteralessExportPermit {
+            permit.presentWhenReady(controller, accountId: self.context.account.id.int64, from: self, present: { [weak self] controller in
+                self?.presentOwnedReady(controller, in: location, with: arguments, blockInteraction: blockInteraction, completion: completion)
+            })
+        } else { super.present(controller, in: location, with: arguments, blockInteraction: blockInteraction, completion: completion) }
+    }
+
+    private func presentOwnedReady(_ controller: ViewController, in location: PresentationContextType, with arguments: Any?, blockInteraction: Bool, completion: @escaping () -> Void) {
+        super.present(controller, in: location, with: arguments, blockInteraction: blockInteraction, completion: completion)
+    }
+
     override public func loadDisplayNode() {
         let controllerInteraction = GalleryControllerInteraction(presentController: { [weak self] controller, arguments in
             if let strongSelf = self {
-                strongSelf.present(controller, in: .window(.root), with: arguments, blockInteraction: true)
+                strongSelf.exteralessPresent(controller, in: .window(.root), with: arguments, blockInteraction: true)
             }
         }, pushController: { [weak self] c in
-            self?.baseNavigationController?.pushViewController(c)
-            self?.dismiss(forceAway: true)
+            guard let self else { return }
+            if let permit = self.exteralessExportPermit {
+                permit.presentWhenReady(c, accountId: self.context.account.id.int64, from: self, present: { [weak self] c in
+                    self?.baseNavigationController?.pushViewController(c)
+                    self?.dismiss(forceAway: true)
+                })
+            } else {
+                self.baseNavigationController?.pushViewController(c)
+                self.dismiss(forceAway: true)
+            }
         }, dismissController: { [weak self] in
             self?.dismiss(forceAway: true)
         }, replaceRootController: { [weak self] controller, ready in
             if let strongSelf = self {
-                strongSelf.replaceRootController(controller, ready)
+                if let permit = strongSelf.exteralessExportPermit {
+                    permit.presentWhenReady(controller, accountId: strongSelf.context.account.id.int64, from: strongSelf, additionalReady: ready?.get(), present: { [weak strongSelf] controller in strongSelf?.replaceRootController(controller, nil) })
+                } else { strongSelf.replaceRootController(controller, ready) }
             }
         }, editMedia: { [weak self] messageId in
             if let strongSelf = self {
@@ -1696,7 +1752,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                 sendSticker: self.actionInteraction?.sendSticker,
                 present: { [weak self] c, a in
                 if let strongSelf = self {
-                    strongSelf.presentInGlobalOverlay(c, with: a)
+                    strongSelf.exteralessPresentInGlobalOverlay(c, with: a)
                 }
             }) {
                 if isCentral {
@@ -1782,7 +1838,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                             }
                                             if let item = galleryItemForEntry(context: strongSelf.context, presentationData: strongSelf.presentationData, entry: entry, isCentral: isCentral, streamVideos: false, fromPlayingVideo: isCentral && strongSelf.fromPlayingVideo, landscape: isCentral && strongSelf.landscape, timecode: isCentral ? strongSelf.timecode : nil, playbackRate: { return self?.playbackRate }, displayInfoOnTop: displayInfoOnTop, configuration: strongSelf.configuration, peerIsCopyProtected: view.peerIsCopyProtected, performAction: strongSelf.performAction, openActionOptions: strongSelf.openActionOptions, storeMediaPlaybackState: strongSelf.actionInteraction?.storeMediaPlaybackState ?? { _, _, _ in }, generateStoreAfterDownload: strongSelf.generateStoreAfterDownload, sendSticker: strongSelf.actionInteraction?.sendSticker, present: { [weak self] c, a in
                                                 if let strongSelf = self {
-                                                    strongSelf.presentInGlobalOverlay(c, with: a)
+                                                    strongSelf.exteralessPresentInGlobalOverlay(c, with: a)
                                                 }
                                             }) {
                                                 if isCentral {
@@ -1835,7 +1891,7 @@ public class GalleryController: ViewController, StandalonePresentableController,
                                                 }
                                                 if let item = galleryItemForEntry(context: strongSelf.context, presentationData: strongSelf.presentationData, entry: entry, isCentral: isCentral, streamVideos: false, fromPlayingVideo: isCentral && strongSelf.fromPlayingVideo, landscape: isCentral && strongSelf.landscape, timecode: isCentral ? strongSelf.timecode : nil, playbackRate: { return self?.playbackRate }, displayInfoOnTop: displayInfoOnTop, configuration: strongSelf.configuration, performAction: strongSelf.performAction, openActionOptions: strongSelf.openActionOptions, storeMediaPlaybackState: strongSelf.actionInteraction?.storeMediaPlaybackState ?? { _, _, _ in }, generateStoreAfterDownload: strongSelf.generateStoreAfterDownload, sendSticker: strongSelf.actionInteraction?.sendSticker, present: { [weak self] c, a in
                                                     if let strongSelf = self {
-                                                        strongSelf.presentInGlobalOverlay(c, with: a)
+                                                        strongSelf.exteralessPresentInGlobalOverlay(c, with: a)
                                                     }
                                                 }) {
                                                     if isCentral {

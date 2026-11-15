@@ -83,8 +83,10 @@ func managedAutoremoveMessageOperations(network: Network, postbox: Postbox, isRe
 
                     if let message = transaction.getMessage(entry.messageId) {
                         if message.id.peerId.namespace == Namespaces.Peer.SecretChat || isRemove {
+                            exteralessRetainBeforeDelete(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                             _internal_deleteMessages(transaction: transaction, mediaBox: postbox.mediaBox, ids: [entry.messageId])
                         } else {
+                            exteralessRetainBeforeMediaExpiry(transaction: transaction, mediaBox: postbox.mediaBox, previous: message)
                             transaction.updateMessage(message.id, update: { currentMessage in
                                 var storeForwardInfo: StoreMessageForwardInfo?
                                 if let forwardInfo = currentMessage.forwardInfo {
@@ -198,4 +200,3 @@ func managedAutoexpireStoryOperations(network: Network, postbox: Postbox) -> Sig
         }
     }
 }
-

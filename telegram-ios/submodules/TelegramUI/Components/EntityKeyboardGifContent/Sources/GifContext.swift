@@ -180,7 +180,7 @@ public final class GifContext {
         
         let hideBackground = gifInputInteraction.hideBackground
         
-        let hasRecentGifs = context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudRecentGifs))
+        let hasRecentGifs = exteralessSavedGifItems(engine: context.engine)
         |> map { savedGifs -> Bool in
             return !savedGifs.isEmpty
         }
@@ -192,14 +192,14 @@ public final class GifContext {
         switch subject {
         case .recent:
             gifItems = combineLatest(
-                context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudRecentGifs)),
+                exteralessSavedGifItems(engine: context.engine),
                 searchCategories
             )
             |> map { savedGifs, searchCategories -> EntityKeyboardGifContent in
                 var items: [GifPagerContentComponent.Item] = []
                 for gifItem in savedGifs {
                     items.append(GifPagerContentComponent.Item(
-                        file: .savedGif(media: gifItem.contents.get(RecentMediaItem.self)!.media._parse()),
+                        file: gifItem,
                         contextResult: nil
                     ))
                 }
@@ -326,7 +326,7 @@ public final class GifContext {
         
         switch self.subject {
         case let .emojiSearch(query):
-            let hasRecentGifs = context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudRecentGifs))
+            let hasRecentGifs = exteralessSavedGifItems(engine: context.engine)
             |> map { savedGifs -> Bool in
                 return !savedGifs.isEmpty
             }

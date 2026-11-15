@@ -203,7 +203,12 @@ public final class PrincipalThemeEssentialGraphics {
     
     public let hasWallpaper: Bool
     
-    init(presentationTheme: PresentationTheme, wallpaper initialWallpaper: TelegramWallpaper, preview: Bool = false, bubbleCorners: PresentationChatBubbleCorners) {
+    init(presentationTheme: PresentationTheme, wallpaper initialWallpaper: TelegramWallpaper, preview: Bool = false, bubbleCorners: PresentationChatBubbleCorners, removeTail: Bool) {
+        // One immutable preference snapshot for every fill/mask/outline/shadow cached under this key.
+        func messageBubbleImage(maxCornerRadius: CGFloat, minCornerRadius: CGFloat, incoming: Bool, fillColor: UIColor, strokeColor: UIColor, neighbors: MessageBubbleImageNeighbors, theme: PresentationThemeChat, wallpaper: TelegramWallpaper, knockout: Bool, mask: Bool = false, extendedEdges: Bool = false, onlyOutline: Bool = false, onlyShadow: Bool = false, alwaysFillColor: Bool = false) -> UIImage {
+            let colors = incoming ? theme.message.incoming : theme.message.outgoing
+            return generateMessageBubbleImage(maxCornerRadius: maxCornerRadius, minCornerRadius: minCornerRadius, incoming: incoming, fillColor: fillColor, strokeColor: strokeColor, neighbors: neighbors, shadow: colors.bubble.withWallpaper.shadow, wallpaper: wallpaper, knockout: knockout, mask: mask, extendedEdges: extendedEdges, onlyOutline: onlyOutline, onlyShadow: onlyShadow, alwaysFillColor: alwaysFillColor, removeTail: removeTail)
+        }
         let theme = presentationTheme.chat
         let wallpaper = initialWallpaper
         self.hasWallpaper = !wallpaper.isEmpty

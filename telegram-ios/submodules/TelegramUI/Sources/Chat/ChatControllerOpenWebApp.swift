@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import SwiftSignalKit
@@ -36,8 +37,28 @@ func openWebAppImpl(
     /// shimmers) and the `.requestInProgress` title panel is suppressed — two simultaneous progress
     /// indicators for one tap read as a bug. When nil, the panel behaves exactly as before, which is
     /// what surfaces with no inline affordance (reply keyboard, pinned-message panel) rely on.
-    progress: Promise<Bool>? = nil
+    progress: Promise<Bool>? = nil,
+    privacyChecked: Bool = false
 ) {
+    let privacy = PrivacyPolicy.current
+    let isInline: Bool
+    if case .inline = source { isInline = true } else { isInline = false }
+    if !privacyChecked, !isInline, !isOnramp, verifyAgeCompletion == nil, threadId == nil,
+       chatPeer == nil || chatPeer?.id == botPeer.id,
+       privacy.botPrivacyEnabled || privacy.botPrivacyAlwaysAsk {
+        let _ = ExteralessBotAccountRouter.shared.resolve(context: context, bot: botPeer, explicit: chatPeer != nil, presenter: parentController) { [weak parentController] choice in
+            guard let choice, let parentController else { progress?.set(.single(false)); opened(); return }
+            let proceed: (AccountContext, ViewController) -> Void = { chosenContext, presenter in
+                guard ExteralessBotSendAuthorization.shared.approve(account: chosenContext.account, peerId: choice.peer.id, expectedPolicy: privacy) else { progress?.set(.single(false)); opened(); return }
+                openWebAppImpl(context: chosenContext, parentController: presenter, updatedPresentationData: chosenContext.account === context.account ? updatedPresentationData : nil, botPeer: choice.peer, chatPeer: chatPeer == nil ? nil : choice.peer, threadId: nil, buttonText: buttonText, url: url, simple: simple, source: source, skipTermsOfService: chosenContext.account === context.account && skipTermsOfService, payload: payload, verifyAgeCompletion: nil, isOnramp: false, willOpen: willOpen, opened: opened, progress: progress, privacyChecked: true)
+            }
+            if choice.context.account === context.account { proceed(context, parentController) }
+            else { ExteralessBotAccountRouter.shared.activate(choice: choice, failed: { progress?.set(.single(false)); opened() }) { context, navigation in
+                if let presenter = navigation.topViewController as? ViewController { proceed(context, presenter) }
+            } }
+        }
+        return
+    }
     if context.isFrozen {
         parentController.push(context.sharedContext.makeAccountFreezeInfoScreen(context: context))
         return
@@ -736,8 +757,30 @@ public extension ChatControllerImpl {
         ChatControllerImpl.presentBotApp(context: self.context, parentController: self, botApp: botApp, botPeer: botPeer, payload: payload, mode: mode, concealed: concealed, commit: commit)
     }
     
-    internal static func presentBotApp(context: AccountContext, parentController: ViewController, botApp: BotApp?, botPeer: EnginePeer, payload: String?, mode: ResolvedStartAppMode, isOnramp: Bool = false, willOpen: @escaping () -> Void = {}, opened: @escaping () -> Void = {}, concealed: Bool = false, commit: @escaping () -> Void = {}) {
+    internal static func presentBotApp(context: AccountContext, parentController: ViewController, botApp: BotApp?, botPeer: EnginePeer, payload: String?, mode: ResolvedStartAppMode, isOnramp: Bool = false, willOpen: @escaping () -> Void = {}, opened: @escaping () -> Void = {}, concealed: Bool = false, commit: @escaping () -> Void = {}, privacyChecked: Bool = false) {
         let chatController = parentController as? ChatControllerImpl
+        let privacy = PrivacyPolicy.current
+        if !privacyChecked, !isOnramp, chatController?.chatLocation.threadId == nil,
+           chatController == nil || chatController?.chatLocation.peerId == botPeer.id,
+           privacy.botPrivacyEnabled || privacy.botPrivacyAlwaysAsk {
+            let _ = ExteralessBotAccountRouter.shared.resolve(context: context, bot: botPeer, explicit: chatController != nil, presenter: parentController) { [weak parentController] choice in
+                guard let choice, let parentController else { opened(); return }
+                let proceed: (AccountContext, ViewController, BotApp?) -> Void = { chosenContext, presenter, chosenApp in
+                    guard ExteralessBotSendAuthorization.shared.approve(account: chosenContext.account, peerId: choice.peer.id, expectedPolicy: privacy) else { opened(); return }
+                    self.presentBotApp(context: chosenContext, parentController: presenter, botApp: chosenApp, botPeer: choice.peer, payload: payload, mode: mode, isOnramp: false, willOpen: willOpen, opened: opened, concealed: concealed, commit: commit, privacyChecked: true)
+                }
+                if choice.context.account === context.account { proceed(context, parentController, botApp) }
+                else { ExteralessBotAccountRouter.shared.activate(choice: choice, failed: opened) { context, navigation in
+                    guard let presenter = navigation.topViewController as? ViewController else { opened(); return }
+                    if let botApp {
+                        let _ = (context.engine.messages.getBotApp(botId: choice.peer.id, shortName: botApp.shortName) |> deliverOnMainQueue).start(next: { app in
+                            proceed(context, presenter, app)
+                        }, error: { _ in opened() })
+                    } else { proceed(context, presenter, nil) }
+                } }
+            }
+            return
+        }
         let peerId: EnginePeer.Id
         let threadId = chatController?.chatLocation.threadId
         if let chatPeerId = chatController?.chatLocation.peerId {

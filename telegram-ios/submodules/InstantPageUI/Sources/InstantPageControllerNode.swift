@@ -1561,6 +1561,7 @@ final class InstantPageControllerNode: ASDisplayNode, ASScrollViewDelegate {
                             }
                             let controller = await context.sharedContext.makeTextProcessingScreen(
                                 context: context,
+                                capability: .userInput,
                                 theme: nil,
                                 mode: .translate(fromLanguage: language, applyResult: nil),
                                 inputText: .plain(text: text, entities: []),

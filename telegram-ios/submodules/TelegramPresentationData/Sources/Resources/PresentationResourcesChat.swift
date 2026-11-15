@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import TelegramCore
@@ -103,8 +104,9 @@ public struct PresentationResourcesChat {
     
     public static func principalGraphics(theme: PresentationTheme, wallpaper: TelegramWallpaper, bubbleCorners: PresentationChatBubbleCorners) -> PrincipalThemeEssentialGraphics {
         let hasWallpaper = !wallpaper.isEmpty
-        return theme.object(PresentationResourceParameterKey.chatPrincipalThemeEssentialGraphics(hasWallpaper: hasWallpaper, bubbleCorners: bubbleCorners), { theme in
-            return PrincipalThemeEssentialGraphics(presentationTheme: theme, wallpaper: wallpaper, preview: theme.preview, bubbleCorners: bubbleCorners)
+        let removeTail = ClientSettings.shared.bool("chats.removeMessageTail", default: true)
+        return theme.object(PresentationResourceParameterKey.chatPrincipalThemeEssentialGraphics(hasWallpaper: hasWallpaper, bubbleCorners: bubbleCorners, removeTail: removeTail), { theme in
+            return PrincipalThemeEssentialGraphics(presentationTheme: theme, wallpaper: wallpaper, preview: theme.preview, bubbleCorners: bubbleCorners, removeTail: removeTail)
         }) as! PrincipalThemeEssentialGraphics
     }
     

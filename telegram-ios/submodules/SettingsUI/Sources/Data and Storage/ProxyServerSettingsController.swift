@@ -43,6 +43,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     case connectionHeader(PresentationTheme, String)
     case connectionServer(PresentationTheme, PresentationStrings, String, String)
     case connectionPort(PresentationTheme, PresentationStrings, String, String)
+    case displayName(PresentationTheme, String)
     
     case credentialsHeader(PresentationTheme, String)
     case credentialsUsername(PresentationTheme, PresentationStrings, String, String)
@@ -57,7 +58,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return ProxySettingsSection.pasteboard.rawValue
             case .modeSocks5, .modeMtp, .modeWeb:
                 return ProxySettingsSection.mode.rawValue
-            case .connectionHeader, .connectionServer, .connectionPort:
+            case .connectionHeader, .connectionServer, .connectionPort, .displayName:
                 return ProxySettingsSection.connection.rawValue
             case .credentialsHeader, .credentialsUsername, .credentialsPassword, .credentialsSecret:
                 return ProxySettingsSection.credentials.rawValue
@@ -80,18 +81,20 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return 4
             case .connectionHeader:
                 return 5
-            case .connectionServer:
+            case .displayName:
                 return 6
-            case .connectionPort:
+            case .connectionServer:
                 return 7
-            case .credentialsHeader:
+            case .connectionPort:
                 return 8
-            case .credentialsUsername:
+            case .credentialsHeader:
                 return 9
-            case .credentialsPassword:
+            case .credentialsUsername:
                 return 10
-            case .credentialsSecret:
+            case .credentialsPassword:
                 return 11
+            case .credentialsSecret:
+                return 12
             case .share:
                 return 13
         }
@@ -143,6 +146,14 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                     arguments.updateState { current in
                         var state = current
                         state.port = value
+                        return state
+                    }
+                }, action: {})
+            case let .displayName(_, text):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: text, placeholder: "Proxy name (optional)", type: .regular(capitalization: true, autocorrection: false), sectionId: self.section, textUpdated: { value in
+                    arguments.updateState { current in
+                        var state = current
+                        state.displayName = String(value.prefix(128))
                         return state
                     }
                 }, action: {})
@@ -206,6 +217,7 @@ struct ProxyServerSettingsControllerState: Equatable {
     var username: String
     var password: String
     var secret: String
+    var displayName: String = ""
     
     /// Switching away from `.web` must drop the base path from the shared server field.
     /// Only a WEB address is `host/base-path`; SOCKS5 and MTProxy take a bare host, and
@@ -264,6 +276,7 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
     entries.append(.modeWeb(presentationData.theme, presentationData.strings.SocksProxySetup_ProxyWeb, state.mode == .web))
     
     entries.append(.connectionHeader(presentationData.theme, presentationData.strings.SocksProxySetup_Connection.uppercased()))
+    entries.append(.displayName(presentationData.theme, state.displayName))
     entries.append(.connectionServer(presentationData.theme, presentationData.strings, presentationData.strings.SocksProxySetup_Hostname, state.host))
     if case .web = state.mode {
         // A WEB relay is always HTTPS on 443; ProxyServerSettings.init pins it.
@@ -294,17 +307,17 @@ func proxyServerSettings(with state: ProxyServerSettingsControllerState) -> Prox
         return nil
     }
     if case .web = state.mode {
-        return makeWebProxySettings(address: state.host, secret: state.secret)
+        return makeWebProxySettings(address: state.host, secret: state.secret)?.withUpdatedDisplayName(state.displayName)
     }
     guard let port = Int32(state.port) else {
         return nil
     }
     switch state.mode {
         case .socks5:
-            return ProxyServerSettings(host: state.host, port: port, connection: .socks5(username: state.username.isEmpty ? nil : state.username, password: state.password.isEmpty ? nil : state.password))
+            return ProxyServerSettings(host: state.host, port: port, connection: .socks5(username: state.username.isEmpty ? nil : state.username, password: state.password.isEmpty ? nil : state.password), displayName: state.displayName)
         case .mtp:
             if let parsedSecret = MTProxySecret.parse(state.secret) {
-                return ProxyServerSettings(host: state.host, port: port, connection: .mtp(secret: parsedSecret.serialize()))
+                return ProxyServerSettings(host: state.host, port: port, connection: .mtp(secret: parsedSecret.serialize()), displayName: state.displayName)
             }
             return nil
         case .web:
@@ -353,7 +366,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         }
     }
 
-    let initialState = ProxyServerSettingsControllerState(mode: currentMode, host: currentAddress ?? currentSettings?.host ?? "", port: (currentSettings?.port).flatMap { "\($0)" } ?? "", username: currentUsername ?? "", password: currentPassword ?? "", secret: currentSecret ?? "")
+    let initialState = ProxyServerSettingsControllerState(mode: currentMode, host: currentAddress ?? currentSettings?.host ?? "", port: (currentSettings?.port).flatMap { "\($0)" } ?? "", username: currentUsername ?? "", password: currentPassword ?? "", secret: currentSecret ?? "", displayName: currentSettings?.displayName ?? "")
     let stateValue = Atomic(value: initialState)
     let statePromise = ValuePromise(initialState, ignoreRepeated: true)
     let updateState: ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void = { f in

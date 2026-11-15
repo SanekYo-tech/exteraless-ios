@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -2345,9 +2346,11 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
         self.addSubnode(self.buttonNode)
 
         displaySolution = { [weak self] in
-            guard let strongSelf = self, let item = strongSelf.item, let poll = strongSelf.poll, let solution = poll.results.solution else {
+            guard let strongSelf = self, let item = strongSelf.item, strongSelf.poll != nil else {
                 return
             }
+            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage)
+            guard let solution = display.pollSolution else { return }
             item.controllerInteraction.displayPollSolution(solution, strongSelf.solutionButtonNode)
         }
 
@@ -2772,7 +2775,8 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                         hasAutoremove: item.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                         animationCache: item.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(item.message).exteralessRetention
                     ))
                 }
                 
@@ -2790,18 +2794,12 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                 var pollTitleEntities = poll?.textEntities ?? []
                 var pollOptions: [TranslationMessageAttribute.Additional] = []
                 
-                var isTranslating = false
-                if let poll, let translateToLanguage = item.associatedData.translateToLanguage, !poll.text.isEmpty && incoming {
-                    isTranslating = true
-                    for attribute in item.message.attributes {
-                        if let attribute = attribute as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
-                            pollTitleText = attribute.text
-                            pollTitleEntities = attribute.entities
-                            pollOptions = attribute.additional
-                            isTranslating = false
-                            break
-                        }
-                    }
+                let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage)
+                let isTranslating = display.isTranslating
+                if let title = display.pollTitle {
+                    pollTitleText = title.text
+                    pollTitleEntities = title.entities
+                    pollOptions = display.pollOptions
                 }
                 
                 let attributedText = stringWithAppliedEntities(
@@ -3028,7 +3026,18 @@ public class ChatMessagePollBubbleContentNode: ChatMessageBubbleContentNode {
                             forceSelected = votedFor.contains(option.opaqueIdentifier)
                         }
                         
-                        let result = makeLayout(item.context, item.presentationData, item.controllerInteraction.presentationContext, item.message, poll, option, translation, optionResult, forceSelected, hasAnyOptionMedia, constrainedSize.width - layoutConstants.bubble.borderInset * 2.0)
+                        var displayedOption = option
+                        // A local count suffix keeps the original voting controls active. Reusing
+                        // optionResult for a pre-vote preview would turn taps into "view voters".
+                        if optionResult == nil, translation == nil, !isClosed, votedFor.isEmpty,
+                           ClientSettings.shared.bool("chats.showResultsBeforeVoting"),
+                           !poll.hideResultsUntilClose || poll.isCreator,
+                           let total = poll.results.totalVoters, total > 0,
+                           let count = voters?.first(where: { $0.opaqueIdentifier == option.opaqueIdentifier })?.count {
+                            let percent = Int((Double(count) * 100.0 / Double(total)).rounded())
+                            displayedOption = TelegramMediaPollOption(text: option.text + "  ·  \(count) (\(percent)%)", entities: option.entities, opaqueIdentifier: option.opaqueIdentifier, media: option.media, date: option.date, addedBy: option.addedBy)
+                        }
+                        let result = makeLayout(item.context, item.presentationData, item.controllerInteraction.presentationContext, item.message, poll, displayedOption, translation, optionResult, forceSelected, hasAnyOptionMedia, constrainedSize.width - layoutConstants.bubble.borderInset * 2.0)
                         boundingSize.width = max(boundingSize.width, result.minimumWidth + layoutConstants.bubble.borderInset * 2.0)
                         pollOptionsFinalizeLayouts.append((optionResult != nil, result.1))
                     }

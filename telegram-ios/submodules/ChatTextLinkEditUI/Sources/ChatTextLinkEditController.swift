@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import AsyncDisplayKit
@@ -102,7 +103,8 @@ public func chatTextLinkEditController(
         var currentDisplayedPreview: (link: String, webpage: TelegramMediaWebpage?)?
         previewDisposable.set((inputState.valueSignal
         |> map { value -> String in
-            return explicitUrl(value.string)
+            let url = explicitUrl(value.string)
+            return ClientSettings.shared.bool("chats.stripTrackingOnPaste", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
         }
         |> distinctUntilChanged
         |> mapToSignal { link -> Signal<(String, TelegramMediaWebpage?), NoError> in
@@ -139,7 +141,8 @@ public func chatTextLinkEditController(
     }
 
     applyImpl = {
-        let updatedLink = explicitUrl(inputState.value.string)
+        let originalLink = explicitUrl(inputState.value.string)
+        let updatedLink = ClientSettings.shared.bool("chats.stripTrackingOnPaste", default: true) ? ChatLinkPolicy.removingTracking(from: originalLink) : originalLink
         if !updatedLink.isEmpty && isValidUrl(updatedLink, validSchemes: ["http": true, "https": true, "tg": false, "ton": false, "tonsite": true]) {
             dismissImpl?()
             apply(updatedLink, currentPreview?.link == updatedLink ? currentPreview?.webpage : nil)
@@ -159,7 +162,7 @@ public func chatTextLinkEditController(
             let pasteboard = UIPasteboard.general
             if pasteboard.hasURLs {
                 if inputState.value.string.isEmpty, let url = pasteboard.url?.absoluteString, !url.isEmpty {
-                    let value = NSAttributedString(string: url)
+                    let value = NSAttributedString(string: ClientSettings.shared.bool("chats.stripTrackingOnPaste", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url)
                     inputState.setValue(value, selectionRange: 0 ..< value.length)
                 }
             }

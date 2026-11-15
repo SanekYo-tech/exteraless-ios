@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import MTProtoEngineFFI
+import TelegramCore
 
 /// TLS and TCP streams for the engine over Network.framework's C API. Not the Swift overlay: an x86_64
 /// build for macOS 10.13 binds the overlay's symbols to Network.framework, which has them only from
@@ -11,6 +12,8 @@ final class RustStreamHost {
     private let queue = DispatchQueue(label: "org.telegram.MTProtoRust.streams")
     private var connections: [UInt64: nw_connection_t] = [:]
     private var paused = Set<UInt64>()
+    private var appConnectors: [UInt64: ExteralessTLSConnectToken] = [:]
+    private var appConnectorGenerations: [UInt64: UUID] = [:]
 
     init(engine: OpaquePointer) {
         self.engine = engine
@@ -23,6 +26,33 @@ final class RustStreamHost {
                 return
             }
             let queue = self.queue
+            if let previous = self.connections.removeValue(forKey: stream) {
+                nw_connection_cancel(previous)
+            }
+            self.paused.remove(stream)
+            #if os(iOS)
+            if #available(iOS 15.0, *) {
+                let generation = UUID()
+                self.appConnectorGenerations[stream] = generation
+                self.appConnectors[stream]?.cancel()
+                self.appConnectors[stream] = ExteralessResolverTLSConnector.connect(host: host, port: port, serverName: serverName, alpn: alpn, queue: queue, ready: { [weak self] connection in
+                    guard let self, self.appConnectorGenerations[stream] == generation else { nw_connection_cancel(connection); return }
+                    self.appConnectors.removeValue(forKey: stream)
+                    self.appConnectorGenerations.removeValue(forKey: stream)
+                    self.connections[stream] = connection
+                    nw_connection_set_state_changed_handler(connection) { [weak self] state, error in
+                        self?.stateChanged(stream: stream, connection: connection, state: state, error: error)
+                    }
+                    self.stateChanged(stream: stream, connection: connection, state: nw_connection_state_ready, error: nil)
+                }, failed: { [weak self] in
+                    guard let self, self.appConnectorGenerations[stream] == generation else { return }
+                    self.appConnectors.removeValue(forKey: stream)
+                    self.appConnectorGenerations.removeValue(forKey: stream)
+                    self.report(stream: stream, error: "resolver or connection failed")
+                })
+                return
+            }
+            #endif
             let configureTcp: nw_parameters_configure_protocol_block_t = { options in
                 nw_tcp_options_set_no_delay(options, true)
                 nw_tcp_options_set_connection_timeout(options, 15)
@@ -36,9 +66,7 @@ final class RustStreamHost {
                     for name in alpn {
                         sec_protocol_options_add_tls_application_protocol(security, name)
                     }
-                    sec_protocol_options_set_verify_block(security, { _, _, complete in
-                        complete(true)
-                    }, queue)
+                    // Keep normal certificate-chain and hostname trust.
                 }, configureTcp)
             } else {
                 parameters = nw_parameters_create()
@@ -79,6 +107,8 @@ final class RustStreamHost {
 
     func close(stream: UInt64) {
         self.queue.async {
+            self.appConnectors.removeValue(forKey: stream)?.cancel()
+            self.appConnectorGenerations.removeValue(forKey: stream)
             self.paused.remove(stream)
             if let connection = self.connections.removeValue(forKey: stream) {
                 nw_connection_cancel(connection)
@@ -157,8 +187,9 @@ final class RustStreamHost {
 
 @available(macOS 10.14, iOS 12.0, *)
 private func rustStreamErrorText(_ error: nw_error_t) -> String {
-    let description = CFErrorCopyDescription(nw_error_copy_cf_error(error).takeRetainedValue()) as String
-    return "nw error \(nw_error_get_error_domain(error).rawValue)/\(nw_error_get_error_code(error)): \(description)"
+    // CFError's description may include a host/URL. Only numeric fields cross
+    // the stream-error boundary; byte accounting is independent of diagnostics.
+    return "nw error \(nw_error_get_error_domain(error).rawValue)/\(nw_error_get_error_code(error))"
 }
 
 func rustStreamHostCallbacks() -> MTStreamHost {

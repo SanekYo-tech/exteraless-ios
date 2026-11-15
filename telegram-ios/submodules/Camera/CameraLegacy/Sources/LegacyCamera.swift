@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import AVFoundation
@@ -243,6 +244,8 @@ private final class CameraContext {
     }
     
     private var _positionPromise: ValuePromise<Camera.Position>
+    private let zoomStatePromise = Promise<Camera.ZoomState?>(.single(nil))
+    var zoomState: Signal<Camera.ZoomState?, NoError> { self.zoomStatePromise.get() }
     var position: Signal<Camera.Position, NoError> {
         return self._positionPromise.get()
     }
@@ -261,6 +264,7 @@ private final class CameraContext {
             }
             self.positionValue = targetPosition
             self._positionPromise.set(targetPosition)
+            self.updateZoomStateBinding()
             
             mainDeviceContext.output.markPositionChange(position: targetPosition)
         } else {
@@ -347,7 +351,7 @@ private final class CameraContext {
                 if #available(iOS 13.0, *) {
                     front = connection.inputPorts.first?.sourceDevicePosition == .front
                 }
-                self.mainVideoOutput?.push(sampleBuffer, mirror: front)
+                self.mainVideoOutput?.push(sampleBuffer, mirror: front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
                 
                 let timestamp = CACurrentMediaTime()
                 if timestamp > self.lastSnapshotTimestamp + 2.5, !mainDeviceContext.output.isRecording || !self.savedSnapshot {
@@ -365,7 +369,7 @@ private final class CameraContext {
                 if #available(iOS 13.0, *) {
                     front = connection.inputPorts.first?.sourceDevicePosition == .front
                 }
-                self.additionalVideoOutput?.push(sampleBuffer, mirror: front)
+                self.additionalVideoOutput?.push(sampleBuffer, mirror: front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
                 
                 let timestamp = CACurrentMediaTime()
                 if timestamp > self.lastAdditionalSnapshotTimestamp + 2.5, !additionalDeviceContext.output.isRecording || !self.savedAdditionalSnapshot {
@@ -395,7 +399,7 @@ private final class CameraContext {
                 if #available(iOS 13.0, *) {
                     front = connection.inputPorts.first?.sourceDevicePosition == .front
                 }
-                self.mainVideoOutput?.push(sampleBuffer, mirror: front)
+                self.mainVideoOutput?.push(sampleBuffer, mirror: front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
                 
                 let timestamp = CACurrentMediaTime()
                 if timestamp > self.lastSnapshotTimestamp + 2.5, !mainDeviceContext.output.isRecording || !self.savedSnapshot {
@@ -485,6 +489,13 @@ private final class CameraContext {
         self.session.session.beginConfiguration()
         f()
         self.session.session.commitConfiguration()
+        self.updateZoomStateBinding()
+    }
+
+    private func updateZoomStateBinding() {
+        let device = self.isDualCameraEnabled == true && self.positionValue == .front
+            ? self.additionalDeviceContext?.device : self.mainDeviceContext?.device
+        self.zoomStatePromise.set(device?.zoomState ?? .single(nil))
     }
     
     var hasTorch: Signal<Bool, NoError> {
@@ -514,7 +525,7 @@ private final class CameraContext {
     }
     
     func setZoomLevel(_ zoomLevel: CGFloat) {
-        if self.initialConfiguration.isRoundVideo {
+        if self.isDualCameraEnabled == true {
             if self.positionValue == .front {
                 self.additionalDeviceContext?.device.setZoomLevel(zoomLevel)
             } else {
@@ -526,7 +537,7 @@ private final class CameraContext {
     }
     
     func setZoomDelta(_ zoomDelta: CGFloat) {
-        if self.initialConfiguration.isRoundVideo {
+        if self.isDualCameraEnabled == true {
             if self.positionValue == .front {
                 self.additionalDeviceContext?.device.setZoomDelta(zoomDelta)
             } else {
@@ -538,7 +549,7 @@ private final class CameraContext {
     }
     
     func rampZoom(_ zoomLevel: CGFloat, rate: CGFloat) {
-        if self.initialConfiguration.isRoundVideo {
+        if self.isDualCameraEnabled == true {
             if self.positionValue == .front {
                 self.additionalDeviceContext?.device.rampZoom(zoomLevel, rate: rate)
             } else {
@@ -638,14 +649,15 @@ private final class CameraContext {
                 ) |> mapToSignal { main, additional in
                     if case let .finished(mainResult, _, duration, positionChangeTimestamps, _) = main, case let .finished(additionalResult, _, _, _, _) = additional {
                         var additionalThumbnailImage = additionalResult.thumbnail
-                        if let cgImage = additionalResult.thumbnail.cgImage {
+                        let mirror = ClientSettings.shared.bool("tools.cameraMirrorMode", default: true)
+                        if mirror, let cgImage = additionalResult.thumbnail.cgImage {
                             additionalThumbnailImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .leftMirrored)
                         }
                         
                         return .single(
                             .finished(
                                 main: mainResult,
-                                additional: VideoCaptureResult.Result(path: additionalResult.path, thumbnail: additionalThumbnailImage, isMirrored: true, dimensions: additionalResult.dimensions),
+                                additional: VideoCaptureResult.Result(path: additionalResult.path, thumbnail: additionalThumbnailImage, isMirrored: mirror, dimensions: additionalResult.dimensions),
                                 duration: duration,
                                 positionChangeTimestamps: positionChangeTimestamps,
                                 captureTimestamp: CACurrentMediaTime()
@@ -656,7 +668,7 @@ private final class CameraContext {
                     }
                 }
             } else {
-                let isMirrored = self.positionValue == .front
+                let isMirrored = self.positionValue == .front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true)
                 return mainDeviceContext.output.stopRecording()
                 |> map { result -> VideoCaptureResult in
                     if case let .finished(mainResult, _, duration, positionChangeTimestamps, captureTimestamp) = result {
@@ -804,6 +816,18 @@ final class LegacyCamera: CameraProtocol {
                         subscriber.putCompletion()
                     }))
                 }
+            }
+            return disposable
+        }
+    }
+
+    var zoomState: Signal<Camera.ZoomState?, NoError> {
+        return Signal { subscriber in
+            let disposable = MetaDisposable()
+            self.queue.async {
+                if let context = self.contextRef?.takeUnretainedValue() {
+                    disposable.set(context.zoomState.start(next: { subscriber.putNext($0) }))
+                } else { subscriber.putNext(nil) }
             }
             return disposable
         }

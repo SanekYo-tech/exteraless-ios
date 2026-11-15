@@ -138,6 +138,15 @@ func preparedChatListNodeViewTransition(from fromView: ChatListNodeView?, to toV
         if let scrollPosition = scrollPosition {
             switch scrollPosition {
             case let .index(scrollIndex, position, directionHint, animated):
+                // Unread order is not timestamp order. Prefer the actual peer's
+                // native identity before the legacy nearest-index fallback.
+                if let target = toView.filteredEntries.firstIndex(where: { entry in
+                    guard case let .PeerEntry(data) = entry, case let .chatList(index) = data.index else { return false }
+                    return index.messageIndex.id.peerId == scrollIndex.messageIndex.id.peerId
+                }) {
+                    scrollToItem = ListViewScrollToItem(index: toView.filteredEntries.count - 1 - target, position: position, animated: animated, curve: .Default(duration: nil), directionHint: directionHint)
+                    break
+                }
                 var index = toView.filteredEntries.count - 1
                 for entry in toView.filteredEntries {
                     if entry.sortIndex >= .index(.chatList(scrollIndex)) {

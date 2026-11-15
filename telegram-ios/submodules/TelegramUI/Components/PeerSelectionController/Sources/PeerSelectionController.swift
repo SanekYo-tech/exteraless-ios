@@ -20,6 +20,9 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
     private var customTitle: String?
     
     public var peerSelected: ((EnginePeer, Int64?) -> Void)?
+    public var initialForwardOptions: ChatInterfaceForwardOptionsState? {
+        didSet { if self.isNodeLoaded { self.peerSelectionNode.applyInitialForwardOptions(self.initialForwardOptions) } }
+    }
     public var multiplePeersSelected: (([EnginePeer], [EnginePeer.Id: EnginePeer], NSAttributedString, AttachmentTextInputPanelSendMode, ChatInterfaceForwardOptionsState?, ChatSendMessageActionSheetController.SendParameters?) -> Void)?
     private let filter: ChatListNodePeersFilter
     private let forumPeerId: (id: EnginePeer.Id, isMonoforum: Bool)?
@@ -384,6 +387,7 @@ public final class PeerSelectionControllerImpl: ViewController, PeerSelectionCon
         
         self.peerSelectionNode.navigationBar = self.navigationBar
         
+        self.peerSelectionNode.applyInitialForwardOptions(self.initialForwardOptions)
         self.peerSelectionNode.requestSend = { [weak self] peers, peerMap, text, mode, forwardOptionsState, messageEffect in
             self?.multiplePeersSelected?(peers, peerMap, text, mode, forwardOptionsState, messageEffect)
         }

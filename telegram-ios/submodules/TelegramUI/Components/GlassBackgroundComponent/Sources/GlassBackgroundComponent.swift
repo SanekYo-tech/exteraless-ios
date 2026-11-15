@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -488,13 +489,15 @@ public class GlassBackgroundView: UIView {
         public let tintColor: TintColor
         public let isInteractive: Bool
         public let isVisible: Bool
+        public let outlineStyle: Int
         
-        init(shape: Shape, isDark: Bool, tintColor: TintColor, isInteractive: Bool, isVisible: Bool) {
+        init(shape: Shape, isDark: Bool, tintColor: TintColor, isInteractive: Bool, isVisible: Bool, outlineStyle: Int = 0) {
             self.shape = shape
             self.isDark = isDark
             self.tintColor = tintColor
             self.isInteractive = isInteractive
             self.isVisible = isVisible
+            self.outlineStyle = outlineStyle
         }
     }
     
@@ -523,6 +526,24 @@ public class GlassBackgroundView: UIView {
     private let contentContainer: ContentContainer
     
     private var innerBackgroundView: UIView?
+    private let exteralessTintView = UIView()
+    private let exteralessTintMask = CAShapeLayer()
+    private let exteralessOutline = CAShapeLayer()
+    private var exteralessFallbackBlur: UIVisualEffectView?
+    private let exteralessFallbackMask = CAShapeLayer()
+    private var exteralessObservation: ClientSettingsObservation?
+    private var exteralessAppliedOpaqueColor: UIColor?
+    private let appearanceSettings: ClientSettings
+    private var exteralessGeometry: (size: CGSize, shape: Shape)?
+    private var isInstallingShapeKeyframes = false
+
+    /// Explicit opt-in for surfaces such as message menus. Content and gestures
+    /// keep their original hierarchy; only their background effect is replaced.
+    public var exteralessOpaqueFillColor: UIColor? {
+        didSet {
+            if self.exteralessOpaqueFillColor != oldValue { self.exteralessRefresh() }
+        }
+    }
     
     /// UIKit's liquid morph must target the effect view itself so the backdrop
     /// participates in the shape transition along with its content.
@@ -568,7 +589,14 @@ public class GlassBackgroundView: UIView {
         
     public static var useCustomGlassImpl: Bool = false
     
-    public override init(frame: CGRect) {
+    public override convenience init(frame: CGRect) {
+        self.init(frame: frame, appearanceSettings: .shared)
+    }
+
+    /// Explicit store injection keeps offline native fixtures on the real typed
+    /// settings schema without replacing the renderer or mutating app preferences.
+    public init(frame: CGRect, appearanceSettings: ClientSettings) {
+        self.appearanceSettings = appearanceSettings
         if #available(iOS 26.0, *), !GlassBackgroundView.useCustomGlassImpl {
             self.legacyView = nil
             self.legacyHighlightContainerView = nil
@@ -637,10 +665,29 @@ public class GlassBackgroundView: UIView {
         if let legacyHighlightContainerView = self.legacyHighlightContainerView {
             self.addSubview(legacyHighlightContainerView)
         }
+        self.exteralessTintView.isUserInteractionEnabled = false
+        self.exteralessTintView.layer.name = "appearance.glass.tint"
+        self.exteralessTintMask.name = "appearance.glass.tintMask"
+        self.exteralessOutline.name = "appearance.glass.outline"
+        self.exteralessFallbackMask.name = "appearance.glass.fallbackMask"
+        self.exteralessTintView.layer.mask = self.exteralessTintMask
+        self.exteralessOutline.fillColor = UIColor.clear.cgColor
+        self.layer.addSublayer(self.exteralessOutline)
+        self.exteralessObservation = appearanceSettings.observe { [weak self] keys in
+            guard keys.contains("appearance.glassOutlineStyle") else { return }
+            DispatchQueue.main.async { [weak self] in self?.exteralessRefresh() }
+        }
     }
     
     required public init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit { self.exteralessObservation?.cancel() }
+
+    private func exteralessRefresh() {
+        guard let params = self.params else { return }
+        self.update(size: self.bounds.size, shape: params.shape, isDark: params.isDark, tintColor: params.tintColor, isInteractive: params.isInteractive, isVisible: params.isVisible, transition: .immediate)
     }
     
     @objc private func onHighlightGesture(_ recognizer: GlassHighlightGestureRecognizer) {
@@ -679,9 +726,16 @@ public class GlassBackgroundView: UIView {
     }
 
     func update(size: CGSize, shape: Shape, isDark: Bool, tintColor: TintColor, isInteractive: Bool = false, isVisible: Bool = true, transition: ComponentTransition) {
+        let outlineStyle = min(2, max(0, self.appearanceSettings.integer("appearance.glassOutlineStyle")))
+        let flat = outlineStyle != 0 || self.exteralessOpaqueFillColor != nil
+        if !self.isInstallingShapeKeyframes,
+           self.exteralessGeometry?.size != size || self.exteralessGeometry?.shape != shape || self.params?.outlineStyle != outlineStyle || self.exteralessAppliedOpaqueColor != self.exteralessOpaqueFillColor {
+            self.cancelShapeAnimations(preservePresentation: !transition.animation.isImmediate)
+        }
+        self.exteralessGeometry = (size, shape)
         
         if let glassHighlightRecognizer = self.glassHighlightRecognizer {
-            glassHighlightRecognizer.isEnabled = isInteractive
+            glassHighlightRecognizer.isEnabled = isInteractive && !flat
         }
         
         // UIKit can sample backdrop luminance synchronously while changing
@@ -704,6 +758,7 @@ public class GlassBackgroundView: UIView {
             nativeView.overrideUserInterfaceStyle = isDark ? .dark : .light
         }
         if let legacyView = self.legacyView {
+            legacyView.isHidden = flat
             let style: LegacyGlassView.Style
             switch tintColor.kind {
             case .panel:
@@ -771,9 +826,10 @@ public class GlassBackgroundView: UIView {
             innerBackgroundView.removeFromSuperview()
         }
         
-        let params = Params(shape: shape, isDark: isDark, tintColor: tintColor, isInteractive: isInteractive, isVisible: isVisible)
-        if self.params != params {
+        let params = Params(shape: shape, isDark: isDark, tintColor: tintColor, isInteractive: isInteractive, isVisible: isVisible, outlineStyle: outlineStyle)
+        if self.params != params || self.exteralessAppliedOpaqueColor != self.exteralessOpaqueFillColor {
             self.params = params
+            self.exteralessAppliedOpaqueColor = self.exteralessOpaqueFillColor
             
             if let shadowView = self.shadowView {
                 switch shape {
@@ -817,10 +873,12 @@ public class GlassBackgroundView: UIView {
                 #if DEBUG
                 //foregroundView.image = nil
                 #endif
-                transition.setAlpha(view: foregroundView, alpha: isVisible ? 1.0 : 0.0)
+                transition.setAlpha(view: foregroundView, alpha: isVisible && !flat ? 1.0 : 0.0)
             } else {
                 if let nativeView = self.nativeView {
-                    if #available(iOS 26.0, *) {
+                    if flat {
+                        nativeView.effect = isVisible && self.exteralessOpaqueFillColor == nil ? UIBlurEffect(style: isDark ? .systemMaterialDark : .systemMaterialLight) : nil
+                    } else if #available(iOS 26.0, *) {
                         var glassEffect: UIGlassEffect?
                         
                         if isVisible {
@@ -832,7 +890,7 @@ public class GlassBackgroundView: UIView {
                         }
                         
                         if glassEffect == nil {
-                            if nativeView.effect is UIGlassEffect {
+                            if nativeView.effect != nil {
                                 if #available(iOS 26.1, *) {
                                     if transition.animation.isImmediate {
                                         nativeView.effect = nil
@@ -880,6 +938,88 @@ public class GlassBackgroundView: UIView {
             transition.setFrame(view: shadowView, frame: CGRect(origin: CGPoint(), size: size).insetBy(dx: -shadowInset, dy: -shadowInset))
         }
         transition.setFrame(view: self.contentContainer, frame: CGRect(origin: CGPoint(), size: size))
+
+        if flat, self.nativeView == nil, self.exteralessOpaqueFillColor == nil {
+            let blur: UIVisualEffectView
+            if let current = self.exteralessFallbackBlur { blur = current }
+            else {
+                blur = UIVisualEffectView()
+                blur.layer.name = "appearance.glass.fallbackBlur"
+                blur.isUserInteractionEnabled = false
+                blur.layer.mask = self.exteralessFallbackMask
+                self.exteralessFallbackBlur = blur
+                self.insertSubview(blur, belowSubview: self.contentContainer)
+            }
+            if blur.effect == nil || (blur.overrideUserInterfaceStyle == .dark) != isDark {
+                blur.overrideUserInterfaceStyle = isDark ? .dark : .light
+                blur.effect = UIBlurEffect(style: isDark ? .systemMaterialDark : .systemMaterialLight)
+            }
+            transition.setFrame(view: blur, frame: CGRect(origin: .zero, size: size))
+            transition.setFrame(layer: self.exteralessFallbackMask, frame: CGRect(origin: .zero, size: size))
+            transition.setShapeLayerPath(layer: self.exteralessFallbackMask, path: Self.generateRoundedRectPath(size: size, cornerRadii: shape.cornerRadii(for: size)))
+            blur.isHidden = !isVisible
+        } else if let blur = self.exteralessFallbackBlur {
+            self.exteralessFallbackBlur = nil
+            blur.removeFromSuperview()
+        }
+        guard flat else {
+            self.exteralessTintView.isHidden = true
+            self.exteralessOutline.isHidden = true
+            return
+        }
+        let tintParent = self.nativeView?.contentView ?? self.contentContainer
+        if self.exteralessTintView.superview !== tintParent { tintParent.insertSubview(self.exteralessTintView, at: 0) }
+        transition.setFrame(view: self.exteralessTintView, frame: CGRect(origin: .zero, size: size))
+        let materialTint: UIColor
+        switch tintColor.kind {
+        case let .custom(_, color): materialTint = color
+        case .clear: materialTint = UIColor(white: isDark ? 0.0 : 1.0, alpha: 0.12)
+        case .panel: materialTint = UIColor(white: isDark ? 0.12 : 1.0, alpha: 0.35)
+        }
+        self.exteralessTintView.backgroundColor = self.exteralessOpaqueFillColor ?? materialTint
+        self.exteralessTintView.isHidden = !flat || !isVisible
+        transition.setFrame(layer: self.exteralessTintMask, frame: CGRect(origin: .zero, size: size))
+        transition.setShapeLayerPath(layer: self.exteralessTintMask, path: Self.generateRoundedRectPath(size: size, cornerRadii: shape.cornerRadii(for: size)))
+        transition.setFrame(layer: self.exteralessOutline, frame: CGRect(origin: .zero, size: size))
+        transition.setShapeLayerPath(layer: self.exteralessOutline, path: Self.exteralessOutlinePath(size: size, radii: shape.cornerRadii(for: size)))
+        self.exteralessOutline.strokeColor = (isDark ? UIColor.white.withAlphaComponent(0.4) : UIColor.black.withAlphaComponent(0.18)).cgColor
+        self.exteralessOutline.lineWidth = 1.0
+        self.exteralessOutline.isHidden = outlineStyle != 1 || !isVisible || self.exteralessOpaqueFillColor != nil
+    }
+
+    private static func exteralessOutlinePath(size: CGSize, radii: CornerRadii) -> CGPath {
+        guard size.width > 1, size.height > 1 else { return CGMutablePath() }
+        return Self.generateRoundedRectPath(rect: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5), cornerRadii: radii.insetBy(0.5))
+    }
+
+    /// Geometry owned by this view, including masks (not present in `sublayers`).
+    /// Borrowed content below contentView is intentionally not traversed.
+    private var shapeAnimationLayers: [CALayer] {
+        let views: [UIView?] = [self.nativeParamsView, self.nativeView, self.maskContainerView, self.maskContentView, self.contentContainer, self.innerBackgroundView, self.legacyView, self.legacyHighlightContainerView, self.foregroundView, self.shadowView, self.exteralessTintView, self.exteralessFallbackBlur]
+        return views.compactMap { $0?.layer } + [self.exteralessTintMask, self.exteralessOutline, self.exteralessFallbackMask] + [self.legacyView?.layer.mask, self.nativeView?.layer.mask].compactMap { $0 }
+    }
+
+    /// A catch/cancel installs its analytic pose after removing the old samples.
+    /// For a new ordinary animation, begin from the currently displayed geometry.
+    public func cancelShapeAnimations(preservePresentation: Bool = false) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in self.shapeAnimationLayers {
+            if preservePresentation, let presentation = layer.presentation() {
+                layer.bounds = presentation.bounds
+                layer.position = presentation.position
+                layer.cornerRadius = presentation.cornerRadius
+                if CALayer.cornerRadiiSupported, let radii = presentation.cornerRadii { layer.setCornerRadii(radii) }
+                if let shape = layer as? CAShapeLayer, let presentation = presentation as? CAShapeLayer { shape.path = presentation.path }
+            }
+            for key in layer.animationKeys() ?? [] where key.hasPrefix("navigationGlass.") {
+                layer.removeAnimation(forKey: key)
+            }
+        }
+        for layer in [self.exteralessTintView.layer, self.exteralessTintMask, self.exteralessOutline, self.exteralessFallbackMask] + [self.exteralessFallbackBlur?.layer].compactMap({ $0 }) {
+            for key in ["bounds", "bounds.size", "position", "path"] { layer.removeAnimation(forKey: key) }
+        }
+        CATransaction.commit()
     }
     
     override public func willMove(toWindow newWindow: UIWindow?) {
@@ -1948,11 +2088,15 @@ private func glassShapeKeyframes(_ view: UIView?, sizes: [CGSize], timing: Navig
     guard let view else {
         return
     }
-    let origin = view.bounds.origin
-    let anchor = view.layer.anchorPoint
+    glassShapeKeyframes(view.layer, sizes: sizes, timing: timing, frame: frame)
+}
+
+private func glassShapeKeyframes(_ layer: CALayer, sizes: [CGSize], timing: NavigationKeyframeTiming, frame: (CGSize) -> CGRect) {
+    let origin = layer.bounds.origin
+    let anchor = layer.anchorPoint
     let frames = sizes.map(frame)
-    addNavigationKeyframes(to: view.layer, key: "navigationGlass.bounds", keyPath: "bounds", values: frames.map { NSValue(cgRect: CGRect(origin: origin, size: $0.size)) }, timing: timing)
-    addNavigationKeyframes(to: view.layer, key: "navigationGlass.position", keyPath: "position", values: frames.map { NSValue(cgPoint: CGPoint(x: $0.minX + $0.width * anchor.x, y: $0.minY + $0.height * anchor.y)) }, timing: timing)
+    addNavigationKeyframes(to: layer, key: "navigationGlass.bounds", keyPath: "bounds", values: frames.map { NSValue(cgRect: CGRect(origin: origin, size: $0.size)) }, timing: timing)
+    addNavigationKeyframes(to: layer, key: "navigationGlass.position", keyPath: "position", values: frames.map { NSValue(cgPoint: CGPoint(x: $0.minX + $0.width * anchor.x, y: $0.minY + $0.height * anchor.y)) }, timing: timing)
 }
 
 private func glassCornerRadiusKeyframes(_ view: UIView?, sizes: [CGSize], timing: NavigationKeyframeTiming, radius: (CGSize) -> CGFloat) {
@@ -1996,8 +2140,12 @@ extension GlassBackgroundView {
         guard let last = sizes.last, let lastRadius = cornerRadii.last, sizes.count == cornerRadii.count else {
             return
         }
+        self.cancelShapeAnimations()
+        self.isInstallingShapeKeyframes = true
+        defer { self.isInstallingShapeKeyframes = false }
         self.update(size: last, cornerRadius: lastRadius, isDark: isDark, tintColor: tintColor, transition: .immediate)
         self.addShapeKeyframes(sizes: sizes, timing: timing, tintColor: tintColor)
+        self.addExteralessShapeKeyframes(sizes: sizes, radii: cornerRadii.map { CornerRadii(radius: $0) }, timing: timing)
         glassCornerRadiusKeyframes(self.nativeView, radii: cornerRadii, timing: timing)
         if tintColor.innerColor != nil, let innerBackgroundView = self.innerBackgroundView {
             let inset = tintColor.innerInset
@@ -2014,6 +2162,9 @@ extension GlassBackgroundView {
         guard let last = sizes.last, let lastRadii = cornerRadii.last, sizes.count == cornerRadii.count else {
             return
         }
+        self.cancelShapeAnimations()
+        self.isInstallingShapeKeyframes = true
+        defer { self.isInstallingShapeKeyframes = false }
         self.update(size: last, cornerRadii: lastRadii, isDark: isDark, tintColor: tintColor, transition: .immediate)
         // UIKit resolves a corner configuration against the view's bounds when it is set, which is before the update
         // gives the view its new size, and again when it lays the view out (measured on iOS 27: 59 pt corners set on a
@@ -2023,6 +2174,7 @@ extension GlassBackgroundView {
             self.nativeView?.layer.setCornerRadii(Display.CornerRadii(topLeft: lastRadii.topLeft, topRight: lastRadii.topRight, bottomLeft: lastRadii.bottomLeft, bottomRight: lastRadii.bottomRight))
         }
         self.addShapeKeyframes(sizes: sizes, timing: timing, tintColor: tintColor)
+        self.addExteralessShapeKeyframes(sizes: sizes, radii: cornerRadii, timing: timing)
         glassCornerRadiiKeyframes(self.nativeView, radii: cornerRadii, timing: timing)
         if tintColor.innerColor != nil, let innerBackgroundView = self.innerBackgroundView {
             let inset = tintColor.innerInset
@@ -2030,6 +2182,22 @@ extension GlassBackgroundView {
         }
         if let legacyMask = self.legacyView?.layer.mask as? CAShapeLayer {
             addNavigationKeyframes(to: legacyMask, key: "navigationGlass.path", keyPath: "path", values: zip(sizes, cornerRadii).map { GlassBackgroundView.generateRoundedRectPath(size: $0.0, cornerRadii: $0.1) }, timing: timing)
+        }
+    }
+
+    private func addExteralessShapeKeyframes(sizes: [CGSize], radii: [CornerRadii], timing: NavigationKeyframeTiming) {
+        guard self.params?.outlineStyle != 0 || self.exteralessOpaqueFillColor != nil else { return }
+        let filling: (CGSize) -> CGRect = { CGRect(origin: .zero, size: $0) }
+        glassShapeKeyframes(self.exteralessTintView, sizes: sizes, timing: timing, frame: filling)
+        glassShapeKeyframes(self.exteralessTintMask, sizes: sizes, timing: timing, frame: filling)
+        glassShapeKeyframes(self.exteralessOutline, sizes: sizes, timing: timing, frame: filling)
+        let paths = zip(sizes, radii).map { Self.generateRoundedRectPath(size: $0.0, cornerRadii: $0.1) }
+        addNavigationKeyframes(to: self.exteralessTintMask, key: "navigationGlass.path", keyPath: "path", values: paths, timing: timing)
+        addNavigationKeyframes(to: self.exteralessOutline, key: "navigationGlass.path", keyPath: "path", values: zip(sizes, radii).map { Self.exteralessOutlinePath(size: $0.0, radii: $0.1) }, timing: timing)
+        if let blur = self.exteralessFallbackBlur {
+            glassShapeKeyframes(blur, sizes: sizes, timing: timing, frame: filling)
+            glassShapeKeyframes(self.exteralessFallbackMask, sizes: sizes, timing: timing, frame: filling)
+            addNavigationKeyframes(to: self.exteralessFallbackMask, key: "navigationGlass.path", keyPath: "path", values: paths, timing: timing)
         }
     }
 

@@ -478,7 +478,7 @@ private class ReplyThreadHistoryContextImpl {
             }
 
             if let subPeerId {
-                let signal = strongSelf.account.network.request(Api.functions.messages.readSavedHistory(parentPeer: inputPeer, peer: subPeerId, maxId: messageIndex.id.id))
+                let signal = exteralessReadSavedHistory(network: strongSelf.account.network, peerId: peerId, parentPeer: inputPeer, peer: subPeerId, maxId: messageIndex.id.id)
                 |> `catch` { _ -> Signal<Api.Bool, NoError> in
                     return .single(.boolFalse)
                 }
@@ -487,12 +487,12 @@ private class ReplyThreadHistoryContextImpl {
                 }
                 strongSelf.readDisposable.set(signal.start())
             } else {
-                var signal = strongSelf.account.network.request(Api.functions.messages.readDiscussion(peer: inputPeer, msgId: Int32(clamping: threadId), readMaxId: messageIndex.id.id))
+                var signal = exteralessReadDiscussion(network: strongSelf.account.network, peerId: peerId, peer: inputPeer, threadId: Int32(clamping: threadId), maxId: messageIndex.id.id)
                 |> `catch` { _ -> Signal<Api.Bool, NoError> in
                     return .single(.boolFalse)
                 }
                 |> ignoreValues
-                if revalidate {
+                if revalidate && exteralessAllowsMessageRead(network: strongSelf.account.network, peerId: peerId) {
                     let validateSignal = strongSelf.account.network.request(Api.functions.messages.getDiscussionMessage(peer: inputPeer, msgId: Int32(clamping: threadId)))
                     |> map { result -> (MessageId?, Int) in
                         switch result {

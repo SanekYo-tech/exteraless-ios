@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Display
@@ -27,6 +28,10 @@ public enum PeerAvatarImageType {
     case complete
 }
 
+/// Supplies encoded avatar data to the production decoder/compositor. A nil
+/// source means no representation; an emitted nil is a pending image.
+public typealias PeerAvatarImageDataProvider = (TelegramMediaImageRepresentation, Bool) -> Signal<(Data, PeerAvatarImageType)?, NoError>?
+
 public func peerAvatarImageData(postbox: Postbox, peerReference: PeerReference?, authorOfMessage: MessageReference?, representation: TelegramMediaImageRepresentation?, synchronousLoad: Bool) -> Signal<(Data, PeerAvatarImageType)?, NoError>? {
     if let smallProfileImage = representation {
         let resourceData = postbox.mediaBox.resourceData(smallProfileImage.resource, attemptSynchronously: synchronousLoad)
@@ -49,7 +54,7 @@ public func peerAvatarImageData(postbox: Postbox, peerReference: PeerReference?,
 
                     let resourceDataDisposable = resourceData.start(next: { data in
                         if data.complete {
-                            if let dataValue = try? Data(contentsOf: URL(fileURLWithPath: maybeData.path)) {
+                            if let dataValue = try? Data(contentsOf: URL(fileURLWithPath: data.path)) {
                                 subscriber.putNext((dataValue, .complete))
                             } else {
                                 subscriber.putNext(nil)
@@ -96,22 +101,38 @@ public func peerAvatarCompleteImage(account: Account, peer: EnginePeer, forcePro
         font: font,
         drawLetters: drawLetters,
         fullSize: fullSize,
-        blurred: blurred
+        blurred: blurred,
+        identityPresentation: exteralessIdentityPresentation(account: account, peer: peer)
     )
 }
 
-public func peerAvatarCompleteImage(postbox: Postbox, peer: EnginePeer, forceProvidedRepresentation: Bool = false, representation: TelegramMediaImageRepresentation? = nil, size: CGSize, round: Bool = true, font: UIFont = avatarPlaceholderFont(size: 13.0), drawLetters: Bool = true, fullSize: Bool = false, blurred: Bool = false) -> Signal<UIImage?, NoError> {
+public func peerAvatarCompleteImage(postbox: Postbox, peer: EnginePeer, forceProvidedRepresentation: Bool = false, representation: TelegramMediaImageRepresentation? = nil, size: CGSize, round: Bool = true, font: UIFont = avatarPlaceholderFont(size: 13.0), drawLetters: Bool = true, fullSize: Bool = false, blurred: Bool = false, identityPresentation: ExteralessPeerIdentityPresentation? = nil) -> Signal<UIImage?, NoError> {
+    return peerAvatarCompleteImage(peer: peer, forceProvidedRepresentation: forceProvidedRepresentation, representation: representation, size: size, round: round, font: font, drawLetters: drawLetters, fullSize: fullSize, blurred: blurred, identityPresentation: identityPresentation, imageDataProvider: { representation, synchronousLoad in
+        peerAvatarImageData(postbox: postbox, peerReference: PeerReference(peer), authorOfMessage: nil, representation: representation, synchronousLoad: synchronousLoad)
+    })
+}
+
+/// Account-independent entry to the same complete-image path, including forum
+/// selection, photo decoding, fallback initials and caller font/unrounded choice.
+public func peerAvatarCompleteImage(peer: EnginePeer, forceProvidedRepresentation: Bool = false, representation: TelegramMediaImageRepresentation? = nil, size: CGSize, round: Bool = true, font: UIFont = avatarPlaceholderFont(size: 13.0), drawLetters: Bool = true, fullSize: Bool = false, blurred: Bool = false, identityPresentation: ExteralessPeerIdentityPresentation? = nil, appearanceSettings: ClientSettings = .shared, imageDataProvider: @escaping PeerAvatarImageDataProvider) -> Signal<UIImage?, NoError> {
     let iconSignal: Signal<UIImage?, NoError>
     
-    let clipStyle: AvatarNodeClipStyle
+    let nativeClipStyle: AvatarNodeClipStyle
     if round {
         if case let .channel(channel) = peer, channel.isForumOrMonoForum {
-            clipStyle = .roundedRect
+            nativeClipStyle = .roundedRect
         } else {
-            clipStyle = .round
+            nativeClipStyle = .round
         }
     } else {
-        clipStyle = .none
+        nativeClipStyle = .none
+    }
+    let policy = AppearanceAvatarPolicy(corners: appearanceSettings.integer("appearance.avatarCorners", default: 28), singleRadius: appearanceSettings.bool("appearance.singleCornerRadius"))
+    let clipStyle = nativeClipStyle.withExteralessShape(size: size, policy: policy)
+
+    func imageSignal(_ representation: TelegramMediaImageRepresentation?, synchronousLoad: Bool, blurred: Bool) -> Signal<(UIImage, UIImage)?, NoError>? {
+        guard let representation else { return nil }
+        return peerAvatarImage(imageData: imageDataProvider(representation, synchronousLoad), displayDimensions: size, resolvedClipStyle: clipStyle, blurred: blurred, synchronousLoad: synchronousLoad)
     }
     
     let thumbnailRepresentation: TelegramMediaImageRepresentation?
@@ -121,8 +142,8 @@ public func peerAvatarCompleteImage(postbox: Postbox, peer: EnginePeer, forcePro
         thumbnailRepresentation = peer.profileImageRepresentations.first
     }
     
-    if let signal = peerAvatarImage(postbox: postbox, peerReference: PeerReference(peer), authorOfMessage: nil,representation: thumbnailRepresentation, displayDimensions: size, clipStyle: clipStyle, blurred: blurred, inset: 0.0, emptyColor: nil, synchronousLoad: fullSize) {
-        if fullSize, let fullSizeSignal = peerAvatarImage(postbox: postbox, peerReference: PeerReference(peer), authorOfMessage: nil,representation: peer.profileImageRepresentations.last, displayDimensions: size, emptyColor: nil, synchronousLoad: true) {
+    if let signal = imageSignal(thumbnailRepresentation, synchronousLoad: fullSize, blurred: blurred) {
+        if fullSize, let fullSizeSignal = imageSignal(peer.profileImageRepresentations.last, synchronousLoad: true, blurred: blurred) {
             iconSignal = combineLatest(.single(nil) |> then(signal), .single(nil) |> then(fullSizeSignal))
             |> mapToSignal { thumbnailImage, fullSizeImage -> Signal<UIImage?, NoError> in
                 if let fullSizeImage = fullSizeImage {
@@ -141,7 +162,7 @@ public func peerAvatarCompleteImage(postbox: Postbox, peer: EnginePeer, forcePro
         }
     } else {
         let peerId = peer.id
-        var displayLetters = peer.displayLetters
+        var displayLetters = (identityPresentation?.letters ?? peer.displayLetters).map { exteralessZalgoDisplayText($0) }
         if displayLetters.count == 2 && displayLetters[0].isSingleEmoji && displayLetters[1].isSingleEmoji {
             displayLetters = [displayLetters[0]]
         }
@@ -151,8 +172,9 @@ public func peerAvatarCompleteImage(postbox: Postbox, peer: EnginePeer, forcePro
         iconSignal = Signal { subscriber in
             let image = generateImage(size, rotatedContext: { size, context in
                 context.clear(CGRect(origin: CGPoint(), size: size))
-                drawPeerAvatarLetters(context: context, size: CGSize(width: size.width, height: size.height), round: round, font: font, letters: displayLetters, peerId: peerId, nameColor: peer.nameColor)
+                drawPeerAvatarLetters(context: context, size: size, resolvedClipStyle: clipStyle, font: font, letters: displayLetters, peerId: peerId, nameColor: identityPresentation?.nameColor ?? peer.nameColor)
                 if blurred {
+                    clipPeerAvatarLetters(context: context, size: size, clipStyle: clipStyle)
                     context.setFillColor(UIColor(rgb: 0x000000, alpha: 0.5).cgColor)
                     context.fill(CGRect(origin: CGPoint(), size: size))
                 }
@@ -178,13 +200,20 @@ public func peerAvatarImage(account: Account, peerReference: PeerReference?, aut
         inset: inset,
         emptyColor: emptyColor,
         synchronousLoad: synchronousLoad,
-        provideUnrounded: synchronousLoad,
+        provideUnrounded: provideUnrounded,
         cutoutRect: cutoutRect
     )
 }
     
 public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, authorOfMessage: MessageReference?, representation: TelegramMediaImageRepresentation?, displayDimensions: CGSize = CGSize(width: 60.0, height: 60.0), clipStyle: AvatarNodeClipStyle = .round, blurred: Bool = false, inset: CGFloat = 0.0, emptyColor: UIColor? = nil, synchronousLoad: Bool = false, provideUnrounded: Bool = false, cutoutRect: CGRect? = nil) -> Signal<(UIImage, UIImage)?, NoError>? {
-    if let imageData = peerAvatarImageData(postbox: postbox, peerReference: peerReference, authorOfMessage: authorOfMessage, representation: representation, synchronousLoad: synchronousLoad) {
+    let clipStyle = clipStyle.withExteralessShape(size: displayDimensions)
+    return peerAvatarImage(imageData: peerAvatarImageData(postbox: postbox, peerReference: peerReference, authorOfMessage: authorOfMessage, representation: representation, synchronousLoad: synchronousLoad), displayDimensions: displayDimensions, resolvedClipStyle: clipStyle, blurred: blurred, inset: inset, emptyColor: emptyColor, synchronousLoad: synchronousLoad, provideUnrounded: provideUnrounded, cutoutRect: cutoutRect)
+}
+
+/// Decodes cached or delivered bytes using an already resolved contour. In
+/// particular, a native forum fraction must not be re-resolved as a regular avatar.
+public func peerAvatarImage(imageData: Signal<(Data, PeerAvatarImageType)?, NoError>?, displayDimensions: CGSize, resolvedClipStyle clipStyle: AvatarNodeClipStyle, blurred: Bool = false, inset: CGFloat = 0, emptyColor: UIColor? = nil, synchronousLoad: Bool = false, provideUnrounded: Bool = false, cutoutRect: CGRect? = nil) -> Signal<(UIImage, UIImage)?, NoError>? {
+    if let imageData {
         return imageData
         |> mapToSignal { data -> Signal<(UIImage, UIImage)?, NoError> in
             let generate = deferred { () -> Signal<(UIImage, UIImage)?, NoError> in
@@ -207,6 +236,9 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                                 }
                             case .roundedRect:
                                 context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                                context.clip()
+                            case let .exteralessRoundedRect(fraction):
+                                context.addPath(UIBezierPath(roundedRect: CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset), cornerRadius: min(displayDimensions.width, displayDimensions.height) * fraction).cgPath)
                                 context.clip()
                             case .bubble:
                                 let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
@@ -267,7 +299,7 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                                     context.setBlendMode(.destinationOut)
                                     context.draw(roundCorners.cgImage!, in: CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset))
                                 }
-                            case .roundedRect:
+                            case .roundedRect, .exteralessRoundedRect:
                                 break
                             case .bubble:
                                 break
@@ -284,6 +316,9 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                                 case .roundedRect:
                                     context.beginPath()
                                     context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                                    context.fillPath()
+                                case let .exteralessRoundedRect(fraction):
+                                    context.addPath(UIBezierPath(roundedRect: CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset), cornerRadius: min(displayDimensions.width, displayDimensions.height) * fraction).cgPath)
                                     context.fillPath()
                                 case .bubble:
                                     let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
@@ -310,6 +345,9 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                         case .roundedRect:
                             context.beginPath()
                             context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
+                            context.fillPath()
+                        case let .exteralessRoundedRect(fraction):
+                            context.addPath(UIBezierPath(roundedRect: CGRect(origin: .zero, size: displayDimensions).insetBy(dx: inset, dy: inset), cornerRadius: min(displayDimensions.width, displayDimensions.height) * fraction).cgPath)
                             context.fillPath()
                         case .bubble:
                             let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
@@ -350,26 +388,8 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
                         } else if let emptyColor = emptyColor {
                             context.clear(CGRect(origin: CGPoint(), size: displayDimensions))
                             context.setFillColor(emptyColor.cgColor)
-                            switch clipStyle {
-                            case .none:
-                                context.fill(CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset))
-                            case .round:
-                                context.fillEllipse(in: CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset))
-                            case .roundedRect:
-                                context.beginPath()
-                                context.addPath(UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: displayDimensions.width, height: displayDimensions.height).insetBy(dx: inset, dy: inset), cornerRadius: floor(displayDimensions.width * 0.25)).cgPath)
-                                context.fillPath()
-                            case .bubble:
-                                let rect = CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset)
-                                context.translateBy(x: rect.midX, y: rect.midY)
-                                context.scaleBy(x: 1.0, y: -1.0)
-                                context.translateBy(x: -rect.midX, y: -rect.midY)
-                                AvatarNode.addAvatarBubblePath(context: context, rect: rect)
-                                context.translateBy(x: rect.midX, y: rect.midY)
-                                context.scaleBy(x: 1.0, y: -1.0)
-                                context.translateBy(x: -rect.midX, y: -rect.midY)
-                                context.clip()
-                            }
+                            // This is the unrounded copy, including the placeholder.
+                            context.fill(CGRect(origin: CGPoint(), size: displayDimensions).insetBy(dx: inset, dy: inset))
                         }
                     })
                 } else {
@@ -393,12 +413,32 @@ public func peerAvatarImage(postbox: Postbox, peerReference: PeerReference?, aut
 }
 
 public func drawPeerAvatarLetters(context: CGContext, size: CGSize, round: Bool = true, font: UIFont, letters: [String], peerId: EnginePeer.Id, nameColor: PeerColor?) {
-    if round {
-        context.beginPath()
-        context.addEllipse(in: CGRect(x: 0.0, y: 0.0, width: size.width, height:
-            size.height))
-        context.clip()
+    let clipStyle = (round ? AvatarNodeClipStyle.round : .none).withExteralessShape(size: size)
+    drawPeerAvatarLetters(context: context, size: size, resolvedClipStyle: clipStyle, font: font, letters: letters, peerId: peerId, nameColor: nameColor)
+}
+
+private func clipPeerAvatarLetters(context: CGContext, size: CGSize, clipStyle: AvatarNodeClipStyle) {
+    let bounds = CGRect(origin: .zero, size: size)
+    context.beginPath()
+    switch clipStyle {
+    case .none:
+        return
+    case .round:
+        context.addEllipse(in: bounds)
+    case .roundedRect:
+        context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: floor(size.width * 0.25)).cgPath)
+    case let .exteralessRoundedRect(fraction):
+        context.addPath(UIBezierPath(roundedRect: bounds, cornerRadius: min(size.width, size.height) * fraction).cgPath)
+    case .bubble:
+        AvatarNode.addAvatarBubblePath(context: context, rect: bounds)
     }
+    context.clip()
+}
+
+public func drawPeerAvatarLetters(context: CGContext, size: CGSize, resolvedClipStyle: AvatarNodeClipStyle, font: UIFont, letters: [String], peerId: EnginePeer.Id, nameColor: PeerColor?) {
+    context.saveGState()
+    defer { context.restoreGState() }
+    clipPeerAvatarLetters(context: context, size: size, clipStyle: resolvedClipStyle)
     
     let colorIndex: Int
     if peerId.namespace == .max {
@@ -430,8 +470,6 @@ public func drawPeerAvatarLetters(context: CGContext, size: CGSize, round: Bool 
     let gradient = CGGradient(colorsSpace: colorSpace, colors: colorsArray, locations: &locations)!
     
     context.drawLinearGradient(gradient, start: CGPoint(), end: CGPoint(x: 0.0, y: size.height), options: CGGradientDrawingOptions())
-    
-    context.resetClip()
     
     context.setBlendMode(.normal)
     

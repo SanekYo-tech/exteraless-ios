@@ -58,8 +58,8 @@ private final class PrefetchManagerInnerImpl {
             return view?.get(AppConfiguration.self) ?? .defaultValue
         }
         
-        let orderedPreloadMedia = combineLatest(account.viewTracker.orderedPreloadMedia, TelegramEngine(account: account).stickers.loadedStickerPack(reference: .animatedEmoji, forceActualized: false), appConfiguration)
-        |> map { orderedPreloadMedia, stickerPack, appConfiguration -> [PrefetchMediaItem] in
+        let orderedPreloadMedia = combineLatest(account.viewTracker.orderedPreloadMedia, TelegramEngine(account: account).stickers.loadedStickerPack(reference: .animatedEmoji, forceActualized: false), appConfiguration, ExteralessFilteringRuntime.shared.changes)
+        |> map { orderedPreloadMedia, stickerPack, appConfiguration, _ -> [PrefetchMediaItem] in
             let emojiSounds = AnimatedEmojiSoundsConfiguration.with(appConfiguration: appConfiguration, account: account)
             let chatHistoryMediaItems = orderedPreloadMedia.map { PrefetchMediaItem.chatHistory($0) }
             var stickerItems: [PrefetchMediaItem] = []
@@ -92,6 +92,19 @@ private final class PrefetchManagerInnerImpl {
             prefetchItems.append(contentsOf: emojiSounds.sounds.values.map { .animatedEmojiSticker($0) })
             
             return prefetchItems
+        }
+        |> mapToSignal { items -> Signal<[PrefetchMediaItem], NoError> in
+            let ids = items.compactMap { item -> EngineMessage.Id? in
+                if case let .chatHistory(value) = item { return value.media.index.id }
+                return nil
+            }
+            return exteralessFilterAutomaticDownloads(account: account, ids: ids)
+            |> map { allowed in
+                items.filter { item in
+                    if case let .chatHistory(value) = item { return allowed.contains(value.media.index.id) }
+                    return true
+                }
+            }
         }
         
         self.listDisposable = (combineLatest(orderedPreloadMedia, sharedContext.automaticMediaDownloadSettings, networkType)
@@ -149,7 +162,7 @@ private final class PrefetchManagerInnerImpl {
                         mediaResource = EngineMediaResource(telegramFile.resource)
                         if shouldDownloadMediaAutomatically(settings: automaticDownloadSettings, peerType: peerType, networkType: networkType, authorPeerId: nil, contactsPeerIds: [], media: .file(telegramFile)) {
                             automaticDownload = .full
-                        } else if shouldPredownloadMedia(settings: automaticDownloadSettings, peerType: peerType, networkType: networkType, media: .file(telegramFile)) {
+                        } else if automaticDownloadSettings.energyUsageSettings.autoplayVideo && shouldPredownloadMedia(settings: automaticDownloadSettings, peerType: peerType, networkType: networkType, media: .file(telegramFile)) {
                             automaticDownload = .prefetch
                         }
                     }
@@ -189,6 +202,7 @@ private final class PrefetchManagerInnerImpl {
                         }
                     }
                 case let .animatedEmojiSticker(media):
+                    guard automaticDownloadSettings.energyUsageSettings.loopEmoji else { continue }
                     guard let id = media.id else {
                         continue
                     }

@@ -3621,6 +3621,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
     
     func openStoryArchive() {
+        guard exteralessDialogStoriesEnabled() else { return }
         self.controller?.push(PeerInfoStoryGridScreen(context: self.context, peerId: self.peerId, scope: .archive))
     }
     
@@ -4880,6 +4881,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
     }
     
     private func openPostStory(sourceFrame: CGRect?) {
+        guard exteralessDialogStoriesEnabled() else { return }
         guard let controller = self.controller, !controller.presentAccountFrozenInfoIfNeeded() else {
             return
         }
@@ -6923,10 +6925,11 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
             if let strongSelf = self {
                 let previousTheme = strongSelf.presentationData.theme
                 let previousStrings = strongSelf.presentationData.strings
+                let previousDateTimeFormat = strongSelf.presentationData.dateTimeFormat
                 
                 strongSelf.presentationData = presentationData
                 
-                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings {
+                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousDateTimeFormat != presentationData.dateTimeFormat {
                     strongSelf.controllerNode.updatePresentationData(strongSelf.presentationData)
                     
                     if strongSelf.navigationItem.backBarButtonItem != nil {
@@ -7472,7 +7475,10 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
             })))
             
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-            let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
+            let pluginItems = ExteralessPluginMenuEntry.updating(
+                items: .single(ContextController.Items(content: .list(items))), context: context,
+                placement: "CHAT_ACTION_MENU", peer: peer, source: sourceController)
+            let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: pluginItems, gesture: gesture)
             sourceController.presentInGlobalOverlay(contextController)
         })
     }

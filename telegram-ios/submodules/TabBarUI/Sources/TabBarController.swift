@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import SwiftSignalKit
@@ -158,10 +159,24 @@ open class TabBarControllerImpl: ViewController, TabBarController {
         self.tabBarControllerNode.updateIsTabBarEnabled(value, transition: transition)
     }
     
+    private var exteralessTabVisibility = AppearanceTabVisibilityPolicy()
+
+    public func updateExteralessTabBarHidden(_ value: Bool, transition: ContainedViewLayoutTransition) {
+        self.exteralessTabVisibility.persistentRequest = value
+        self.applyTabBarHidden(transition: transition)
+    }
+
     public func updateIsTabBarHidden(_ value: Bool, transition: ContainedViewLayoutTransition) {
-        self.tabBarControllerNode.tabBarHidden = value
+        self.exteralessTabVisibility.nativeRequest = value
+        self.applyTabBarHidden(transition: transition)
+    }
+
+    private func applyTabBarHidden(transition: ContainedViewLayoutTransition) {
+        let hidden = self.exteralessTabVisibility.isHidden
+        guard self.tabBarControllerNode.tabBarHidden != hidden else { return }
+        self.tabBarControllerNode.tabBarHidden = hidden
         if let layout = self.validLayout {
-            self.containerLayoutUpdated(layout, transition: .animated(duration: 0.4, curve: .slide))
+            self.containerLayoutUpdated(layout, transition: transition)
         }
     }
     

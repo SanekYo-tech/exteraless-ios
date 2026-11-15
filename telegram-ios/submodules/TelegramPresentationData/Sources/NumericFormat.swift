@@ -1,8 +1,12 @@
 import Foundation
+import ExteralessCore
 import PresentationStrings
 import TelegramCore
 
 public func compactNumericCountString(_ count: Int, decimalSeparator: String = ".", showDecimalPart: Bool = true) -> String {
+    if let fullNumber = AppearanceNumberPolicy.fullNumberOverride(count, disableRounding: ClientSettings.shared.bool("appearance.disableNumberRounding")) {
+        return fullNumber
+    }
     if count >= 1000 * 1000 {
         let remainder = (count % (1000 * 1000)) / (1000 * 100)
         if remainder != 0 && showDecimalPart {

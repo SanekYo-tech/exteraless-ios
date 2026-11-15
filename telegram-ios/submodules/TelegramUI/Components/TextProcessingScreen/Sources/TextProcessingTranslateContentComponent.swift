@@ -108,6 +108,7 @@ final class TextProcessingTranslateContentComponent: Component {
     let strings: PresentationStrings
     let styles: [TextProcessingScreen.Style]
     let inputText: ComposedRichMessage
+    let capability: ExteralessAIProcessingCapability
     let externalState: ExternalState
     let mode: Mode
     let appliedPrompt: String?
@@ -127,6 +128,7 @@ final class TextProcessingTranslateContentComponent: Component {
         styles: [TextProcessingScreen.Style],
         externalState: ExternalState,
         inputText: ComposedRichMessage,
+        capability: ExteralessAIProcessingCapability,
         mode: Mode,
         appliedPrompt: String?,
         copyAction: (() -> Void)?,
@@ -144,6 +146,7 @@ final class TextProcessingTranslateContentComponent: Component {
         self.styles = styles
         self.externalState = externalState
         self.inputText = inputText
+        self.capability = capability
         self.mode = mode
         self.appliedPrompt = appliedPrompt
         self.copyAction = copyAction
@@ -157,6 +160,7 @@ final class TextProcessingTranslateContentComponent: Component {
     }
 
     static func ==(lhs: TextProcessingTranslateContentComponent, rhs: TextProcessingTranslateContentComponent) -> Bool {
+        if lhs.capability != rhs.capability { return false }
         if lhs.context !== rhs.context {
             return false
         }
@@ -279,9 +283,14 @@ final class TextProcessingTranslateContentComponent: Component {
                 
                 if let mappedMode {
                     component.externalState.isProcessing = true
-                    self.processDisposable = (component.context.engine.messages.composeAIMessage(
+                    self.processDisposable = (ExteralessAIHooks.compose(
+                        context: component.context,
                         text: component.inputText,
-                        mode: mappedMode
+                        mode: mappedMode,
+                        styles: component.styles.map(\.cloudStyle),
+                        sourceLanguage: component.externalState.sourceLanguage,
+                        capability: component.capability,
+                        fallback: { component.context.engine.messages.composeAIMessage(text: component.inputText, mode: mappedMode) }
                     ) |> deliverOnMainQueue).startStrict(next: { [weak self] processedText in
                         guard let self, let component = self.component else {
                             return
@@ -664,6 +673,7 @@ final class TextProcessingTranslateContentComponent: Component {
                     transition: transition,
                     component: AnyComponent(TextProcessingTextAreaComponent(
                         context: component.context,
+                        capability: component.capability,
                         theme: component.theme,
                         strings: component.strings,
                         titleFormat: fromFormat,
@@ -723,6 +733,7 @@ final class TextProcessingTranslateContentComponent: Component {
                 transition: transition,
                 component: AnyComponent(TextProcessingTextAreaComponent(
                     context: component.context,
+                    capability: component.capability,
                     theme: component.theme,
                     strings: component.strings,
                     titleFormat: toFormat,

@@ -12,7 +12,9 @@ import TelegramCore
 import ComponentDisplayAdapters
 import AccountContext
 
-private let titleFont = Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
+private var titleFont: UIFont {
+    return Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
+}
 
 public struct NetworkStatusTitle: Equatable {
     public enum Status: Equatable {
@@ -339,7 +341,10 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
         return availableSize
     }
     
-    public func updateLayoutInternal(size: CGSize, transition: ContainedViewLayoutTransition) -> CGRect {
+    private var exteralessTitleAlignment: NSTextAlignment = .center
+
+    public func updateLayoutInternal(size: CGSize, transition: ContainedViewLayoutTransition, alignment: NSTextAlignment? = nil) -> CGRect {
+        if let alignment { self.exteralessTitleAlignment = alignment }
         self.validLayout = size
         
         var indicatorPadding: CGFloat = 0.0
@@ -348,25 +353,24 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
         if !self.activityIndicator.isHidden {
             indicatorPadding = indicatorSize.width + 6.0
         }
-        var maxTitleWidth = size.width - indicatorPadding
-        var proxyPadding: CGFloat = 0.0
-        if !self.proxyNode.isHidden {
-            maxTitleWidth -= 25.0
-            proxyPadding += 39.0
-        }
-        if !self.lockView.isHidden {
-            maxTitleWidth -= 10.0
-        }
+        let leadingPadding = max(indicatorPadding, self.lockView.isHidden ? 0.0 : 18.0)
+        let proxyPadding: CGFloat = self.proxyNode.isHidden ? 0.0 : 39.0
+        let statusPadding: CGFloat = self.title.peerStatus != nil && !self.title.activity ? 24.0 : 0.0
+        let availableWidth = max(0, size.width - proxyPadding)
+        let maxTitleWidth = max(0, availableWidth - leadingPadding - statusPadding)
         
         let titleSize = self.titleNode.updateLayout(CGSize(width: max(1.0, maxTitleWidth), height: size.height))
         
         let combinedHeight = titleSize.height
         
-        let combinedWidth = titleSize.width
+        let combinedWidth = titleSize.width + leadingPadding + statusPadding
         
-        var titleContentRect = CGRect(origin: CGPoint(x: indicatorPadding + floor((size.width - combinedWidth - indicatorPadding) / 2.0), y: floor((size.height - combinedHeight) / 2.0)), size: titleSize)
-        
-        titleContentRect.origin.x = min(titleContentRect.origin.x, size.width - proxyPadding - titleContentRect.width)
+        var titleContentRect = CGRect(origin: CGPoint(x: leadingPadding + max(0, floor((availableWidth - combinedWidth) / 2.0)), y: floor((size.height - combinedHeight) / 2.0)), size: titleSize)
+        if self.exteralessTitleAlignment == .left {
+            titleContentRect.origin.x = leadingPadding
+        } else if self.exteralessTitleAlignment == .right {
+            titleContentRect.origin.x = max(leadingPadding, availableWidth - statusPadding - titleSize.width)
+        }
         
         let titleFrame = titleContentRect
         var titleTransition = transition
@@ -381,7 +385,7 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
         self.proxyButton.frame = proxyFrame.insetBy(dx: -2.0, dy: -2.0)
         
         let buttonX = max(0.0, titleFrame.minX - 10.0)
-        self.buttonView.frame = CGRect(origin: CGPoint(x: buttonX, y: 0.0), size: CGSize(width: min(titleFrame.maxX + 28.0, size.width) - buttonX, height: size.height))
+        self.buttonView.frame = CGRect(origin: CGPoint(x: buttonX, y: 0.0), size: CGSize(width: max(0, min(titleFrame.maxX + 28.0, size.width) - buttonX), height: size.height))
         
         let lockFrame = CGRect(x: titleFrame.minX - 6.0 - 12.0, y: titleFrame.minY + 2.0, width: 2.0, height: 2.0)
         transition.updateFrame(view: self.lockView, frame: lockFrame)
@@ -448,10 +452,13 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
         }
         
         var resultFrame = titleFrame
+        if !self.activityIndicator.isHidden {
+            resultFrame = resultFrame.union(activityIndicatorFrame)
+        }
         if !self.lockView.isHidden {
             resultFrame = resultFrame.union(lockFrame)
         }
-        if let titleCredibilityIconView = self.titleCredibilityIconView {
+        if let titleCredibilityIconView = self.titleCredibilityIconView, titleCredibilityIconView.alpha > 0 {
             resultFrame = resultFrame.union(titleCredibilityIconView.frame)
         }
         
@@ -493,6 +500,7 @@ public final class ChatListTitleView: UIView, NavigationBarTitleView, Navigation
     }
     
     override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard !self.isHidden, self.alpha > 0.01, self.isUserInteractionEnabled, self.bounds.contains(point) else { return nil }
         if let titleCredibilityIconView = self.titleCredibilityIconView, !titleCredibilityIconView.isHidden, titleCredibilityIconView.alpha != 0.0 {
             if titleCredibilityIconView.bounds.insetBy(dx: -8.0, dy: -8.0).contains(self.convert(point, to: titleCredibilityIconView)) {
                 if let result = titleCredibilityIconView.hitTest(titleCredibilityIconView.bounds.center, with: event) {

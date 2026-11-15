@@ -550,6 +550,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 needsShareButton = false
             }
             
+            if exteralessHideChannelShare(message: EngineMessage(item.message)) && !hasCommentButton(item: item) { needsShareButton = false }
             var layoutInsets = UIEdgeInsets(top: mergedTop.merged ? layoutConstants.bubble.mergedSpacing : layoutConstants.bubble.defaultSpacing, left: 0.0, bottom: mergedBottom.merged ? layoutConstants.bubble.mergedSpacing : layoutConstants.bubble.defaultSpacing, right: 0.0)
             if dateHeaderAtBottom.hasDate && dateHeaderAtBottom.hasTopic {
                 layoutInsets.top += layoutConstants.timestampDateAndTopicHeaderHeight
@@ -573,7 +574,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             let innerImageSize = CGSize(width: imageSize.width + innerImageInset * 2.0, height: imageSize.height + innerImageInset * 2.0)
             var imageFrame = CGRect(origin: CGPoint(x: 0.0 + (incoming ? (params.leftInset + layoutConstants.bubble.edgeInset + avatarInset + layoutConstants.bubble.contentInsets.left) : (params.width - params.rightInset - innerImageSize.width - layoutConstants.bubble.edgeInset - layoutConstants.bubble.contentInsets.left - deliveryFailedInset)), y: -innerImageInset), size: innerImageSize)
             
-            let arguments = TransformImageArguments(corners: ImageCorners(), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets(top: innerImageInset, left: innerImageInset, bottom: innerImageInset, right: innerImageInset))
+            let stickerRadius = exteralessStickerCornerRadius(isSticker: telegramFile?.isSticker == true && !isEmoji, messageRadius: item.presentationData.chatBubbleCorners.mainRadius)
+            let arguments = TransformImageArguments(corners: ImageCorners(radius: stickerRadius), imageSize: imageSize, boundingSize: imageSize, intrinsicInsets: UIEdgeInsets(top: innerImageInset, left: innerImageInset, bottom: innerImageInset, right: innerImageInset))
             
             let imageApply = imageLayout(arguments)
             
@@ -648,7 +650,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 hasAutoremove: item.message.isSelfExpiring,
                 canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.message)),
                 animationCache: item.controllerInteraction.presentationContext.animationCache,
-                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                retention: EngineMessage(item.message).exteralessRetention
             ))
             
             let (dateAndStatusSize, dateAndStatusApply) = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)
@@ -772,7 +775,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                         if let sourcePeer = item.message.peers[attribute.messageId.peerId] {
                             let inlineBotNameColor = serviceMessageColorComponents(theme: item.presentationData.theme.theme, wallpaper: item.presentationData.theme.wallpaper).primaryText
                             
-                            let nameString = NSAttributedString(string: EnginePeer(sourcePeer).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder), font: inlineBotPrefixFont, textColor: inlineBotNameColor)
+                            let nameString = NSAttributedString(string: EnginePeer(sourcePeer).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder), font: inlineBotPrefixFont, textColor: inlineBotNameColor)
                             viaBotApply = viaBotLayout(TextNodeLayoutArguments(attributedString: nameString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: max(0, availableWidth), height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
                         }
                     }
@@ -801,12 +804,12 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 forwardPsaType = forwardInfo.psaType
                 
                 let resolvedForwardInfo = chatMessageForwardInfoDisplay(forwardInfo: forwardInfo, messageId: item.message.id, previouslyApplied: currentForwardInfo, peerDisplayTitle: { peer in
-                    return peer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                    return peer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 })
                 forwardSource = resolvedForwardInfo.source
                 forwardAuthorSignature = resolvedForwardInfo.authorSignature
                 let availableForwardWidth = max(60.0, availableWidth + 6.0)
-                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, CGSize(width: availableForwardWidth, height: CGFloat.greatestFiniteMagnitude))
+                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, item.message.forwardInfo?.date, CGSize(width: availableForwardWidth, height: CGFloat.greatestFiniteMagnitude))
             }
             
             var needsReplyBackground = false
@@ -884,7 +887,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
             }
             
             let reactions: ReactionsMessageAttribute
-            if shouldDisplayInlineDateReactions(message: EngineMessage(item.message), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions) {
+            if exteralessHideMessageReactions(message: EngineMessage(item.message)) || shouldDisplayInlineDateReactions(message: EngineMessage(item.message), isPremium: item.associatedData.isPremium, forceInline: item.associatedData.forceInlineReactions) {
                 reactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
             } else {
                 reactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -1008,6 +1011,10 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                 }
             }
             
+            let timeFrames = exteralessStickerTimeFrames(sticker: updatedImageFrame.insetBy(dx: innerImageInset, dy: innerImageInset), time: dateAndStatusFrame, share: needsShareButton ? baseShareButtonFrame : nil, obstacles: [replyBackgroundFrame, viaBotFrame].compactMap { $0 }, incoming: incoming, leftInset: params.leftInset, rightEdge: params.width - params.rightInset, isSticker: telegramFile?.isSticker == true && !isEmoji)
+            dateAndStatusFrame = timeFrames.time
+            if let share = timeFrames.share { baseShareButtonFrame = share }
+
             func finishAsyncLayout(_ animation: ListViewItemUpdateAnimation, _ synchronousLoads: Bool) {
                 if let strongSelf = weakSelf.value {
                     var transition: ContainedViewLayoutTransition = .immediate
@@ -1024,6 +1031,7 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                     strongSelf.enableSynchronousImageApply = true
                     imageApply()
                     strongSelf.enableSynchronousImageApply = false
+                    exteralessApplyStickerMask(layer: strongSelf.imageNode.layer, drawingRect: arguments.drawingRect, radius: stickerRadius)
                     
                     if let immediateThumbnailData = telegramFile?.immediateThumbnailData {
                         if strongSelf.backgroundNode == nil {
@@ -1043,6 +1051,8 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                         let placeholderFrame = updatedImageFrame.insetBy(dx: innerImageInset, dy: innerImageInset)
                         strongSelf.placeholderNode.update(backgroundColor: nil, foregroundColor: foregroundColor, shimmeringColor: shimmeringColor, data: immediateThumbnailData, size: placeholderFrame.size, enableEffect: item.context.sharedContext.energyUsageSettings.fullTranslucency)
                         animation.animator.updateFrame(layer: strongSelf.placeholderNode.layer, frame: placeholderFrame, completion: nil)
+                        strongSelf.placeholderNode.cornerRadius = stickerRadius
+                        strongSelf.placeholderNode.clipsToBounds = stickerRadius > 0
                     }
                     
                     if let (suggestedPostInfoSize, suggestedPostInfoApply) = suggestedPostInfoNodeLayout {
@@ -1063,11 +1073,14 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
                     strongSelf.containerNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.contextSourceNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
+                    strongSelf.contextSourceNode.contentNode.alpha = exteralessRetentionOpacity(messages: [EngineMessage(item.message)])
                     strongSelf.contextSourceNode.contentRect = strongSelf.imageNode.frame
                     strongSelf.containerNode.targetNodeForActivationProgressContentRect = strongSelf.contextSourceNode.contentRect
                     
                     animation.animator.updateFrame(layer: strongSelf.dateAndStatusNode.layer, frame: dateAndStatusFrame, completion: nil)
                     dateAndStatusApply(animation)
+                    strongSelf.dateAndStatusNode.setTimestampHidden(exteralessStickerTimeHidden(isSticker: telegramFile?.isSticker == true && !isEmoji))
+                    strongSelf.dateAndStatusNode.configureTimeHint(message: EngineMessage(item.message)) { text in item.controllerInteraction.displayMessageTooltip(item.message.id, text, false, nil, nil) }
                     if case .customChatContents = item.associatedData.subject {
                         strongSelf.dateAndStatusNode.isHidden = true
                     }
@@ -1454,6 +1467,14 @@ public class ChatMessageStickerItemNode: ChatMessageItemView {
         switch recognizer.state {
         case .ended:
             if let (gesture, location) = recognizer.lastRecognizedGestureAndLocation {
+                if case .doubleTap = gesture, let item = self.item, exteralessPerformDoubleTap(message: EngineMessage(item.message), accountPeerId: item.context.account.peerId, host: item.controllerInteraction.chatControllerNode() as? ExteralessChatMessageActionHost, openMenu: {
+                    item.controllerInteraction.openMessageContextMenu(item.message, false, self, self.bounds, nil, nil)
+                }, reply: {
+                    if case .reply = item.controllerInteraction.canSetupReply(item.message) { item.controllerInteraction.setupReply(item.message.id) }
+                }) {
+                    self.containerNode.cancelGesture()
+                    return
+                }
                 if case .doubleTap = gesture {
                     self.containerNode.cancelGesture()
                 }

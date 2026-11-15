@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AudioToolbox
 import CoreHaptics
@@ -144,6 +145,9 @@ public final class HapticFeedback {
     
     @available(iOSApplicationExtension 10.0, iOS 10.0, *)
     private func withImpl(_ f: (HapticFeedbackImpl) -> Void) {
+        guard !ClientSettings.shared.bool("appearance.disableVibration") else {
+            return
+        }
         if self.impl == nil {
             self.impl = HapticFeedbackImpl()
         }
@@ -216,11 +220,17 @@ public final class HapticFeedback {
 }
 
 @available(iOS 13.0, *)
-public final class ContinuousHaptic {
+public final class ContinuousHaptic: @unchecked Sendable {
+    public enum InitializationError: Error { case disabledByClientSetting }
+
     private let engine: CHHapticEngine
     private let player: CHHapticPatternPlayer
+    private var settingsObservation: ClientSettingsObservation?
     
     public init(duration: Double) throws {
+        guard !ClientSettings.shared.bool("appearance.disableVibration") else {
+            throw InitializationError.disabledByClientSetting
+        }
         self.engine = try CHHapticEngine()
         
         var events: [CHHapticEvent] = []
@@ -244,9 +254,17 @@ public final class ContinuousHaptic {
 
         try self.engine.start()
         try self.player.start(atTime: 0)
+        self.settingsObservation = ClientSettings.shared.observe { [weak self] keys in
+            guard keys.contains("appearance.disableVibration"), ClientSettings.shared.bool("appearance.disableVibration") else { return }
+            DispatchQueue.main.async { [weak self] in
+                try? self?.player.stop(atTime: 0)
+                self?.engine.stop(completionHandler: nil)
+            }
+        }
     }
     
     deinit {
+        self.settingsObservation?.cancel()
         self.engine.stop(completionHandler: nil)
     }
 }

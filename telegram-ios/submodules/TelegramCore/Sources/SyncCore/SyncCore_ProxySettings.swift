@@ -51,8 +51,9 @@ public struct ProxyServerSettings: Codable, Equatable, Hashable {
     public let host: String
     public let port: Int32
     public let connection: ProxyServerConnection
+    public let displayName: String?
     
-    public init(host: String, port: Int32, connection: ProxyServerConnection) {
+    public init(host: String, port: Int32, connection: ProxyServerConnection, displayName: String? = nil) {
         self.host = host
         if case .web = connection {
             self.port = 443
@@ -60,6 +61,8 @@ public struct ProxyServerSettings: Codable, Equatable, Hashable {
             self.port = port
         }
         self.connection = connection
+        let name = displayName?.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        self.displayName = name?.isEmpty == false ? name : nil
     }
     
     public init(from decoder: Decoder) throws {
@@ -73,7 +76,7 @@ public struct ProxyServerSettings: Codable, Equatable, Hashable {
         } else {
             connection = (try? container.decodeIfPresent(ProxyServerConnection.self, forKey: "connection")) ?? ProxyServerConnection.socks5(username: nil, password: nil)
         }
-        self.init(host: host, port: port, connection: connection)
+        self.init(host: host, port: port, connection: connection, displayName: try container.decodeIfPresent(String.self, forKey: "displayName"))
     }
     
     public func encode(to encoder: Encoder) throws {
@@ -82,12 +85,22 @@ public struct ProxyServerSettings: Codable, Equatable, Hashable {
         try container.encode(self.host, forKey: "host")
         try container.encode(self.port, forKey: "port")
         try container.encode(self.connection, forKey: "connection")
+        try container.encodeIfPresent(self.displayName, forKey: "displayName")
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(self.host)
         hasher.combine(self.port)
         hasher.combine(self.connection)
+        hasher.combine(self.displayName)
+    }
+
+    public func withUpdatedDisplayName(_ name: String?) -> ProxyServerSettings {
+        return ProxyServerSettings(host: self.host, port: self.port, connection: self.connection, displayName: name)
+    }
+
+    public func hasSameConnection(as other: ProxyServerSettings) -> Bool {
+        return self.host == other.host && self.port == other.port && self.connection == other.connection
     }
 }
 
@@ -127,7 +140,7 @@ public struct ProxySettings: Codable, Equatable {
     }
     
     public var effectiveActiveServer: ProxyServerSettings? {
-        if self.enabled, let activeServer = self.activeServer {
+        if self.enabled, !ExteralessProxyEnvironment.shared.isSuppressed, let activeServer = self.activeServer {
             return activeServer
         } else {
             return nil

@@ -53,7 +53,14 @@ public final class RichTextEngineEditorView: UIView {
     /// which pins this by reading `editor.document` twice with no engine mutation in between.
     /// One role per ENGINE block — the source of truth. A block quote is 1-to-N with engine blocks,
     /// so the model `Document` is DERIVED from this by grouping rather than stored.
-    internal var currentRoles: [EngineBlockRole] = []
+    internal var currentRoles: [EngineBlockRole] = [] {
+        didSet { documentRevision &+= 1 }
+    }
+    /// Includes role-only edits and external sets as well as text/attribute mutations. Over-counting
+    /// is intentional: a picker lease only compares equality, and an undo never revives a lease.
+    public private(set) var documentRevision: UInt64 = 0
+    public private(set) var selectionRevision: UInt64 = 0
+    public var hasMarkedText: Bool { engine.markedTextRange != nil }
     /// Pooled by the LINE's id, which is unique per container and kind.
     internal var secondaryPlaceholderLabels: [BlockID: SecondaryPlaceholderLabel] = [:]
 
@@ -1306,6 +1313,7 @@ public final class RichTextEngineEditorView: UIView {
 
     fileprivate func engineDidChangeDocument(replacedRange: NSRange, replacementLength: Int,
                                              charactersChanged: Bool) {
+        documentRevision &+= 1
         // Hosted views — custom emoji, spoiler dust — are reconciled in `layoutSubviews`, and a
         // content change does not otherwise mark this view dirty. Without this an emoji outlives the
         // text it belonged to, and dust lingers over deleted runs.
@@ -1839,6 +1847,7 @@ public final class RichTextEngineEditorView: UIView {
         // relaying out, and above all SCHEDULING a host update — is wrong for it. The update is what
         // asks for the traits, so reporting the probe's own moves looped.
         guard !isApplyingHostDocument, !isProbingInlineTraits else { return }
+        selectionRevision &+= 1
         // Mid-keystroke the keyboard is not reloaded; `engineDidFinishEdit` re-derives once settled.
         // Likewise the undo baseline: only a caret move of its own moves the caret an undo restores.
         if !isEngineEditInFlight {

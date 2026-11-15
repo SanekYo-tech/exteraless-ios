@@ -77,6 +77,22 @@ func infoItems(
         items[section] = []
     }
     
+    if let peer = data.peer, let metadata = exteralessIdentityMetadata(account: context.account, peer: peer, cachedData: data.cachedData) {
+        items[.peerInfo]!.append(PeerInfoScreenLabeledValueItem(
+            id: "exteraless.identity.id", label: "ID", text: metadata.id,
+            action: { _, _ in UIPasteboard.general.string = metadata.id },
+            longTapAction: metadata.userLink.map { link in { _ in UIPasteboard.general.string = link } },
+            requestLayout: { interaction.requestLayout($0) }
+        ))
+        if let dc = metadata.datacenterId {
+            items[.peerInfo]!.append(PeerInfoScreenLabeledValueItem(
+                id: "exteraless.identity.dc", label: metadata.datacenterSource ?? "DC", text: String(dc),
+                action: { _, _ in UIPasteboard.general.string = String(dc) },
+                requestLayout: { interaction.requestLayout($0) }
+            ))
+        }
+    }
+
     let bioContextAction: (ASDisplayNode, ContextGesture?, CGPoint?) -> Void = { node, gesture, _ in
         interaction.openBioContextMenu(node, gesture)
     }
@@ -130,7 +146,7 @@ func infoItems(
         let ItemCommunity = 10000
         
         if let cachedUserData = data.cachedData as? CachedUserData, cachedUserData.flags.contains(.unofficialSecurityRisk) {
-            items[.unofficial]!.append(PeerInfoScreenInfoItem(id: 0, title: "", text: .plain(presentationData.strings.PeerInfo_UnofficialSecurityRisk(EnginePeer(user).compactDisplayTitle).string), style: .compact, linkAction: nil))
+            items[.unofficial]!.append(PeerInfoScreenInfoItem(id: 0, title: "", text: .plain(presentationData.strings.PeerInfo_UnofficialSecurityRisk(EnginePeer(user).exteralessCompactDisplayTitle(account: context.account)).string), style: .compact, linkAction: nil))
         }
         
         if !callMessages.isEmpty {
@@ -173,7 +189,7 @@ func infoItems(
             ))
         }
         
-        if let phone = user.phone {
+        if let phone = user.phone, !exteralessShouldHidePhone(accountPeerId: context.account.peerId, peerId: user.id) {
             let formattedPhone = formatPhoneNumber(context: context, number: phone)
             let label: String
             if formattedPhone.hasPrefix("+888 ") {
@@ -306,7 +322,7 @@ func infoItems(
                     if let about = cachedData.about, !about.isEmpty {
                         label = user.botInfo == nil ? presentationData.strings.Profile_About : presentationData.strings.Profile_BotInfo
                     }
-                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: label, text: cachedData.about ?? "", textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: user.isPremium ? enabledPublicBioEntities : enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
+                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: label, text: cachedData.about ?? "", textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: user.isPremium ? enabledPublicBioEntities : enabledPrivateBioEntities), expandedByDefault: ExteralessIdentityPresentation.shared.policy.showFullAbout, action: isMyProfile ? { node, _ in
                         bioContextAction(node, nil, nil)
                     } : nil, linkItemAction: bioLinkAction, button: actionButton, contextAction: bioContextAction, requestLayout: { animated in
                         interaction.requestLayout(animated)
@@ -362,7 +378,7 @@ func infoItems(
                             items[.botAffiliateProgram]!.append(PeerInfoScreenDisclosureItem(id: ItemAffiliate, label: .labelBadge(programTitleValue), additionalBadgeLabel: nil, text: presentationData.strings.PeerInfo_ItemAffiliateProgram_Title, icon: PresentationResourcesSettings.affiliateProgram, action: {
                                 interaction.editingOpenAffiliateProgram()
                             }))
-                            items[.botAffiliateProgram]!.append(PeerInfoScreenCommentItem(id: ItemAffiliateInfo, text: presentationData.strings.PeerInfo_ItemAffiliateProgram_Footer(EnginePeer.user(user).compactDisplayTitle, formatPermille(starRefProgram.commissionPermille)).string))
+                            items[.botAffiliateProgram]!.append(PeerInfoScreenCommentItem(id: ItemAffiliateInfo, text: presentationData.strings.PeerInfo_ItemAffiliateProgram_Footer(EnginePeer.user(user).exteralessCompactDisplayTitle(account: context.account), formatPermille(starRefProgram.commissionPermille)).string))
                         }
                     }
                 }
@@ -541,7 +557,7 @@ func infoItems(
                     }))
                     
                     if let managedByBot = data.managedByBot {
-                        items[currentPeerInfoSection]!.append(PeerInfoScreenCommentItem(id: ItemBotAddToChatInfo, icon: .managedBot, text: presentationData.strings.PeerInfo_ManagedBotFooter(managedByBot.compactDisplayTitle).string, linkAction: { _ in
+                        items[currentPeerInfoSection]!.append(PeerInfoScreenCommentItem(id: ItemBotAddToChatInfo, icon: .managedBot, text: presentationData.strings.PeerInfo_ManagedBotFooter(managedByBot.exteralessCompactDisplayTitle(account: context.account)).string, linkAction: { _ in
                             interaction.openPeerInfo(managedByBot, false)
                         }))
                     } else {
@@ -686,7 +702,7 @@ func infoItems(
                     if case .group = channel.info {
                         enabledEntities = enabledPrivateBioEntities
                     }
-                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledEntities), action: isMyProfile ? { node, _ in
+                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledEntities), expandedByDefault: ExteralessIdentityPresentation.shared.policy.showFullAbout, action: isMyProfile ? { node, _ in
                         bioContextAction(node, nil, nil)
                     } : nil, linkItemAction: bioLinkAction, contextAction: bioContextAction, requestLayout: { animated in
                         interaction.requestLayout(animated)
@@ -836,7 +852,7 @@ func infoItems(
             }
             
             if let aboutText = aboutText {
-                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 0, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 0, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledPrivateBioEntities), expandedByDefault: ExteralessIdentityPresentation.shared.policy.showFullAbout, action: isMyProfile ? { node, _ in
                     bioContextAction(node, nil, nil)
                 } : nil, linkItemAction: bioLinkAction, contextAction: bioContextAction, requestLayout: { animated in
                     interaction.requestLayout(animated)
@@ -1029,7 +1045,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
                     items[.community]!.append(PeerInfoScreenCommentItem(id: ItemAddToCommunityInfo, text: presentationData.strings.PeerInfo_Community_BotInfo))
                 }
             } else if !user.flags.contains(.isSupport) {
-                let compactName = EnginePeer(user).compactDisplayTitle
+                let compactName = EnginePeer(user).exteralessCompactDisplayTitle(account: context.account)
                 
                 if let cachedData = data.cachedData as? CachedUserData {
                     items[.peerNote]!.append(PeerInfoScreenNoteListItem(
@@ -1165,7 +1181,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
                             if let addressName = peer.addressName, !addressName.isEmpty {
                                 discussionGroupTitle = "@\(addressName)"
                             } else {
-                                discussionGroupTitle = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+                                discussionGroupTitle = peer.exteralessDisplayTitle(account: context.account, strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
                             }
                         } else {
                             discussionGroupTitle = presentationData.strings.Channel_DiscussionGroupAdd
@@ -1485,7 +1501,7 @@ func editingItems(data: PeerInfoScreenData?, boostStatus: ChannelBoostStatus?, s
                             if let addressName = linkedDiscussionPeer.addressName, !addressName.isEmpty {
                                 peerTitle = "@\(addressName)"
                             } else {
-                                peerTitle = linkedDiscussionPeer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+                                peerTitle = linkedDiscussionPeer.exteralessDisplayTitle(account: context.account, strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
                             }
                                                         
                             items[.peerDataSettings]!.append(PeerInfoScreenDisclosureItem(id: ItemLinkedChannel, label: .text(peerTitle), text: presentationData.strings.Group_LinkedChannel, icon: PresentationResourcesSettings.channels, action: {

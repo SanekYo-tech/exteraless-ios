@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import SwiftSignalKit
@@ -29,6 +30,7 @@ public func openUserGeneratedUrl(
     alertDisplayUpdated: ((ViewController?) -> Void)? = nil,
     concealedAlertOption: OpenUserGeneratedUrlConcealedAlertOption? = nil
 ) -> Disposable {
+    let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
     var concealed = concealed
 
     var presentationData = context.sharedContext.currentPresentationData.with { $0 }
@@ -106,15 +108,17 @@ public func openUserGeneratedUrl(
     // A login part hides the host the link opens (see `externalUrlWithLoginPart`).
     let loginPartUrl = externalUrlWithLoginPart(url)
 
-    if forceConcealed || loginPartUrl != nil {
+    var mandatoryConfirmation = forceConcealed || loginPartUrl != nil
+    if mandatoryConfirmation {
         concealed = true
     } else if let parsedUrl = parseInternalUrl(sharedContext: context.sharedContext, context: context, query: url) {
         if case .proxy = parsedUrl {
             concealed = true
+            mandatoryConfirmation = true
         }
     }
 
-    if concealed && !skipConcealedAlert {
+    if ChatLinkConfirmationPolicy.shouldConfirm(concealed: concealed, mandatory: mandatoryConfirmation, callerSkipped: skipConcealedAlert, confirmAll: ClientSettings.shared.bool("chats.confirmAllLinks"), skipBasic: ClientSettings.shared.bool("chats.skipOpenLinkConfirm")) {
         // For a login part the prompt shows the host the link really opens. The external-URL opener asks about such
         // a link as well, so accepting it here tells the opener it has been confirmed.
         let displayUrl = loginPartUrl.map { urlRemovingLoginPart($0).absoluteString } ?? parsedString
@@ -134,6 +138,7 @@ public func openUserGeneratedUrl(
             webpage: webpage,
             check: concealedAlertOption.flatMap { option in checkState.map { (title: option.title, state: $0) } },
             open: {
+                ChatLinkConfirmationLedger.shared.note(url)
                 if let loginPartUrl {
                     noteLoginPartConfirmed(loginPartUrl)
                 }

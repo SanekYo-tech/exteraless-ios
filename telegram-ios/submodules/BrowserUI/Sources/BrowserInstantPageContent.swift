@@ -1796,12 +1796,16 @@ final class BrowserInstantPageContent: UIView, BrowserContent, UIScrollViewDeleg
                 if canTranslate {
                     actions.append(ContextMenuAction(content: .text(title: strings.Conversation_ContextMenuTranslate, accessibilityLabel: strings.Conversation_ContextMenuTranslate), action: { [weak self] in
                         Task { @MainActor [weak self] in
-                            guard let self else {
+                             guard let self else {
+                                 return
+                             }
+                            if let controller = ExteralessAIHooks.articleController(context: context, text: text, entities: [], toLanguage: nil) {
+                                self.present(controller, nil)
                                 return
                             }
-                            let controller = await TextProcessingScreen(
-                                context: context,
-                                mode: .translate(fromLanguage: language, applyResult: nil),
+                             let controller = await TextProcessingScreen(
+                                 context: context,
+                                 mode: .translate(fromLanguage: language, applyResult: nil),
                                 inputText: .plain(text: text, entities: []),
                                 copyResult: { [weak self] text in
                                     storeComposedRichMessageInPasteboard(text)

@@ -1110,6 +1110,32 @@ public func layoutInstantPageBlock(webpage: TelegramMediaWebpage, userLocation: 
     }
 }
 
+/// V1 viewers enumerate concrete embed/details items to restore state and route
+/// callbacks. Empty placeholders preserve those ordinals while the summary has
+/// no painted text, media, hit area or height. Anchors still resolve to its boundary.
+func instantPageHiddenAISummaryPlaceholders(_ source: [InstantPageItem], origin: CGPoint, width: CGFloat) -> [InstantPageItem] {
+    let frame = CGRect(origin: origin, size: CGSize(width: width, height: 0.0))
+    var result: [InstantPageItem] = []
+    for item in source {
+        if let details = item as? InstantPageDetailsItem {
+            result.append(InstantPageDetailsItem(frame: frame, titleItems: [], titleHeight: 0.0, items: instantPageHiddenAISummaryPlaceholders(details.items, origin: .zero, width: width), safeInset: details.safeInset, rtl: details.rtl, initiallyExpanded: details.initiallyExpanded, index: details.index))
+        } else if item is InstantPageWebEmbedItem {
+            result.append(InstantPageWebEmbedItem(frame: frame, url: nil, html: nil, enableScrolling: false))
+        } else if let image = item as? InstantPageImageItem, case .webpage = image.media.media {
+            // A covered embed is represented by an image item in the original
+            // layout but consumes the same embed ordinal in both IV viewers.
+            result.append(InstantPageWebEmbedItem(frame: frame, url: nil, html: nil, enableScrolling: false))
+        } else if let anchor = item as? InstantPageAnchorItem {
+            result.append(InstantPageAnchorItem(frame: frame, anchor: anchor.anchor))
+        } else if let text = item as? InstantPageTextItem {
+            for anchor in text.anchors.keys.sorted() { result.append(InstantPageAnchorItem(frame: frame, anchor: anchor)) }
+        } else if let table = item as? InstantPageTableItem {
+            for anchor in table.anchors.keys.sorted() { result.append(InstantPageAnchorItem(frame: frame, anchor: anchor)) }
+        }
+    }
+    return result
+}
+
 public func instantPageLayoutForWebPage(_ webPage: TelegramMediaWebpage, instantPage: InstantPage?, userLocation: MediaResourceUserLocation, boundingWidth: CGFloat, sideInset: CGFloat, safeInset: CGFloat, strings: PresentationStrings, theme: InstantPageTheme, dateTimeFormat: PresentationDateTimeFormat, webEmbedHeights: [Int : CGFloat] = [:], cachedMessageSyntaxHighlight: CachedMessageSyntaxHighlight? = nil, addFeedback: Bool = true, fitToWidth: Bool = false) -> InstantPageLayout {
     var maybeLoadedContent: TelegramMediaWebpageLoadedContent?
     if case let .Loaded(content) = webPage.content {
@@ -1138,9 +1164,16 @@ public func instantPageLayoutForWebPage(_ webPage: TelegramMediaWebpage, instant
     var detailsIndexCounter: Int = 0
     
     var previousBlock: InstantPageBlock?
+    let hideAISummary = ExteralessAIVisibility.instantViewSummaryHidden
     for i in 0 ..< pageBlocks.count {
         let block = pageBlocks[i]
         let blockLayout = layoutInstantPageBlock(webpage: webPage, userLocation: userLocation, rtl: rtl, block: block, boundingWidth: boundingWidth, horizontalInset: sideInset + safeInset, safeInset: safeInset, isCover: false, previousItems: items, fillToSize: nil, media: media, mediaIndexCounter: &mediaIndexCounter, embedIndexCounter: &embedIndexCounter, detailsIndexCounter: &detailsIndexCounter, theme: theme, strings: strings, dateTimeFormat: dateTimeFormat, webEmbedHeights: webEmbedHeights, cachedMessageSyntaxHighlight: cachedMessageSyntaxHighlight, excludeCaptions: false, isLast: i == pageBlocks.count - 1, fitToWidth: fitToWidth)
+        if ExteralessAIVisibility.shouldHideInstantViewBlock(block, hideSummary: hideAISummary) {
+            // Run the real layout to advance its media/embed/details counters,
+            // then project an empty item set with the original state ordinals.
+            items.append(contentsOf: instantPageHiddenAISummaryPlaceholders(blockLayout.items, origin: CGPoint(x: 0.0, y: contentSize.height), width: boundingWidth))
+            continue
+        }
         let spacing = spacingBetweenBlocksV1(upper: previousBlock, lower: block)
         let blockItems = blockLayout.flattenedItemsWithOrigin(CGPoint(x: 0.0, y: contentSize.height + spacing))
         items.append(contentsOf: blockItems)

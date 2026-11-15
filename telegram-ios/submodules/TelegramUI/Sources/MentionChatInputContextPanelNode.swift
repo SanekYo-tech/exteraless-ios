@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import TelegramCore
@@ -161,7 +162,14 @@ final class MentionChatInputContextPanelNode: ChatInputContextPanelNode {
                             
                             if let range = mentionQueryRange {
                                 if let addressName = peer.addressName, !addressName.isEmpty {
-                                    return (textInputState.replacingFlatRange(range, with: addressName + " "), inputMode)
+                                    let isBot: Bool
+                                    if case let .user(user) = peer {
+                                        isBot = user.botInfo != nil
+                                    } else {
+                                        isBot = false
+                                    }
+                                    let suffix = ClientSettings.shared.bool("chats.addCommaAfterMention", default: true) && !isBot ? ", " : " "
+                                    return (textInputState.replacingFlatRange(range, with: addressName + suffix), inputMode)
                                 } else if !peer.compactDisplayTitle.isEmpty {
                                     let replacementText = NSMutableAttributedString()
                                     replacementText.append(NSAttributedString(string: peer.compactDisplayTitle, attributes: [ChatTextInputAttributes.textMention: ChatTextInputTextMentionAttribute(peerId: peer.id)]))

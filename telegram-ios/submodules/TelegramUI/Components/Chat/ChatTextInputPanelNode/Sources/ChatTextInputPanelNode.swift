@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UniformTypeIdentifiers
 import UIKit
@@ -293,6 +294,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var useInputDecEngineEditor: Bool = false
     
     public var displayAttachmentMenu: () -> Void = { }
+    private var exteralessPlaceholderOptions: (Bool, Bool)?
+    private var exteralessLockRecordingDeadline: Double?
     public var sendMessage: () -> Void = { }
     public var paste: (ChatTextInputPanelPasteData) -> Void = { _ in }
     public var updateHeight: (Bool) -> Void = { _ in }
@@ -329,6 +332,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private let hapticFeedback = HapticFeedback()
     
     public var isAIEnabled: Bool = false
+
+    private var exteralessMathButton: UIButton?
+    private var exteralessMathSuggestion: ChatMathExpression.Suggestion?
+    private var exteralessCurrency: ExteralessInlineCurrencyController?
     
     public var inputTextState: ChatTextInputState {
         if let richTextInputNode = self.richTextInputNode {
@@ -367,6 +374,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     
     override public var context: AccountContext? {
         didSet {
+            if oldValue !== self.context {
+                self.exteralessLockRecordingDeadline = nil
+                self.exteralessCurrency?.cancelPending()
+                self.exteralessCurrency = nil
+                self.exteralessMathSuggestion = nil
+            }
             self.sendActionButtons.micButton.statusBarHost = self.context?.sharedContext.mainWindow?.statusBarHost
             self.mediaActionButtons.micButton.statusBarHost = self.context?.sharedContext.mainWindow?.statusBarHost
         }
@@ -885,6 +898,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         self.attachmentButton.addTarget(self, action: #selector(self.attachmentButtonPressed), for: .touchUpInside)
+        self.attachmentButton.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(self.exteralessAttachmentLongPressed(_:))))
         self.attachmentButton.highligthedChanged = { [weak self] highlighted in
             if let self {
                 if highlighted {
@@ -914,6 +928,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         self.mediaActionButtons.micButton.beginRecording = { [weak self] in
             if let strongSelf = self, let presentationInterfaceState = strongSelf.presentationInterfaceState, let interfaceInteraction = strongSelf.interfaceInteraction {
+                strongSelf.exteralessLockRecordingDeadline = nil
+                if ClientSettings.shared.bool("chats.useChatAttachMediaMenu") {
+                    strongSelf.exteralessPresentRecordingMenu()
+                    return
+                }
                 let isVideo: Bool
                 switch presentationInterfaceState.interfaceState.mediaRecordingMode {
                     case .audio:
@@ -1204,11 +1223,17 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         richTextInputNode.canPasteMedia = { Self.pasteboardMayHoldMedia() }
         richTextInputNode.onPasteMedia = { [weak self] in self?.handlePastedMedia(perform: true) ?? false }
+        richTextInputNode.pastedLinkTargetTransformer = { url in
+            ClientSettings.shared.bool("chats.stripTrackingOnPaste", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
+        }
+        richTextInputNode.committedTextTransformer = { text in
+            exteralessCleanPastedPlainText(text)
+        }
         richTextInputNode.pastedMarkdownFragmentParser = { [weak self] text in
-            guard let self, let context = self.context, let content = self.pastedMarkdownParser?(context, text) else {
-                return nil
-            }
-            return pasteFragmentDocument(fromChatInputContent: content)
+            return exteralessComposerPasteFragment(text, parseMarkdown: { text in
+                guard let self, let context = self.context else { return nil }
+                return self.pastedMarkdownParser?(context, text)
+            })
         }
         richTextInputNode.onRequestTableStructuralMenu = { [weak self] request in
             guard let self, let context = self.context else { return }
@@ -1439,7 +1464,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         var hasSendAsButton = false
-        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
+        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil && !ClientSettings.shared.bool("chats.hideSendAsChannel") {
             hasSendAsButton = true
         }
         
@@ -1821,10 +1846,24 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         } else if case .webView = interfaceState.botMenuButton {
             shouldDisplayMenuButton = true
         }
+        if ClientSettings.shared.bool("chats.hideBotButtonInInputField") { shouldDisplayMenuButton = false }
         
         var displaySendAsAvatarButton = false
         let mediaRecordingState = interfaceState.inputTextPanelState.mediaRecordingState
-        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
+        if let deadline = self.exteralessLockRecordingDeadline {
+            if deadline < CACurrentMediaTime() {
+                self.exteralessLockRecordingDeadline = nil
+            } else if mediaRecordingState != nil {
+                self.exteralessLockRecordingDeadline = nil
+                let context = self.context
+                let location = interfaceState.chatLocation
+                Queue.mainQueue().async { [weak self] in
+                    guard let self, self.context === context, self.presentationInterfaceState?.chatLocation == location else { return }
+                    self.interfaceInteraction?.lockMediaRecording()
+                }
+            }
+        }
+        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil && !ClientSettings.shared.bool("chats.hideSendAsChannel") {
             menuButtonExpanded = false
             displaySendAsAvatarButton = true
             
@@ -1927,6 +1966,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         var updatedPlaceholder: String?
+        let placeholderOptions = (ClientSettings.shared.bool("chats.typeMessageHintUseGroupName"), ClientSettings.shared.bool("chats.showSendAsUnderMessageHint"))
+        if self.exteralessPlaceholderOptions?.0 != placeholderOptions.0 || self.exteralessPlaceholderOptions?.1 != placeholderOptions.1 || previousState?.currentSendAsPeerId != interfaceState.currentSendAsPeerId {
+            self.initializedPlaceholder = false
+            self.exteralessPlaceholderOptions = placeholderOptions
+        }
         var placeholderHasStar = false
         
         let themeUpdated = self.presentationInterfaceState?.theme !== interfaceState.theme
@@ -2163,6 +2207,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                                     placeholderHasStar = true
                                 } else {
                                     placeholder = interfaceState.strings.Conversation_InputTextPlaceholder
+                                    if placeholderOptions.0, peer.id != interfaceState.accountPeerId {
+                                        placeholder = EnginePeer(peer).displayTitle(strings: interfaceState.strings, displayOrder: interfaceState.nameDisplayOrder)
+                                    }
+                                    if placeholderOptions.1, let sendAsPeers = interfaceState.sendAsPeers,
+                                       let sender = sendAsPeers.first(where: { $0.peer.id == interfaceState.currentSendAsPeerId })?.peer ?? sendAsPeers.first?.peer {
+                                        placeholder += " · as " + sender.displayTitle(strings: interfaceState.strings, displayOrder: interfaceState.nameDisplayOrder)
+                                    }
                                 }
                             }
                         }
@@ -2250,6 +2301,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
         
+        if self.customLeftAction == nil, !hasMediaDraft, !isEditingMedia {
+            let more = inputHasText && !ClientSettings.shared.bool("chats.keepAttachButton")
+            self.attachmentButtonIcon.image = more ? UIImage(systemName: "ellipsis") : PresentationResourcesChat.chatInputPanelAttachmentButtonImage(interfaceState.theme)
+            self.attachmentButtonIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
+            self.attachmentButton.accessibilityLabel = more ? "Composer actions" : interfaceState.strings.VoiceOver_AttachMedia
+        }
         if let customLeftAction = self.customLeftAction {
             switch customLeftAction {
             case .empty, .settings:
@@ -3154,6 +3211,37 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             })
         }
         
+        self.exteralessMathSuggestion = self.currentExteralessMathSuggestion()
+        if let suggestion = self.exteralessMathSuggestion, audioRecordingItemsAlpha > 0.0, interfaceState.interfaceState.mediaDraftState == nil {
+            let button: UIButton
+            if let current = self.exteralessMathButton {
+                button = current
+            } else {
+                button = UIButton(type: .system)
+                button.contentHorizontalAlignment = .leading
+                button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
+                button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
+                button.titleLabel?.adjustsFontForContentSizeCategory = true
+                button.titleLabel?.numberOfLines = 0
+                button.titleLabel?.lineBreakMode = .byWordWrapping
+                button.accessibilityIdentifier = "exteraless.inlineMath.insert"
+                button.addTarget(self, action: #selector(self.insertExteralessMathResult), for: .touchUpInside)
+                self.textInputContainerBackgroundView.contentView.addSubview(button)
+                self.exteralessMathButton = button
+            }
+            button.tintColor = interfaceState.theme.chat.inputPanel.panelControlAccentColor
+            button.setTitle("= \(suggestion.value)  ·  Insert", for: .normal)
+            button.accessibilityLabel = "Insert calculated result \(suggestion.value)"
+            let titleHeight = button.titleLabel?.sizeThatFits(CGSize(width: max(1, textInputWidth - 28), height: .greatestFiniteMagnitude)).height ?? 20
+            let resultHeight = max(44, ceil(titleHeight) + 12)
+            transition.updateFrame(view: button, frame: CGRect(x: 0, y: contentHeight, width: textInputWidth, height: resultHeight))
+            contentHeight += resultHeight
+        } else if let button = self.exteralessMathButton {
+            self.exteralessMathButton = nil
+            self.exteralessMathSuggestion = nil
+            button.removeFromSuperview()
+        }
+
         let textFieldTopContentOffset = contentHeight
         
         contentHeight += textInputHeight
@@ -3189,7 +3277,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         var hasSendAsButton = false
-        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
+        if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil && !ClientSettings.shared.bool("chats.hideSendAsChannel") {
             hasSendAsButton = true
         }
         
@@ -3570,8 +3658,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         // grows UPWARD into a pill (bottom edge stays at textInputFrame.maxY): + at the bottom slot, AI at the top.
         var isAIButtonVisible = false
         var attachmentPillHeight: CGFloat = 40.0
+        let aiEditorVisible = self.isAIEnabled && ExteralessAIHooks.aiEditorVisible
         let inputHasNonWhitespaceText = !(self.richTextInputNode?.inputContentIsEmptyWhitespaceTrimmed ?? true)
-        if self.isAIEnabled, inputHasNonWhitespaceText, let node = self.richTextInputNode {
+        if aiEditorVisible, inputHasNonWhitespaceText, let node = self.richTextInputNode {
             let threeLineHeight = self.threeLineFieldHeight(forWidth: baseWidth, node: node, metrics: metrics, bottomInset: bottomInset, textFieldInsets: textFieldInsets)
             if textInputHeight >= threeLineHeight - 0.5 {
                 isAIButtonVisible = true
@@ -3593,7 +3682,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
 
         // AI button in the TOP 40x40 slot of the capsule (fades in with the 3-line rule).
-        if self.isAIEnabled {
+        if aiEditorVisible {
             let aiButton: (button: HighlightTrackingButton, icon: UIImageView)
             if let current = self.attachmentAIButton {
                 aiButton = current
@@ -3947,6 +4036,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     @objc private func aiButtonPressed() {
+        guard ExteralessAIHooks.aiEditorVisible else { return }
         self.interfaceInteraction?.openAICompose()
     }
 
@@ -4042,6 +4132,51 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.interfaceInteraction?.updateTextInputStateAndMode({ _, inputMode in return (inputTextState, inputMode) })
             self.interfaceInteraction?.updateInputLanguage({ _ in return self.richTextInputNode?.primaryLanguage })
             self.updateTextNodeText(animated: true)
+        }
+    }
+
+    private func currentExteralessMathSuggestion() -> ChatMathExpression.Suggestion? {
+        guard ClientSettings.shared.bool("chats.inlineMathResult", default: true),
+              let node = self.richTextInputNode, node.isInputFirstResponder,
+              !exteralessInputHasMarkedText(in: node.inputView) else {
+            self.exteralessCurrency?.cancelPending()
+            return nil
+        }
+        let state = self.inputTextState
+        guard state.selectionRange.isEmpty, state.content.isEntityExpressible() else { self.exteralessCurrency?.cancelPending(); return nil }
+        let caret = state.selectionRange.lowerBound
+        let text = state.inputText
+        guard caret > 0, caret <= text.length else { self.exteralessCurrency?.cancelPending(); return nil }
+        let attributes = text.attributes(at: caret - 1, effectiveRange: nil)
+        for key in [ChatTextInputAttributes.monospace, ChatTextInputAttributes.spoiler, ChatTextInputAttributes.block, ChatTextInputAttributes.customEmoji] {
+            if attributes[key] != nil { self.exteralessCurrency?.cancelPending(); return nil }
+        }
+        if let local = ChatMathExpression.suggestion(in: text.string, caret: caret, decimalSeparator: Locale.current.decimalSeparator ?? ".") {
+            self.exteralessCurrency?.cancelPending()
+            return local
+        }
+        guard let context = self.context, ClientSettings.shared.bool("chats.inlineMathCurrency", default: true) else {
+            self.exteralessCurrency?.cancelPending()
+            return nil
+        }
+        if self.exteralessCurrency == nil {
+            self.exteralessCurrency = ExteralessInlineCurrencyController(updated: { [weak self] in self?.updateHeight(true) })
+        }
+        return self.exteralessCurrency?.suggestion(text: text.string, caret: caret, context: context)
+    }
+
+    @objc private func insertExteralessMathResult() {
+        guard let suggestion = self.exteralessMathSuggestion,
+              suggestion == self.currentExteralessMathSuggestion(),
+              let node = self.richTextInputNode else { return }
+        let text = NSAttributedString(string: suggestion.insertionText)
+        if node.insertTextOnUsersBehalf(text) { return }
+        if let textView = node.inputView as? ChatInputTextView {
+            if !self.pasteThroughTextInput(text, textView: textView) {
+                textView.performUndoableTextChange { self.insertText(text: text) }
+            }
+        } else {
+            node.performUndoableInputChange { self.insertText(text: text) }
         }
     }
     
@@ -4820,6 +4955,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     private func updateTextHeight(animated: Bool) {
+        if self.exteralessMathSuggestion != self.currentExteralessMathSuggestion() {
+            self.updateHeight(animated)
+            return
+        }
         if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, _, metrics, _, _, deviceMetrics) = self.validLayout, let interfaceState = self.presentationInterfaceState {
             var leftInset = leftInset
             var rightInset = rightInset
@@ -4915,6 +5054,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     public func chatInputTextNodeDidChangeSelection(dueToEditing: Bool) {
+        if !dueToEditing && self.exteralessMathSuggestion != self.currentExteralessMathSuggestion() {
+            self.updateHeight(true)
+        }
         if !dueToEditing && !self.updatingInputState {
             let inputTextState = self.inputTextState
             self.interfaceInteraction?.updateTextInputStateAndMode({ _, inputMode in return (inputTextState, inputMode) })
@@ -4972,6 +5114,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     
     public var skipPresentationInterfaceStateUpdate = false
     public func chatInputTextNodeDidFinishEditing() {
+        self.exteralessCurrency?.cancelPending()
         guard let richTextInputNode = self.richTextInputNode else {
             return
         }
@@ -5012,6 +5155,23 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     public func editableTextNodeTarget(forAction action: Selector) -> ASEditableTextNodeTargetForAction? {
+        let formatSettings: [(Selector, String)] = [
+            (#selector(self._translate(_:)), "showTextTranslate"),
+            (#selector(self.formatAttributesBold(_:)), "showTextBold"),
+            (#selector(self.formatAttributesItalic(_:)), "showTextItalic"),
+            (#selector(self.formatAttributesMonospace(_:)), "showTextMono"),
+            (#selector(self.formatAttributesCodeBlock(_:)), "showTextMonoCode"),
+            (#selector(self.formatAttributesStrikethrough(_:)), "showTextStrikethrough"),
+            (#selector(self.formatAttributesUnderline(_:)), "showTextUnderline"),
+            (#selector(self.formatAttributesQuote(_:)), "showTextQuote"),
+            (#selector(self.formatAttributesSpoiler(_:)), "showTextSpoiler"),
+            (#selector(self.formatAttributesLink(_:)), "showTextCreateLink"),
+            (#selector(self.formatAttributesDate(_:)), "showTextCreateDate")
+        ]
+        if let field = formatSettings.first(where: { $0.0 == action })?.1,
+           !ClientSettings.shared.bool("chats.\(field)", default: true) {
+            return ASEditableTextNodeTargetForAction(target: nil)
+        }
         if action == makeSelectorFromString("_accessibilitySpeak:") {
             if case .format = self.inputMenu.state {
                 return ASEditableTextNodeTargetForAction(target: nil)
@@ -5125,7 +5285,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             
             if hasSpoilers {
-                children.append(UIAction(title: self.strings?.TextFormat_Quote ?? "Quote", image: nil) { [weak self] (action) in
+                children.append(UIAction(title: self.strings?.TextFormat_Quote ?? "Quote", image: nil, identifier: UIAction.Identifier("exteraless.format.quote")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesQuote(strongSelf)
                     }
@@ -5133,7 +5293,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             
             if hasSpoilers {
-                children.append(UIAction(title: self.strings?.TextFormat_Spoiler ?? "Spoiler", image: nil) { [weak self] (action) in
+                children.append(UIAction(title: self.strings?.TextFormat_Spoiler ?? "Spoiler", image: nil, identifier: UIAction.Identifier("exteraless.format.spoiler")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesSpoiler(strongSelf)
                     }
@@ -5141,22 +5301,22 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             
             children.append(contentsOf: [
-                UIAction(title: self.strings?.TextFormat_Bold ?? "Bold", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Bold ?? "Bold", image: nil, identifier: UIAction.Identifier("exteraless.format.bold")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesBold(strongSelf)
                     }
                 },
-                UIAction(title: self.strings?.TextFormat_Italic ?? "Italic", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Italic ?? "Italic", image: nil, identifier: UIAction.Identifier("exteraless.format.italic")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesItalic(strongSelf)
                     }
                 },
-                UIAction(title: self.strings?.TextFormat_Monospace ?? "Monospace", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Monospace ?? "Monospace", image: nil, identifier: UIAction.Identifier("exteraless.format.mono")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesMonospace(strongSelf)
                     }
                 },
-                UIAction(title: self.strings?.TextFormat_Link ?? "Link", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Link ?? "Link", image: nil, identifier: UIAction.Identifier("exteraless.format.link")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesLink(strongSelf)
                     }
@@ -5164,7 +5324,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             ])
             
             if hasSpoilers {
-                children.append(UIAction(title: self.strings?.TextFormat_Date ?? "Date", image: nil) { [weak self] (action) in
+                children.append(UIAction(title: self.strings?.TextFormat_Date ?? "Date", image: nil, identifier: UIAction.Identifier("exteraless.format.date")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesDate(strongSelf)
                     }
@@ -5172,26 +5332,40 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             
             children.append(contentsOf: [
-                UIAction(title: self.strings?.TextFormat_Strikethrough ?? "Strikethrough", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Strikethrough ?? "Strikethrough", image: nil, identifier: UIAction.Identifier("exteraless.format.strike")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesStrikethrough(strongSelf)
                     }
                 },
-                UIAction(title: self.strings?.TextFormat_Underline ?? "Underline", image: nil) { [weak self] (action) in
+                UIAction(title: self.strings?.TextFormat_Underline ?? "Underline", image: nil, identifier: UIAction.Identifier("exteraless.format.underline")) { [weak self] (action) in
                     if let strongSelf = self {
                         strongSelf.formatAttributesUnderline(strongSelf)
                     }
                 }
             ] as [UIAction])
             
-            children.append(UIAction(title: self.strings?.TextFormat_Code ?? "Code", image: nil) { [weak self] (action) in
+            children.append(UIAction(title: self.strings?.TextFormat_Code ?? "Code", image: nil, identifier: UIAction.Identifier("exteraless.format.code")) { [weak self] (action) in
                 if let strongSelf = self {
                     strongSelf.formatAttributesCodeBlock(strongSelf)
                 }
             })
+
+            children.append(UIAction(title: "Translate", identifier: UIAction.Identifier("exteraless.format.translate")) { [weak self] _ in
+                guard let self else { return }
+                self._translate(self)
+            })
+            children.append(UIAction(title: "Mention", identifier: UIAction.Identifier("exteraless.format.mention")) { [weak self] _ in
+                self?.exteralessCreateMention()
+            })
+            children.append(UIAction(title: "Clear formatting", identifier: UIAction.Identifier("exteraless.format.regular")) { [weak self] _ in
+                self?.exteralessClearSelectedFormatting()
+            })
             
-            let formatMenu = UIMenu(title: self.strings?.TextFormat_Format ?? "Format", image: nil, children: children)
-            actions.insert(formatMenu, at: 1)
+            let orderedChildren = exteralessOrderedFormatActions(children)
+            if !orderedChildren.isEmpty {
+                let formatMenu = UIMenu(title: self.strings?.TextFormat_Format ?? "Format", image: nil, children: orderedChildren)
+                actions.insert(formatMenu, at: min(1, actions.count))
+            }
         }
         return UIMenu(children: actions)
     }
@@ -5215,13 +5389,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
 
         var children: [UIAction] = []
         if hasSpoilers {
-            children.append(UIAction(title: self.strings?.TextFormat_Quote ?? "Quote", image: nil) { [weak richTextInputNode] _ in
+            children.append(UIAction(title: self.strings?.TextFormat_Quote ?? "Quote", image: nil, identifier: UIAction.Identifier("exteraless.format.quote")) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.quote)
             })
-            children.append(UIAction(title: self.strings?.RichText_MenuPullquote ?? "Pull Quote", image: nil) { [weak richTextInputNode] _ in
+            children.append(UIAction(title: self.strings?.RichText_MenuPullquote ?? "Pull Quote", image: nil, identifier: UIAction.Identifier("exteraless.format.pullquote")) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.pullQuote)
             })
-            children.append(UIAction(title: self.strings?.TextFormat_Spoiler ?? "Spoiler", image: nil,
+            children.append(UIAction(title: self.strings?.TextFormat_Spoiler ?? "Spoiler", image: nil, identifier: UIAction.Identifier("exteraless.format.spoiler"),
                                      attributes: richTextInputNode.canPerformFormatAction(.spoiler) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.spoiler)
             })
@@ -5229,52 +5403,65 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         // Inline formats are disabled where they cannot apply — a selection wholly in code, whose
         // model is plain text (a `Pre` entity holds no other entity) — rather than offered as no-ops.
         children.append(contentsOf: [
-            UIAction(title: self.strings?.TextFormat_Bold ?? "Bold", image: nil,
+            UIAction(title: self.strings?.TextFormat_Bold ?? "Bold", image: nil, identifier: UIAction.Identifier("exteraless.format.bold"),
                      attributes: richTextInputNode.canPerformFormatAction(.bold) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.bold)
             },
             // Disabled where italic cannot apply (a pull quote's body is italic by role and the
             // model cannot carry it there), rather than offered as a silent no-op.
-            UIAction(title: self.strings?.TextFormat_Italic ?? "Italic", image: nil,
+            UIAction(title: self.strings?.TextFormat_Italic ?? "Italic", image: nil, identifier: UIAction.Identifier("exteraless.format.italic"),
                      attributes: richTextInputNode.canPerformFormatAction(.italic) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.italic)
             },
-            UIAction(title: self.strings?.TextFormat_Monospace ?? "Monospace", image: nil,
+            UIAction(title: self.strings?.TextFormat_Monospace ?? "Monospace", image: nil, identifier: UIAction.Identifier("exteraless.format.mono"),
                      attributes: richTextInputNode.canPerformFormatAction(.monospace) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.monospace)
             },
             // A link is an inline format: it reaches exactly the text Bold reaches.
-            UIAction(title: self.strings?.TextFormat_Link ?? "Link", image: nil,
+            UIAction(title: self.strings?.TextFormat_Link ?? "Link", image: nil, identifier: UIAction.Identifier("exteraless.format.link"),
                      attributes: richTextInputNode.canPerformFormatAction(.bold) ? [] : .disabled) { [weak self] _ in
                 self?.interfaceInteraction?.openLinkEditing()
             }
         ])
         if hasSpoilers {
-            children.append(UIAction(title: self.strings?.TextFormat_Date ?? "Date", image: nil) { [weak richTextInputNode] _ in
-                richTextInputNode?.performFormatAction(.date)
+            children.append(UIAction(title: self.strings?.TextFormat_Date ?? "Date", image: nil, identifier: UIAction.Identifier("exteraless.format.date"), attributes: richTextInputNode.canPerformFormatAction(.date) ? [] : .disabled) { [weak self] _ in
+                self?.interfaceInteraction?.openDateEditing()
             })
         }
         children.append(contentsOf: [
-            UIAction(title: self.strings?.TextFormat_Strikethrough ?? "Strikethrough", image: nil,
+            UIAction(title: self.strings?.TextFormat_Strikethrough ?? "Strikethrough", image: nil, identifier: UIAction.Identifier("exteraless.format.strike"),
                      attributes: richTextInputNode.canPerformFormatAction(.strikethrough) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.strikethrough)
             },
-            UIAction(title: self.strings?.TextFormat_Underline ?? "Underline", image: nil,
+            UIAction(title: self.strings?.TextFormat_Underline ?? "Underline", image: nil, identifier: UIAction.Identifier("exteraless.format.underline"),
                      attributes: richTextInputNode.canPerformFormatAction(.underline) ? [] : .disabled) { [weak richTextInputNode] _ in
                 richTextInputNode?.performFormatAction(.underline)
             }
         ])
-        children.append(UIAction(title: self.strings?.TextFormat_Code ?? "Code", image: nil) { [weak richTextInputNode] _ in
+        children.append(UIAction(title: self.strings?.TextFormat_Code ?? "Code", image: nil, identifier: UIAction.Identifier("exteraless.format.code")) { [weak richTextInputNode] _ in
             richTextInputNode?.performFormatAction(.code)
         })
 
-        let formatMenu = UIMenu(title: self.strings?.TextFormat_Format ?? "Format", image: nil, children: children)
+        children.append(UIAction(title: "Translate", identifier: UIAction.Identifier("exteraless.format.translate"),
+                                 attributes: (richTextInputNode as? RichTextEditorChatInputNode)?.canReplaceRichTextSelection == true ? [] : .disabled) { [weak self] _ in
+            guard let self else { return }
+            self._translate(self)
+        })
+        children.append(UIAction(title: "Mention", identifier: UIAction.Identifier("exteraless.format.mention"), attributes: richTextInputNode.canPerformFormatAction(.date) ? [] : .disabled) { [weak self] _ in
+            self?.exteralessCreateMention()
+        })
+        children.append(UIAction(title: "Clear formatting", identifier: UIAction.Identifier("exteraless.format.regular")) { [weak self] _ in
+            self?.exteralessClearSelectedFormatting()
+        })
+
+        let orderedChildren = exteralessOrderedFormatActions(children)
+        let formatMenu = UIMenu(title: self.strings?.TextFormat_Format ?? "Format", image: nil, children: orderedChildren)
 
         // Drop the editor's built-in "Format" submenu by its language-independent identifier, then
         // splice in the composer's after the system Cut/Copy/Paste actions.
         var elements = defaultElements.filter { ($0 as? UIMenu)?.identifier != UIMenu.Identifier("org.telegram.RichTextEditor.format") }
         let insertIndex = min(1, elements.count)
-        elements.insert(formatMenu, at: insertIndex)
+        if !orderedChildren.isEmpty { elements.insert(formatMenu, at: insertIndex) }
         return elements
     }
 
@@ -5307,24 +5494,62 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     @objc public func _translate(_ sender: Any) {
-        var text = NSAttributedString()
-        self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
-            text = current.inputText.attributedSubstring(from: NSMakeRange(current.selectionRange.lowerBound, current.selectionRange.count))
-            return (current, inputMode)
+        guard let request = self.beginSelectionTranslation() else { return }
+        self.interfaceInteraction?.presentInputTextTranslation(request.text, request.apply)
+    }
+
+    /// The presentation scope of a pending Format action. Input revision/selection checks are owned
+    /// by the native node; this also rejects a replacement panel, chat/thread or edit target.
+    private func selectionActionScope(for node: ChatRichTextInputNode) -> () -> Bool {
+        let context = self.context
+        let location = self.presentationInterfaceState?.chatLocation
+        let editMessageId = self.presentationInterfaceState?.interfaceState.editMessage?.messageId
+        return { [weak self, weak node] in
+            guard let self, let node else { return false }
+            return self.context === context && self.richTextInputNode?.asNode === node.asNode
+                && self.presentationInterfaceState?.chatLocation == location
+                && self.presentationInterfaceState?.interfaceState.editMessage?.messageId == editMessageId
         }
-        self.interfaceInteraction?.presentInputTextTranslation(text, { [weak self] attributedString in
-            guard let self else {
-                return
-            }
-            self.interfaceInteraction?.updateTextInputStateAndMode { current, inputMode in
-                if !current.selectionRange.isEmpty {
-                    let range = NSRange(location: current.selectionRange.lowerBound, length: current.selectionRange.count)
-                    return (current.replacingFlatRange(range, with: attributedString), .text)
-                } else {
-                    // No selection: the whole composer is replaced by newly translated text. Building a
-                    // fresh state is correct here — there is no existing structure to preserve, and
-                    // mapping one blob of translation back onto blocks is not well defined.
-                    return (ChatTextInputState(inputText: attributedString), inputMode)
+    }
+
+    /// The native Date picker uses this request and its completion verbatim. The selection stays on
+    /// the editor's axis while the picker is open; a date is an inline link marker, not a draft set.
+    public func beginNativeDateEditing() -> (text: NSAttributedString, apply: (Int32) -> Bool)? {
+        guard let node = self.richTextInputNode as? RichTextEditorChatInputNode,
+              node.canPerformFormatAction(.date), let selection = node.captureRichTextSelection() else { return nil }
+        let isCurrent = self.selectionActionScope(for: node)
+        return (selection.text, { [weak node] timestamp in
+            guard let node, isCurrent() else { return false }
+            return node.applyRichTextLink(timestamp == 0 ? nil : dateMarkdownURL(timestamp: timestamp), to: selection)
+        })
+    }
+
+    /// Shared by the actual Translate action and the loginless fixture. A non-empty native selection
+    /// can have a zero-length flat range (caption/cell/details/author), so it is captured first.
+    public func beginSelectionTranslation() -> (text: NSAttributedString, apply: (NSAttributedString) -> Void)? {
+        guard let node = self.richTextInputNode, !exteralessInputHasMarkedText(in: node.inputView) else { return nil }
+        let isCurrent = self.selectionActionScope(for: node)
+        if node.usesNativeRichTextEngine {
+            guard let node = node as? RichTextEditorChatInputNode, node.canReplaceRichTextSelection,
+                  let selection = node.captureRichTextSelection() else { return nil }
+            return (selection.text, { [weak node] text in
+                guard let node, isCurrent() else { return }
+                node.replaceRichTextSelection(selection, with: text)
+            })
+        }
+        let expected = self.inputTextState
+        let range = NSRange(location: expected.selectionRange.lowerBound, length: expected.selectionRange.count)
+        guard range.length > 0, NSMaxRange(range) <= expected.inputText.length,
+              let textView = node.inputView as? ChatInputTextView else { return nil }
+        var consumed = false
+        return (expected.inputText.attributedSubstring(from: range), { [weak self, weak textView] text in
+            guard let self, let textView, !consumed, isCurrent(), self.inputTextState == expected,
+                  textView.markedTextRange == nil else { return }
+            consumed = true
+            textView.performUndoableTextChange {
+                self.interfaceInteraction?.updateTextInputStateAndMode { current, mode in
+                    guard current == expected else { return (current, mode) }
+                    return (current.replacingFlatRange(range, with: text), .text)
                 }
             }
         })
@@ -5351,6 +5576,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         richTextInputNode.performFormatAction(action)
         return true
+    }
+
+    private func exteralessClearSelectedFormatting() {
+        if self.performNativeFormatShortcut(.clearFormatting) { return }
+        let _ = self.performLegacyFormatShortcut(chatTextInputClearFormattingAttributes)
     }
 
     /// The legacy text view's half of a hardware format shortcut (⌘B, ⌘I, ⌘U, ⇧⌘M, ⇧⌘X, ⇧⌘P,
@@ -5409,6 +5639,51 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     @objc public func formatAttributesLink(_ sender: Any) {
         self.inputMenu.back()
         self.interfaceInteraction?.openLinkEditing()
+    }
+
+    private func exteralessCreateMention() {
+        guard ClientSettings.shared.bool("chats.showTextCreateMention", default: true),
+              let context = self.context, let apply = self.beginSelectionMention() else { return }
+        let controller = context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: context, filter: [.onlyPrivateChats, .excludeSecretChats], hasGlobalSearch: true, title: "Mention a person", selectForumThreads: false))
+        controller.peerSelected = { [weak controller] peer, _ in
+            controller?.dismiss()
+            guard case .user = peer else { return }
+            _ = apply(peer.id)
+        }
+        self.interfaceInteraction?.presentController(controller, nil)
+    }
+
+    /// Captures the selection before the asynchronous peer picker. A completed picker can only link
+    /// that selection, once; it cannot apply to a later selection with the same flat projection.
+    public func beginSelectionMention() -> ((EnginePeer.Id) -> Bool)? {
+        guard let node = self.richTextInputNode, !exteralessInputHasMarkedText(in: node.inputView) else { return nil }
+        let isCurrent = self.selectionActionScope(for: node)
+        if node.usesNativeRichTextEngine {
+            guard let node = node as? RichTextEditorChatInputNode, node.canPerformFormatAction(.date),
+                  let selection = node.captureRichTextSelection() else { return nil }
+            return { [weak node] peerId in
+                guard let node, isCurrent() else { return false }
+                return node.applyRichTextLink(mentionMarkdownURL(peerId: peerId), to: selection)
+            }
+        }
+        let expected = self.inputTextState
+        let range = NSRange(location: expected.selectionRange.lowerBound, length: expected.selectionRange.count)
+        guard range.length > 0, NSMaxRange(range) <= expected.inputText.length else { return nil }
+        var consumed = false
+        return { [weak self, weak node] peerId in
+            guard let self, let node, !consumed, isCurrent(), self.inputTextState == expected,
+                  !exteralessInputHasMarkedText(in: node.inputView) else { return false }
+            consumed = true
+            return self.performLegacyFormatShortcut { current in
+                guard current == expected else { return current }
+                let result = NSMutableAttributedString(attributedString: current.inputText)
+                result.removeAttribute(ChatTextInputAttributes.textUrl, range: range)
+                result.removeAttribute(ChatTextInputAttributes.date, range: range)
+                result.removeAttribute(ChatTextInputAttributes.monospace, range: range)
+                result.addAttribute(ChatTextInputAttributes.textMention, value: ChatTextInputTextMentionAttribute(peerId: peerId), range: range)
+                return ChatTextInputState(inputText: result, selectionRange: current.selectionRange)
+            }
+        }
     }
     
     @objc public func formatAttributesDate(_ sender: Any) {
@@ -5613,6 +5888,16 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     public func chatInputTextNodeShouldPaste() -> Bool {
         let pasteboard = UIPasteboard.general
 
+        // Plain text at a literal destination must reach the view with the ORIGINAL bytes. This
+        // precedes markdown detection/latching and URL cleaning; its insertText guard is too late
+        // to recover text that this panel already changed.
+        if pasteboard.hasStrings, !Self.pasteboardMayHoldMedia(),
+           !pasteboard.contains(pasteboardTypes: ["private.telegramtext", RichTextEditorClipboard.fragmentUTI, "public.rtf", "com.apple.flat-rtfd"]),
+           let textView = self.richTextInputNode?.inputView as? ChatInputTextView,
+           textView.isLiteralTextDestination(textView.selectedRange) {
+            return true
+        }
+
         // A rich structural fragment (e.g. a copied table/list) from the WYSIWYG editor carries the private
         // `RichTextEditorClipboard.fragmentUTI`, which the legacy NSAttributedString paste below cannot represent
         // (a table would flatten through RTF). Route it to the native backend — which reads the fragment and
@@ -5658,7 +5943,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         // performs a two-step paste (insert plain → replace with rich) so undo reverts rich→plain. Only
         // taken when the parser actually classifies the text as rich; plain text falls through.
         var pastedMarkdownContent: ChatInputContent?
-        if attributedString == nil, let plainText = pasteboard.string, let context = self.context {
+        if !ClientSettings.shared.bool("chats.disableMarkdown"), attributedString == nil, let plainText = pasteboard.string, let context = self.context {
             pastedMarkdownContent = self.pastedMarkdownParser?(context, plainText)
         }
 
@@ -5697,6 +5982,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
 
         if let attributedString = attributedString {
+            let attributedString = exteralessCleanPastedText(attributedString)
             if let textView = self.richTextInputNode?.inputView as? ChatInputTextView {
                 // Undoable, and without wiping what was typed before it (composer harness,
                 // 2026-09-23, `HarnessLegacyRichPasteUndoTests`): the state push below comes back as
@@ -5714,6 +6000,22 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         if self.handlePastedMedia(perform: true) {
             return false   // media consumed → suppress the default text paste
+        }
+        if ClientSettings.shared.bool("chats.stripTrackingOnPaste", default: true), let text = pasteboard.string {
+            let cleaned = exteralessCleanPastedPlainText(text)
+            if cleaned != text {
+                let insertion = NSAttributedString(string: cleaned)
+                if self.richTextInputNode?.insertTextOnUsersBehalf(insertion) != true {
+                    if let textView = self.richTextInputNode?.inputView as? ChatInputTextView {
+                        if !self.pasteThroughTextInput(insertion, textView: textView) {
+                            textView.performUndoableTextChange { self.applyPastedAttributedString(insertion) }
+                        }
+                    } else {
+                        self.applyPastedAttributedString(insertion)
+                    }
+                }
+                return false
+            }
         }
         return true
     }
@@ -5900,8 +6202,63 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.audioRecordingRemoveAnimationState = .previewToAttachButton
             self.interfaceInteraction?.deleteRecordedMedia()
         } else {
-            self.displayAttachmentMenu()
+            if !(self.richTextInputNode?.inputContentIsEmpty ?? true), !ClientSettings.shared.bool("chats.keepAttachButton"), self.presentationInterfaceState?.editMessageState == nil {
+                self.exteralessPresentComposerMenu()
+            } else {
+                self.displayAttachmentMenu()
+            }
         }
+    }
+
+    @objc private func exteralessAttachmentLongPressed(_ gesture: UILongPressGestureRecognizer) {
+        if gesture.state == .began, self.presentationInterfaceState?.interfaceState.mediaDraftState == nil {
+            self.exteralessPresentComposerMenu()
+        }
+    }
+
+    private func exteralessPresentComposerMenu() {
+        guard let context = self.context else { return }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let sheet = ActionSheetController(presentationData: presentationData)
+        let overrides = self.presentationInterfaceState?.interfaceState.composeDisableUrlPreviews ?? []
+        let allow = !overrides.contains(ChatComposerPolicy.allowPreviewMarker)
+        sheet.setItemGroups([
+            ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: "Attach media", color: .accent, action: { [weak self, weak sheet] in sheet?.dismissAnimated(); self?.displayAttachmentMenu() }),
+                ActionSheetButtonItem(title: "Chat actions", color: .accent, action: { [weak self, weak sheet] in
+                    sheet?.dismissAnimated()
+                    (self?.interfaceInteraction?.chatController() as? ExteralessChatSelectionActions)?.exteralessPresentChatActions()
+                }),
+                ActionSheetButtonItem(title: allow ? "Enable link preview for this draft" : "Use default link preview policy", color: .accent, action: { [weak self, weak sheet] in
+                    sheet?.dismissAnimated()
+                    self?.chatControllerInteraction?.updatePresentationState { state in
+                        state.updatedInterfaceState { state in
+                            return state.withUpdatedComposeDisableUrlPreviews(allow ? [ChatComposerPolicy.allowPreviewMarker] : [])
+                        }
+                    }
+                })
+            ]),
+            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, action: { [weak sheet] in sheet?.dismissAnimated() })])
+        ])
+        self.interfaceInteraction?.presentController(sheet, nil)
+    }
+
+    private func exteralessPresentRecordingMenu() {
+        guard let context = self.context else { return }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let sheet = ActionSheetController(presentationData: presentationData)
+        let recordingItems: [ActionSheetItem] = [("Voice message", false), ("Video message", true)].map { title, video in
+            ActionSheetButtonItem(title: title, color: .accent, action: { [weak self, weak sheet] in
+                sheet?.dismissAnimated()
+                self?.exteralessLockRecordingDeadline = CACurrentMediaTime() + 30
+                self?.interfaceInteraction?.beginMediaRecording(video)
+            })
+        }
+        sheet.setItemGroups([
+            ActionSheetItemGroup(items: recordingItems + [ActionSheetButtonItem(title: "Attach media", color: .accent, action: { [weak self, weak sheet] in sheet?.dismissAnimated(); self?.displayAttachmentMenu() })]),
+            ActionSheetItemGroup(items: [ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, action: { [weak sheet] in sheet?.dismissAnimated() })])
+        ])
+        self.interfaceInteraction?.presentController(sheet, nil)
     }
     
     @objc func searchLayoutClearButtonPressed() {

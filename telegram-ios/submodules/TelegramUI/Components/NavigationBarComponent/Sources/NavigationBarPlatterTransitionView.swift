@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -279,6 +280,8 @@ public final class NavigationBarPlatterTransitionView: UIView {
         }
 
         func removeViews() {
+            self.glass.cancelShapeAnimations()
+            self.fadingGlass?.cancelShapeAnimations()
             for view in self.views {
                 view.removeFromSuperview()
             }
@@ -337,6 +340,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
     /// nothing reports nothing.
     public var onSettled: (() -> Void)?
     private var hasReportedSettled = true
+    private var exteralessHeaderCrossfade = true
     /// Whether a glass container merges the shapes in it (native glass), read as glass is hosted.
     var glassMergesShapes: () -> Bool = {
         return GlassBackgroundContainerView.mergesShapes
@@ -553,6 +557,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
 
     /// The transition starts. `toTop`: it ends on the top bar (a push), else on the bottom one (a pop).
     public func beginTransition(isInteractive: Bool, toTop: Bool) {
+        self.exteralessHeaderCrossfade = ClientSettings.shared.integer("appearance.backAnimationStyle", default: 1) == 1 && ClientSettings.shared.bool("appearance.springAnimationCrossfade", default: true)
         self.clock.stop()
         self.time = 0.0
         self.hasBegun = true
@@ -925,7 +930,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
         }
         let presence = dematerializations.map { NSNumber(value: Float(1.0 - $0)) }
         add(platter.container.layer, "opacity", presence)
-        add(platter.itemsHost.layer, "opacity", presence)
+        add(platter.itemsHost.layer, "opacity", dematerializations.map { NSNumber(value: AppearanceMotionPolicy.headerContentAlpha(disappearance: Double($0), crossfade: self.exteralessHeaderCrossfade)) })
         self.addBlurKeyframes(to: platter.itemsHost.layer, radii: dematerializations.map { platter.blurRadius * $0 }, timing: timing)
 
         platter.container.animateSize(width: platter.width, height: platter.height, timing: timing, isDark: platter.isDark)
@@ -957,7 +962,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
             let scales = times.map { items.appearance.value(at: $0) }
             add(items.view.layer, "position", frames.map { NSValue(cgPoint: CGPoint(x: items.frame.midX - $0.minX, y: items.frame.midY - $0.minY)) })
             add(items.view.layer, "transform", scales.map { a in NSValue(caTransform3D: CATransform3DMakeScale(1.0 + a * (items.maxScale.width - 1.0), 1.0 + a * (items.maxScale.height - 1.0), 1.0)) })
-            add(items.view.layer, "opacity", appearances.map { NSNumber(value: Float(1.0 - $0)) })
+            add(items.view.layer, "opacity", appearances.map { NSNumber(value: AppearanceMotionPolicy.headerContentAlpha(disappearance: Double($0), crossfade: self.exteralessHeaderCrossfade)) })
             self.addBlurKeyframes(to: items.view.layer, radii: appearances.map { items.blurRadius * $0 }, timing: timing)
         }
     }
@@ -1070,7 +1075,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
             fadingGlass.frame = bounds
             fadingGlass.update(size: frame.size, cornerRadius: min(frame.width, frame.height) * 0.5, isDark: platter.isDark, tintColor: fadingTint, isInteractive: false, transition: .immediate)
         }
-        platter.itemsHost.alpha = 1.0 - d
+        platter.itemsHost.alpha = CGFloat(AppearanceMotionPolicy.headerContentAlpha(disappearance: Double(d), crossfade: self.exteralessHeaderCrossfade))
         if let glowView = platter.glowView {
             glowView.frame = CGRect(origin: CGPoint(), size: glassFrame.size)
             glowView.update(size: glassFrame.size, glow: platter.glow.value(at: self.time), isDark: platter.isDark)
@@ -1082,7 +1087,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
             items.view.bounds = CGRect(origin: CGPoint(), size: items.frame.size)
             items.view.center = CGPoint(x: items.frame.midX - frame.minX, y: items.frame.midY - frame.minY)
             items.view.transform = CGAffineTransform(scaleX: 1.0 + items.appearance.value(at: self.time) * (items.maxScale.width - 1.0), y: 1.0 + items.appearance.value(at: self.time) * (items.maxScale.height - 1.0))
-            items.view.alpha = 1.0 - a
+            items.view.alpha = CGFloat(AppearanceMotionPolicy.headerContentAlpha(disappearance: Double(a), crossfade: self.exteralessHeaderCrossfade))
             ComponentTransition.immediate.setBlur(layer: items.view.layer, radius: items.blurRadius * a)
         }
     }
@@ -1113,7 +1118,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
         let d = platter.dematerialization.value(at: time)
         return PlatterState(
             frame: platter.frame(at: time),
-            opacity: 1.0 - max(0.0, min(1.0, d)),
+            opacity: CGFloat(AppearanceMotionPolicy.headerContentAlpha(disappearance: Double(d), crossfade: self.exteralessHeaderCrossfade)),
             glassOpacity: self.isGlassMerged(platter) ? 1.0 : 1.0 - max(0.0, min(1.0, d)),
             glassFrame: platter.glassFrame(at: time),
             scale: CGSize(width: 1.0 + d * (platter.maxScale.width - 1.0), height: 1.0 + d * (platter.maxScale.height - 1.0)),
@@ -1173,7 +1178,7 @@ public final class NavigationBarPlatterTransitionView: UIView {
         let time = self.now
         return (self.platters[role]?.items ?? []).map { items in
             let a = items.appearance.value(at: time)
-            return ItemsState(isTop: items.side == .top, opacity: 1.0 - max(0.0, min(1.0, a)), scale: CGSize(width: 1.0 + a * (items.maxScale.width - 1.0), height: 1.0 + a * (items.maxScale.height - 1.0)), blur: items.blurRadius * max(0.0, min(1.0, a)))
+            return ItemsState(isTop: items.side == .top, opacity: CGFloat(AppearanceMotionPolicy.headerContentAlpha(disappearance: Double(a), crossfade: self.exteralessHeaderCrossfade)), scale: CGSize(width: 1.0 + a * (items.maxScale.width - 1.0), height: 1.0 + a * (items.maxScale.height - 1.0)), blur: items.blurRadius * max(0.0, min(1.0, a)))
         }
     }
 }

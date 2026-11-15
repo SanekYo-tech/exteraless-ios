@@ -68,6 +68,7 @@ final class GroupHeaderLayer: UIView {
         layoutType: EmojiPagerContentComponent.ItemLayoutType,
         hasTopSeparator: Bool,
         actionButtonTitle: String?,
+        actionButtonAccessibilityLabel: String? = nil,
         actionButtonIsCompact: Bool,
         title: String,
         subtitle: String?,
@@ -134,6 +135,7 @@ final class GroupHeaderLayer: UIView {
             }
             
             actionButtonSize = actionButton.update(theme: theme, title: actionButtonTitle, compact: actionButtonIsCompact)
+            actionButton.accessibilityLabel = actionButtonAccessibilityLabel ?? actionButtonTitle
         } else {
             if let actionButton = self.actionButton {
                 self.actionButton = nil
@@ -467,7 +469,7 @@ final class GroupHeaderLayer: UIView {
         }
         
         if let actionButtonSize = actionButtonSize, let actionButton = self.actionButton {
-            let actionButtonFrame = CGRect(origin: CGPoint(x: size.width - actionButtonSize.width, y: textFrame.minY + (actionButtonIsCompact ? 0.0 : 3.0)), size: actionButtonSize)
+            let actionButtonFrame = CGRect(origin: CGPoint(x: size.width - actionButtonSize.width - (hasClear ? clearSize.width + 8.0 : 0.0), y: textFrame.minY + (actionButtonIsCompact ? 0.0 : 3.0)), size: actionButtonSize)
             actionButton.bounds = CGRect(origin: CGPoint(), size: actionButtonFrame.size)
             actionButton.center = actionButtonFrame.center
         }

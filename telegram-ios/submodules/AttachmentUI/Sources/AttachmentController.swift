@@ -786,6 +786,7 @@ public class AttachmentController: ViewController, MinimizableController {
                 }
             }
             self.panel.invokeAICompose = { [weak self] in
+                guard ExteralessAIHooks.aiEditorVisible else { return }
                 Task { @MainActor in
                     guard let self, let controller = self.controller, let mediaPickerContext = self.mediaPickerContext else {
                         return
@@ -800,6 +801,7 @@ public class AttachmentController: ViewController, MinimizableController {
 
                     let textProcessingScreen = await controller.context.sharedContext.makeTextProcessingScreen(
                         context: controller.context,
+                        capability: .userInput,
                         theme: self.presentationData.theme,
                         mode: .edit(
                             saveRestoreStateId: nil,

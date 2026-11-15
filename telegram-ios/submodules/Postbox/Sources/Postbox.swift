@@ -51,6 +51,13 @@ public final class Transaction {
             return [:]
         }
     }
+
+    /// Reserves a display identity without adding a message, history hole, or read state.
+    public func reserveMessageStableId() -> UInt32? {
+        assert(self.queue.isCurrent())
+        assert(!self.disposed)
+        return self.postbox?.messageHistoryMetadataTable.getNextStableMessageIndexId()
+    }
     
     public func messageExists(id: MessageId) -> Bool {
         if let postbox = self.postbox {
@@ -1820,6 +1827,8 @@ final class PostboxImpl {
     let chatListTable: ChatListTable
     let additionalChatListItemsTable: AdditionalChatListItemsTable
     let messageHistoryMetadataTable: MessageHistoryMetadataTable
+    let messageHistoryObservers = Bag<(Transaction, Message, StoreMessage) -> Void>()
+    private var isNotifyingMessageHistoryObservers = false
     let messageHistoryUnsentTable: MessageHistoryUnsentTable
     let messageHistoryFailedTable: MessageHistoryFailedTable
     let messageHistoryTagsTable: MessageHistoryTagsTable
@@ -2192,6 +2201,14 @@ final class PostboxImpl {
     }
     
     fileprivate func addMessages(transaction: Transaction, messages: [StoreMessage], location: AddMessagesLocation) -> [Int64: MessageId] {
+        precondition(!self.isNotifyingMessageHistoryObservers, "A before-message observer cannot write messages recursively")
+        if !self.messageHistoryObservers.isEmpty {
+            for value in messages {
+                if case let .Id(id) = value.id, let previous = self.getMessage(id) {
+                    self.notifyMessageHistoryObservers(transaction: transaction, previous: previous, updated: value)
+                }
+            }
+        }
         var addedMessagesByPeerId: [PeerId: [StoreMessage]] = [:]
         let addResult = self.messageHistoryTable.addMessages(messages: messages, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations, processMessages: { messagesByPeerId in
             addedMessagesByPeerId = messagesByPeerId
@@ -3075,9 +3092,11 @@ final class PostboxImpl {
     }
     
     fileprivate func updateMessage(transaction: Transaction, id: MessageId, update: (Message) -> PostboxUpdateMessage) {
+        precondition(!self.isNotifyingMessageHistoryObservers, "A before-message observer cannot write messages recursively")
         if let index = self.messageHistoryIndexTable.getIndex(id), let intermediateMessage = self.messageHistoryTable.getMessage(index) {
             let message = self.renderIntermediateMessage(intermediateMessage)
             if case let .update(updatedMessage) = update(message) {
+                self.notifyMessageHistoryObservers(transaction: transaction, previous: message, updated: updatedMessage)
                 self.messageHistoryTable.updateMessage(id, message: updatedMessage, operationsByPeerId: &self.currentOperationsByPeerId, updatedMedia: &self.currentUpdatedMedia, unsentMessageOperations: &self.currentUnsentOperations, updatedPeerReadStateOperations: &self.currentUpdatedSynchronizeReadStateOperations, globalTagsOperations: &self.currentGlobalTagsOperations, pendingActionsOperations: &self.currentPendingMessageActionsOperations, updatedMessageActionsSummaries: &self.currentUpdatedMessageActionsSummaries, updatedMessageTagSummaries: &self.currentUpdatedMessageTagSummaries, invalidateMessageTagSummaries: &self.currentInvalidateMessageTagSummaries, localTagsOperations: &self.currentLocalTagsOperations, timestampBasedMessageAttributesOperations: &self.currentTimestampBasedMessageAttributesOperations)
                 
                 if let bag = self.installedStoreOrUpdateMessageActionsByPeerId[id.peerId] {
@@ -3086,6 +3105,16 @@ final class PostboxImpl {
                     }
                 }
             }
+        }
+    }
+
+    private func notifyMessageHistoryObservers(transaction: Transaction, previous: Message, updated: StoreMessage) {
+        guard !self.messageHistoryObservers.isEmpty else { return }
+        precondition(!self.isNotifyingMessageHistoryObservers)
+        self.isNotifyingMessageHistoryObservers = true
+        defer { self.isNotifyingMessageHistoryObservers = false }
+        for observer in self.messageHistoryObservers.copyItems() {
+            observer(transaction, previous, updated)
         }
     }
     
@@ -4687,6 +4716,20 @@ public class Postbox {
     public let mediaBox: MediaBox
     
     private let isInTransaction = Atomic<Bool>(value: false)
+
+    /// Runs on this Postbox's transaction queue before an existing message is replaced.
+    /// Observers may persist separate local data, but must not mutate message history.
+    /// Disposing removes only this registration on the owning queue.
+    public func installMessageHistoryObserver(_ observer: @escaping (Transaction, Message, StoreMessage) -> Void) -> Disposable {
+        let disposable = MetaDisposable()
+        self.impl.with { impl in
+            let index = impl.messageHistoryObservers.add(observer)
+            disposable.set(ActionDisposable { [weak self] in
+                self?.impl.with { impl in impl.messageHistoryObservers.remove(index) }
+            })
+        }
+        return disposable
+    }
 
     init(
         queue: Queue,

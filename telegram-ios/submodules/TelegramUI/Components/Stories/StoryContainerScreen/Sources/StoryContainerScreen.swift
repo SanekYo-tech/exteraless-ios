@@ -1801,7 +1801,7 @@ private final class StoryContainerScreenComponent: Component {
                                         return
                                     }
                                     
-                                    if let content = component.content as? PeerStoryListContentContextImpl {
+                                    if let content = exteralessUnderlyingStoryContent(component.content) as? PeerStoryListContentContextImpl {
                                         if let listSource = content.listContext as? PeerStoryListContext {
                                             let _ = listSource.addFolder(title: title, items: [], completion: { [weak listSource] id in
                                                 Queue.mainQueue().async {
@@ -1823,7 +1823,7 @@ private final class StoryContainerScreenComponent: Component {
                                     guard let stateValue = self.stateValue, let slice = stateValue.slice else {
                                         return
                                     }
-                                    if let content = component.content as? PeerStoryListContentContextImpl {
+                                    if let content = exteralessUnderlyingStoryContent(component.content) as? PeerStoryListContentContextImpl {
                                         if let listSource = content.listContext as? PeerStoryListContext {
                                             let _ = listSource.addToFolder(id: folderId, items: [slice.item.storyItem])
                                         }
@@ -2185,6 +2185,7 @@ public class StoryContainerScreen: ViewControllerComponentContainer, KeyShortcut
     }
     
     private let context: AccountContext
+    private let exteralessPrivacyContent: ExteralessPrivacyStoryContent
     private var didAnimateIn: Bool = false
     private var isDismissed: Bool = false
     
@@ -2203,10 +2204,12 @@ public class StoryContainerScreen: ViewControllerComponentContainer, KeyShortcut
         transitionOut: @escaping (EnginePeer.Id, AnyHashable) -> TransitionOut?
     ) {
         self.context = context
+        let privacyContent = ExteralessPrivacyStoryContent(context: context, source: content)
+        self.exteralessPrivacyContent = privacyContent
         
         super.init(context: context, component: StoryContainerScreenComponent(
             context: context,
-            content: content,
+            content: privacyContent,
             focusedItemPromise: self.focusedItemPromise,
             transitionIn: transitionIn,
             transitionOut: transitionOut
@@ -2226,6 +2229,7 @@ public class StoryContainerScreen: ViewControllerComponentContainer, KeyShortcut
     }
     
     deinit {
+        self.exteralessPrivacyContent.close()
         self.context.sharedContext.hasPreloadBlockingContent.set(.single(false))
         self.focusedItemPromise.set(.single(nil))
     }
@@ -2238,6 +2242,14 @@ public class StoryContainerScreen: ViewControllerComponentContainer, KeyShortcut
         super.viewDidAppear(animated)
         
         self.view.disablesInteractiveModalDismiss = true
+        if self.exteralessPrivacyContent.pendingChoice {
+            self.exteralessPrivacyContent.requestChoice(controller: self, proceed: { [weak self] in self?.exteralessAnimateInIfNeeded() })
+            return
+        }
+        self.exteralessAnimateInIfNeeded()
+    }
+
+    private func exteralessAnimateInIfNeeded() {
         
         if !self.didAnimateIn {
             self.didAnimateIn = true
@@ -2349,6 +2361,7 @@ public class StoryContainerScreen: ViewControllerComponentContainer, KeyShortcut
     
     override public func dismiss(completion: (() -> Void)? = nil) {
         if !self.isDismissed {
+            self.exteralessPrivacyContent.close()
             self.isDismissed = true
             
             self.statusBar.updateStatusBarStyle(.Ignore, animated: true)

@@ -17,6 +17,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
     let initialMessageId: EngineMessage.Id
     let initialOrder: MusicPlaybackSettingsOrder
     let playlistLocation: SharedMediaPlaylistLocation?
+    private let forceClassic: Bool
     
     private(set) weak var parentNavigationController: NavigationController?
     
@@ -27,6 +28,10 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
     }
     
     private var accountInUseDisposable: Disposable?
+    private var activeAccountDisposable: Disposable?
+    private let fileDescriptionDisposable = MetaDisposable()
+    private let uploadDisposable = MetaDisposable()
+    private var accountIsValid = true
     
     init(
         context: AccountContext,
@@ -35,7 +40,8 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
         initialMessageId: EngineMessage.Id,
         initialOrder: MusicPlaybackSettingsOrder,
         playlistLocation: SharedMediaPlaylistLocation? = nil,
-        parentNavigationController: NavigationController?
+        parentNavigationController: NavigationController?,
+        forceClassic: Bool = false
     ) {
         self.context = context
         self.chatLocation = chatLocation
@@ -43,6 +49,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
         self.initialMessageId = initialMessageId
         self.initialOrder = initialOrder
         self.playlistLocation = playlistLocation
+        self.forceClassic = forceClassic
         self.parentNavigationController = parentNavigationController
         
         super.init(navigationBarPresentationData: nil)
@@ -53,6 +60,19 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
         self.ready.set(.never())
         
         self.accountInUseDisposable = context.sharedContext.setAccountUserInterfaceInUse(context.account.id)
+        self.activeAccountDisposable = (context.sharedContext.activeAccountContexts |> deliverOnMainQueue).start(next: { [weak self] value in
+            guard let self, self.accountIsValid else { return }
+            guard value.primary?.account.id == self.context.account.id else {
+                self.accountIsValid = false
+                self.fileDescriptionDisposable.set(nil)
+                self.uploadDisposable.set(nil)
+                if self.isNodeLoaded {
+                    self.controllerNode.invalidateExteralessPlayerAccount()
+                    self.dismiss()
+                }
+                return
+            }
+        })
     }
     
     required init(coder aDecoder: NSCoder) {
@@ -61,6 +81,9 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
     
     deinit {
         self.accountInUseDisposable?.dispose()
+        self.activeAccountDisposable?.dispose()
+        self.fileDescriptionDisposable.dispose()
+        self.uploadDisposable.dispose()
     }
     
     override public func loadDisplayNode() {
@@ -75,25 +98,25 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                 self?.dismiss()
             },
             requestShare: { [weak self] subject in
-                if let strongSelf = self {
+                if let strongSelf = self, strongSelf.accountIsValid {
                     var canShowInChat = false
                     if case .messages = subject {
                         canShowInChat = true
                     }
                     let shareController = strongSelf.context.sharedContext.makeShareScreen(context: strongSelf.context, params: ShareControllerParams(subject: subject, showInChat: canShowInChat ? { message in
-                        if let strongSelf = self {
+                        if let strongSelf = self, strongSelf.accountIsValid {
                             strongSelf.context.sharedContext.navigateToChat(accountId: strongSelf.context.account.id, peerId: message.id.peerId, messageId: message.id)
                             strongSelf.dismiss()
                         }
                     } : nil, externalShare: true, completed: { [weak self] peerIds in
-                        if let strongSelf = self {
+                        if let strongSelf = self, strongSelf.accountIsValid {
                             let _ = (strongSelf.context.engine.data.get(
                                 EngineDataList(
                                     peerIds.map(TelegramEngine.EngineData.Item.Peer.Peer.init)
                                 )
                             )
                                      |> deliverOnMainQueue).startStandalone(next: { [weak self] peerList in
-                                if let strongSelf = self {
+                                if let strongSelf = self, strongSelf.accountIsValid {
                                     let peers = peerList.compactMap { $0 }
                                     let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
 
@@ -146,14 +169,14 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                 }
             },
             requestSearchByArtist: { [weak self] artist in
-                guard let self else {
+                guard let self, self.accountIsValid else {
                     return
                 }
                 self.context.sharedContext.openSearch(filter: .music, query: artist)
                 self.dismiss()
             },
             requestAdd: { [weak self] in
-                guard let self, let navigationController = self.parentNavigationController else {
+                guard let self, self.accountIsValid, let navigationController = self.parentNavigationController else {
                     return
                 }
                 var dismissImpl: (() -> Void)?
@@ -161,19 +184,19 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                     context: self.context,
                     mode: .audio(.savedMusic),
                     presentFiles: { [weak self] in
-                        guard let self else {
+                        guard let self, self.accountIsValid else {
                             return
                         }
                         dismissImpl?()
                         let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
                         let controller = legacyICloudFilePicker(theme: presentationData.theme, mode: .default, documentTypes: ["public.mp3", "public.mpeg-4-audio", "public.aac-audio", "org.xiph.flac"], completion: { [weak self] urls in
-                            guard let self, let url = urls.first else {
+                            guard let self, self.accountIsValid, let url = urls.first else {
                                 return
                             }
                             
-                            let _ = (iCloudFileDescription(url)
+                            self.fileDescriptionDisposable.set((iCloudFileDescription(url)
                             |> deliverOnMainQueue).start(next: { [weak self] item in
-                                guard let self, let item else {
+                                guard let self, self.accountIsValid, let item else {
                                     return
                                 }
                                 let fileId = Int64.random(in: Int64.min ... Int64.max)
@@ -190,7 +213,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                 
                                 let file = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: fileId), partialReference: nil, resource: ICloudFileResource(urlData: item.urlData, thumbnail: false), previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: Int64(item.fileSize), attributes: attributes, alternativeRepresentations: [])
                                 
-                                let _ = (standaloneUploadedFile(
+                                self.uploadDisposable.set((standaloneUploadedFile(
                                     postbox: self.context.account.postbox,
                                     network: self.context.account.network,
                                     peerId: self.context.account.peerId,
@@ -202,7 +225,7 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                     hintFileIsLarge: false
                                 )
                                 |> deliverOnMainQueue).start(next: { [weak self] value in
-                                    guard let self else {
+                                    guard let self, self.accountIsValid else {
                                         return
                                     }
                                     switch value {
@@ -211,19 +234,19 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
                                         case let .media(resultMedia):
                                             if let resultFile = resultMedia.media as? TelegramMediaFile {
                                                 self.context.engine.resources.moveResourceData(from: EngineMediaResource.Id(file.resource.id), to: EngineMediaResource.Id(resultFile.resource.id), synchronous: true)
-                                                self.controllerNode.addToSavedMusic(file: .standalone(media: file))
+                                                self.controllerNode.addToSavedMusic(file: .standalone(media: resultFile))
                                             }
                                         }
                                     default:
                                         break
                                     }
-                                })
-                            })
+                                }))
+                            }))
                         })
                         self.present(controller, in: .window(.root))
                     },
                     send: { [weak self] mediaReferences, _, _, _ in
-                        guard let self, let reference = mediaReferences.first?.concrete(TelegramMediaFile.self) else {
+                        guard let self, self.accountIsValid, let reference = mediaReferences.first?.concrete(TelegramMediaFile.self) else {
                             return
                         }
                         self.controllerNode.addToSavedMusic(file: reference)
@@ -237,7 +260,8 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
             },
             getParentController: { [weak self] in
                 return self
-            }
+            },
+            forceClassic: self.forceClassic
         )
         
         self.ready.set(self.controllerNode.ready.get())
@@ -256,6 +280,21 @@ final class OverlayAudioPlayerControllerImpl: ViewController, OverlayAudioPlayer
             self.animatedIn = true
             self.controllerNode.animateIn()
         }
+    }
+
+    override public func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        guard self.accountIsValid else {
+            self.controllerNode.invalidateExteralessPlayerAccount()
+            self.dismiss()
+            return
+        }
+        self.controllerNode.setExteralessPlayerVisible(true)
+    }
+
+    override public func viewWillDisappear(_ animated: Bool) {
+        self.controllerNode.setExteralessPlayerVisible(false)
+        super.viewWillDisappear(animated)
     }
     
     override public func dismiss(completion: (() -> Void)? = nil) {

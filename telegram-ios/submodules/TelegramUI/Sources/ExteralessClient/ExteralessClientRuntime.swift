@@ -14,12 +14,13 @@ enum ExteralessClientPreparationState: Equatable {
 }
 
 private enum ExteralessClientWorkError: Error, Sendable {
-    case settings, privateSettings, changedRoot, retiredContext
+    case settings, fontFamilies, privateSettings, changedRoot, retiredContext
     case clientAPI(ClientAPIError)
 
     var message: String {
         switch self {
         case .settings: return "Client settings could not be prepared. The saved file has been preserved. Repair storage or free space, then retry."
+        case .fontFamilies: return "The bundled interface fonts could not be loaded."
         case .privateSettings: return "Private account settings could not be loaded. Unlock the device, then retry."
         case .changedRoot: return "The application's settings container changed. Restart with the original provisioned container."
         case .retiredContext: return "The account context changed before the operation completed."
@@ -52,12 +53,13 @@ private final class ExteralessClientSettingsWorker: @unchecked Sendable {
     private var configuration: ClientAPIConfigurationStore?
 
     private static var definitions: [ClientSettingDefinition] {
-        return AppearanceFeatures.definitions + ChatFeatures.definitions + FeedFeatures.definitions
+        return AppearanceFeatures.definitions + ChatFeatures.definitions + ChatSwipeFeatures.definitions + FeedFeatures.definitions
             + PlayerFeatures.definitions + PlayerFeatures.galleryDefinitions + PillFeatures.definitions
             + PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions + DialogFeatures.definitions
             + AIFeatures.definitions + ToolsFeatures.definitions + NewNetworkFeatures.definitions + MapFeatures.definitions
             + StickerFeatures.definitions + IdentityFeatures.definitions + RetentionFeatures.definitions
             + NewCloudFeatures.definitions + ClientAPIFeatures.definitions
+            + ToolsPerformancePolicy.definitions
             + ExteraConfigCompatibility.definitions
     }
 
@@ -67,6 +69,9 @@ private final class ExteralessClientSettingsWorker: @unchecked Sendable {
             var failure = ExteralessClientWorkError.settings
             do {
                 if let preparedInput = self.preparedInput, preparedInput != input { throw ExteralessClientWorkError.changedRoot }
+                failure = .fontFamilies
+                try ExteralessFontFamily.prepare()
+                failure = .settings
                 if let configuration = self.configuration {
                     if reload {
                         try ClientSettings.shared.reload()

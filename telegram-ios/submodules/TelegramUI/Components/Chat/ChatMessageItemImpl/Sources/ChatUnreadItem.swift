@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramCore
 import AsyncDisplayKit
@@ -153,7 +154,10 @@ public class ChatUnreadItemNode: ListViewItemNode {
             let string = item.presentationData.strings.Conversation_UnreadMessages
             let (size, apply) = labelLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: string, font: titleFont, textColor: item.presentationData.theme.theme.chat.serviceMessage.unreadBarTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - params.leftInset - params.rightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
-            let backgroundSize = CGSize(width: params.width, height: 25.0)
+            let capsule = ClientSettings.shared.bool("chats.unreadCapsule")
+            let availableWidth = max(0, params.width - params.leftInset - params.rightInset)
+            let backgroundSize = CGSize(width: capsule ? min(availableWidth, size.size.width + 24) : params.width, height: 25.0)
+            let backgroundFrame = CGRect(x: capsule ? params.leftInset + floorToScreenPixels((availableWidth - backgroundSize.width) / 2) : 0, y: 0, width: backgroundSize.width, height: backgroundSize.height)
             
             return (ListViewItemNodeLayout(contentSize: CGSize(width: params.width, height: 25.0), insets: UIEdgeInsets(top: 6.0 + (dateAtBottom ? layoutConstants.timestampHeaderHeight : 0.0), left: 0.0, bottom: 5.0, right: 0.0)), { animation in
                 if let strongSelf = self {
@@ -169,9 +173,11 @@ public class ChatUnreadItemNode: ListViewItemNode {
                     strongSelf.activateArea.frame = CGRect(origin: CGPoint(x: params.leftInset, y: 0.0), size: backgroundSize)
                     strongSelf.activateArea.accessibilityLabel = string
                     
-                    strongSelf.backgroundNode.frame = CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: backgroundSize)
+                    animation.animator.updateFrame(layer: strongSelf.backgroundNode.layer, frame: backgroundFrame, completion: nil)
+                    strongSelf.backgroundNode.cornerRadius = capsule ? 12.5 : 0
+                    strongSelf.backgroundNode.clipsToBounds = capsule
                     
-                    let labelFrame = CGRect(origin: CGPoint(x: params.leftInset + floorToScreenPixels((backgroundSize.width - params.leftInset - params.rightInset - size.size.width) / 2.0), y: floorToScreenPixels((backgroundSize.height - size.size.height) / 2.0)), size: size.size)
+                    let labelFrame = CGRect(origin: CGPoint(x: capsule ? backgroundFrame.minX + floorToScreenPixels((backgroundSize.width - size.size.width) / 2) : params.leftInset + floorToScreenPixels((backgroundSize.width - params.leftInset - params.rightInset - size.size.width) / 2.0), y: floorToScreenPixels((backgroundSize.height - size.size.height) / 2.0)), size: size.size)
                     animation.animator.updatePosition(layer: strongSelf.labelNode.layer, position: labelFrame.center, completion: nil)
                     strongSelf.labelNode.bounds = CGRect(origin: CGPoint(), size: labelFrame.size)
                     
@@ -190,6 +196,7 @@ public class ChatUnreadItemNode: ListViewItemNode {
                     if let backgroundContent = strongSelf.backgroundContent {
                         strongSelf.backgroundNode.isHidden = true
                         backgroundContent.frame = strongSelf.backgroundNode.frame
+                        backgroundContent.cornerRadius = capsule ? 12.5 : 0
                         if let (rect, containerSize) = strongSelf.absolutePosition {
                             strongSelf.updateAbsoluteRect(rect, within: containerSize)
                         }

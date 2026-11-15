@@ -437,7 +437,10 @@ func synchronizePeerReadState(network: Network, postbox: Postbox, stateManager: 
 
     return keepsReadState
     |> mapToSignal { keepsReadState -> Signal<Never, PeerReadStateValidationError> in
-        if !keepsReadState {
+        if !keepsReadState || !exteralessAllowsMessageRead(network: network, peerId: peerId) {
+            // Keep the already-applied local read mark. Confirm the persisted operation;
+            // neither pushing a fake PTS nor validating against the intentionally older
+            // server read mark is meaningful in ghost mode.
             return confirmSynchronized(postbox: postbox, peerId: peerId)
             |> ignoreValues
         }

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import PasscodeCore
 import UserNotifications
 import SwiftSignalKit
@@ -496,6 +497,8 @@ private func peerAvatar(mediaBox: MediaBox, accountPeerId: PeerId, peer: Peer, i
 
 @available(iOSApplicationExtension 10.0, iOS 10.0, *)
 private struct NotificationContent: CustomStringConvertible {
+    var extrasGate: ExteralessPrivacyExtrasNotificationGate?
+    var extrasAccount: PrivacyExtrasAccountIdentity?
     var lottieSettings: LottieRenderingSettings = .noAccountFallback
     struct CustomEmoji {
         var range: Range<Int>
@@ -540,21 +543,7 @@ private struct NotificationContent: CustomStringConvertible {
     }
 
     var description: String {
-        var string = "{"
-        string += " title: \(String(describing: self.title))\n"
-        string += " subtitle: \(String(describing: self.subtitle))\n"
-        string += " body: \(String(describing: self.body)),\n"
-        string += " threadId: \(String(describing: self.threadId)),\n"
-        string += " sound: \(String(describing: self.sound)),\n"
-        string += " badge: \(String(describing: self.badge)),\n"
-        string += " category: \(String(describing: self.category)),\n"
-        string += " userInfo: \(String(describing: self.userInfo)),\n"
-        string += " senderImage: \(self.senderImage != nil ? "non-empty" : "empty"),\n"
-        string += " isLockedMessage: \(String(describing: self.isLockedMessage)),\n"
-        string += " attachments: \(self.attachments),\n"
-        string += " resolvedEmojiFiles: \(self.resolvedEmojiFiles.count) files,\n"
-        string += "}"
-        return string
+        return "{content: redacted, locked: \(self.isLockedMessage != nil), attachments: \(self.attachments.count)}"
     }
 
     mutating func addSenderInfo(mediaBox: MediaBox, accountPeerId: PeerId, peer: Peer, topicTitle: String?, contactIdentifier: String?, isStory: Bool) {
@@ -614,7 +603,26 @@ private struct NotificationContent: CustomStringConvertible {
     }
 
     func generate() -> UNNotificationContent {
+        if let extrasGate = self.extrasGate, !extrasGate.canPresent { return UNMutableNotificationContent() }
+        let includeBadge: Bool
+        if let extrasAccount = self.extrasAccount {
+            let policy = ExteralessFilteringRuntime.shared.policy(extrasAccount)
+            // The extension has no complete filtered account total. Do not send
+            // its native, unprojected count as a filtered numeric badge.
+            includeBadge = !policy.hasSenderFilters && !policy.configuration.regexFiltersEnabled
+        } else {
+            includeBadge = false
+        }
         var content = UNMutableNotificationContent()
+        if let lockedMessage = self.isLockedMessage {
+            if self.title?.isEmpty == false || self.subtitle?.isEmpty == false || self.body?.isEmpty == false { content.body = lockedMessage }
+            content.categoryIdentifier = "unknown"
+            content.userInfo = self.userInfo
+            content.threadIdentifier = self.threadId ?? ""
+            if includeBadge, let badge = self.badge { content.badge = NSNumber(value: badge) }
+            if let sound = self.sound { content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: sound)) }
+            return content
+        }
         
         //Logger.shared.log("NotificationService", "Generating final content: \(self.description)")
 
@@ -682,7 +690,7 @@ private struct NotificationContent: CustomStringConvertible {
         if let sound = self.sound {
             content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: sound))
         }
-        if let badge = self.badge {
+        if includeBadge, let badge = self.badge {
             content.badge = badge as NSNumber
         }
         if let category = self.category {
@@ -703,7 +711,7 @@ private struct NotificationContent: CustomStringConvertible {
 
                 let interaction = INInteraction(intent: donatedIntent, response: nil)
                 interaction.direction = .incoming
-                interaction.donate(completion: nil)
+                if PrivacyPolicy.current.contentCapture { interaction.donate(completion: nil) }
 
                 // The system draws the notification from the intent it is updated from, not the
                 // donated one, so only the drawn copy names the recipient account. The title is
@@ -757,6 +765,7 @@ private func getCurrentRenderedTotalUnreadCount(accountManager: AccountManager<T
 @available(iOSApplicationExtension 10.0, iOS 10.0, *)
 private final class NotificationServiceHandler {
     private let queue: Queue
+    private let startup: ExteralessStateManagerStartupLifetime
     private let accountManager: AccountManager<TelegramAccountManagerTypes>
     private let encryptionParameters: ValueBoxEncryptionParameters
     private var stateManager: AccountStateManager?
@@ -767,9 +776,17 @@ private final class NotificationServiceHandler {
     // budget started ticking; the connection deadline on the poll path counts from here.
     private let startTimestamp = CFAbsoluteTimeGetCurrent()
 
-    init?(queue: Queue, episode: String, updateCurrentContent: @escaping (NotificationContent) -> Void, completed: @escaping () -> Void, requestIdentifier: String, payload: [AnyHashable: Any]) {
+    init?(queue: Queue, episode: String, extrasGate: ExteralessPrivacyExtrasNotificationGate, startup: ExteralessStateManagerStartupLifetime, updateCurrentContent updateContent: @escaping (NotificationContent) -> Void, completed: @escaping () -> Void, requestIdentifier: String, payload: [AnyHashable: Any]) {
         //debug_linker_fail_test()
         self.queue = queue
+        self.startup = startup
+        guard !startup.isDisposed else { return nil }
+        let extrasAccount = Atomic<PrivacyExtrasAccountIdentity?>(value: nil)
+        let updateCurrentContent: (NotificationContent) -> Void = { value in
+            var value = value
+            value.extrasAccount = extrasAccount.with { $0 }
+            updateContent(value)
+        }
 
         // In the extension, database BEGIN/COMMIT/step failures must crash (the system then
         // falls back to displaying the unmodified push) instead of failing silently: silent
@@ -797,6 +814,23 @@ private final class NotificationServiceHandler {
         }
 
         let rootPath = rootPathForBasePath(appGroupUrl.path)
+        guard exteralessReloadNotificationPrivacyExtras() else {
+            ExteralessAccountRetentionEnvironment.shared.setUnavailable()
+            return nil
+        }
+        do {
+            try ClientSettings.shared.register(ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions)
+            try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+            try ExteralessAccountRetentionEnvironment.shared.configure(ExteralessRetentionProcessConfiguration(
+                role: .notificationService, snapshot: ClientSettings.shared.readSnapshot(), durabilityRootURL: appGroupUrl))
+            let configuration = ClientAPIConfigurationStore(settings: .shared, settingsSecrets: ClientSecrets.systemStore(),
+                vault: ClientAPIVault(storage: ClientAPIKeychain.storage(accessGroup: try PasscodeEnvironment.shared.sharedAccessGroup())))
+            try ExteralessClientAPIEnvironment.shared.configure(builtinApiId: apiId, builtinApiHash: apiHash, configuration: configuration)
+        } catch {
+            ExteralessAccountRetentionEnvironment.shared.setUnavailable()
+            return nil
+        }
+        let notificationPrivacy = exteralessNotificationPrivacySettings(root: URL(fileURLWithPath: rootPath))
 
         TempBox.initializeShared(basePath: rootPath, processType: "notification", launchSpecificId: Int64.random(in: Int64.min ... Int64.max))
 
@@ -845,7 +879,7 @@ private final class NotificationServiceHandler {
         
         let isLockedMessage: String?
         let isLockedStoryMessage: String?
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: appLockStatePath(rootPath: rootPath))), let state = try? JSONDecoder().decode(LockState.self, from: data), isAppLocked(state: state) {
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: appLockStatePath(rootPath: rootPath))), let state = try? JSONDecoder().decode(LockState.self, from: data), isAppLocked(state: state), !notificationPrivacy.showNotificationPreviewWhenLocked {
             if let notificationsPresentationData = try? Data(contentsOf: URL(fileURLWithPath: notificationsPresentationDataPath(rootPath: rootPath))), let notificationsPresentationDataValue = try? JSONDecoder().decode(NotificationsPresentationData.self, from: notificationsPresentationData) {
                 isLockedMessage = notificationsPresentationDataValue.applicationLockedMessageString
                 isLockedStoryMessage = notificationsPresentationDataValue.applicationLockedStoryString ?? notificationsPresentationDataValue.applicationLockedMessageString
@@ -881,7 +915,7 @@ private final class NotificationServiceHandler {
             return nil
         }
 
-        let _ = (combineLatest(queue: self.queue,
+        self.startup.start({ _ in combineLatest(queue: self.queue,
             self.accountManager.accountRecords(),
             self.accountManager.sharedData(keys: [
                 ApplicationSpecificSharedDataKeys.inAppNotificationSettings,
@@ -891,7 +925,7 @@ private final class NotificationServiceHandler {
             ])
         )
         |> take(1)
-        |> deliverOn(self.queue)).start(next: { [weak self] records, sharedData in
+        |> deliverOn(self.queue) }, next: { [weak self] records, sharedData in
             var recordId: AccountRecordId?
             var isCurrentAccount: Bool = false
             
@@ -938,17 +972,25 @@ private final class NotificationServiceHandler {
                 return
             }
 
-            let _ = (standaloneStateManager(
+            strongSelf.startup.start({ token in standaloneStateManager(
                 accountManager: strongSelf.accountManager,
                 networkArguments: networkArguments,
                 id: recordId,
                 encryptionParameters: strongSelf.encryptionParameters,
                 rootPath: rootPath,
-                auxiliaryMethods: accountAuxiliaryMethods
+                auxiliaryMethods: accountAuxiliaryMethods,
+                startupToken: token
             )
-            |> deliverOn(strongSelf.queue)).start(next: { stateManager in
+            |> deliverOn(strongSelf.queue) }, next: { result in
                 guard let strongSelf = self else {
                     return
+                }
+                let stateManager: AccountStateManager?
+                switch result {
+                case let .success(value): stateManager = value
+                case let .failure(error):
+                    Logger.shared.log("NotificationService \(episode)", "Retention startup failed: \(error)")
+                    stateManager = nil
                 }
                 guard let stateManager = stateManager else {
                     Logger.shared.log("NotificationService \(episode)", "Didn't receive stateManager")
@@ -961,6 +1003,15 @@ private final class NotificationServiceHandler {
                 strongSelf.stateManager = stateManager
                 
                 let accountPeerId = stateManager.accountPeerId
+                let extrasIdentity = PrivacyExtrasAccountIdentity(recordId: recordId.int64,
+                    userId: accountPeerId.id._internalGetInt64Value(),
+                    testingEnvironment: stateManager.network.context.isTestingEnvironment)
+                let _ = extrasAccount.swap(extrasIdentity)
+                extrasGate.bind(account: extrasIdentity)
+                let extrasPolicy = ExteralessFilteringRuntime.shared.policy(extrasIdentity)
+                if !extrasPolicy.hasSenderFilters && !extrasPolicy.configuration.regexFiltersEnabled {
+                    extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
+                }
                 
                 let settings = stateManager.postbox.transaction { transaction -> NotificationSoundList? in
                     return _internal_cachedNotificationSoundList(transaction: transaction)
@@ -1031,7 +1082,7 @@ private final class NotificationServiceHandler {
                         return
                     }
 
-                    Logger.shared.log("NotificationService \(episode)", "Decrypted payload: \(payloadJson)")
+                    Logger.shared.log("NotificationService \(episode)", "Payload decrypted")
 
                     var peerId: PeerId?
                     var messageId: MessageId.Id?
@@ -1310,7 +1361,7 @@ private final class NotificationServiceHandler {
                             }
 
                             if let threadId = aps["thread-id"] as? String {
-                                content.threadId = threadId
+                                content.threadId = "\(recordId.int64):\(threadId)"
                             }
                             if let topicIdValue = payloadJson["topic_id"] as? String, let topicId = Int(topicIdValue) {
                                 if let threadId = content.threadId {
@@ -1419,6 +1470,7 @@ private final class NotificationServiceHandler {
                     if let action = action {
                         switch action {
                         case let .call(callData):
+                            extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
                             if let stateManager = strongSelf.stateManager {
                                 let content = NotificationContent(isLockedMessage: nil)
                                 updateCurrentContent(content)
@@ -1430,6 +1482,11 @@ private final class NotificationServiceHandler {
                                         return nil
                                     }
                                 }).start(next: { phoneNumber in
+                                    guard exteralessReloadNotificationPrivacyExtras(), ExteralessHiddenAccounts.shared.shouldNotify(extrasIdentity) else {
+                                        completed()
+                                        return
+                                    }
+                                    extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
                                     var voipPayload: [AnyHashable: Any] = [
                                         "call_id": "\(callData.id)",
                                         "call_ah": "\(callData.accessHash)",
@@ -1467,6 +1524,7 @@ private final class NotificationServiceHandler {
                                 })
                             }
                         case let .groupCall(groupCallData):
+                            extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
                             if let stateManager = strongSelf.stateManager {
                                 let content = NotificationContent(isLockedMessage: nil)
                                 updateCurrentContent(content)
@@ -1474,6 +1532,11 @@ private final class NotificationServiceHandler {
                                 let _ = (stateManager.postbox.transaction { transaction -> TelegramUser? in
                                     return transaction.getPeer(groupCallData.fromId) as? TelegramUser
                                 }).start(next: { fromPeer in
+                                    guard exteralessReloadNotificationPrivacyExtras(), ExteralessHiddenAccounts.shared.shouldNotify(extrasIdentity) else {
+                                        completed()
+                                        return
+                                    }
+                                    extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
                                     var voipPayload: [AnyHashable: Any] = [
                                         "group_call_id": "\(groupCallData.id)",
                                         "msg_id": "\(groupCallData.messageId)",
@@ -2083,6 +2146,10 @@ private final class NotificationServiceHandler {
                                 let pollWithUpdatedContent: Signal<(NotificationContent, Media?), NoError>
                                 if interactionAuthorId != nil || messageId != nil {
                                     pollWithUpdatedContent = stateManager.postbox.transaction { transaction -> (NotificationContent, Media?) in
+                                        exteralessPrivacyExtrasEvaluateNotification(gate: extrasGate, account: extrasIdentity,
+                                            transaction: transaction, peerId: peerId, messageId: messageId,
+                                            actorId: interactionAuthorId,
+                                            oauthNotification: (payloadJson["loc-key"] as? String) == "OAUTH_REQUEST")
                                         var content = initialContent
                                         
                                         if let interactionAuthorId = interactionAuthorId {
@@ -2140,6 +2207,10 @@ private final class NotificationServiceHandler {
                                     |> takeLast
                                     |> mapToSignal { content, _ -> Signal<(NotificationContent, Media?), NoError> in
                                         return stateManager.postbox.transaction { transaction -> (NotificationContent, Media?) in
+                                            exteralessPrivacyExtrasEvaluateNotification(gate: extrasGate, account: extrasIdentity,
+                                                transaction: transaction, peerId: peerId, messageId: messageId,
+                                                actorId: interactionAuthorId,
+                                                oauthNotification: (payloadJson["loc-key"] as? String) == "OAUTH_REQUEST")
                                             var content = content
                                             
                                             var parsedMedia: Media?
@@ -2209,6 +2280,7 @@ private final class NotificationServiceHandler {
                                 completed()
                             }
                         case let .pollStories(peerId, initialContent, storyId, isReaction):
+                            extrasGate.update(.allow, generation: ExteralessFilteringRuntime.shared.generation)
                             Logger.shared.log("NotificationService \(episode)", "Will poll stories for \(peerId) isReaction: \(isReaction)")
                             if let stateManager = strongSelf.stateManager {
                                 let pollCompletion: (NotificationContent) -> Void = { content in
@@ -2490,6 +2562,7 @@ private final class NotificationServiceHandler {
                                 UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
                                     var removeIdentifiers: [String] = []
                                     for notification in notifications {
+                                        guard notification.request.content.userInfo["accountId"] as? String == "\(recordId.int64)" else { continue }
                                         if let peerIdString = notification.request.content.userInfo["peerId"] as? String, let peerIdValue = Int64(peerIdString), let messageIdString = notification.request.content.userInfo["msg_id"] as? String, let messageIdValue = Int32(messageIdString) {
                                             for id in ids {
                                                 if PeerId(peerIdValue) == id.peerId && messageIdValue == id.id {
@@ -2537,6 +2610,7 @@ private final class NotificationServiceHandler {
                             UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
                                 var removeIdentifiers: [String] = []
                                 for notification in notifications {
+                                    guard notification.request.content.userInfo["accountId"] as? String == "\(recordId.int64)" else { continue }
                                     if notification.request.content.categoryIdentifier != "t" {
                                         continue
                                     }
@@ -2575,17 +2649,11 @@ private final class NotificationServiceHandler {
                             }
                             |> deliverOn(strongSelf.queue)).start(completed: {
                                 UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
-                                    let notificationDebugList = notifications.map { notification -> String in
-                                        if let peerIdString = notification.request.content.userInfo["peerId"] as? String, let peerIdValue = Int64(peerIdString), let messageIdString = notification.request.content.userInfo["msg_id"] as? String, let messageIdValue = Int32(messageIdString) {
-                                            return "peerId: \(peerIdValue), messageId: \(messageIdValue)"
-                                        } else {
-                                            return "unknown: \(String(describing: notification.request.content.userInfo))"
-                                        }
-                                    }.joined(separator: "\n")
-                                    Logger.shared.log("NotificationService \(episode)", "Filtering delivered notifications: \(notificationDebugList)")
+                                    Logger.shared.log("NotificationService \(episode)", "Filtering delivered notifications: \(notifications.count)")
                                     
                                     var removeIdentifiers: [String] = []
                                     for notification in notifications {
+                                        guard notification.request.content.userInfo["accountId"] as? String == "\(recordId.int64)" else { continue }
                                         if let peerIdString = notification.request.content.userInfo["peerId"] as? String, let peerIdValue = Int64(peerIdString), let messageIdString = notification.request.content.userInfo["msg_id"] as? String, let messageIdValue = Int32(messageIdString) {
                                             if PeerId(peerIdValue) == id.peerId && messageIdValue <= id.id {
                                                 removeIdentifiers.append(notification.request.identifier)
@@ -2635,6 +2703,7 @@ private final class NotificationServiceHandler {
                                 UNUserNotificationCenter.current().getDeliveredNotifications(completionHandler: { notifications in
                                     var removeIdentifiers: [String] = []
                                     for notification in notifications {
+                                        guard notification.request.content.userInfo["accountId"] as? String == "\(recordId.int64)" else { continue }
                                         if let peerIdString = notification.request.content.userInfo["peerId"] as? String, let peerIdValue = Int64(peerIdString), let messageIdString = notification.request.content.userInfo["story_id"] as? String, let messageIdValue = Int32(messageIdString) {
                                             if PeerId(peerIdValue) == peerId && messageIdValue <= maxId {
                                                 removeIdentifiers.append(notification.request.identifier)
@@ -2673,6 +2742,8 @@ private final class NotificationServiceHandler {
     }
 
     deinit {
+        self.startup.dispose()
+        self.notificationKeyDisposable.dispose()
         self.pollDisposable.dispose()
         self.stateManager?.network.shouldKeepConnection.set(.single(false))
     }
@@ -2688,61 +2759,98 @@ private final class BoxedNotificationServiceHandler {
 }
 
 @available(iOSApplicationExtension 10.0, iOS 10.0, *)
+private final class ExteralessNotificationDelivery {
+    let id = UUID()
+    let extrasGate = ExteralessPrivacyExtrasNotificationGate()
+    let startup = ExteralessStateManagerStartupLifetime()
+    let initialContent: UNNotificationContent
+    let content = Atomic<NotificationContent?>(value: nil)
+    let isFinished = Atomic(value: false)
+    private let completion: PrivacyCompletion<(UNNotificationContent, PrivacyNotificationDiagnostics.ExtensionReport.Stage)>
+
+    init(initialContent: UNNotificationContent, completion: @escaping (UNNotificationContent) -> Void) {
+        self.initialContent = initialContent
+        self.completion = PrivacyCompletion { content, stage in
+            if let root = exteralessNotificationRoot() {
+                let accountId = (content.userInfo["accountId"] as? String).flatMap(Int64.init)
+                try? PrivacyNotificationDiagnostics.writeExtensionReport(.init(stage: stage, accountId: accountId), root: root)
+            }
+            completion(content)
+        }
+    }
+
+    func finish(expired: Bool = false) {
+        self.startup.dispose()
+        guard !self.isFinished.swap(true) else { return }
+        let extrasAvailable = exteralessReloadNotificationPrivacyExtras()
+        let generated: UNNotificationContent = extrasAvailable && self.extrasGate.canPresent
+            ? (self.content.with { $0 }?.generate() ?? self.initialContent)
+            : UNMutableNotificationContent()
+        // Recheck the shared lock state at delivery as well as at decoding time.
+        let (candidate, redacted) = exteralessNotificationPrivacyFallback(generated)
+        let content: UNNotificationContent = extrasAvailable && self.extrasGate.canPresent ? candidate : UNMutableNotificationContent()
+        let stage: PrivacyNotificationDiagnostics.ExtensionReport.Stage
+        if expired { stage = .expired }
+        else if content.title.isEmpty && content.subtitle.isEmpty && content.body.isEmpty { stage = .suppressed }
+        else if redacted || self.content.with({ $0?.isLockedMessage != nil }) { stage = .redacted }
+        else { stage = .displayed }
+        self.completion.finish((content, stage))
+    }
+}
+
+@available(iOSApplicationExtension 10.0, iOS 10.0, *)
 @objc(NotificationService)
 final class NotificationService: UNNotificationServiceExtension {
-    private var impl: QueueLocalObject<BoxedNotificationServiceHandler>?
-
-    private var initialContent: UNNotificationContent?
-    private let content = Atomic<NotificationContent?>(value: nil)
-    private var contentHandler: ((UNNotificationContent) -> Void)?
-    private var episode: String?
+    private let impl = Atomic<(UUID, QueueLocalObject<BoxedNotificationServiceHandler>)?>(value: nil)
+    private let currentDelivery = Atomic<ExteralessNotificationDelivery?>(value: nil)
     
     override init() {
         super.init()
     }
+
+    deinit {
+        self.currentDelivery.swap(nil)?.startup.dispose()
+        let _ = self.impl.swap(nil)
+    }
     
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         let episode = String(UInt32.random(in: 0 ..< UInt32.max), radix: 16)
-        self.episode = episode
-        
-        self.initialContent = request.content
-        self.contentHandler = contentHandler
-
-        self.impl = nil
-
-        let content = self.content
-
-        self.impl = QueueLocalObject(queue: queue, generate: { [weak self] in
-            return BoxedNotificationServiceHandler(value: NotificationServiceHandler(
+        let delivery = ExteralessNotificationDelivery(initialContent: request.content, completion: contentHandler)
+        self.currentDelivery.swap(delivery)?.finish()
+        let _ = self.impl.swap(nil)
+        let holder = QueueLocalObject(queue: queue, generate: { [weak self] in
+            guard !delivery.isFinished.with({ $0 }) else { return BoxedNotificationServiceHandler(value: nil) }
+            let handler = NotificationServiceHandler(
                 queue: queue,
                 episode: episode,
+                extrasGate: delivery.extrasGate,
+                startup: delivery.startup,
                 updateCurrentContent: { value in
-                    let _ = content.swap(value)
+                    var value = value
+                    value.extrasGate = delivery.extrasGate
+                    if !delivery.isFinished.with({ $0 }) { let _ = delivery.content.swap(value) }
                 },
                 completed: {
-                    guard let strongSelf = self else {
-                        return
-                    }
-                    strongSelf.impl = nil
-
-                    if let contentHandler = strongSelf.contentHandler {
-                        Logger.shared.log("NotificationService \(episode)", "Complete handling notification")
-                        
-                        strongSelf.contentHandler = nil
-                        
-                        if let content = content.with({ $0 }) {
-                            contentHandler(content.generate())
-                        } else if let initialContent = strongSelf.initialContent {
-                            contentHandler(initialContent)
-                        }
-                    } else {
-                        Logger.shared.log("NotificationService \(episode)", "Attempted to repeatedly complete handling notification")
-                    }
+                    self?.complete(delivery: delivery)
+                    delivery.finish()
                 },
                 requestIdentifier: request.identifier,
                 payload: request.content.userInfo
-            ))
+            )
+            if handler == nil {
+                self?.complete(delivery: delivery)
+                delivery.finish()
+            }
+            return BoxedNotificationServiceHandler(value: handler)
         })
+        let _ = self.impl.swap((delivery.id, holder))
+        if delivery.isFinished.with({ $0 }) { self.complete(delivery: delivery) }
+    }
+
+    private func complete(delivery: ExteralessNotificationDelivery) {
+        delivery.startup.dispose()
+        let _ = self.currentDelivery.modify { current in current === delivery ? nil : current }
+        let _ = self.impl.modify { current in current?.0 == delivery.id ? nil : current }
     }
     
     override func serviceExtensionTimeWillExpire() {
@@ -2750,19 +2858,10 @@ final class NotificationService: UNNotificationServiceExtension {
         // poll (getDifference/state replay) and drops the keep-alive network connection.
         // Without this, that work keeps running after the system takes back control and
         // continues to consume CPU for as long as the extension process stays alive.
-        self.impl = nil
-
-        if let contentHandler = self.contentHandler {
-            self.contentHandler = nil
-            
-            Logger.shared.log("NotificationService \(self.episode ?? "???")", "Completing due to serviceExtensionTimeWillExpire")
-            
-            if let content = self.content.with({ $0 }) {
-                contentHandler(content.generate())
-            } else if let initialContent = self.initialContent {
-                contentHandler(initialContent)
-            }
-        }
+        let delivery = self.currentDelivery.swap(nil)
+        delivery?.startup.dispose()
+        let _ = self.impl.swap(nil)
+        delivery?.finish(expired: true)
     }
 }
 

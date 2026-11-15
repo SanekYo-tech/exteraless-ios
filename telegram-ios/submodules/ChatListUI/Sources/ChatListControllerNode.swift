@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -544,7 +545,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
         
         self.applyItemNodeAsCurrent(id: .all, itemNode: itemNode)
         
-        let panRecognizer = InteractiveTransitionGestureRecognizer(target: self, action: #selector(self.panGesture(_:)), allowedDirections: { [weak self] _ in
+        let panRecognizer = InteractiveTransitionGestureRecognizer(target: self, action: #selector(self.panGesture(_:)), allowedDirections: { [weak self] point in
             guard let self, self.availableFilters.count > 1 || (self.controller?.isStoryPostingAvailable == true && !(self.context.sharedContext.callManager?.hasActiveCall ?? false)) else {
                 return []
             }
@@ -560,6 +561,9 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 break
             }
             if !self.currentItemNode.isNavigationInAFinalState {
+                return []
+            }
+            guard exteralessChatSwipeAllowsPager(at: point, in: self.view, hasFilters: self.availableFilters.contains(where: { $0.filter != nil })) else {
                 return []
             }
             if self.currentItemNode.isDragging || self.currentItemNode.isDeceleratingAfterTracking {
@@ -1177,6 +1181,16 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     var navigationBar: NavigationBar?
     let navigationBarView = ComponentView<Empty>()
     weak var controller: ChatListControllerImpl?
+    private var exteralessPillHeader: (any ExteralessPillHeader)?
+    private var exteralessPillVisible = false
+
+    func setExteralessPillVisible(_ visible: Bool) {
+        self.exteralessPillVisible = visible
+        if !visible {
+            MainActor.assumeIsolated { self.exteralessPillHeader?.setVisible(false) }
+        }
+        self.controller?.requestLayout(transition: .immediate)
+    }
     
     private var toolbar: ComponentView<Empty>?
     var toolbarData: Toolbar?
@@ -1443,6 +1457,18 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     
     private func updateNavigationBar(layout: ContainerViewLayout, deferScrollApplication: Bool, transition: ComponentTransition) -> (navigationHeight: CGFloat, storiesInset: CGFloat) {
         let headerContent = self.controller?.updateHeaderContent()
+        var primaryContent = headerContent?.primaryContent
+        // Android's live folderNameAsTitle() derives from icons-only tabs; the
+        // similarly named old NaConfig boolean is not its source of truth.
+        if self.location == .chatList(groupId: .root), !self.isReorderingFilters,
+           !self.mainContainerNode.currentItemNode.currentState.editing,
+           ClientSettings.shared.integer("appearance.tabsTitleType") == 1,
+           let content = primaryContent, var title = content.chatListTitle, !title.activity,
+           let entry = self.controller?.tabContainerData?.0.first(where: { $0.id == self.mainContainerNode.currentItemFilter }),
+           case let .filter(_, folderTitle, _) = entry {
+            title.text = folderTitle.text
+            primaryContent = ChatListHeaderComponent.Content(title: content.title, titleComponent: content.titleComponent, chatListTitle: title, leftButton: content.leftButton, rightButtons: content.rightButtons, backPressed: content.backPressed, overflowInfo: content.overflowInfo)
+        }
         
         var panels: [HeaderPanelContainerComponent.Panel] = []
         if let chatListNotice = self.controller?.globalControlPanelsContextState?.chatListNotice {
@@ -1544,6 +1570,30 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             )
         }
         
+        MainActor.assumeIsolated {
+            if self.exteralessPillHeader == nil,
+               self.location == .chatList(groupId: .root), self.controller?.previewing == false {
+                self.exteralessPillHeader = ExteralessPillEntry.makeHeader(context: self.context, open: { [weak self] controller in
+                    self?.controller?.push(controller)
+                })
+                self.exteralessPillHeader?.heightUpdated = { [weak self] in
+                    // Invalidation is deferred until ComponentFlow measurement ends.
+                    DispatchQueue.main.async { [weak self] in self?.controller?.requestLayout(transition: .immediate) }
+                }
+            }
+            if let header = self.exteralessPillHeader {
+                let visible = self.exteralessPillVisible && self.isSearchDisplayControllerActive == nil
+                    && self.inlineStackContainerNode == nil && !self.isEditing && !self.isReorderingFilters
+                header.setVisible(visible)
+                let height = visible ? header.preferredHeight : 0
+                if height > 0 {
+                    panels.append(HeaderPanelContainerComponent.Panel(
+                        key: "exteraless.pills", orderIndex: 3,
+                        component: AnyComponent(ExteralessPillPanelComponent(header: header, height: height))
+                    ))
+                }
+            }
+        }
         var navigationHeaderPanels: AnyComponent<Empty>?
         if self.controller?.tabContainerData != nil || !panels.isEmpty {
             var tabs: AnyComponent<Empty>?
@@ -1576,11 +1626,13 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 }
                 
                 let isEditing = self.isReorderingFilters || (self.mainContainerNode.currentItemNode.currentState.editing && !self.didBeginSelectingChatsWhileEditing)
+                let hideAll = AppearanceControlPolicy.hidesAllChatsChip(enabled: ClientSettings.shared.bool("appearance.hideAllTab"), selectedIsAll: self.mainContainerNode.currentItemFilter == .all, isReordering: self.isReorderingFilters || isEditing, isTransitioning: abs(self.mainContainerNode.transitionFraction) > 0.001, hasCustomFolders: tabContainerData.0.contains { if case .filter = $0 { return true }; return false })
+                let visibleFolderTabs = tabContainerData.0.filter { !hideAll || $0.id != .all }
                 
                 tabs = AnyComponent(HorizontalTabsComponent(
                     context: self.context,
                     theme: self.presentationData.theme,
-                    tabs: tabContainerData.0.map { entry -> HorizontalTabsComponent.Tab in
+                    tabs: visibleFolderTabs.map { entry -> HorizontalTabsComponent.Tab in
                         let id: HorizontalTabsComponent.Tab.Id
                         let title: HorizontalTabsComponent.Tab.Title
                         var badge: HorizontalTabsComponent.Tab.Badge?
@@ -1588,11 +1640,14 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         switch entry {
                         case .all:
                             id = Int32.min
-                            title = HorizontalTabsComponent.Tab.Title(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
+                            let source = ChatFolderTitle(text: self.presentationData.strings.ChatList_Tabs_All, entities: [], enableAnimations: false)
+                            let display = exteralessFolderTitle(source, allChats: true)
+                            title = HorizontalTabsComponent.Tab.Title(text: display.text, entities: display.entities, enableAnimations: false, accessibilityTitle: self.presentationData.strings.ChatList_Tabs_AllChats)
                             isMainTab = true
                         case let .filter(idValue, text, unread):
                             id = AnyHashable(idValue)
-                            title = HorizontalTabsComponent.Tab.Title(text: text.text, entities: text.entities, enableAnimations: text.enableAnimations)
+                            let display = exteralessFolderTitle(text, allChats: false)
+                            title = HorizontalTabsComponent.Tab.Title(text: display.text, entities: display.entities, enableAnimations: display.enableAnimations, accessibilityTitle: text.text)
                             if unread.value != 0 {
                                 badge = HorizontalTabsComponent.Tab.Badge(
                                     title: "\(unread.value)",
@@ -1721,9 +1776,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 leftInset: layout.safeInsets.left,
                 rightInset: layout.safeInsets.right,
                 trailingButtonsInset: layout.navigationBarTrailingButtonsInset,
-                search: ChatListNavigationBar.Search(isEnabled: true),
+                search: !ClientSettings.shared.bool("appearance.hideDialogsSearchField") || self.isSearchDisplayControllerActive != nil || !ExteralessAppearanceEntry.isMainMenuAvailable(context: self.context) ? ChatListNavigationBar.Search(isEnabled: true) : nil,
                 activeSearch: self.isSearchDisplayControllerActive,
-                primaryContent: headerContent?.primaryContent,
+                primaryContent: primaryContent,
                 secondaryContent: headerContent?.secondaryContent,
                 secondaryTransition: self.inlineStackContainerTransitionFraction,
                 storySubscriptions: effectiveStorySubscriptions,
@@ -2517,6 +2572,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 }
 
 func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
+    if ClientSettings.shared.bool("appearance.hideStoriesFromHeader", default: true) { return false }
     if !storySubscriptions.items.isEmpty {
         return true
     }

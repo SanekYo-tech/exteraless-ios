@@ -1,0 +1,2 @@
+# CPython 3.12, macOS arm64 wheel only. Build/analysis tool, never app payload.
+Pillow==11.3.0 --hash=sha256:921bd305b10e82b4d1f5e802b6850677f965d8394203d182f078873851dada69

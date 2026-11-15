@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import SwiftSignalKit
@@ -102,8 +103,8 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
             keys.append(.basicPeer(peerId))
         }
         
-        return context.account.postbox.combinedView(keys: keys)
-        |> map { view -> (Int, [(ChatListFilter, Int, Bool)]) in
+        return combineLatest(context.account.postbox.combinedView(keys: keys), exteralessAppearanceUpdates())
+        |> map { view, _ -> (Int, [(ChatListFilter, Int, Bool)]) in
             guard let unreadCounts = view.views[unreadKey] as? EngineRawUnreadMessageCountsView else {
                 return (0, [])
             }
@@ -307,7 +308,7 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
                         }
                     }
                 }
-                result.append((filter, max(0, count), unmutedUnreadCount > 0))
+                result.append((filter, AppearanceFolderPolicy.unreadCount(all: count, unmuted: unmutedUnreadCount, mode: ClientSettings.shared.integer("appearance.ignoreUnreadCount", default: AppearanceFolderPolicy.defaultUnreadMode)), unmutedUnreadCount > 0))
             }
             
             return (totalBadge, result)

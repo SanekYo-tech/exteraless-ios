@@ -3,6 +3,7 @@ import UIKit
 import SwiftSignalKit
 import Postbox
 import TelegramCore
+import ExteralessCore
 import QuickLook
 import Display
 import TelegramPresentationData
@@ -26,7 +27,8 @@ private final class DocumentPreviewItem: NSObject, QLPreviewItem {
 }
 
 final class CompactDocumentPreviewController: QLPreviewController, QLPreviewControllerDelegate, QLPreviewControllerDataSource {
-    private let postbox: Postbox
+    private let account: Account
+    private let accountIdentity: PrivacyExtrasAccountIdentity
     private let file: TelegramMediaFile
     private let canShare: Bool
     
@@ -34,8 +36,9 @@ final class CompactDocumentPreviewController: QLPreviewController, QLPreviewCont
     
     private var tempFile: TempBoxFile?
     
-    init(theme: PresentationTheme, strings: PresentationStrings, postbox: Postbox, file: TelegramMediaFile, canShare: Bool = true) {
-        self.postbox = postbox
+    init(theme: PresentationTheme, strings: PresentationStrings, account: Account, file: TelegramMediaFile, canShare: Bool = true) {
+        self.account = account
+        self.accountIdentity = exteralessPrivacyExtrasIdentity(account)
         self.file = file
         self.canShare = canShare
         
@@ -44,10 +47,16 @@ final class CompactDocumentPreviewController: QLPreviewController, QLPreviewCont
         self.delegate = self
         self.dataSource = self
         
-        if let path = self.postbox.mediaBox.completedResourcePath(self.file.resource) {
+        if let path = self.account.postbox.mediaBox.completedResourcePath(self.file.resource) {
             var updatedPath = path
             if let fileName = self.file.fileName {
                 let tempFile = TempBox.shared.file(path: path, fileName: fileName)
+                do {
+                    try ExteralessPrivacyExtrasTemporaryFiles.shared.track(tempFile, account: self.accountIdentity)
+                } catch {
+                    TempBox.shared.dispose(tempFile)
+                    return
+                }
                 updatedPath = tempFile.path
                 self.tempFile = tempFile
             }
@@ -61,7 +70,7 @@ final class CompactDocumentPreviewController: QLPreviewController, QLPreviewCont
     
     deinit {
         if let tempFile = self.tempFile {
-            TempBox.shared.dispose(tempFile)
+            ExteralessPrivacyExtrasTemporaryFiles.shared.release(tempFile, account: self.accountIdentity)
         }
         self.timer?.invalidate()
     }
@@ -185,7 +194,7 @@ final class CompactDocumentPreviewController: QLPreviewController, QLPreviewCont
     }
 }
 
-func presentDocumentPreviewController(rootController: UIViewController, theme: PresentationTheme, strings: PresentationStrings, postbox: Postbox, file: TelegramMediaFile, canShare: Bool) {
+func presentDocumentPreviewController(rootController: UIViewController, theme: PresentationTheme, strings: PresentationStrings, account: Account, file: TelegramMediaFile, canShare: Bool) {
     let navigationBar = UINavigationBar.appearance(whenContainedInInstancesOf: [QLPreviewController.self])
     navigationBar.barTintColor = theme.rootController.navigationBar.opaqueBackgroundColor
     navigationBar.setBackgroundImage(generateImage(CGSize(width: 1.0, height: 1.0), rotatedContext: { size, context in
@@ -201,5 +210,5 @@ func presentDocumentPreviewController(rootController: UIViewController, theme: P
     })
     navigationBar.titleTextAttributes = [NSAttributedString.Key.font: Font.semibold(17.0), NSAttributedString.Key.foregroundColor: theme.rootController.navigationBar.primaryTextColor]
     
-    rootController.present(CompactDocumentPreviewController(theme: theme, strings: strings, postbox: postbox, file: file, canShare: canShare), animated: true, completion: nil)
+    rootController.present(CompactDocumentPreviewController(theme: theme, strings: strings, account: account, file: file, canShare: canShare), animated: true, completion: nil)
 }

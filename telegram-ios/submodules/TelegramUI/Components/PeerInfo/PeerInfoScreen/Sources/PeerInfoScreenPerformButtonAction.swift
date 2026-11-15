@@ -1299,7 +1299,10 @@ extension PeerInfoScreenNode {
                 
                 let sourceView = sourceNode.view
                 
-                let contextController = makeContextController(presentationData: self.presentationData, source: .reference(PeerInfoContextReferenceContentSource(controller: controller, sourceView: sourceView)), items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                let pluginItems = ExteralessPluginMenuEntry.updating(
+                    items: items |> map { ContextController.Items(content: .list($0)) }, context: self.context,
+                    placement: "PROFILE_ACTION_MENU", peer: self.data?.peer, source: controller)
+                let contextController = makeContextController(presentationData: self.presentationData, source: .reference(PeerInfoContextReferenceContentSource(controller: controller, sourceView: sourceView)), items: pluginItems, gesture: gesture)
                 contextController.dismissed = { [weak self] in
                     if let strongSelf = self {
                         strongSelf.state = strongSelf.state.withHighlightedButton(nil)

@@ -1,4 +1,5 @@
 import UIKit
+import ExteralessCore
 import AppBundle
 import AsyncDisplayKit
 
@@ -49,6 +50,8 @@ final class NavigationTransitionCoordinator {
     /// A swipe steers it: from the start (a swipe back), or since a swipe caught it (`catchBySwipe`).
     private(set) var isInteractive: Bool
     let isFlat: Bool
+    private let exteralessParallax: CGFloat
+    private let exteralessNavigationStyle: Int
     let topNode: ASDisplayNode
     let bottomNode: ASDisplayNode
     private let topNavigationBar: NavigationBar?
@@ -131,6 +134,8 @@ final class NavigationTransitionCoordinator {
     }
     
     init(transition: NavigationTransition, isInteractive: Bool, isFlat: Bool, container: NavigationContainer, topNode: ASDisplayNode, topNavigationBar: NavigationBar?, topTransitionSource: NavigationBarTransitionSource?, bottomNode: ASDisplayNode, bottomNavigationBar: NavigationBar?, bottomTransitionSource: NavigationBarTransitionSource?, screenCornerRadii: CornerRadii, didUpdateProgress: ((CGFloat, ContainedViewLayoutTransition, CGRect, CGRect) -> Void)? = nil, didStartProgressAnimation: ((NavigationTransitionTimeline) -> Void)? = nil, style: NavigationTransitionStyle = .slide) {
+        self.exteralessParallax = CGFloat(AppearancePresentationPolicy.navigationParallax(percent: ClientSettings.shared.integer("appearance.predictiveBackIntensity", default: 100)))
+        self.exteralessNavigationStyle = ClientSettings.shared.integer("appearance.backAnimationStyle", default: 1)
         self.transition = transition
         if case let .expand(renderer) = style {
             self.expansion = renderer
@@ -342,7 +347,7 @@ final class NavigationTransitionCoordinator {
         let containerSize = self.container.bounds.size
         
         let topFrame = CGRect(origin: CGPoint(x: floorToScreenPixels(position * containerSize.width), y: 0.0), size: containerSize)
-        let bottomFrame = CGRect(origin: CGPoint(x: self.isFlat ? -floorToScreenPixels((1.0 - position) * containerSize.width) : ((position - 1.0) * containerSize.width * 0.3), y: 0.0), size: containerSize)
+        let bottomFrame = CGRect(origin: CGPoint(x: self.isFlat || self.exteralessNavigationStyle == 3 ? -floorToScreenPixels((1.0 - position) * containerSize.width) : ((position - 1.0) * containerSize.width * self.exteralessParallax), y: 0.0), size: containerSize)
         let dimFrame = CGRect(origin: CGPoint(x: 0.0, y: dimInset), size: CGSize(width: max(0.0, topFrame.minX + self.container.overflowInset + 62.0), height: containerSize.height - dimInset))
         // UIKit: black at 0.1, linear in the progress.
         let dimAlpha = max(0.0, min(1.0, 1.0 - position)) * 0.1
@@ -609,7 +614,13 @@ final class NavigationTransitionCoordinator {
             })
             self.progressDriver = driver
         }
-        driver.animate(to: target, spring: spring, velocity: velocity, overshoots: overshoots, settled: completion)
+        driver.animate(to: target, spring: self.exteralessSpring(spring), velocity: velocity, overshoots: overshoots, settled: completion)
+    }
+
+    private func exteralessSpring(_ stock: NavigationTransitionSpring) -> NavigationTransitionSpring {
+        guard self.expansion == nil, !self.isFlat, stock != .tracking else { return stock }
+        let value = AppearanceMotionPolicy.spring(style: self.exteralessNavigationStyle, stockResponse: Double(stock.response), stockDampingRatio: Double(stock.dampingRatio))
+        return NavigationTransitionSpring(dampingRatio: CGFloat(value.dampingRatio), response: CGFloat(value.response))
     }
 
     var frameTiming: () -> (lastTargetTimestamp: Double?, frameDuration: Double) = {
@@ -622,7 +633,7 @@ final class NavigationTransitionCoordinator {
         if let driver = self.progressDriver {
             driver.displayLinkFrame(at: self.clock.now())
         }
-        let curve = NavigationSpringCurve(from: self.progress, velocity: velocity, target: target, spring: spring, overshoots: false, rest: .progress)
+        let curve = NavigationSpringCurve(from: self.progress, velocity: velocity, target: target, spring: self.exteralessSpring(spring), overshoots: false, rest: .progress)
         self.runProgressCurve(curve, continuing: true, completion: completion)
     }
 
@@ -848,7 +859,7 @@ final class NavigationTransitionCoordinator {
                 spring = self.transition == .Push ? expansion.openSpring : expansion.closeSpring
                 rest = .expansion
             } else {
-                spring = .noninteractive
+                spring = self.exteralessSpring(.noninteractive)
                 rest = .progress
             }
             self.runProgressCurve(NavigationSpringCurve(from: self.progress, target: 1.0, spring: spring, overshoots: true, rest: rest), continuing: false, completion: {
@@ -897,7 +908,7 @@ final class NavigationTransitionCoordinator {
         if let expansion = self.expansion {
             curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: expansion.closeSpring, overshoots: true, rest: .expansion)
         } else {
-            curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: .noninteractive, overshoots: false, rest: .progress)
+            curve = NavigationSpringCurve(from: value, velocity: velocity, target: 0.0, spring: self.exteralessSpring(.noninteractive), overshoots: false, rest: .progress)
         }
         self.runProgressCurve(curve, continuing: true, completion: { [weak self] in
             guard let self else {

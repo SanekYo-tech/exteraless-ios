@@ -51,6 +51,7 @@ final class TextProcessingContentComponent: Component {
     let previewIconFile: TelegramMediaFile?
     let styles: [TextProcessingScreen.Style]
     let inputText: ComposedRichMessage
+    let capability: ExteralessAIProcessingCapability
     let initialEditState: TextProcessingScreen.EditState?
     let ignoredTranslationLanguages: [String]
     let shouldDisplayStyleNotice: Bool
@@ -71,6 +72,7 @@ final class TextProcessingContentComponent: Component {
         previewIconFile: TelegramMediaFile?,
         styles: [TextProcessingScreen.Style],
         inputText: ComposedRichMessage,
+        capability: ExteralessAIProcessingCapability,
         initialEditState: TextProcessingScreen.EditState?,
         ignoredTranslationLanguages: [String],
         shouldDisplayStyleNotice: Bool,
@@ -90,6 +92,7 @@ final class TextProcessingContentComponent: Component {
         self.mode = mode
         self.previewIconFile = previewIconFile
         self.inputText = inputText
+        self.capability = capability
         self.initialEditState = initialEditState
         self.ignoredTranslationLanguages = ignoredTranslationLanguages
         self.shouldDisplayStyleNotice = shouldDisplayStyleNotice
@@ -105,6 +108,7 @@ final class TextProcessingContentComponent: Component {
     }
 
     static func ==(lhs: TextProcessingContentComponent, rhs: TextProcessingContentComponent) -> Bool {
+        if lhs.capability != rhs.capability { return false }
         if lhs.styles != rhs.styles {
             return false
         }
@@ -835,6 +839,7 @@ final class TextProcessingContentComponent: Component {
                     styles: component.styles,
                     externalState: self.translateState,
                     inputText: component.inputText,
+                    capability: component.capability,
                     mode: .translate(ignoredLanguages: component.ignoredTranslationLanguages),
                     appliedPrompt: nil,
                     copyAction: component.copyCurrentResult,
@@ -895,6 +900,7 @@ final class TextProcessingContentComponent: Component {
                     styles: component.styles,
                     externalState: self.stylizeState,
                     inputText: inputText,
+                    capability: component.capability,
                     mode: mappedMode,
                     appliedPrompt: mappedAppliedPrompt,
                     copyAction: component.copyCurrentResult,
@@ -1017,6 +1023,7 @@ final class TextProcessingContentComponent: Component {
                     styles: component.styles,
                     externalState: self.fixState,
                     inputText: component.inputText,
+                    capability: component.capability,
                     mode: .fix,
                     appliedPrompt: nil,
                     copyAction: component.copyCurrentResult,
@@ -1312,6 +1319,7 @@ private final class TextProcessingSheetComponent: Component {
     let ignoredTranslationLanguages: [String]
     let initialStyles: [TextProcessingScreen.Style]
     let inputText: ComposedRichMessage
+    let capability: ExteralessAIProcessingCapability
     let initialEditState: TextProcessingScreen.EditState?
     let shouldDisplayStyleNotice: Bool
     let previewIconFile: TelegramMediaFile?
@@ -1324,6 +1332,7 @@ private final class TextProcessingSheetComponent: Component {
         ignoredTranslationLanguages: [String],
         initialStyles: [TextProcessingScreen.Style],
         inputText: ComposedRichMessage,
+        capability: ExteralessAIProcessingCapability,
         initialEditState: TextProcessingScreen.EditState?,
         shouldDisplayStyleNotice: Bool,
         previewIconFile: TelegramMediaFile?,
@@ -1335,6 +1344,7 @@ private final class TextProcessingSheetComponent: Component {
         self.ignoredTranslationLanguages = ignoredTranslationLanguages
         self.initialStyles = initialStyles
         self.inputText = inputText
+        self.capability = capability
         self.initialEditState = initialEditState
         self.shouldDisplayStyleNotice = shouldDisplayStyleNotice
         self.previewIconFile = previewIconFile
@@ -1343,7 +1353,7 @@ private final class TextProcessingSheetComponent: Component {
     }
 
     static func ==(lhs: TextProcessingSheetComponent, rhs: TextProcessingSheetComponent) -> Bool {
-        return true
+        return lhs.capability == rhs.capability
     }
 
     final class View: UIView {
@@ -1752,6 +1762,7 @@ private final class TextProcessingSheetComponent: Component {
                         previewIconFile: component.previewIconFile,
                         styles: self.styles,
                         inputText: component.inputText,
+                        capability: component.capability,
                         initialEditState: component.initialEditState,
                         ignoredTranslationLanguages: component.ignoredTranslationLanguages,
                         shouldDisplayStyleNotice: component.shouldDisplayStyleNotice,
@@ -2291,6 +2302,7 @@ public class TextProcessingScreen: ViewControllerComponentContainer {
 
     public init(
         context: AccountContext,
+        capability: ExteralessAIProcessingCapability = .userInput,
         theme: PresentationTheme? = nil,
         mode: Mode,
         inputText: ComposedRichMessage,
@@ -2375,10 +2387,15 @@ public class TextProcessingScreen: ViewControllerComponentContainer {
                 ignoredTranslationLanguages: translationSettings.ignoredLanguages ?? [],
                 initialStyles: styles,
                 inputText: inputText,
+                capability: capability,
                 initialEditState: initialEditState,
                 shouldDisplayStyleNotice: shouldDisplayStyleNotice,
                 previewIconFile: previewIconFile,
-                copyCurrentResult: copyResult,
+                copyCurrentResult: capability.allowsCopy ? copyResult.map { copy in
+                    { value in
+                        ExteralessAIHooks.withCopyCapability(context: context, capability: capability) { copy(value) }
+                    }
+                } : nil,
                 translateChat: translateChat
             ),
             navigationBarAppearance: .none,

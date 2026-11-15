@@ -1,6 +1,7 @@
 import UIKit
 import SwiftSignalKit
 import Display
+import ExteralessCore
 import TelegramCore
 import UserNotifications
 import Intents
@@ -65,6 +66,15 @@ import AppCenterCrashes
 #endif
 
 private let handleVoipNotifications = false
+
+/// Routing only: an invalid or temporarily unreadable recovery capability must
+/// stay local too. The native handler separately checks the exact stored key and
+/// requires an ordinary settings PasscodeSession before exposing management.
+func exteralessPrivacyExtrasIsRecoveryRoute(_ url: URL) -> Bool {
+    let components = url.pathComponents
+    return url.scheme?.lowercased() == "https" && url.host?.lowercased() == "t.me"
+        && components.count == 3 && components[1] == "nasettings"
+}
 
 private func isTonTransferUrl(_ url: URL) -> Bool {
     return url.scheme?.lowercased() == "ton" && url.host?.lowercased() == "transfer"
@@ -241,6 +251,138 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     )
 }
 
+/// Pins a launcher action to the first initialized account and releases pending
+/// work on account replacement. Readiness and the app lock are observed together.
+@MainActor
+private final class ExteralessToolsPendingShortcutCoordinator {
+    private final class Request {
+        let type: ApplicationShortcutItemType
+        let completion: PrivacyCompletion<Bool>
+        let readiness = MetaDisposable()
+        var context: AuthorizedApplicationContext?
+        var started = false
+
+        init(type: ApplicationShortcutItemType, completion: @escaping (Bool) -> Void) {
+            self.type = type
+            self.completion = PrivacyCompletion(completion)
+        }
+    }
+
+    private let perform: @MainActor (ApplicationShortcutItemType, AuthorizedApplicationContext, @escaping (Bool) -> Void) -> Void
+    private var context: AuthorizedApplicationContext?
+    private var receivedContext = false
+    private var authorizationActive = false
+    private var pending: Request?
+
+    init(perform: @escaping @MainActor (ApplicationShortcutItemType, AuthorizedApplicationContext, @escaping (Bool) -> Void) -> Void) {
+        self.perform = perform
+    }
+
+    func update(context: AuthorizedApplicationContext?) {
+        self.context = context
+        self.receivedContext = true
+        guard let request = self.pending else {
+            return
+        }
+        if let previous = request.context {
+            if previous !== context {
+                self.finish(request, succeeded: false)
+            }
+        } else if let context {
+            self.waitUntilReady(request, context: context)
+        } else {
+            self.finish(request, succeeded: false)
+        }
+    }
+
+    func updateAuthorizationState(active: Bool) {
+        self.authorizationActive = active
+        if active, let request = self.pending, self.isToolsShortcut(request.type) {
+            self.finish(request, succeeded: false)
+        }
+    }
+
+    func submit(type: ApplicationShortcutItemType, completion: @escaping (Bool) -> Void) {
+        guard self.pending == nil, !(self.authorizationActive && self.isToolsShortcut(type)) else {
+            completion(false)
+            return
+        }
+        let request = Request(type: type, completion: completion)
+        self.pending = request
+        // This bounds initialization/unlock waiting, not a native operation that
+        // has already been admitted by the runtime and owns its completion.
+        Queue.mainQueue().after(30.0) { [weak self, weak request] in
+            MainActor.assumeIsolated {
+                guard let self, let request, !request.started else {
+                    return
+                }
+                self.finish(request, succeeded: false)
+            }
+        }
+        if self.receivedContext {
+            if let context = self.context {
+                self.waitUntilReady(request, context: context)
+            } else {
+                self.finish(request, succeeded: false)
+            }
+        }
+    }
+
+    private func isToolsShortcut(_ type: ApplicationShortcutItemType) -> Bool {
+        return type == .toolsGhostMode || type == .toolsSafeMode
+    }
+
+    private func waitUntilReady(_ request: Request, context: AuthorizedApplicationContext) {
+        request.context = context
+        let isUnlocked: Signal<Bool, NoError>
+        let isReady: Signal<Bool, NoError>
+        if request.type == .account {
+            isUnlocked = .single(true)
+            isReady = .single(true)
+        } else {
+            if let appLockContext = context.context.sharedContext.appLockContext as? AppLockContextImpl {
+                isUnlocked = appLockContext.isCurrentlyLocked |> map { !$0 }
+            } else {
+                isUnlocked = context.context.sharedContext.appLockContext.isPasscodeLocked |> map { !$0 }
+            }
+            isReady = context.isReady.get()
+        }
+        request.readiness.set((combineLatest(queue: .mainQueue(), isReady, isUnlocked)
+        |> filter { ready, unlocked in ready && unlocked }
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self, weak request] _ in
+            MainActor.assumeIsolated {
+                guard let self, let request, self.pending === request else {
+                    return
+                }
+                guard self.context === context, !(self.authorizationActive && self.isToolsShortcut(request.type)) else {
+                    self.finish(request, succeeded: false)
+                    return
+                }
+                request.started = true
+                self.perform(request.type, context, { [weak self, weak request] succeeded in
+                    MainActor.assumeIsolated {
+                        guard let self, let request else {
+                            return
+                        }
+                        self.finish(request, succeeded: succeeded)
+                    }
+                })
+            }
+        }))
+    }
+
+    private func finish(_ request: Request, succeeded: Bool) {
+        guard self.pending === request else {
+            return
+        }
+        self.pending = nil
+        request.readiness.dispose()
+        request.context = nil
+        request.completion.finish(succeeded)
+    }
+}
+
 @objc(AppDelegate) class AppDelegate: UIResponder, UIApplicationDelegate, PKPushRegistryDelegate, UNUserNotificationCenterDelegate, URLSessionDelegate, URLSessionTaskDelegate {
     @objc var window: UIWindow?
     var nativeWindow: (UIWindow & WindowHost)?
@@ -267,6 +409,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private var contextValue: AuthorizedApplicationContext?
     private let context = Promise<AuthorizedApplicationContext?>()
     private let contextDisposable = MetaDisposable()
+    private let clientSettingsReady = Promise<Void>()
+    private let clientPreparationDisposable = MetaDisposable()
+    private let clientAPIErrorsDisposable = MetaDisposable()
+    private let clientRetentionRecoveryDisposable = MetaDisposable()
+    private var clientSettingsPrepared = false
+    private var clientSettingsPreparing = true
+    private var clientPreparationFailure: String?
+    private var clientPreparationAlert: UIAlertController?
+    private var clientAPIErrorAlert: UIAlertController?
+    private var clientRetentionRecoveries: [ExteralessAccountRecoveryEntry] = []
+    private var clientRetentionRecoveryAlert: (id: UUID, controller: UIAlertController)?
+    private var clientRetentionRecoveryPending = Set<UUID>()
+    private var clientRetentionRecoveryDismissed = Set<UUID>()
     
     private var authContextValue: UnauthorizedApplicationContext?
     private let authContext = Promise<UnauthorizedApplicationContext?>()
@@ -277,9 +432,36 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     private let openNotificationSettingsWhenReadyDisposable = MetaDisposable()
     private let openChatWhenReadyDisposable = MetaDisposable()
     private let openUrlWhenReadyDisposable = MetaDisposable()
+    private let privacyExtrasRecoveryDisposable = MetaDisposable()
     
     private let badgeDisposable = MetaDisposable()
     private let quickActionsDisposable = MetaDisposable()
+    private var handledLaunchShortcut: UIApplicationShortcutItem?
+    private var handledLaunchUrl: URL?
+    private lazy var pendingShortcuts = ExteralessToolsPendingShortcutCoordinator { [weak self] type, context, completion in
+        guard let self, self.contextValue === context else {
+            completion(false)
+            return
+        }
+        switch type {
+        case .search:
+            context.openRootSearch()
+        case .compose:
+            context.openRootCompose()
+        case .camera:
+            context.openRootCamera()
+        case .savedMessages:
+            self.openChatWhenReady(accountId: nil, peerId: context.context.account.peerId, threadId: nil, storyId: nil)
+        case .account:
+            context.switchAccount()
+        case .appIcon:
+            context.openAppIcon()
+        case .toolsGhostMode, .toolsSafeMode:
+            ExteralessClientRuntime.shared.handleToolsShortcut(type: type.rawValue, context: context.context, completion: completion)
+            return
+        }
+        completion(true)
+    }
     
     private var pushRegistry: PKPushRegistry?
     
@@ -353,6 +535,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         precondition(!testIsLaunched)
         testIsLaunched = true
+        let launchShortcutItem = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem
         CrashReportCollector.shared.start()
         
         let _ = voipTokenPromise.get().start(next: { token in
@@ -729,6 +912,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         if !isUITest {
             performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
         }
+        self.prepareClientSettings(rootPath: rootPath, durabilityRootURL: appGroupUrl,
+            builtinApiId: buildConfig.apiId, builtinApiHash: buildConfig.apiHash)
         
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
         let encryptionParameters = ValueBoxEncryptionParameters(forceEncryptionIfNoSet: false, key: ValueBoxEncryptionParameters.Key(data: deviceSpecificEncryptionParameters.key)!, salt: ValueBoxEncryptionParameters.Salt(data: deviceSpecificEncryptionParameters.salt)!)
@@ -960,6 +1145,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if let context = context {
                     Logger.shared.log("App \(self.episodeId)", "register for notifications initiate")
                     self.registerForNotifications(context: context.context, authorize: true, completion: completion)
+                } else {
+                    completion(false)
                 }
             })
         }, requestSiriAuthorization: { completion in
@@ -1000,29 +1187,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }, dismissNativeController: {
             self.window?.rootViewController?.dismiss(animated: true, completion: nil)
         }, getAvailableAlternateIcons: {
-            if #available(iOS 10.3, *) {
-                var icons = [
-                    PresentationAppIcon(name: "BlueIcon", imageName: "BlueIcon", isDefault: buildConfig.isAppStoreBuild),
-                    PresentationAppIcon(name: "New2", imageName: "New2"),
-                    PresentationAppIcon(name: "New1", imageName: "New1"),
-                    PresentationAppIcon(name: "BlackIcon", imageName: "BlackIcon"),
-                    PresentationAppIcon(name: "BlueClassicIcon", imageName: "BlueClassicIcon"),
-                    PresentationAppIcon(name: "BlackClassicIcon", imageName: "BlackClassicIcon"),
-                    PresentationAppIcon(name: "BlueFilledIcon", imageName: "BlueFilledIcon"),
-                    PresentationAppIcon(name: "BlackFilledIcon", imageName: "BlackFilledIcon")
-                ]
-                if buildConfig.isInternalBuild {
-                    icons.append(PresentationAppIcon(name: "WhiteFilledIcon", imageName: "WhiteFilledIcon"))
-                }
-                
-                icons.append(PresentationAppIcon(name: "Premium", imageName: "Premium", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumTurbo", imageName: "PremiumTurbo", isPremium: true))
-                icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
-                
-                return icons
-            } else {
-                return []
-            }
+            return exteralessAvailableAppIcons()
         }, getAlternateIconName: {
             if #available(iOS 10.3, *) {
                 return application.alternateIconName
@@ -1085,21 +1250,25 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             let window = self.window!
 
             NSLog("[DeleteAccount] starting for +\(digits)")
-            let _ = test_loginAndDeleteAccount(
-                rootPath: rootPath,
-                accountManager: accountManager,
-                networkArguments: networkArguments,
-                encryptionParameters: encryptionParameters,
-                phoneNumber: "+\(digits)",
-                phoneCode: phoneCode
-            ).start(error: { error in
-                NSLog("[DeleteAccount] error: \(error)")
-                preconditionFailure("test_loginAndDeleteAccount failed")
-            }, completed: {
-                NSLog("[DeleteAccount] completed")
-                DispatchQueue.main.async {
-                    window.accessibilityIdentifier = "DeleteAccount.Success"
-                }
+            let _ = (self.clientSettingsReady.get()
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { _ in
+                let _ = test_loginAndDeleteAccount(
+                    rootPath: rootPath,
+                    accountManager: accountManager,
+                    networkArguments: networkArguments,
+                    encryptionParameters: encryptionParameters,
+                    phoneNumber: "+\(digits)",
+                    phoneCode: phoneCode
+                ).start(error: { error in
+                    NSLog("[DeleteAccount] error: \(error)")
+                    preconditionFailure("test_loginAndDeleteAccount failed")
+                }, completed: {
+                    NSLog("[DeleteAccount] completed")
+                    DispatchQueue.main.async {
+                        window.accessibilityIdentifier = "DeleteAccount.Success"
+                    }
+                })
             })
 
             return true
@@ -1125,7 +1294,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         
-        let sharedContextSignal = currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle)
+        // This factory is lazy behind successful worker preparation. Neither
+        // SharedAccountContext/AppLock nor accountWithId can start on defaults.
+        let sharedContextSignal = self.clientSettingsReady.get()
+        |> take(1)
+        |> mapToSignal { _ in
+            currentPresentationDataAndSettings(accountManager: accountManager, systemUserInterfaceStyle: systemUserInterfaceStyle)
+        }
         |> map { initialPresentationDataAndSettings -> (AccountManager, InitialPresentationDataAndSettings) in
             return (accountManager, initialPresentationDataAndSettings)
         }
@@ -1364,8 +1539,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                             }
                         }
                     })
-                    return phoneNumbers
-                    |> map { phoneNumbers -> (UnauthorizedAccount, ((String, AccountRecordId, Bool)?, [(String, AccountRecordId, Bool)]))? in
+                    return combineLatest(phoneNumbers, ExteralessHiddenAccounts.shared.changes)
+                    |> map { phoneNumbers, _ -> (UnauthorizedAccount, ((String, AccountRecordId, Bool)?, [(String, AccountRecordId, Bool)]))? in
+                        let phoneNumbers = phoneNumbers.filter { value in
+                            guard let value, let context = accounts.first(where: { $0.account.id == value.0 }) else { return false }
+                            return !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity(context.account))
+                        }
                         var primaryNumber: (String, AccountRecordId, Bool)?
                         if let primary = primary {
                             for idAndNumber in phoneNumbers {
@@ -1384,7 +1563,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             |> deliverOnMainQueue
             |> map { accountAndSettings -> UnauthorizedApplicationContext? in
                 return accountAndSettings.flatMap { account, otherAccountPhoneNumbers in
-                    return UnauthorizedApplicationContext(apiId: buildConfig.apiId, apiHash: buildConfig.apiHash, sharedContext: sharedApplicationContext.sharedContext, account: account, otherAccountPhoneNumbers: otherAccountPhoneNumbers)
+                    return UnauthorizedApplicationContext(apiId: account.networkArguments.apiId, apiHash: account.networkArguments.apiHash, sharedContext: sharedApplicationContext.sharedContext, account: account, otherAccountPhoneNumbers: otherAccountPhoneNumbers)
                 }
             }
         })
@@ -1410,15 +1589,20 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 contextValue.context.account.shouldKeepBackgroundDownloadConnections.set(.single(false))
             }
             self.crashReportPromptDisposable.set(nil)
+            self.privacyExtrasRecoveryDisposable.set(nil)
             self.contextValue = context
             // This signal is delivered on main. Publish the account snapshot in
             // the same order as contextValue, before asynchronous host startup.
             MainActor.assumeIsolated {
                 if let context = context {
+                    ExteralessClientRuntime.shared.update(context: context.context)
                     ExteralessPluginRuntime.shared.update(context: context.context)
+                    ExteralessClientRuntime.shared.bindPluginRuntime(context: context.context)
                 } else {
+                    ExteralessClientRuntime.shared.clearContext()
                     ExteralessPluginRuntime.shared.clearContext()
                 }
+                self.pendingShortcuts.update(context: context)
             }
             if let context = context {
                 setupLegacyComponents(context: context.context)
@@ -1427,6 +1611,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 |> filter { $0 }
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { _ in
+                    guard self.contextValue === context else { return }
                     let readyTime = CFAbsoluteTimeGetCurrent() - startTime
                     if readyTime > 0.5 {
                         print("Application: context took \(readyTime) to become ready")
@@ -1435,6 +1620,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
                     self.mainWindow.debugAction = nil
                     self.mainWindow.viewController = context.rootController
+                    MainActor.assumeIsolated {
+                        ExteralessClientRuntime.shared.accountPresentationDidBecomeReady(context: context.context)
+                    }
                     
                     if firstTime {
                         let layer = context.rootController.view.layer
@@ -1503,6 +1691,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 }
             }
             self.authContextValue = context
+            MainActor.assumeIsolated {
+                self.pendingShortcuts.updateAuthorizationState(active: context != nil)
+            }
             if let context = context {
                 let presentationData = context.sharedContext.currentPresentationData.with({ $0 })
                 
@@ -1574,10 +1765,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 if let context = context {
                     let presentationData = context.context.sharedContext.currentPresentationData.with { $0 }
                     
-                    return activeAccountsAndPeers(context: context.context)
-                    |> take(1)
-                    |> map { primaryAndAccounts -> (AccountContext, EnginePeer, Int32)? in
-                        return primaryAndAccounts.1.first
+                    return combineLatest(activeAccountsAndPeers(context: context.context) |> take(1), ExteralessHiddenAccounts.shared.changes)
+                    |> map { primaryAndAccounts, _ -> (AccountContext, EnginePeer, Int32)? in
+                        return primaryAndAccounts.1.first(where: { !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity($0.0.account)) })
                     }
                     |> map { accountAndPeer -> String? in
                         if let (_, peer, _) = accountAndPeer {
@@ -1610,10 +1800,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             Logger.shared.log("App \(self.episodeId)", "isActive = \(value)")
         })
         
-        if let url = launchOptions?[.url] {
+        if let launchShortcutItem {
+            self.handledLaunchShortcut = launchShortcutItem
+            self.handleShortcutItem(launchShortcutItem, completionHandler: { _ in })
+        } else if let url = launchOptions?[.url] {
             if let url = url as? URL, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+                self.handledLaunchUrl = url
                 self.openUrlWhenReady(url: url, external: true)
             } else if let urlString = url as? String, urlString.lowercased().hasPrefix("tg:") || urlString.lowercased().hasPrefix("ton:") || urlString.lowercased().hasPrefix("\(buildConfig.appSpecificUrlScheme):") || WalletContext.isTonConnectUrl(urlString), let url = URL(string: urlString) {
+                self.handledLaunchUrl = url
                 self.openUrlWhenReady(url: url, external: true)
             }
         }
@@ -1787,9 +1982,149 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         })
                 
-        return true
+        // A manually consumed launch item must not be delivered again through
+        // UIApplicationDelegate.performActionFor.
+        return launchShortcutItem == nil
     }
     
+    private func prepareClientSettings(rootPath: String, durabilityRootURL: URL, builtinApiId: Int32, builtinApiHash: String) {
+        let state = MainActor.assumeIsolated { ExteralessClientRuntime.shared.preparationState }
+        self.clientPreparationDisposable.set((state |> deliverOnMainQueue).start(next: { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .preparing:
+                self.clientSettingsPreparing = true
+                self.clientPreparationFailure = nil
+                self.clientPreparationAlert?.dismiss(animated: false)
+                self.clientPreparationAlert = nil
+                self.clientRetentionRecoveryAlert?.controller.dismiss(animated: false)
+                self.clientRetentionRecoveryAlert = nil
+            case .ready:
+                self.clientSettingsPreparing = false
+                self.clientPreparationFailure = nil
+                self.clientPreparationAlert?.dismiss(animated: false)
+                self.clientPreparationAlert = nil
+                if !self.clientSettingsPrepared {
+                    self.clientSettingsPrepared = true
+                    self.clientSettingsReady.set(.single(()))
+                }
+                self.presentClientRetentionRecoveryIfNeeded()
+            case let .failed(message):
+                self.clientSettingsPreparing = false
+                self.clientRetentionRecoveryPending.removeAll()
+                self.clientPreparationFailure = message
+                self.presentClientPreparationFailureIfNeeded()
+            }
+        }))
+        self.clientRetentionRecoveryDisposable.set((ExteralessAccountRecoveryCenter.shared.pending
+        |> deliverOnMainQueue).start(next: { [weak self] entries in
+            guard let self else { return }
+            self.clientRetentionRecoveries = entries
+            for entry in entries where entry.status == .checking {
+                self.clientRetentionRecoveryPending.remove(entry.recovery.id)
+                self.clientRetentionRecoveryDismissed.remove(entry.recovery.id)
+            }
+            let ids = Set(entries.map { $0.recovery.id })
+            self.clientRetentionRecoveryPending.formIntersection(ids)
+            self.clientRetentionRecoveryDismissed.formIntersection(ids)
+            if let alert = self.clientRetentionRecoveryAlert {
+                let stillFailed = entries.contains(where: { entry in
+                    guard entry.recovery.id == alert.id else { return false }
+                    if case .failed = entry.status { return true }
+                    return false
+                })
+                if !stillFailed {
+                    alert.controller.dismiss(animated: false)
+                    self.clientRetentionRecoveryAlert = nil
+                }
+            }
+            self.presentClientRetentionRecoveryIfNeeded()
+        }))
+        self.clientAPIErrorsDisposable.set((ExteralessClientAPIEnvironment.shared.errors
+        |> deliverOnMainQueue).start(next: { [weak self] error in
+            guard let self, self.clientSettingsPrepared, let error else { return }
+            self.clientRetentionRecoveryAlert?.controller.dismiss(animated: false)
+            self.clientRetentionRecoveryAlert = nil
+            self.clientAPIErrorAlert?.dismiss(animated: false)
+            let alert = UIAlertController(title: "Client API", message: error.errorDescription ?? "Client API configuration failed.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: { [weak self] _ in
+                self?.clientAPIErrorAlert = nil
+                self?.presentClientRetentionRecoveryIfNeeded()
+            }))
+            self.clientAPIErrorAlert = alert
+            self.mainWindow?.presentNative(alert)
+        }))
+        MainActor.assumeIsolated {
+            ExteralessClientRuntime.shared.prepare(rootPath: rootPath, durabilityRootURL: durabilityRootURL,
+                builtinApiId: builtinApiId, builtinApiHash: builtinApiHash)
+        }
+    }
+
+    private func presentClientPreparationFailureIfNeeded() {
+        guard let message = self.clientPreparationFailure, self.clientPreparationAlert == nil,
+              self.window?.windowScene != nil else { return }
+        let alert = UIAlertController(title: "Settings recovery", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Retry", style: .default, handler: { [weak self] _ in
+            guard let self else { return }
+            self.clientPreparationAlert = nil
+            MainActor.assumeIsolated { ExteralessClientRuntime.shared.retryPreparation() }
+        }))
+        self.clientPreparationAlert = alert
+        self.mainWindow?.presentNative(alert)
+    }
+
+    private func presentClientRetentionRecoveryIfNeeded() {
+        guard self.clientSettingsPrepared, !self.clientSettingsPreparing, self.clientPreparationFailure == nil,
+              self.clientPreparationAlert == nil, self.clientAPIErrorAlert == nil, self.clientRetentionRecoveryAlert == nil,
+              self.window?.windowScene != nil else { return }
+        guard let entry = self.clientRetentionRecoveries.first(where: { entry in
+            guard !entry.recovery.isDisposed, !self.clientRetentionRecoveryPending.contains(entry.recovery.id),
+                  !self.clientRetentionRecoveryDismissed.contains(entry.recovery.id),
+                  entry.recovery.currentStatus == entry.status else { return false }
+            if case .failed = entry.status { return true }
+            return false
+        }), case let .failed(failure) = entry.status else { return }
+        let recovery = entry.recovery
+        let message: String
+        switch failure {
+        case .configurationUnavailable:
+            message = "The local archive settings could not be loaded. Unlock the device or repair storage, then retry."
+        case .archive(.unsupportedFormat):
+            message = "This local archive uses an unsupported format. Retry after updating the app or repairing the archive. You can also explicitly reset the retained archive."
+        case .archive:
+            message = "The retained local archive could not be read. Repair storage and retry, or explicitly reset the retained archive."
+        case .timedOut:
+            message = "The local archive did not finish preparing. Retry when storage is available."
+        case .cancelled:
+            message = "Local archive preparation was interrupted. Retry to start a new attempt."
+        }
+        // No account title/number is exposed before the account and lock UI exist.
+        let alert = UIAlertController(title: "Local archive recovery", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Retry", style: .default, handler: { [weak self, weak recovery] _ in
+            guard let self, let recovery, !recovery.isDisposed, self.clientRetentionRecoveryAlert?.id == recovery.id,
+                  recovery.currentStatus == .failed(failure) else { return }
+            self.clientRetentionRecoveryAlert = nil
+            self.clientRetentionRecoveryPending.insert(recovery.id)
+            MainActor.assumeIsolated { ExteralessClientRuntime.shared.retryAccountRetention(recovery) }
+        }))
+        if case .archive = failure, recovery.canResetArchive {
+            alert.addAction(UIAlertAction(title: "Reset retained archive", style: .destructive, handler: { [weak self, weak recovery] _ in
+                guard let self, let recovery, !recovery.isDisposed, self.clientRetentionRecoveryAlert?.id == recovery.id,
+                      recovery.currentStatus == .failed(failure) else { return }
+                self.clientRetentionRecoveryAlert = nil
+                self.clientRetentionRecoveryPending.insert(recovery.id)
+                MainActor.assumeIsolated { ExteralessClientRuntime.shared.retryAccountRetention(recovery, resetArchive: true) }
+            }))
+        }
+        alert.addAction(UIAlertAction(title: "Later", style: .cancel, handler: { [weak self, weak recovery] _ in
+            guard let self, let recovery, self.clientRetentionRecoveryAlert?.id == recovery.id else { return }
+            self.clientRetentionRecoveryAlert = nil
+            self.clientRetentionRecoveryDismissed.formUnion(self.clientRetentionRecoveries.map { $0.recovery.id })
+        }))
+        self.clientRetentionRecoveryAlert = (recovery.id, alert)
+        self.mainWindow?.presentNative(alert)
+    }
+
     func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
         let configuration = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
         // Only the application-role scene owns the app's window and drives app-wide life-cycle
@@ -1827,22 +2162,40 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
         self.mainWindow?.updateDeviceMetrics()
         self.window?.makeKeyAndVisible()
+        self.presentClientPreparationFailureIfNeeded()
+        self.presentClientRetentionRecoveryIfNeeded()
 
-        for context in connectionOptions.urlContexts {
-            let url = context.url
-            if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
-                self.openUrlWhenReady(url: url, external: true)
-            } else {
-                self.handleOpenURL(url)
-            }
-        }
-
-        for userActivity in connectionOptions.userActivities {
-            self.handleUserActivity(userActivity)
-        }
+        let handledLaunchShortcut = self.handledLaunchShortcut
+        let handledLaunchUrl = self.handledLaunchUrl
+        self.handledLaunchShortcut = nil
+        self.handledLaunchUrl = nil
 
         if let shortcutItem = connectionOptions.shortcutItem {
-            self.handleShortcutItem(shortcutItem, completionHandler: { _ in })
+            let alreadyHandled = handledLaunchShortcut.map { item in
+                return item.type == shortcutItem.type && NSDictionary(dictionary: item.userInfo ?? [:]).isEqual(to: shortcutItem.userInfo ?? [:])
+            } ?? false
+            if !alreadyHandled {
+                self.handleShortcutItem(shortcutItem, completionHandler: { _ in })
+            }
+        } else if handledLaunchShortcut == nil {
+            for context in connectionOptions.urlContexts {
+                let url = context.url
+                if url == handledLaunchUrl {
+                    continue
+                }
+                if let buildConfig = self.buildConfig, url.scheme == "tg" || url.scheme == "ton" || url.scheme == buildConfig.appSpecificUrlScheme || WalletContext.isTonConnectUrl(url.absoluteString) {
+                    self.openUrlWhenReady(url: url, external: true)
+                } else {
+                    self.handleOpenURL(url)
+                }
+            }
+
+            for userActivity in connectionOptions.userActivities {
+                if userActivity.activityType == NSUserActivityTypeBrowsingWeb, let url = userActivity.webpageURL, url == handledLaunchUrl {
+                    continue
+                }
+                self.handleUserActivity(userActivity)
+            }
         }
     }
     
@@ -2128,6 +2481,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleWillEnterForeground() {
+        self.clientRetentionRecoveryDismissed.removeAll()
         if self.isActiveValue {
             self.isInForegroundValue = true
             self.isInForegroundPromise.set(true)
@@ -2167,6 +2521,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         self.isInForegroundPromise.set(true)
         self.isActiveValue = true
         self.isActivePromise.set(true)
+        self.presentClientRetentionRecoveryIfNeeded()
 
         self.resetBadge()
         
@@ -2192,6 +2547,13 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func applicationWillTerminate(_ application: UIApplication) {
+        MainActor.assumeIsolated {
+            self.pendingShortcuts.update(context: nil)
+            ExteralessClientRuntime.shared.cancelPreparation()
+        }
+        self.clientPreparationDisposable.dispose()
+        self.clientAPIErrorsDisposable.dispose()
+        self.clientRetentionRecoveryDisposable.dispose()
         Task { @MainActor in
             await ExteralessPluginRuntime.shared.terminate()
         }
@@ -2199,37 +2561,27 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        Logger.shared.log("App \(self.episodeId)", "register for notifications: didRegisterForRemoteNotificationsWithDeviceToken (deviceToken: \(hexString(deviceToken)))")
+        PrivacyNotificationDiagnostics.shared.recordTokenReceived()
+        Logger.shared.log("App \(self.episodeId)", "APNs device token received")
         self.notificationTokenPromise.set(.single(deviceToken))
     }
     
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        Logger.shared.log("App \(self.episodeId)", "register for notifications: didFailToRegisterForRemoteNotificationsWithError (error: \(error))")
+        PrivacyNotificationDiagnostics.shared.recordTokenFailure(code: (error as NSError).code)
+        Logger.shared.log("App \(self.episodeId)", "APNs registration failed (code: \((error as NSError).code))")
     }
     
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable : Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        let completionHandler = exteralessBackgroundNotificationCompletion(completionHandler)
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> deliverOnMainQueue).start(next: { sharedApplicationContext in
             sharedApplicationContext.wakeupManager.allowBackgroundTimeExtension(timeout: 2.0)
         })
         
-        var redactedPayload = userInfo
-        if var aps = redactedPayload["aps"] as? [AnyHashable: Any] {
-            if Logger.shared.redactSensitiveData {
-                if aps["alert"] != nil {
-                    aps["alert"] = "[[redacted]]"
-                }
-                if aps["body"] != nil {
-                    aps["body"] = "[[redacted]]"
-                }
-            }
-            redactedPayload["aps"] = aps
-        }
+        Logger.shared.log("App \(self.episodeId)", "Remote notification received")
         
-        Logger.shared.log("App \(self.episodeId)", "remoteNotification: \(redactedPayload)")
-        
-        if let firebaseAuth = redactedPayload["com.google.firebase.auth"] as? String {
+        if let firebaseAuth = userInfo["com.google.firebase.auth"] as? String {
             guard let firebaseAuthData = firebaseAuth.data(using: .utf8), let firebaseJson = try? JSONSerialization.jsonObject(with: firebaseAuthData) else {
                 completionHandler(.newData)
                 return
@@ -2249,7 +2601,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             return
         }
         
-        if let nonce = redactedPayload["verify_nonce"] as? String, let secret = redactedPayload["verify_secret"] as? String {
+        if let nonce = userInfo["verify_nonce"] as? String, let secret = userInfo["verify_secret"] as? String {
             var firebaseRequestVerificationSecrets = self.firebaseRequestVerificationSecrets
             firebaseRequestVerificationSecrets[nonce] = secret
             self.firebaseRequestVerificationSecrets = firebaseRequestVerificationSecrets
@@ -2276,7 +2628,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     public func pushRegistry(_ registry: PKPushRegistry, didUpdate credentials: PKPushCredentials, for type: PKPushType) {
         if #available(iOS 9.0, *) {
             if case PKPushType.voIP = type {
-                Logger.shared.log("App \(self.episodeId)", "pushRegistry credentials: \(credentials.token as NSData)")
+                Logger.shared.log("App \(self.episodeId)", "VoIP push token received")
                 
                 self.voipTokenPromise.set(.single(credentials.token))
             }
@@ -2284,18 +2636,20 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
-        Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry didReceiveIncomingPushWith \(payload.dictionaryPayload)")
+        Logger.shared.log("App \(self.episodeId) PushRegistry", "VoIP notification received")
         
         self.pushRegistryImpl(registry, didReceiveIncomingPushWith: payload, for: type, completion: completion)
     }
     
     public func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType) {
-        Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry didReceiveIncomingPushWith \(payload.dictionaryPayload)")
+        Logger.shared.log("App \(self.episodeId) PushRegistry", "VoIP notification received")
         
         self.pushRegistryImpl(registry, didReceiveIncomingPushWith: payload, for: type, completion: {})
     }
     
-    private func pushRegistryImpl(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion: @escaping () -> Void) {
+    private func pushRegistryImpl(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload, for type: PKPushType, completion completionHandler: @escaping () -> Void) {
+        let once = PrivacyCompletion<Void> { _ in completionHandler() }
+        let completion: () -> Void = { once.finish(()) }
         Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry processing push notification")
         
         let decryptedPayloadAndAccountId: ([AnyHashable: Any], AccountRecordId)?
@@ -2486,7 +2840,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 sharedApplicationContext.wakeupManager.allowBackgroundTimeExtension(timeout: 2.0)
                 
                 if case PKPushType.voIP = type {
-                    Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry payload: \(payload.dictionaryPayload)")
+                    Logger.shared.log("App \(self.episodeId) PushRegistry", "Forwarding VoIP notification")
                     sharedApplicationContext.notificationManager.addNotification(payload.dictionaryPayload)
                 }
             })
@@ -2583,7 +2937,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 sharedApplicationContext.wakeupManager.allowBackgroundTimeExtension(timeout: 2.0)
                 
                 if case PKPushType.voIP = type {
-                    Logger.shared.log("App \(self.episodeId) PushRegistry", "pushRegistry payload: \(payload.dictionaryPayload)")
+                    Logger.shared.log("App \(self.episodeId) PushRegistry", "Forwarding VoIP notification")
                     sharedApplicationContext.notificationManager.addNotification(payload.dictionaryPayload)
                 }
             })
@@ -2639,10 +2993,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func handleOpenURL(_ url: URL) {
+        let url = self.clientCleanOpeningURL(url)
         guard self.openUrlInProgress != url else {
             return
         }
         self.openUrl(url: url)
+    }
+
+    private func clientCleanOpeningURL(_ url: URL) -> URL {
+        // Pending launch links retain their original bytes until preparation has
+        // loaded the user's rules. Recovery capabilities always stay local/exact.
+        guard self.clientSettingsPrepared, !exteralessPrivacyExtrasIsRecoveryRoute(url),
+              ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) else { return url }
+        return URL(string: ChatLinkPolicy.removingTracking(from: url.absoluteString)) ?? url
     }
 
     private func presentWalletUnavailable(in context: AuthorizedApplicationContext) {
@@ -2650,7 +3013,27 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         context.context.sharedContext.presentGlobalController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: presentationData.strings.Wallet_Unavailable, timeout: nil, customUndoText: nil), action: { _ in return false }), nil)
     }
 
+    private func consumePrivacyExtrasRecoveryURL(_ url: URL, context: AuthorizedApplicationContext?) -> Bool {
+        guard exteralessPrivacyExtrasIsRecoveryRoute(url) else { return false }
+        // A recovery route is consumed even while its UI/key store is unavailable.
+        // The native handler checks the exact key before requesting a settings PIN.
+        guard let context else { return true }
+        self.privacyExtrasRecoveryDisposable.set((combineLatest(context.isReady.get(), context.context.sharedContext.appLockContext.isPasscodeLocked)
+        |> filter { ready, locked in ready && !locked }
+        |> take(1)
+        |> timeout(30.0, queue: .mainQueue(), alternate: .complete())
+        |> deliverOnMainQueue).start(next: { [weak self, weak context] _ in
+            guard let self, let context, self.contextValue === context,
+                  let parent = context.rootController.topViewController as? ViewController else { return }
+            MainActor.assumeIsolated {
+                _ = exteralessPrivacyExtrasOpenRecoveryURL(context: context.context, url: url, parent: parent)
+            }
+        }))
+        return true
+    }
+
     private func openUrl(url: URL) {
+        let url = self.clientCleanOpeningURL(url)
         let _ = (self.sharedContextPromise.get()
         |> take(1)
         |> mapToSignal { sharedApplicationContext -> Signal<(SharedAccountContextImpl, AuthorizedApplicationContext?, UnauthorizedApplicationContext?), NoError> in
@@ -2662,24 +3045,32 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             }
         }
         |> deliverOnMainQueue).start(next: { sharedContext, context, authContext in
+            let url = self.clientCleanOpeningURL(url)
+            if self.consumePrivacyExtrasRecoveryURL(url, context: context) { return }
             if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
                 authContext.rootController.applyConfirmationCode(confirmationCode)
             } else if let context = context {
-                if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
-                    self.presentWalletUnavailable(in: context)
-                } else if WalletContext.isTonConnectUrl(url.absoluteString) {
-                    context.context.walletContext?.processTonConnectUrl(url.absoluteString)
-                } else if url.scheme?.lowercased() == "ton" {
-                    if isTonTransferUrl(url), let walletContext = context.context.walletContext {
-                        context.rootController.pushViewController(WalletSendScreen(
-                            context: context.context,
-                            walletContext: walletContext,
-                            address: url.absoluteString
-                        ))
+                let nativeOpen = {
+                    if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
+                        self.presentWalletUnavailable(in: context)
+                    } else if WalletContext.isTonConnectUrl(url.absoluteString) {
+                        context.context.walletContext?.processTonConnectUrl(url.absoluteString)
+                    } else if url.scheme?.lowercased() == "ton" {
+                        if isTonTransferUrl(url), let walletContext = context.context.walletContext {
+                            context.rootController.pushViewController(WalletSendScreen(
+                                context: context.context,
+                                walletContext: walletContext,
+                                address: url.absoluteString
+                            ))
+                        }
+                    } else {
+                        context.openUrl(url, external: true)
                     }
-                } else {
-                    context.openUrl(url, external: true)
                 }
+                let intercepted = MainActor.assumeIsolated {
+                    NativeServiceOpenHooks.shared.interceptURL(context: context.context, url: url, fromIntent: true, original: nativeOpen)
+                }
+                if !intercepted { nativeOpen() }
             } else if let authContext = authContext {
                 if let proxyData = parseProxyUrl(sharedContext: sharedContext, url: url) {
                     authContext.rootController.view.endEditing(true)
@@ -2875,47 +3266,18 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         return true
     }
     
+    func application(_ application: UIApplication, performActionFor shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
+        self.handleShortcutItem(shortcutItem, completionHandler: completionHandler)
+    }
+
     func handleShortcutItem(_ shortcutItem: UIApplicationShortcutItem, completionHandler: @escaping (Bool) -> Void) {
-        let _ = (self.sharedContextPromise.get()
-        |> take(1)
-        |> deliverOnMainQueue).start(next: { sharedContext in
-            let type = ApplicationShortcutItemType(rawValue: shortcutItem.type)
-            let immediately = type == .account
-            let proceed: () -> Void = {
-                let _ = (self.context.get()
-                |> take(1)
-                |> deliverOnMainQueue).start(next: { context in
-                    if let context = context {
-                        if let type = type {
-                            switch type {
-                                case .search:
-                                    context.openRootSearch()
-                                case .compose:
-                                    context.openRootCompose()
-                                case .camera:
-                                    context.openRootCamera()
-                                case .savedMessages:
-                                    self.openChatWhenReady(accountId: nil, peerId: context.context.account.peerId, threadId: nil, storyId: nil)
-                                case .account:
-                                    context.switchAccount()
-                                case .appIcon:
-                                    context.openAppIcon()
-                            }
-                        }
-                    }
-                })
-            }
-            if let appLockContext = sharedContext.sharedContext.appLockContext as? AppLockContextImpl, !immediately {
-                let _ = (appLockContext.isCurrentlyLocked
-                |> filter { !$0 }
-                |> take(1)
-                |> deliverOnMainQueue).start(next: { _ in
-                    proceed()
-                })
-            } else {
-                proceed()
-            }
-        })
+        guard let type = ApplicationShortcutItemType(rawValue: shortcutItem.type) else {
+            completionHandler(false)
+            return
+        }
+        MainActor.assumeIsolated {
+            self.pendingShortcuts.submit(type: type, completion: completionHandler)
+        }
     }
     
     private func openNotificationSettingsWhenReady() {
@@ -3018,6 +3380,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
     private var openUrlInProgress: URL?
     private func openUrlWhenReady(accountId: AccountRecordId? = nil, url: URL, external: Bool = false) {
+        let url = self.clientCleanOpeningURL(url)
         self.openUrlInProgress = url
         
         let signal = self.sharedContextPromise.get()
@@ -3038,21 +3401,32 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         self.openUrlWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { [weak self] context in
-            if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
-                self?.presentWalletUnavailable(in: context)
-            } else if WalletContext.isTonConnectUrl(url.absoluteString) {
-                context.context.walletContext?.processTonConnectUrl(url.absoluteString)
-            } else if url.scheme?.lowercased() == "ton" {
-                if isTonTransferUrl(url), let walletContext = context.context.walletContext {
-                    context.rootController.pushViewController(WalletSendScreen(
-                        context: context.context,
-                        walletContext: walletContext,
-                        address: url.absoluteString
-                    ))
-                }
-            } else {
-                context.openUrl(url, external: external)
+            let url = self?.clientCleanOpeningURL(url) ?? url
+            if self?.consumePrivacyExtrasRecoveryURL(url, context: context) == true {
+                self?.openUrlInProgress = nil
+                return
             }
+            let nativeOpen = {
+                if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
+                    self?.presentWalletUnavailable(in: context)
+                } else if WalletContext.isTonConnectUrl(url.absoluteString) {
+                    context.context.walletContext?.processTonConnectUrl(url.absoluteString)
+                } else if url.scheme?.lowercased() == "ton" {
+                    if isTonTransferUrl(url), let walletContext = context.context.walletContext {
+                        context.rootController.pushViewController(WalletSendScreen(
+                            context: context.context,
+                            walletContext: walletContext,
+                            address: url.absoluteString
+                        ))
+                    }
+                } else {
+                    context.openUrl(url, external: external)
+                }
+            }
+            let intercepted = MainActor.assumeIsolated {
+                NativeServiceOpenHooks.shared.interceptURL(context: context.context, url: url, fromIntent: true, original: nativeOpen)
+            }
+            if !intercepted { nativeOpen() }
             
             Queue.mainQueue().after(1.0, {
                 self?.openUrlInProgress = nil
@@ -3171,85 +3545,41 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     private func registerForNotifications(replyString: String, messagePlaceholderString: String, hiddenContentString: String, hiddenReactionContentString: String, hiddenStoryContentString: String, hiddenStoryReactionContentString: String, includeNames: Bool, authorize: Bool = true, completion: @escaping (Bool) -> Void = { _ in }) {
-        let notificationCenter = UNUserNotificationCenter.current()
-        Logger.shared.log("App \(self.episodeId)", "register for notifications: get settings (authorize: \(authorize))")
-        notificationCenter.getNotificationSettings(completionHandler: { settings in
-            Logger.shared.log("App \(self.episodeId)", "register for notifications: received settings: \(settings.authorizationStatus)")
-            
-            switch (settings.authorizationStatus, authorize) {
-                case (.authorized, _), (.notDetermined, true):
-                    var authorizationOptions: UNAuthorizationOptions = [.badge, .sound, .alert, .carPlay]
-                    if #available(iOS 12.0, *) {
-                        authorizationOptions.insert(.providesAppNotificationSettings)
-                    }
-                    Logger.shared.log("App \(self.episodeId)", "register for notifications: request authorization")
-                    notificationCenter.requestAuthorization(options: authorizationOptions, completionHandler: { result, _ in
-                        Logger.shared.log("App \(self.episodeId)", "register for notifications: received authorization: \(result)")
-                        completion(result)
-                        if result {
-                            Queue.mainQueue().async {
-                                let reply = UNTextInputNotificationAction(identifier: "reply", title: replyString, options: [], textInputButtonTitle: replyString, textInputPlaceholder: messagePlaceholderString)
-                                                                    
-                                let unknownMessageCategory: UNNotificationCategory
-                                let repliableMessageCategory: UNNotificationCategory
-                                let repliableMediaMessageCategory: UNNotificationCategory
-                                let groupRepliableMessageCategory: UNNotificationCategory
-                                let groupRepliableMediaMessageCategory: UNNotificationCategory
-                                let channelMessageCategory: UNNotificationCategory
-                                let reactionMessageCategory: UNNotificationCategory
-                                let storyCategory: UNNotificationCategory
-                                let storyReactionCategory: UNNotificationCategory
-                                
-                                var options: UNNotificationCategoryOptions = []
-                                if includeNames {
-                                    options.insert(.hiddenPreviewsShowTitle)
-                                }
-                                
-                                var carPlayOptions = options
-                                carPlayOptions.insert(.allowInCarPlay)
-                                
-                                unknownMessageCategory = UNNotificationCategory(identifier: "unknown", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: options)
-                                repliableMessageCategory = UNNotificationCategory(identifier: "r", actions: [reply], intentIdentifiers: [INSearchForMessagesIntentIdentifier], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions)
-                                repliableMediaMessageCategory = UNNotificationCategory(identifier: "m", actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions)
-                                groupRepliableMessageCategory = UNNotificationCategory(identifier: "gr", actions: [reply], intentIdentifiers: [INSearchForMessagesIntentIdentifier], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions)
-                                groupRepliableMediaMessageCategory = UNNotificationCategory(identifier: "gm", actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions)
-                                channelMessageCategory = UNNotificationCategory(identifier: "c", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: options)
-                                reactionMessageCategory = UNNotificationCategory(identifier: "t", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenReactionContentString, options: options)
-                                storyCategory = UNNotificationCategory(identifier: "st", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenStoryContentString, options: options)
-                                storyReactionCategory = UNNotificationCategory(identifier: "str", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenStoryReactionContentString, options: options)
-                                
-                                UNUserNotificationCenter.current().setNotificationCategories([
-                                    unknownMessageCategory,
-                                    repliableMessageCategory,
-                                    repliableMediaMessageCategory,
-                                    channelMessageCategory,
-                                    reactionMessageCategory,
-                                    groupRepliableMessageCategory,
-                                    groupRepliableMediaMessageCategory,
-                                    storyCategory,
-                                    storyReactionCategory
-                                ])
-                                
-                                Logger.shared.log("App \(self.episodeId)", "register for notifications: invoke registerForRemoteNotifications")
-                                UIApplication.shared.registerForRemoteNotifications()
-                            }
-                        }
-                    })
-                default:
-                    break
+        let center = UNUserNotificationCenter.current()
+        exteralessRegisterForNotifications(center: center, authorize: authorize, prepareCategories: {
+            let reply = UNTextInputNotificationAction(identifier: "reply", title: replyString, options: [], textInputButtonTitle: replyString, textInputPlaceholder: messagePlaceholderString)
+            var options: UNNotificationCategoryOptions = []
+            if includeNames {
+                options.insert(.hiddenPreviewsShowTitle)
             }
-        })
+            var carPlayOptions = options
+            carPlayOptions.insert(.allowInCarPlay)
+            center.setNotificationCategories([
+                UNNotificationCategory(identifier: "unknown", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: options),
+                UNNotificationCategory(identifier: "r", actions: [reply], intentIdentifiers: [INSearchForMessagesIntentIdentifier], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions),
+                UNNotificationCategory(identifier: "m", actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions),
+                UNNotificationCategory(identifier: "gr", actions: [reply], intentIdentifiers: [INSearchForMessagesIntentIdentifier], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions),
+                UNNotificationCategory(identifier: "gm", actions: [reply], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: carPlayOptions),
+                UNNotificationCategory(identifier: "c", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenContentString, options: options),
+                UNNotificationCategory(identifier: "t", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenReactionContentString, options: options),
+                UNNotificationCategory(identifier: "st", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenStoryContentString, options: options),
+                UNNotificationCategory(identifier: "str", actions: [], intentIdentifiers: [], hiddenPreviewsBodyPlaceholder: hiddenStoryReactionContentString, options: options)
+            ])
+        }, completion: completion)
     }
     
     @available(iOS 10.0, *)
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let complete = exteralessForegroundNotificationCompletion(completionHandler)
         let _ = (accountIdFromNotification(notification, sharedContext: self.sharedContextPromise.get())
-        |> deliverOnMainQueue).start(next: { accountId in
-            if let context = self.contextValue {
-                if let accountId = accountId, context.context.account.id != accountId || notification.request.content.userInfo["url"] != nil {
-                    completionHandler([.banner, .list])
-                }
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self] accountId in
+            guard let context = self?.contextValue?.context else {
+                complete([])
+                return
             }
+            let _ = (exteralessForegroundNotificationOptions(context: context, accountId: accountId, notification: notification)
+            |> deliverOnMainQueue).start(next: complete)
         })
     }
     

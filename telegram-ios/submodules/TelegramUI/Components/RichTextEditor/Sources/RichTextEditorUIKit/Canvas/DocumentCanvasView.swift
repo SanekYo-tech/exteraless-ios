@@ -217,6 +217,8 @@ class DocumentCanvasView: UIView {
     final var canPasteMedia: (() -> Bool)?
     final var onPasteMedia: (() -> Bool)?
     final var plainTextFragmentTransformer: ((String) -> Document?)?
+    final var pastedLinkTargetTransformer: ((String) -> String)?
+    final var committedTextTransformer: ((String) -> String)?
 
     /// A HARDWARE-keyboard Return (plain or ⌘) routes here before the editor inserts a newline, so a host
     /// (the chat composer) can send-on-Enter / send-on-⌘-Enter. Mirrors the legacy `ChatInputTextViewImpl`'s

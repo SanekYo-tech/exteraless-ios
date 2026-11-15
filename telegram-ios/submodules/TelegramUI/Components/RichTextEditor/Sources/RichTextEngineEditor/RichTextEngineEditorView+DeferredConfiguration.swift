@@ -46,6 +46,8 @@ public struct DeferredConfiguration {
     public var canPasteMedia: (() -> Bool)?
     public var onPasteMedia: (() -> Bool)?
     public var plainTextFragmentTransformer: ((String) -> Document?)?
+    public var pastedLinkTargetTransformer: ((String) -> String)?
+    public var committedTextTransformer: ((String) -> String)?
     public var contextMenuItemsProvider: (([UIMenuElement]) -> [UIMenuElement])?
     public var onRequestTableStructuralMenu: ((TableStructuralMenuRequest) -> Void)?
     public var onRequestMediaControl: ((MediaControlRequest) -> Void)?
@@ -229,6 +231,18 @@ extension RichTextEngineEditorView {
     public var plainTextFragmentTransformer: ((String) -> Document?)? {
         get { deferredConfiguration.plainTextFragmentTransformer }
         set { deferredConfiguration.plainTextFragmentTransformer = newValue }
+    }
+
+    // CONSUMED BY: R7-paste — `pasteFragment` and the engine RTF import seam, before one native splice.
+    public var pastedLinkTargetTransformer: ((String) -> String)? {
+        get { deferredConfiguration.pastedLinkTargetTransformer }
+        set { deferredConfiguration.pastedLinkTargetTransformer = newValue }
+    }
+
+    // CONSUMED BY: R7-surface-gate — the final insert/replace text filter, before any storage edit.
+    public var committedTextTransformer: ((String) -> String)? {
+        get { deferredConfiguration.committedTextTransformer }
+        set { deferredConfiguration.committedTextTransformer = newValue }
     }
 
     // CONSUMED BY: R9-inline — DONE. `+EditMenu.swift` hands the system's suggested actions to this provider

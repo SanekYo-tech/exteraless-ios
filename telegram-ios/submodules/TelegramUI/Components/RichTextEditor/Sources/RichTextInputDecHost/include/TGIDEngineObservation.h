@@ -305,6 +305,8 @@ API_AVAILABLE(ios(18.4))
 /// asynchronous (it lands 20-30 ms after `paste:`), so this is the one moment the host knows the next
 /// storage edit is the paste — to make it an undo step of its own.
 @property(nonatomic, copy, nullable) void (^tgid_pasteWillLandHandler)(void);
+/// Pure value transform after the engine's attributed import, before its storage insertion.
+@property(nonatomic, copy, nullable) NSAttributedString *(^tgid_pastedTextTransformer)(NSAttributedString *text);
 
 /// Host gate for text arriving at the view's UITextInput surface — typing, hardware Return, the
 /// keyboard's own replaces (autocorrect, predictive text) — consulted BEFORE the controller edits,
@@ -316,6 +318,9 @@ API_AVAILABLE(ios(18.4))
 /// A selection deletion (`deleteBackward` with a selection, `cut:`) is issued as `replaceRange:withText:`
 /// with empty text, so it reaches the gate too: a range across blocks is structural.
 @property(nonatomic, copy, nullable) NSString *_Nullable (^tgid_textInputGate)(NSRange canonicalRange, NSString *text);
+/// Pure final-text transform, including an IME commit through insertText. Never called by
+/// setMarkedText/setAttributedMarkedText, and never allowed to edit storage or change selection.
+@property(nonatomic, copy, nullable) NSString *(^tgid_committedTextTransformer)(NSRange canonicalRange, NSString *text);
 
 /// YES only while the gate is being asked to resolve the selection a COMPOSITION is about to start
 /// over (an empty replacement, see `setMarkedText:selectedRange:`). A host that decides the deletion

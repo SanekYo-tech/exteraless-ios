@@ -3,6 +3,7 @@ import UIKit
 import Display
 import AccountContext
 import TelegramPresentationData
+import PresentationDataUtils
 import TelegramCore
 import PhoneNumberFormat
 import ItemListUI
@@ -88,7 +89,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                 interaction.openSettings(.premiumManagement)
             }))
         } else if settings.suggestPhoneNumberConfirmation, case let .user(peer) = data.peer {
-            let phoneNumber = formatPhoneNumber(context: context, number: peer.phone ?? "")
+            let phoneNumber = exteralessShouldHidePhone(accountPeerId: context.account.peerId, peerId: peer.id) ? "••••" : formatPhoneNumber(context: context, number: peer.phone ?? "")
             items[.phone]!.append(PeerInfoScreenInfoItem(id: 0, title: presentationData.strings.Settings_CheckPhoneNumberTitle(phoneNumber).string, text: .markdown(presentationData.strings.Settings_CheckPhoneNumberText), linkAction: { link in
                 if case .tap = link {
                     interaction.openFaq(presentationData.strings.Settings_CheckPhoneNumberFAQAnchor)
@@ -275,6 +276,28 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         interaction.openSettings(.language)
     }))
 
+    if ExteralessSettingsEntry.isAvailable {
+        items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 8, text: "exteraless", icon: exteralessClientSettingsIcon, action: {
+            guard let parent = interaction.getController(), let controller = ExteralessSettingsEntry.makeController(context: context) else {
+                return
+            }
+            parent.push(controller)
+        }))
+    }
+    if exteralessShowGhostShortcut() {
+        items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 9, label: .text(exteralessGhostModeIsActive() ? "On" : "Off"), text: "Ghost mode", icon: PresentationResourcesSettings.security, action: {
+            let _ = (exteralessToggleGhostMode(account: context.account)
+            |> deliverOnMainQueue).start(next: { _ in
+                interaction.requestLayout(false)
+            }, error: { _ in
+                interaction.requestLayout(false)
+                guard let parent = interaction.getController() else {
+                    return
+                }
+                parent.present(textAlertController(context: context, title: "Ghost mode", text: "Could not save privacy settings.", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), in: .window(.root))
+            })
+        }))
+    }
     if ExteralessPluginEntry.isAvailable {
         items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: ExteralessPluginLocalization.text("Plugins.Title", fallback: "Plugins"), icon: exteralessPluginsSettingsIcon, action: {
             guard let parent = interaction.getController(), let controller = ExteralessPluginEntry.makeController(context: context) else {
@@ -367,8 +390,17 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
             result.append((section, sectionItems))
         }
     }
-    return result
+    return exteralessAppearanceSettingsItems(result, data: data, presentationData: presentationData, interaction: interaction)
 }
+
+private let exteralessClientSettingsIcon: UIImage = {
+    return UIGraphicsImageRenderer(size: CGSize(width: 30.0, height: 30.0)).image { _ in
+        UIColor(rgb: 0x007AFF).setFill()
+        UIBezierPath(roundedRect: CGRect(x: 0.0, y: 0.0, width: 30.0, height: 30.0), cornerRadius: 8.0).fill()
+        UIImage(systemName: "slider.horizontal.3")?.withTintColor(.white, renderingMode: .alwaysOriginal)
+            .draw(in: CGRect(x: 5.0, y: 5.0, width: 20.0, height: 20.0))
+    }
+}()
 
 private let exteralessPluginsSettingsIcon: UIImage = {
     return UIGraphicsImageRenderer(size: CGSize(width: 30.0, height: 30.0)).image { _ in
@@ -488,7 +520,7 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
     }
     
     if case let .user(user) = data.peer {
-        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
+        items[.info]!.append(PeerInfoScreenDisclosureItem(id: ItemPhoneNumber, label: .text(exteralessShouldHidePhone(accountPeerId: context.account.peerId, peerId: user.id) ? "" : user.phone.flatMap({ formatPhoneNumber(context: context, number: $0) }) ?? ""), text: presentationData.strings.Settings_PhoneNumber, icon: PresentationResourcesSettings.recentCalls, action: {
             interaction.openSettings(.phoneNumber)
         }))
     }

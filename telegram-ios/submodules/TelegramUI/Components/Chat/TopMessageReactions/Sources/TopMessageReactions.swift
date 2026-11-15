@@ -271,9 +271,16 @@ public func topMessageReactions(context: AccountContext, message: EngineRawMessa
         }
     }
     
-    let topReactions = context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudTopReactions))
-    |> map { items -> [RecentReactionItem] in
-        return items.compactMap { item -> RecentReactionItem? in
+    var isBroadcastChannel = false
+    if let channel = message.peers[message.id.peerId] as? TelegramChannel, case .broadcast = channel.info {
+        isBroadcastChannel = true
+    }
+    let topReactions = combineLatest(
+        context.engine.data.subscribe(TelegramEngine.EngineData.Item.OrderedLists.ListItems(collectionId: Namespaces.OrderedItemList.CloudTopReactions)),
+        exteralessPinnedReactionItems(engine: context.engine, isChannel: isBroadcastChannel)
+    )
+    |> map { items, pinned -> [RecentReactionItem] in
+        return pinned + items.compactMap { item -> RecentReactionItem? in
             return item.contents.get(RecentReactionItem.self)
         }
     }

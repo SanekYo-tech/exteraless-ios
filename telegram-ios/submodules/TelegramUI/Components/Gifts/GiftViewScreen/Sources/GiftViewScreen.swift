@@ -955,6 +955,10 @@ private final class GiftViewSheetContent: CombinedComponent {
 
                         let translationController = await self.context.sharedContext.makeTextProcessingScreen(
                             context: self.context,
+                            capability: {
+                                if case let .message(message) = self.subject { return .message(message, canCopy: canCopy) }
+                                return .init(allowsExternalProcessing: canCopy, allowsCopy: canCopy)
+                            }(),
                             theme: nil,
                             mode: .translate(fromLanguage: language, applyResult: nil),
                             inputText: .plain(text: text.string, entities: []),

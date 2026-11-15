@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramCore
 import SwiftSignalKit
@@ -1261,28 +1262,31 @@ func peerInfoScreenData(
                     }
                     subscriber.putNext(data)
                 }
-                let disposable = (context.account.viewTracker.peerView(userPeerId, updateData: false)
-                |> map { view -> StatusInputData in
+                let disposable = (combineLatest(context.account.viewTracker.peerView(userPeerId, updateData: false), exteralessPrivacySettingsChanges())
+                |> mapToSignal { view, _ -> Signal<StatusInputData, NoError> in
                     guard let user = view.peers[userPeerId] as? TelegramUser else {
-                        return .none
+                        return .single(.none)
                     }
                     if user.id == context.account.peerId {
-                        return .none
+                        return exteralessPrivacyAdjustedPresence(account: context.account, peerId: userPeerId, presence: nil)
+                        |> map { presence in presence.map(StatusInputData.presence) ?? .none }
                     }
                     if user.isDeleted {
-                        return .none
+                        return .single(.none)
                     }
                     if user.flags.contains(.isSupport) {
-                        return .support
+                        return .single(.support)
                     }
                     if user.botInfo != nil {
-                        return .bot(subscriberCount: user.subscriberCount)
+                        return .single(.bot(subscriberCount: user.subscriberCount))
                     }
                     guard let presence = view.peerPresences[userPeerId] as? TelegramUserPresence else {
-                        return .none
+                        return .single(.none)
                     }
-                    return .presence(presence)
+                    return exteralessPrivacyAdjustedPresence(account: context.account, peerId: userPeerId, presence: presence)
+                    |> map { presence in presence.map(StatusInputData.presence) ?? .none }
                 }
+                |> deliverOnMainQueue
                 |> distinctUntilChanged).start(next: { inputData in
                     switch inputData {
                     case let .bot(subscriberCount):
@@ -1659,6 +1663,13 @@ func peerInfoScreenData(
                     }
                 }
                 
+                if var panes = availablePanes,
+                   exteralessIdentityPreferCommonGroups(defaultIsGifts: panes.first == .gifts, hasCommonGroups: panes.contains(.groupsInCommon)) {
+                    panes.removeAll(where: { $0 == .groupsInCommon })
+                    panes.insert(.groupsInCommon, at: 0)
+                    availablePanes = panes
+                }
+
                 let peer = peerView.peers[userPeerId]
                 
                 var managedByBot: EnginePeer?
@@ -2803,6 +2814,15 @@ func peerInfoHeaderButtons(peer: EnginePeer?, cachedData: EngineCachedPeerData?,
         result.append(.more)
     }
     
+    if isOpenedFromChat {
+        if ClientSettings.shared.bool("chats.hideCallButton") {
+            result.removeAll { $0 == .call || $0 == .videoCall }
+        }
+        if case let .channel(channel) = peer, case .broadcast = channel.info,
+           ClientSettings.shared.bool("chats.hideChannelSearchButton") {
+            result.removeAll { $0 == .search }
+        }
+    }
     return result
 }
 

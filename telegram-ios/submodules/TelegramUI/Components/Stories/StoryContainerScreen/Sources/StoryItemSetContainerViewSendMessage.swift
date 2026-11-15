@@ -1563,6 +1563,7 @@ final class StoryItemSetContainerSendMessage: @unchecked(Sendable) {
                 let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
                 let translateController = await TextProcessingScreen(
                     context: component.context,
+                    capability: .init(allowsExternalProcessing: !component.slice.item.storyItem.isForwardingDisabled, allowsCopy: !component.slice.item.storyItem.isForwardingDisabled),
                     theme: defaultDarkPresentationTheme,
                     mode: .translate(fromLanguage: language, applyResult: nil),
                     inputText: .plain(text: text, entities: entities),

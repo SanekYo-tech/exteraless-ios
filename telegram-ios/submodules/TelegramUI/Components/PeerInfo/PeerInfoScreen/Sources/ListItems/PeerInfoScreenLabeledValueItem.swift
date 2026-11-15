@@ -73,6 +73,7 @@ final class PeerInfoScreenLabeledValueItem: PeerInfoScreenItem {
     let handleSpoilers: Bool
     let textColor: PeerInfoScreenLabeledValueTextColor
     let textBehavior: PeerInfoScreenLabeledValueTextBehavior
+    let expandedByDefault: Bool
     let leftIcon: PeerInfoScreenLabeledValueLeftIcon?
     let icon: PeerInfoScreenLabeledValueIcon?
     let action: ((ASDisplayNode, Promise<Bool>?) -> Void)?
@@ -94,6 +95,7 @@ final class PeerInfoScreenLabeledValueItem: PeerInfoScreenItem {
         handleSpoilers: Bool = false,
         textColor: PeerInfoScreenLabeledValueTextColor = .primary,
         textBehavior: PeerInfoScreenLabeledValueTextBehavior = .singleLine,
+        expandedByDefault: Bool = false,
         leftIcon: PeerInfoScreenLabeledValueLeftIcon? = nil,
         icon: PeerInfoScreenLabeledValueIcon? = nil,
         action: ((ASDisplayNode, Promise<Bool>?) -> Void)?,
@@ -114,6 +116,7 @@ final class PeerInfoScreenLabeledValueItem: PeerInfoScreenItem {
         self.handleSpoilers = handleSpoilers
         self.textColor = textColor
         self.textBehavior = textBehavior
+        self.expandedByDefault = expandedByDefault
         self.leftIcon = leftIcon
         self.icon = icon
         self.action = action
@@ -566,7 +569,7 @@ private final class PeerInfoScreenLabeledValueItemNode: PeerInfoScreenItemNode {
             }
         case let .multiLine(maxLines, enabledEntities):
             let originalText = text
-            if !self.isExpanded {
+            if !(self.isExpanded || item.expandedByDefault) {
                 text = trimToLineCount(text, lineCount: 3)
             }
             
@@ -603,7 +606,7 @@ private final class PeerInfoScreenLabeledValueItemNode: PeerInfoScreenItemNode {
                 collapsedNumberOfLines = 4
             }
             
-            maxNumberOfLines = self.isExpanded ? maxLines : collapsedNumberOfLines
+            maxNumberOfLines = item.expandedByDefault ? 0 : (self.isExpanded ? maxLines : collapsedNumberOfLines)
             self.textNode.maximumNumberOfLines = maxNumberOfLines
         }
         
@@ -616,7 +619,7 @@ private final class PeerInfoScreenLabeledValueItemNode: PeerInfoScreenItemNode {
         let additionalTextSize = self.additionalTextNode.updateLayout(CGSize(width: width - sideInset - sideInsetRight, height: .greatestFiniteMagnitude))
         
         var displayMore = false
-        if !self.isExpanded {
+        if !(self.isExpanded || item.expandedByDefault) {
             if textLayout.truncated || text.count < item.text.count {
                 displayMore = true
             }

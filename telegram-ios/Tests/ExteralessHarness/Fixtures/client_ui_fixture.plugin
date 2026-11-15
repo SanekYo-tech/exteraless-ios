@@ -1,0 +1,105 @@
+__id__ = "clientUIFixture"
+__name__ = "Owned UI Fixture"
+__version__ = "1.0"
+__description__ = "Bounded local UIKit acceptance fixture"
+__permissions__ = ["ui", "intents"]
+__requirements__ = []
+
+import threading
+
+from base_plugin import BasePlugin
+from ui.alert import AlertDialogBuilder
+from ui.settings import Header, Text
+
+
+class ClientUIFixture(BasePlugin):
+    def on_plugin_load(self):
+        import exteraless_runtime as runtime
+        import _exteraless_bridge as bridge
+        from extera_utils import plugin_loader
+        self.worker = threading.get_ident()
+        self.set_setting("loads", self.get_setting("loads", 0) + 1)
+        self.set_setting("sdk_sources", {
+            "loader": plugin_loader.__file__.endswith("/python/sdk/extera_utils/plugin_loader.py"),
+            "native_builtin": getattr(bridge, "__file__", None) is None,
+            "epoch": runtime._state.owner_token,
+            "fixture": __file__.endswith("/plugins/clientUIFixture.plugin"),
+        })
+
+    def owner(self):
+        import exteraless_runtime as runtime
+        from extera_utils import plugin_loader
+        assert threading.get_ident() == self.worker, "callback left native owner worker"
+        assert plugin_loader.current_plugin_id() == __id__, "callback changed plugin context"
+        return runtime._runtime(loaded=True)
+
+    def create_settings(self):
+        return [Header("Actual SDK / actual UIKit"),
+                Text("Alert and keyboard", on_click=self.alert),
+                Text("Sheet widgets", on_click=self.sheet),
+                Text("Menu choices", on_click=self.menu),
+                Text("Navigate native settings", on_click=self.navigate),
+                Text("Inspect callback leases", on_click=self.inspect)]
+
+    def alert(self, *_):
+        self.owner()
+        from java import jclass
+        field = jclass("android.widget.EditText")()
+        field.setHint("Fixture draft")
+        field.setText("")
+        def accepted(builder, which):
+            self.owner()
+            assert which == -1
+            self.set_setting("alertAccepted", {"which": which, "text": field.getText()})
+        def dismissed(builder):
+            self.owner()
+            self.set_setting("alertDismissed", True)
+        self.dialog = (AlertDialogBuilder().set_title("SDK alert")
+                       .set_message("Real UIKit, isolated fixture")
+                       .set_view(field).set_positive_button("Accept fixture", accepted)
+                       .set_on_dismiss_listener(dismissed).show())
+
+    def sheet(self, *_):
+        # Portable SDK widgets are the production Presentation/model boundary.
+        # No native screen, pixels or callback result is supplied by this fixture.
+        p = self.owner()
+        def changed(event):
+            self.owner()
+            self.set_setting("widget_" + event["key"], event["value"])
+        def applied(event):
+            self.owner()
+            self.set_setting("sheetApplied", event["values"])
+        self.sheet_dialog = p.present("bottomSheet", {
+            "title": "SDK sheet",
+            "view": {"type": "column", "id": "sheet-content", "children": [
+                {"type": "toggle", "id": "sheet-enabled", "text": "Fixture toggle", "value": False},
+                {"type": "slider", "id": "sheet-amount", "text": "Fixture amount",
+                 "min": 0, "max": 100, "step": 25, "value": 0}]},
+            "buttons": [{"which": -1, "text": "Apply sheet"}],
+        }, {"change": changed, "positive": applied})
+
+    def menu(self, *_):
+        p = self.owner()
+        def selected(event):
+            self.owner()
+            self.set_setting("menuIndex", event["which"])
+        self.menu_dialog = p.present("menu", {
+            "title": "SDK menu", "items": ["First fixture item", "Second fixture item"],
+        }, {"item": selected})
+
+    def navigate(self, *_):
+        self.owner()
+        from client_utils import get_last_fragment
+        fragment = get_last_fragment()
+        assert fragment is not None and fragment.getCurrentAccount() == 41
+        fragment.presentFragment({"route": "settings", "title": "SDK native settings",
+                                  "sourceId": fragment.descriptor["id"]})
+        self.set_setting("navigated", True)
+
+    def inspect(self, *_):
+        p = self.owner()
+        self.set_setting("leases", {"count": len(p.callbacks.leases), "handles": len(p.callbacks.handles)})
+
+    def on_plugin_unload(self):
+        assert threading.get_ident() == self.worker
+        self.set_setting("unloads", self.get_setting("unloads", 0) + 1)

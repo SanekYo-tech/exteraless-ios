@@ -81,7 +81,7 @@ extension DocumentCanvasView {
         // text as one undo step, then replace it with the rich content as a second, so the first undo
         // reverts rich→plain and a further undo removes it. Only when the pasteboard carries NO richer
         // representation (a fragment/RTF paste keeps its own single-step path below).
-        if !pasteboardHasRichTextRepresentation(pasteboard),
+        if !isLiteralPasteDestination, !pasteboardHasRichTextRepresentation(pasteboard),
            let s = pasteboard.string, !s.isEmpty,
            let transformer = plainTextFragmentTransformer,
            let rich = transformer(s), !rich.blocks.isEmpty {
@@ -96,6 +96,32 @@ extension DocumentCanvasView {
         return pb.data(forPasteboardType: Self.richTextFragmentUTI) != nil
             || pb.data(forPasteboardType: "public.rtf") != nil
             || pb.data(forPasteboardType: "com.apple.flat-rtfd") != nil
+    }
+
+    /// Decide BEFORE asking a host transformer: a mixed selection touching code is literal too,
+    /// even when the selection's uniform format state says `code == false`.
+    var isLiteralPasteDestination: Bool {
+        if selFrom == selTo {
+            guard let (region, local) = leafRegion(containingGlobal: head) else { return true }
+            switch region.ref {
+            case .code, .codeLanguage: return true
+            default: return mapper.characterAttributes(from: typingAttributeDict(region: region, atLocal: local)).inlineCode
+            }
+        }
+        for region in allLeafRegions() {
+            let from = max(selFrom, region.globalStart), to = min(selTo, region.globalStart + region.length)
+            guard from < to else { continue }
+            switch region.ref {
+            case .code, .codeLanguage: return true
+            default: break
+            }
+            var literal = false
+            region.layout.attributedString.enumerateAttribute(.rtInlineCode, in: NSRange(location: from - region.globalStart, length: to - from), options: []) { value, _, stop in
+                if (value as? Bool) == true { literal = true; stop.pointee = true }
+            }
+            if literal { return true }
+        }
+        return false
     }
 
     /// The richest fragment available on the pasteboard: private UTI → RTF → plain text.
@@ -149,7 +175,7 @@ extension DocumentCanvasView {
         // neither show nor edit it. Downgrade to `.disabled`, which is what the wire itself uses for a
         // stripped action. The EDIT round-trip is unaffected — that goes through the `document` setter,
         // not a fragment splice, so reopening a message still preserves its actions verbatim.
-        let fragment = rawFragment.convertingUnsupportedButtonActions()
+        let fragment = rawFragment.convertingUnsupportedButtonActions().rewritingLinkTargets(isLiteralPasteDestination ? nil : pastedLinkTargetTransformer)
         // 1. delete the selection (grapheme-safe, cross-region) → collapsed caret at selFrom.
         // THE CLAIM IS APPLIED HERE, ON THE NEXT INSTRUCTION. This call is OUTSIDE any `editing { }` and
         // `let caret = head` on the line after the brace reads it straight back; the whole splice below
@@ -205,6 +231,9 @@ extension DocumentCanvasView {
     /// of first reverting rich→plain. Running step 2 in a fresh event puts it in its own undo group.
     func pasteMarkdownTwoStep(plainText: String, rich: Document) {
         guard !rich.blocks.isEmpty else { return }
+        // Rewrite only the parsed destinations. Step 1 must keep the original source, including
+        // code and authored link labels, so undo always has the bytes the user actually pasted.
+        let rich = rich.convertingUnsupportedButtonActions().rewritingLinkTargets(pastedLinkTargetTransformer)
         let plain = plainTextFragment(plainText)
         guard !plain.blocks.isEmpty else { return }
         var range = (start: 0, end: 0)
@@ -213,8 +242,10 @@ extension DocumentCanvasView {
         suppressHostChangeNotification = true
         editing { range = spliceFragmentInEditing(plain); return .unchanged }        // step 1: raw plain text (this event)
         suppressHostChangeNotification = false
+        let revision = documentRevision
+        let selection = canonicalSelection
         DispatchQueue.main.async { [weak self] in                 // step 2: replace with rich (next event)
-            guard let self else { return }
+            guard let self, self.documentRevision == revision, self.canonicalSelection == selection else { return }
             let size = self.documentSize
             let lo = max(0, min(range.start, size))
             let hi = max(lo, min(range.end, size))

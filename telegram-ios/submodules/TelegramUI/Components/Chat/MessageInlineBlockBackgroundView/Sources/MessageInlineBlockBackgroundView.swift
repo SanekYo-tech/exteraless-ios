@@ -188,6 +188,7 @@ private final class PatternContentsTarget: MultiAnimationRenderTarget {
         self.imageUpdated = imageUpdated
         
         super.init()
+        self.performanceAnimationKind = .effect
     }
     
     required init(coder: NSCoder) {
@@ -642,7 +643,7 @@ public final class MessageInlineBlockBackgroundView: UIView {
         let previousParams = self.params
         self.params = params
 
-        if previousParams?.primaryColor != params.primaryColor || previousParams?.secondaryColor != params.secondaryColor || previousParams?.backgroundColor != params.backgroundColor {
+        if previousParams?.primaryColor != params.primaryColor || previousParams?.secondaryColor != params.secondaryColor || previousParams?.backgroundColor != params.backgroundColor || previousParams?.isTransparent != params.isTransparent {
             for patternContentLayer in self.patternContentLayers {
                 patternContentLayer.layerTintColor = primaryColor.cgColor
             }

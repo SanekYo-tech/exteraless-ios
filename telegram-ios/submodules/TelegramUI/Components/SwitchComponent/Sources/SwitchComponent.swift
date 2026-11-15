@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -11,18 +12,26 @@ public final class SwitchComponent: Component {
     let tintColor: UIColor?
     let value: Bool
     let valueUpdated: (Bool) -> Void
+    private let accessibilityLabel: String?
+    private let appearanceStyle: Int
     
     public init(
         tintColor: UIColor? = nil,
         value: Bool,
+        accessibilityLabel: String? = nil,
+        appearanceSettings: ClientSettings = .shared,
         valueUpdated: @escaping (Bool) -> Void
     ) {
         self.tintColor = tintColor
         self.value = value
         self.valueUpdated = valueUpdated
+        self.accessibilityLabel = accessibilityLabel
+        self.appearanceStyle = appearanceSettings.integer("appearance.switchStyle", default: 2)
     }
     
     public static func ==(lhs: SwitchComponent, rhs: SwitchComponent) -> Bool {
+        if lhs.appearanceStyle != rhs.appearanceStyle { return false }
+        if lhs.accessibilityLabel != rhs.accessibilityLabel { return false }
         if lhs.tintColor != rhs.tintColor {
             return false
         }
@@ -34,6 +43,7 @@ public final class SwitchComponent: Component {
     
     public final class View: UIView {
         private let switchView: UISwitch
+        private let appearanceSwitch = AppearanceSwitchControl(frame: .zero)
     
         private var component: SwitchComponent?
         
@@ -43,6 +53,8 @@ public final class SwitchComponent: Component {
             super.init(frame: frame)
             
             self.addSubview(self.switchView)
+            self.addSubview(self.appearanceSwitch)
+            self.appearanceSwitch.addTarget(self, action: #selector(self.valueChanged(_:)), for: .valueChanged)
             
             self.switchView.addTarget(self, action: #selector(self.valueChanged(_:)), for: .valueChanged)
         }
@@ -52,11 +64,27 @@ public final class SwitchComponent: Component {
         }
         
         @objc func valueChanged(_ sender: Any) {
-            self.component?.valueUpdated(self.switchView.isOn)
+            self.component?.valueUpdated(self.appearanceSwitch.isHidden ? self.switchView.isOn : self.appearanceSwitch.isOn)
         }
         
         func update(component: SwitchComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<EnvironmentType>, transition: ComponentTransition) -> CGSize {
+            if self.component?.appearanceStyle != component.appearanceStyle {
+                self.switchView.cancelTracking(with: nil)
+                self.appearanceSwitch.cancelTracking(with: nil)
+            }
             self.component = component
+            self.switchView.accessibilityLabel = component.accessibilityLabel
+            self.appearanceSwitch.accessibilityLabel = component.accessibilityLabel
+            let material = component.appearanceStyle != 0
+            self.switchView.isHidden = material
+            self.appearanceSwitch.isHidden = !material
+            if material {
+                self.appearanceSwitch.update(value: component.value, style: component.appearanceStyle == 3 ? 3 : 2, tint: component.tintColor, animated: !transition.animation.isImmediate)
+                let size = self.appearanceSwitch.intrinsicContentSize
+                self.appearanceSwitch.frame = CGRect(origin: .zero, size: size)
+                self.appearanceSwitch.setNeedsLayout()
+                return size
+            }
           
             self.switchView.tintColor = component.tintColor
             self.switchView.setOn(component.value, animated: !transition.animation.isImmediate)

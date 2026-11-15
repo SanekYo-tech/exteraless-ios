@@ -24,6 +24,7 @@ private enum OptionsId: Hashable {
 
 extension ChatControllerImpl {
     func openPollOptionContextMenu(optionId: Data, params: ChatControllerInteraction.LongTapParams) -> Void {
+        if let message = params.message, MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: EngineMessage(message)) }) { return }
         guard let message = params.message, let poll = message.media.first(where: { $0 is TelegramMediaPoll }) as? TelegramMediaPoll, let pollOptionIndex = poll.options.firstIndex(where: { $0.opaqueIdentifier == optionId }), let contentNode = params.contentNode else {
             return
         }

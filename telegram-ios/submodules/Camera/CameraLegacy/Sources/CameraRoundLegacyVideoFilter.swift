@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Camera
 import UIKit
 import AVFoundation
@@ -100,6 +101,9 @@ final class CameraRoundLegacyVideoFilter {
             sourceOrientation = additional ? .leftMirrored : .right
         }
         sourceImage = sourceImage.oriented(sourceOrientation)
+        if additional && !ClientSettings.shared.bool("tools.cameraMirrorMode", default: true) {
+            sourceImage = sourceImage.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: sourceImage.extent.minX + sourceImage.extent.maxX, ty: 0))
+        }
         let scale = CGFloat(videoMessageDimensions.width) / min(sourceImage.extent.width, sourceImage.extent.height)
         
         if !self.simple {

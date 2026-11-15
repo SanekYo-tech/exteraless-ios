@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -1108,6 +1109,20 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                     nativeSize = unboundSize
             }
 
+            // Compact only standalone GIFs. Unconstrained/mosaic layout owns its
+            // shared edges and must retain the complete album's geometry.
+            let compactGIF: Bool
+            if case .constrained = sizeCalculation, let file = media as? TelegramMediaFile,
+               file.isAnimated, !file.isSticker, !file.isAnimatedSticker, !file.isVideoSticker,
+               !isSecretMedia, ClientSettings.shared.bool("chats.showSmallGIF") {
+                compactGIF = true
+                nativeSize = CGSize(width: 120.0, height: 120.0)
+                maxDimensions = CGSize(width: 120.0, height: 120.0)
+                maxHeight = 120.0
+            } else {
+                compactGIF = false
+            }
+
             var statusSize = CGSize()
             var statusApply: ((ListViewItemUpdateAnimation) -> Void)?
             
@@ -1137,7 +1152,8 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                     hasAutoremove: message.isSelfExpiring,
                     canViewReactionList: canViewMessageReactionList(message: EngineMessage(message)),
                     animationCache: presentationContext.animationCache,
-                    animationRenderer: presentationContext.animationRenderer
+                    animationRenderer: presentationContext.animationRenderer,
+                    retention: EngineMessage(message).exteralessRetention
                 ))
                 
                 let (size, apply) = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)
@@ -1178,6 +1194,7 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                             }
                             resultWidth = min(nativeSize.width, min(maxFittedSize.width, min(constrainedSize.width, maxDimensions.width)))
                             resultWidth = max(resultWidth, layoutConstants.image.minDimensions.width)
+                            if compactGIF { resultWidth = min(120.0, constrainedSize.width) }
                         }
                     case .unconstrained:
                         resultWidth = constrainedSize.width
@@ -1204,6 +1221,9 @@ public final class ChatMessageInteractiveMediaNode: ASDisplayNode, GalleryItemTr
                                 boundingSize = CGSize(width: boundingWidth, height: filledSize.height).cropped(CGSize(width: CGFloat.greatestFiniteMagnitude, height: maxHeight))
                                 boundingSize.height = max(boundingSize.height, layoutConstants.image.minDimensions.height)
                                 boundingSize.width = max(boundingSize.width, layoutConstants.image.minDimensions.width)
+                                if compactGIF {
+                                    boundingSize = CGSize(width: min(120.0, boundingWidth), height: min(120.0, boundingWidth))
+                                }
                                 switch contentMode {
                                     case .aspectFit:
                                         drawingSize = nativeSize.aspectFittedWithOverflow(boundingSize, leeway: 4.0)

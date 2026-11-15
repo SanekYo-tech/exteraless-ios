@@ -22,6 +22,9 @@ import ChatMessageNotificationItem
 import FaceScanScreen
 
 public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParams) {
+    if ExteralessBotAccountRouter.shared.interceptNavigation(params) {
+        return
+    }
     if case let .peer(peer) = params.chatLocation {
         let _ = params.context.engine.peers.ensurePeerIsLocallyAvailable(peer: peer).startStandalone()
     }
@@ -47,18 +50,11 @@ public func navigateToChatControllerImpl(_ params: NavigateToChatControllerParam
             viewForumAsMessages = .single(false)
         }
     } else if case let .peer(peer) = params.chatLocation, case let .channel(channel) = peer, channel.flags.contains(.isForum) {
-        if channel.flags.contains(.displayForumAsTabs) {
-            viewForumAsMessages = .single(true)
-        } else {
-            viewForumAsMessages = params.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id))
-            |> take(1)
-            |> map { cachedPeerData in
-                if let cachedData = cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
-                    return true
-                } else {
-                    return false
-                }
-            }
+        viewForumAsMessages = combineLatest(
+            params.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id)),
+            exteralessDialogForumLayout(account: params.context.account, peerId: peer.id) |> take(1)
+        ) |> map { cachedPeerData, layout in
+            exteralessDialogViewForumAsMessages(peer: peer, layout: layout, nativeViewAsMessages: (cachedPeerData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: params.context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
         }
     } else if case let .peer(peer) = params.chatLocation, peer.id == params.context.account.peerId {
         viewForumAsMessages = params.context.engine.data.get(

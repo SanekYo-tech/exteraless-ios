@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import TelegramPresentationData
 import AccountContext
 import TelegramCore
@@ -13,6 +14,7 @@ import PremiumUI
 import ReactionSelectionNode
 import TopMessageReactions
 import ChatMessagePaymentAlertController
+import PeerSelectionController
 
 extension ChatControllerImpl {
     func forwardMessages(messageIds: [EngineMessage.Id], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool = false) {
@@ -27,8 +29,15 @@ extension ChatControllerImpl {
         })
     }
 
-    func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool) {
-        let _ = self.presentVoiceMessageDiscardAlert(action: { [weak self] in
+    func forwardMessages(messages: [EngineRawMessage], options: ChatInterfaceForwardOptionsState? = nil, resetCurrent: Bool, exportAccess: ExteralessChatExportAccess? = nil) {
+        let context = self.context
+        let exportPermit = exportAccess?.permit
+        let exportMessageIds = exportAccess?.ids
+        let exportAccountId = context.account.id.int64
+        func presentationContinuation(_ body: @escaping () -> Void) -> () -> Void {
+            return { exteralessForwardAdmission(context: context, access: exportAccess, operation: .presentation, body) }
+        }
+        let presentSelection: () -> Void = { [weak self] in
             guard let self else {
                 return
             }
@@ -57,6 +66,7 @@ extension ChatControllerImpl {
             let controller = self.context.sharedContext.makePeerSelectionController(PeerSelectionControllerParams(context: self.context, updatedPresentationData: self.updatedPresentationData, filter: filter, hasFilters: true, attemptSelection: { peer, _, reason in
                 attemptSelectionImpl?(peer, reason)
             }, multipleSelection: true, forwardedMessageIds: messages.map { $0.id }, selectForumThreads: true))
+            (controller as? PeerSelectionControllerImpl)?.initialForwardOptions = options
             let context = self.context
             attemptSelectionImpl = { [weak self, weak controller] peer, reason in
                 guard let strongSelf = self, let controller = controller else {
@@ -104,7 +114,7 @@ extension ChatControllerImpl {
                     }), in: .current)
                 }
             }
-            controller.multiplePeersSelected = { [weak self, weak controller] peers, peerMap, messageText, mode, forwardOptions, _ in
+            controller.multiplePeersSelected = { [weak self, weak controller] peers, peerMap, messageText, mode, forwardOptions, parameters in
                 let peerIds = peers.map { $0.id }
                 
                 let _ = (context.engine.data.get(
@@ -134,7 +144,7 @@ extension ChatControllerImpl {
                         }
                     }
                                         
-                    let proceed = { [weak self, weak controller] in
+                    let proceedBody = { [weak self, weak controller] in
                         guard let strongSelf = self, let strongController = controller else {
                             return
                         }
@@ -143,11 +153,9 @@ extension ChatControllerImpl {
                         
                         var result: [EnqueueMessage] = []
                         if messageText.string.count > 0 {
-                            let inputText = convertMarkdownToAttributes(messageText)
-                            for text in breakChatInputText(trimChatInputText(inputText)) {
+                            for (text, entities) in exteralessComposerForwardComment(messageText) {
                                 if text.length != 0 {
                                     var attributes: [EngineMessage.Attribute] = []
-                                    let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
                                     if !entities.isEmpty {
                                         attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                     }
@@ -162,8 +170,9 @@ extension ChatControllerImpl {
                         result.append(contentsOf: messages.map { message -> EnqueueMessage in
                             return .forward(source: message.id, threadId: nil, grouping: .auto, attributes: attributes, correlationId: nil)
                         })
+                        result = result.map { $0.withNotificationOverride(silent: parameters?.notificationOverride) }
                         
-                        let commit: ([EnqueueMessage]) -> Void = { result in
+                        let commitBody: ([EnqueueMessage]) -> Void = { result in
                             guard let strongSelf = self else {
                                 return
                             }
@@ -195,7 +204,7 @@ extension ChatControllerImpl {
                                 
                                 var displayPeers: [EnginePeer] = []
                                 for (peer, shouldDivert) in targetPeersShouldDivert {
-                                    var peerMessages = result
+                                    var peerMessages = ChatComposerPolicy.ordering(result, commentAfterForward: ClientSettings.shared.bool("chats.sendCommentAfterForward", default: true), isForward: { if case .forward = $0 { return true }; return false })
                                     if shouldDivert {
                                         displayConvertingTooltip = true
                                         peerMessages = peerMessages.map { message -> EnqueueMessage in
@@ -218,7 +227,7 @@ extension ChatControllerImpl {
                                         }
                                     }
                                     
-                                    let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peer.id, messages: peerMessages)
+                                    let _ = (exteralessForwardExportSignal(context: context, access: exportAccess, { exteralessEnqueueWithExportPermit(context: context, peerId: peer.id, messages: peerMessages, permit: exportAccess?.permit, sourceMessageIds: exportAccess?.ids) |> map { $0.messageIds } })
                                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                                         if let strongSelf = self {
                                             let signals: [Signal<Bool, NoError>] = messageIds.compactMap({ id -> Signal<Bool, NoError>? in
@@ -313,6 +322,12 @@ extension ChatControllerImpl {
                             })
                         }
                         
+                        let commit: ([EnqueueMessage]) -> Void = { result in
+                            exteralessForwardAdmission(context: context, access: exportAccess, operation: .exportEffect) {
+                                exportAccess?.commitSelection()
+                                commitBody(result)
+                            }
+                        }
                         switch mode {
                         case .generic:
                             commit(result)
@@ -320,18 +335,24 @@ extension ChatControllerImpl {
                             let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: true)
                             commit(transformedMessages)
                         case .schedule:
-                            strongSelf.presentScheduleTimePicker(completion: { [weak self] timeResult in
+                            strongSelf.exteralessForwardSchedulePicker(access: exportAccess, silentPosting: parameters?.notificationOverride, completion: { [weak self] timeResult in
                                 if let strongSelf = self {
                                     let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: timeResult.silentPosting, scheduleTime: timeResult.time, repeatPeriod: timeResult.repeatPeriod)
                                     commit(transformedMessages)
                                 }
                             })
                         case .whenOnline:
-                            let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: strongSelf.presentationInterfaceState.interfaceState.silentPosting, scheduleTime: scheduleWhenOnlineTimestamp)
+                            let transformedMessages = strongSelf.transformEnqueueMessages(result, silentPosting: parameters?.notificationOverride, scheduleTime: scheduleWhenOnlineTimestamp)
                             commit(transformedMessages)
                         }
                     }
                     
+                    let proceed: () -> Void = {
+                        exteralessForwardAdmission(context: context, access: exportAccess, operation: .exportPreparation) {
+                            exportAccess?.expectCoverDismissal()
+                            proceedBody()
+                        }
+                    }
                     if totalAmount.value > 0 {
                         let controller = chatMessagePaymentAlertController(
                             context: nil,
@@ -347,11 +368,17 @@ extension ChatControllerImpl {
                                 proceed()
                             }
                         )
-                        strongSelf.present(controller, in: .window(.root))
+                        exteralessPresentForwardController(context: context, access: exportAccess, controller: controller, from: strongSelf)
                     } else {
                         proceed()
                     }
                 })
+            }
+            let nativeMultipleSelection = controller.multiplePeersSelected
+            controller.multiplePeersSelected = { peers, peerMap, messageText, mode, forwardOptions, parameters in
+                exteralessForwardAdmission(context: context, access: exportAccess, operation: .exportPreparation) {
+                    nativeMultipleSelection?(peers, peerMap, messageText, mode, forwardOptions, parameters)
+                }
             }
             controller.peerSelected = { [weak self, weak controller] peer, threadId in
                 guard let strongSelf = self, let strongController = controller else {
@@ -378,7 +405,8 @@ extension ChatControllerImpl {
                 }
                 
                 if case .peer(peerId) = strongSelf.chatLocation, strongSelf.parentController == nil, !isPinnedMessages {
-                    strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withUpdatedForwardMessageIds(messages.map { $0.id }).withUpdatedForwardOptionsState(ChatInterfaceForwardOptionsState(hideNames: !hasNotOwnMessages, hideCaptions: false, unhideNamesOnCaptionChange: false)).withoutSelectionState() }).updatedSearch(nil) })
+                    guard exportAccess?.handoff(to: strongSelf) ?? true else { return }
+                    strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withUpdatedForwardMessageIds(messages.map { $0.id }).withUpdatedForwardOptionsState(options ?? ChatInterfaceForwardOptionsState(hideNames: !hasNotOwnMessages, hideCaptions: false, unhideNamesOnCaptionChange: false)).withoutSelectionState() }).updatedSearch(nil) })
                     strongSelf.updateItemNodesSearchTextHighlightStates()
                     strongSelf.searchResultsController = nil
                     strongController.dismiss()
@@ -424,7 +452,7 @@ extension ChatControllerImpl {
                         }, additionalView: messages.count > 0 ? chatShareToSavedMessagesAdditionalView(strongSelf, reactionItems: reactionItems, correlationIds: correlationIds) : nil), in: .current)
                     })
                     
-                    let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peerId, messages: mappedMessages)
+                    let _ = (exteralessForwardExportSignal(context: context, access: exportAccess, { exteralessEnqueueWithExportPermit(context: context, peerId: peerId, messages: mappedMessages, permit: exportAccess?.permit, sourceMessageIds: exportAccess?.ids) |> map { $0.messageIds } })
                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                         if let strongSelf = self {
                             let signals: [Signal<Bool, NoError>] = messageIds.compactMap({ id -> Signal<Bool, NoError>? in
@@ -460,6 +488,7 @@ extension ChatControllerImpl {
                                         isChatPinnedMessages = true
                                     }
                                     if !isChatPinnedMessages {
+                                        guard exportAccess?.handoff(to: maybeChat) ?? true else { return }
                                         maybeChat.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withUpdatedForwardMessageIds(messages.map { $0.id }).withoutSelectionState() }) })
                                         strongSelf.dismiss()
                                         strongController.dismiss()
@@ -470,12 +499,12 @@ extension ChatControllerImpl {
                         }
                     }
 
-                    let _ = (ChatInterfaceState.update(engine: strongSelf.context.engine, peerId: peerId, threadId: threadId, { currentState in
-                        return currentState.withUpdatedForwardMessageIds(messages.map { $0.id }).withUpdatedForwardOptionsState(ChatInterfaceForwardOptionsState(hideNames: !hasNotOwnMessages, hideCaptions: false, unhideNamesOnCaptionChange: false))
-                    })
-                    |> deliverOnMainQueue).startStandalone(completed: {
+                    let _ = (exteralessForwardExportSignal(context: context, access: exportAccess, { ChatInterfaceState.update(engine: strongSelf.context.engine, peerId: peerId, threadId: threadId, admission: exportAccess.map { $0.draftWriteAdmission(peerId: peerId, threadId: threadId, permit: exportPermit, accountId: exportAccountId, sourceMessageIds: exportMessageIds) }, { currentState in
+                        return currentState.withUpdatedForwardMessageIds(messages.map { $0.id }).withUpdatedForwardOptionsState(options ?? ChatInterfaceForwardOptionsState(hideNames: !hasNotOwnMessages, hideCaptions: false, unhideNamesOnCaptionChange: false))
+                    }) })
+                    |> deliverOnMainQueue).startStandalone(next: exteralessForwardDraftCompletion(presentationContinuation({
                         if let strongSelf = self {
-                            let proceed: (ChatController) -> Void = { chatController in
+                            let proceedBody: (ChatController) -> Void = { chatController in
                                 strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
                                 
                                 let navigationController: NavigationController?
@@ -494,17 +523,24 @@ extension ChatControllerImpl {
                                     }
                                     navigationController.setViewControllers(viewControllers, animated: false)
                                     
-                                    strongSelf.controllerNavigationDisposable.set((chatController.ready.get()
-                                    |> SwiftSignalKit.filter { $0 }
-                                    |> take(1)
+                                    strongSelf.controllerNavigationDisposable.set((exteralessForwardExportSignal(context: context, access: exportAccess, { chatController.ready.get()
+                                    |> SwiftSignalKit.filter { $0 } |> take(1) })
                                     |> deliverOnMainQueue).startStrict(next: { [weak navigationController] _ in
-                                        viewControllers.removeAll(where: { $0 is PeerSelectionController })
-                                        navigationController?.setViewControllers(viewControllers, animated: true)
+                                        exteralessForwardAdmission(context: context, access: exportAccess, operation: .presentation) {
+                                            viewControllers.removeAll(where: { $0 is PeerSelectionController })
+                                            navigationController?.setViewControllers(viewControllers, animated: true)
+                                        }
                                     }))
                                 }
                             }
+                            let proceed: (ChatController) -> Void = { chatController in
+                                exteralessForwardAdmission(context: context, access: exportAccess, operation: .presentation) {
+                                    guard exportAccess?.handoff(to: chatController) ?? true else { return }
+                                    proceedBody(chatController)
+                                }
+                            }
                             if let threadId = threadId {
-                                let _ = (strongSelf.context.sharedContext.chatControllerForForumThread(context: strongSelf.context, peerId: peerId, threadId: threadId)
+                                let _ = (exteralessForwardExportSignal(context: context, access: exportAccess, { strongSelf.context.sharedContext.chatControllerForForumThread(context: strongSelf.context, peerId: peerId, threadId: threadId) })
                                 |> deliverOnMainQueue).startStandalone(next: { chatController in
                                     proceed(chatController)
                                 })
@@ -512,11 +548,21 @@ extension ChatControllerImpl {
                                 proceed(ChatControllerImpl(context: strongSelf.context, chatLocation: .peer(id: peerId)))
                             }
                         }
-                    })
+                    })))
+                }
+            }
+            let nativeSingleSelection = controller.peerSelected
+            controller.peerSelected = { peer, threadId in
+                exteralessForwardAdmission(context: context, access: exportAccess, operation: .exportEffect) {
+                    exportAccess?.commitSelection()
+                    nativeSingleSelection?(peer, threadId)
                 }
             }
             self.chatDisplayNode.dismissInput()
-            self.effectiveNavigationController?.pushViewController(controller)
+            exteralessPresentForwardController(context: context, access: exportAccess, controller: controller, from: self, push: true)
+        }
+        let _ = self.presentVoiceMessageDiscardAlert(action: {
+            exteralessForwardAdmission(context: context, access: exportAccess, operation: .exportPreparation, presentSelection)
         })
     }
 }

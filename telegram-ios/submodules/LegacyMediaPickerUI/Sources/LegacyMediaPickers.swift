@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import LegacyComponents
 import SwiftSignalKit
@@ -475,8 +476,7 @@ public func legacyAssetPickerEnqueueMessages(
                                                 attributes.append(MediaSpoilerMessageAttribute())
                                             }
                                                                                         
-                                            let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                                            let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                                            let (text, entities) = exteralessComposerCaption(caption)
                                             if !entities.isEmpty {
                                                 attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                             }
@@ -566,8 +566,7 @@ public func legacyAssetPickerEnqueueMessages(
                                                         attributes.append(MediaSpoilerMessageAttribute())
                                                     }
                                                     
-                                                    let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                                                    let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                                                    let (text, entities) = exteralessComposerCaption(caption)
                                                     if !entities.isEmpty {
                                                         attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                                     }
@@ -634,8 +633,7 @@ public func legacyAssetPickerEnqueueMessages(
                                             attributes.append(MediaSpoilerMessageAttribute())
                                         }
                                     
-                                        let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                                        let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                                        let (text, entities) = exteralessComposerCaption(caption)
                                         if !entities.isEmpty {
                                             attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                         }
@@ -704,8 +702,7 @@ public func legacyAssetPickerEnqueueMessages(
                                     let media = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: randomId), partialReference: nil, resource: resource, previewRepresentations: previewRepresentations, videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: engineFileSize(path), attributes: [.FileName(fileName: name)], alternativeRepresentations: [])
                                     
                                     var attributes: [EngineMessage.Attribute] = []
-                                    let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                                    let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                                    let (text, entities) = exteralessComposerCaption(caption)
                                     if !entities.isEmpty {
                                         attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                     }
@@ -757,8 +754,7 @@ public func legacyAssetPickerEnqueueMessages(
                                     let media = TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: randomId), partialReference: nil, resource: resource, previewRepresentations: [], videoThumbnails: [], immediateThumbnailData: nil, mimeType: mimeType, size: nil, attributes: [.FileName(fileName: name)], alternativeRepresentations: [])
                                     
                                     var attributes: [EngineMessage.Attribute] = []
-                                    let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                                    let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                                    let (text, entities) = exteralessComposerCaption(caption)
                                     if !entities.isEmpty {
                                         attributes.append(TextEntitiesMessageAttribute(entities: entities))
                                     }
@@ -807,6 +803,25 @@ public func legacyAssetPickerEnqueueMessages(
                                     break
                             }
                         case let .video(data, thumbnail, cover, adjustments, caption, asFile, asAnimation, stickers):
+                            let documentDimensions: CGSize
+                            let documentDuration: Double
+                            let documentExtension: String
+                            switch data {
+                            case let .asset(asset):
+                                documentDimensions = asset.dimensions
+                                documentDuration = asset.videoDuration
+                                documentExtension = ((asset.fileName ?? "") as NSString).pathExtension.lowercased()
+                            case let .tempFile(path, dimensions, duration):
+                                documentDimensions = dimensions
+                                documentDuration = duration
+                                documentExtension = (path as NSString).pathExtension.lowercased()
+                            }
+                            let mp4AsVideo = asFile && !asAnimation && documentExtension == "mp4"
+                                && ClientSettings.shared.bool("chats.sendMp4DocumentAsVideo", default: true)
+                                && documentDuration.isFinite && documentDuration > 0
+                                && documentDimensions.width.isFinite && documentDimensions.height.isFinite
+                                && documentDimensions.width > 0 && documentDimensions.height > 0
+                                && documentDimensions.width <= 32768 && documentDimensions.height <= 32768
                             var finalDimensions: CGSize
                             var finalDuration: Double
                             switch data {
@@ -938,6 +953,9 @@ public func legacyAssetPickerEnqueueMessages(
                                     fileAttributes.append(.hintFileIsLarge)
                                 }
                             } else {
+                                if mp4AsVideo {
+                                    fileAttributes.append(.Video(duration: documentDuration, size: PixelDimensions(documentDimensions), flags: [], preloadSize: nil, coverTime: nil, videoCodec: nil))
+                                }
                                 if case let .asset(asset) = data, let phAsset = asset.backingAsset, let resource = PHAssetResource.assetResources(for: phAsset).last, let sizeValue = resource.value(forKey: "fileSize") as? CLong, sizeValue > 0 {
                                     let size = Int64(bitPattern: UInt64(sizeValue))
                                     
@@ -977,8 +995,7 @@ public func legacyAssetPickerEnqueueMessages(
                                 attributes.append(MediaSpoilerMessageAttribute())
                             }
                             
-                            let text = trimChatInputText(convertMarkdownToAttributes(caption ?? NSAttributedString()))
-                            let entities = generateTextEntities(text.string, enabledTypes: .all, currentEntities: generateChatInputTextEntities(text))
+                            let (text, entities) = exteralessComposerCaption(caption)
                             if !entities.isEmpty {
                                 attributes.append(TextEntitiesMessageAttribute(entities: entities))
                             }
@@ -1021,7 +1038,7 @@ public func legacyAssetPickerEnqueueMessages(
                                     )
                                 }
                             } else {
-                                messages.append(LegacyAssetPickerEnqueueMessage(message: .message(text: text.string, attributes: attributes, inlineStickers: [:], mediaReference: mediaReference, threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: item.groupedId, correlationId: nil, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets), uniqueId: item.uniqueId, isFile: asFile))
+                                messages.append(LegacyAssetPickerEnqueueMessage(message: .message(text: text.string, attributes: attributes, inlineStickers: [:], mediaReference: mediaReference, threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: item.groupedId, correlationId: nil, bubbleUpEmojiOrStickersets: bubbleUpEmojiOrStickersets), uniqueId: item.uniqueId, isFile: asFile && !mp4AsVideo))
                             }
                     }
                 }

@@ -477,6 +477,7 @@ func updatePeerPresences(transaction: Transaction, accountPeerId: PeerId, peerPr
         }
     }
         
+    exteralessObservePresences(transaction: transaction, accountPeerId: accountPeerId, presences: parsedPresences)
     parsedPresences.removeValue(forKey: accountPeerId)
         
     transaction.updatePeerPresencesInternal(presences: parsedPresences, merge: { previous, updated in
@@ -502,6 +503,7 @@ func updatePeerPresencesClean(transaction: Transaction, accountPeerId: PeerId, p
         }
     }
     
+    exteralessObservePresences(transaction: transaction, accountPeerId: accountPeerId, presences: parsedPresences)
     if parsedPresences[accountPeerId] != nil {
         parsedPresences.removeValue(forKey: accountPeerId)
     }
@@ -515,6 +517,7 @@ func updatePeerPresencesClean(transaction: Transaction, accountPeerId: PeerId, p
 }
 
 func updatePeerPresenceLastActivities(transaction: Transaction, accountPeerId: PeerId, activities: [PeerId: Int32]) {
+    exteralessObserveActivities(transaction: transaction, accountPeerId: accountPeerId, activities: activities)
     var activities = activities
     if activities[accountPeerId] != nil {
         activities.removeValue(forKey: accountPeerId)

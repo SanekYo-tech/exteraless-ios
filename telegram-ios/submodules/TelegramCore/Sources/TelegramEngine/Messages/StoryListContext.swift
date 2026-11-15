@@ -305,6 +305,7 @@ public final class StorySubscriptionsContext {
         private var stateDisposable: Disposable?
         private let loadMoreDisposable = MetaDisposable()
         private let refreshTimerDisposable = MetaDisposable()
+        private var dialogPolicyDisposable: Disposable?
         
         init(queue: Queue, accountPeerId: PeerId, postbox: Postbox, network: Network, isHidden: Bool) {
             self.accountPeerId = accountPeerId
@@ -316,12 +317,29 @@ public final class StorySubscriptionsContext {
             self.taskState.isRefreshScheduled = true
             
             self.updateTasks()
+            self.dialogPolicyDisposable = (exteralessDialogPolicyUpdates()
+            |> map { !$0.disableStories }
+            |> distinctUntilChanged
+            |> deliverOn(queue)).start(next: { [weak self] enabled in
+                guard let self else { return }
+                if !enabled {
+                    self.stateDisposable?.dispose()
+                    self.stateDisposable = nil
+                    self.loadMoreDisposable.set(nil)
+                    self.refreshTimerDisposable.set(nil)
+                    self.isLoading = false
+                    self.taskState.isRefreshScheduled = true
+                } else {
+                    self.updateTasks()
+                }
+            })
         }
         
         deinit {
             self.stateDisposable?.dispose()
             self.loadMoreDisposable.dispose()
             self.refreshTimerDisposable.dispose()
+            self.dialogPolicyDisposable?.dispose()
         }
         
         func loadMore() {
@@ -330,6 +348,7 @@ public final class StorySubscriptionsContext {
         }
         
         private func updateTasks() {
+            guard exteralessDialogStoriesEnabled() else { return }
             if self.isLoading {
                 return
             }
@@ -676,7 +695,7 @@ public protocol StoryListContext: AnyObject {
     func loadMore(completion: (() -> Void)?)
 }
 
-public final class PeerStoryListContext: StoryListContext {    
+public final class PeerStoryListContext: StoryListContext {
     private final class Impl {
         private let queue: Queue
         private let account: Account
@@ -691,13 +710,16 @@ public final class PeerStoryListContext: StoryListContext {
             }
         }
         var state: Signal<State, NoError> {
-            return self.statePromise.get()
+            return exteralessDialogStoryListStates(self.statePromise.get())
         }
         
         private var isLoadingMore: Bool = false
         private var requestDisposable: Disposable?
         
         private var updatesDisposable: Disposable?
+        private var dialogPolicyDisposable: Disposable?
+        private var storiesWereDisabled = !exteralessDialogStoriesEnabled()
+        private var didLoadInitialCache = false
         
         private var completionCallbacksByToken: [AnyHashable: [() -> Void]] = [:]
         
@@ -837,17 +859,39 @@ public final class PeerStoryListContext: StoryListContext {
                     })
                 }
                 self.stateValue = updatedState
+                self.didLoadInitialCache = true
                 
                 self.loadMore(completion: nil)
+            })
+            self.dialogPolicyDisposable = (exteralessDialogPolicyUpdates()
+            |> map { !$0.disableStories }
+            |> distinctUntilChanged
+            |> deliverOn(queue)).start(next: { [weak self] enabled in
+                guard let self else { return }
+                if !enabled {
+                    self.storiesWereDisabled = true
+                    self.requestDisposable?.dispose()
+                    self.requestDisposable = nil
+                    self.isLoadingMore = false
+                    self.stateValue.isLoading = false
+                    let callbacks = self.completionCallbacksByToken.values.flatMap { $0 }
+                    self.completionCallbacksByToken.removeAll()
+                    for callback in callbacks { callback() }
+                } else if self.storiesWereDisabled {
+                    self.storiesWereDisabled = false
+                    if self.didLoadInitialCache { self.loadMore(completion: nil) }
+                }
             })
         }
         
         deinit {
             self.requestDisposable?.dispose()
             self.updatesDisposable?.dispose()
+            self.dialogPolicyDisposable?.dispose()
         }
         
         func loadMore(completion: (() -> Void)?) {
+            guard exteralessDialogStoriesEnabled() else { completion?(); return }
             guard let loadMoreTokenValue = self.stateValue.loadMoreToken, let loadMoreToken = loadMoreTokenValue.base as? Int else {
                 return
             }
@@ -2094,7 +2138,7 @@ public final class SearchStoryListContext: StoryListContext {
             }
         }
         var state: Signal<State, NoError> {
-            return self.statePromise.get()
+            return exteralessDialogStoryListStates(self.statePromise.get())
         }
         
         private var isLoadingMore: Bool = false {
@@ -2105,6 +2149,8 @@ public final class SearchStoryListContext: StoryListContext {
         private var requestDisposable: Disposable?
         
         private var updatesDisposable: Disposable?
+        private var dialogPolicyDisposable: Disposable?
+        private var storiesWereDisabled = !exteralessDialogStoriesEnabled()
         
         private var completionCallbacksByToken: [AnyHashable: [() -> Void]] = [:]
         
@@ -2117,14 +2163,34 @@ public final class SearchStoryListContext: StoryListContext {
             self.statePromise.set(.single(self.stateValue))
                 
             self.loadMore(completion: nil)
+            self.dialogPolicyDisposable = (exteralessDialogPolicyUpdates()
+            |> map { !$0.disableStories }
+            |> distinctUntilChanged
+            |> deliverOn(queue)).start(next: { [weak self] enabled in
+                guard let self else { return }
+                if !enabled {
+                    self.storiesWereDisabled = true
+                    self.requestDisposable?.dispose()
+                    self.requestDisposable = nil
+                    self.isLoadingMore = false
+                    let callbacks = self.completionCallbacksByToken.values.flatMap { $0 }
+                    self.completionCallbacksByToken.removeAll()
+                    for callback in callbacks { callback() }
+                } else if self.storiesWereDisabled {
+                    self.storiesWereDisabled = false
+                    self.loadMore(completion: nil)
+                }
+            })
         }
         
         deinit {
             self.requestDisposable?.dispose()
             self.updatesDisposable?.dispose()
+            self.dialogPolicyDisposable?.dispose()
         }
         
         func loadMore(completion: (() -> Void)?) {
+            guard exteralessDialogStoriesEnabled() else { completion?(); return }
             guard let loadMoreTokenValue = self.stateValue.loadMoreToken, let loadMoreToken = loadMoreTokenValue.base as? String else {
                 return
             }

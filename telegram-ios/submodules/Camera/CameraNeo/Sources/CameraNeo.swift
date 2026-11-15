@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AVFoundation
 import CoreMedia
@@ -66,6 +67,7 @@ final class CameraNeo: NSObject, CameraProtocol {
 
     private let positionValue: Atomic<Camera.Position>
     private let positionPromise: ValuePromise<Camera.Position>
+    private let zoomStatePromise = Promise<Camera.ZoomState?>(.single(nil))
     private let flashModePromise = ValuePromise<Camera.FlashMode>(.off)
     private let hasTorchPromise = ValuePromise<Bool>(false)
     private let isFlashActivePromise = ValuePromise<Bool>(false)
@@ -210,6 +212,8 @@ final class CameraNeo: NSObject, CameraProtocol {
     var position: Signal<Camera.Position, NoError> {
         return self.positionPromise.get()
     }
+
+    var zoomState: Signal<Camera.ZoomState?, NoError> { self.zoomStatePromise.get() }
 
     func togglePosition() {
         let currentPosition = self.positionValue.with { $0 }
@@ -741,7 +745,7 @@ final class CameraNeo: NSObject, CameraProtocol {
             let previewConnection = AVCaptureConnection(inputPort: port, videoPreviewLayer: previewView.videoPreviewLayer)
             previewConnection.automaticallyAdjustsVideoMirroring = false
             if previewConnection.isVideoMirroringSupported {
-                previewConnection.isVideoMirrored = mirrored
+                previewConnection.isVideoMirrored = mirrored && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true)
             }
             guard self.session.canAddConnection(previewConnection) else {
                 return false
@@ -808,6 +812,14 @@ final class CameraNeo: NSObject, CameraProtocol {
     }
 
     private func makeVideoDevice(position: Camera.Position) -> AVCaptureDevice? {
+        if position == .back, !self.useMultiCam, ClientSettings.shared.bool("tools.startWithWideAngleCamera") {
+            for type in [AVCaptureDevice.DeviceType.builtInTripleCamera, .builtInDualWideCamera] {
+                if let device = AVCaptureDevice.default(type, for: .video, position: position),
+                   roundVideoCaptureFormat(for: device, requiresMultiCam: false, mode: self.roundVideoMode) != nil {
+                    return device
+                }
+            }
+        }
         if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) {
             return device
         }
@@ -819,8 +831,20 @@ final class CameraNeo: NSObject, CameraProtocol {
     }
 
     private func configureCaptureFormat(device: AVCaptureDevice) -> Bool {
-        guard let selectedFormat = roundVideoCaptureFormat(for: device, requiresMultiCam: self.useMultiCam, mode: self.roundVideoMode) else {
+        guard var selectedFormat = roundVideoCaptureFormat(for: device, requiresMultiCam: self.useMultiCam, mode: self.roundVideoMode) else {
             return false
+        }
+        if !self.useMultiCam, ClientSettings.shared.bool("tools.extendedFramesPerSecond") {
+            let dimensions = CMVideoFormatDescriptionGetDimensions(selectedFormat.formatDescription)
+            let subtype = CMFormatDescriptionGetMediaSubType(selectedFormat.formatDescription)
+            if let faster = device.formats.first(where: { candidate in
+                let size = CMVideoFormatDescriptionGetDimensions(candidate.formatDescription)
+                return size.width == dimensions.width && size.height == dimensions.height
+                    && CMFormatDescriptionGetMediaSubType(candidate.formatDescription) == subtype
+                    && candidate.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 60 && $0.maxFrameRate >= 60 })
+            }) {
+                selectedFormat = faster
+            }
         }
         return self.applyCaptureFormat(selectedFormat, device: device)
     }
@@ -880,10 +904,13 @@ final class CameraNeo: NSObject, CameraProtocol {
         guard fps.isFinite, fps > 0.0 else {
             return
         }
-        guard let range = device.activeFormat.videoSupportedFrameRateRanges.first(where: { $0.minFrameRate <= fps && $0.maxFrameRate >= fps }) else {
+        let extended = ClientSettings.shared.bool("tools.extendedFramesPerSecond") && !self.useMultiCam
+        let requested = extended && device.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 60 && $0.maxFrameRate >= 60 }) ? 60.0 : fps
+        guard let range = device.activeFormat.videoSupportedFrameRateRanges.first(where: { $0.minFrameRate <= requested && $0.maxFrameRate >= requested }) else {
             return
         }
-        let effectiveFps = min(range.maxFrameRate, max(range.minFrameRate, fps))
+        let effectiveFps = ToolsCameraPolicy.frameRate(requested: requested, supported: range.minFrameRate...range.maxFrameRate,
+                                                     extended: extended, multiCamera: self.useMultiCam)
         let duration = CMTime(seconds: 1.0 / effectiveFps, preferredTimescale: 60_000)
         self.withLockedDevice(device) { device in
             if #available(iOS 18.0, *), device.activeFormat.isAutoVideoFrameRateSupported, device.isAutoVideoFrameRateEnabled {
@@ -906,7 +933,7 @@ final class CameraNeo: NSObject, CameraProtocol {
                 continue
             }
             let supportsStandard = connection.isVideoStabilizationSupported && device.activeFormat.isVideoStabilizationModeSupported(.standard)
-            connection.preferredVideoStabilizationMode = supportsStandard ? .standard : .off
+            connection.preferredVideoStabilizationMode = supportsStandard && ClientSettings.shared.bool("tools.cameraStabilization") ? .standard : .off
             self.stabilizationObservers.append(connection.observe(\.activeVideoStabilizationMode, options: [.new]) { [weak self, weak connection] _, _ in
                 self?.sessionQueue.async { [weak self, weak connection] in
                     guard let self, let connection,
@@ -979,12 +1006,14 @@ final class CameraNeo: NSObject, CameraProtocol {
 
     private func updateActiveDeviceState() {
         guard let device = self.activeDevice else {
+            self.zoomStatePromise.set(.single(nil))
             self.hasTorchPromise.set(false)
             self.isFlashActivePromise.set(false)
             return
         }
         self.hasTorchPromise.set(device.hasTorch && device.isTorchAvailable)
         self.isFlashActivePromise.set(device.torchMode == .on)
+        self.zoomStatePromise.set(cameraDeviceZoomState(device))
     }
 
     private func updateZoom(_ value: @escaping (AVCaptureDevice) -> CGFloat) {
@@ -1001,7 +1030,7 @@ final class CameraNeo: NSObject, CameraProtocol {
     private func clampedZoom(_ value: CGFloat, device: AVCaptureDevice) -> CGFloat {
         let minimum = max(1.0, device.minAvailableVideoZoomFactor)
         let maximum = max(minimum, device.maxAvailableVideoZoomFactor)
-        return min(maximum, max(minimum, value))
+        return CGFloat(ToolsCameraPolicy.zoom(Double(value), minimum: Double(minimum), maximum: Double(maximum)))
     }
 
     private func withLockedDevice(_ device: AVCaptureDevice, _ update: (AVCaptureDevice) -> Void) {
@@ -1015,6 +1044,7 @@ final class CameraNeo: NSObject, CameraProtocol {
 
     private func tearDownSession() {
         dispatchPrecondition(condition: .onQueue(self.sessionQueue))
+        self.zoomStatePromise.set(.single(nil))
         self.stabilizationObservers.removeAll()
         self.primaryVideoOutput?.setSampleBufferDelegate(nil, queue: nil)
         self.secondaryVideoOutput?.setSampleBufferDelegate(nil, queue: nil)
@@ -1127,12 +1157,12 @@ extension CameraNeo: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudi
 
         if self.useMultiCam {
             if position == .front {
-                self.additionalVideoOutput?.push(sampleBuffer, mirror: true)
+                self.additionalVideoOutput?.push(sampleBuffer, mirror: ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
             } else {
                 self.mainVideoOutput?.push(sampleBuffer, mirror: false)
             }
         } else {
-            self.mainVideoOutput?.push(sampleBuffer, mirror: position == .front)
+            self.mainVideoOutput?.push(sampleBuffer, mirror: position == .front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true))
         }
     }
 

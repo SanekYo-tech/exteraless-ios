@@ -1,0 +1,324 @@
+diff --git a/crates/mtproto-engine/src/resolver.rs b/crates/mtproto-engine/src/resolver.rs
+index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf05406c31eac5 100644
+--- a/crates/mtproto-engine/src/resolver.rs
++++ b/crates/mtproto-engine/src/resolver.rs
+@@ -1,0 +2,44 @@ use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
++use std::sync::atomic::{AtomicBool, Ordering};
++
++#[cfg(target_os = "ios")]
++unsafe extern "C" {
++    fn MTAppNetworkResolve(
++        host: *const std::ffi::c_char,
++        port: u16,
++        output: *mut u8,
++        capacity: usize,
++        cancelled: extern "C" fn(*const std::ffi::c_void) -> bool,
++        context: *const std::ffi::c_void,
++    ) -> i32;
++    fn MTAppNetworkResolverEpoch() -> u64;
++    fn MTAppNetworkResolverCacheLifetime(host: *const std::ffi::c_char, port: u16) -> f64;
++}
++
++pub(super) fn policy_epoch() -> u64 {
++    #[cfg(target_os = "ios")]
++    {
++        unsafe { MTAppNetworkResolverEpoch() }
++    }
++    #[cfg(not(target_os = "ios"))]
++    {
++        0
++    }
++}
++
++pub(super) fn cache_lifetime(host: &str, port: u16, fallback: f64) -> f64 {
++    #[cfg(target_os = "ios")]
++    if let Ok(host) = std::ffi::CString::new(host) {
++        let ttl = unsafe { MTAppNetworkResolverCacheLifetime(host.as_ptr(), port) };
++        if ttl.is_finite() && ttl >= 0.0 {
++            return ttl.min(fallback);
++        }
++    }
++    #[cfg(not(target_os = "ios"))]
++    let _ = (host, port);
++    fallback
++}
++
++#[cfg(target_os = "ios")]
++extern "C" fn lookup_cancelled(context: *const std::ffi::c_void) -> bool {
++    !context.is_null() && unsafe { &*context.cast::<AtomicBool>() }.load(Ordering::Acquire)
++}
+@@ -8,0 +53,7 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
++    resolve_blocking_cancellable(host, port, &AtomicBool::new(false))
++}
++
++pub fn resolve_blocking_cancellable(host: &str, port: u16, cancelled: &AtomicBool) -> Vec<SocketAddr> {
++    if cancelled.load(Ordering::Acquire) {
++        return Vec::new();
++    }
+@@ -11,0 +63,24 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
++    #[cfg(target_os = "ios")]
++    if let Ok(name) = std::ffi::CString::new(host) {
++        let mut output = [0u8; 2048];
++        let count = unsafe {
++            MTAppNetworkResolve(
++                name.as_ptr(), port, output.as_mut_ptr(), output.len(), lookup_cancelled,
++                (cancelled as *const AtomicBool).cast(),
++            )
++        };
++        if count < 0 || count as usize > output.len() {
++            return Vec::new();
++        }
++        if count > 0 {
++            let Ok(text) = std::str::from_utf8(&output[..count as usize]) else {
++                return Vec::new();
++            };
++            return text.lines().filter_map(|text| {
++                if let Some((ip, scope)) = text.rsplit_once('%') {
++                    return Some(SocketAddr::V6(std::net::SocketAddrV6::new(ip.parse().ok()?, port, 0, scope.parse().ok()?)));
++                }
++                text.parse::<IpAddr>().ok().map(|ip| SocketAddr::new(ip, port))
++            }).take(16).collect();
++        }
++    }
+diff --git a/crates/mtproto-engine/src/session_runtime.rs b/crates/mtproto-engine/src/session_runtime.rs
+index 69a7dc6de1eb8cfcc42e4c8638922616d38e86af..a74a7613d1df788379bf326be163a0aaf08836b3 100644
+--- a/crates/mtproto-engine/src/session_runtime.rs
++++ b/crates/mtproto-engine/src/session_runtime.rs
+@@ -200,0 +201,3 @@ pub struct SessionRuntime {
++    // A TTL=0 reply may satisfy its current connection once without a cache hit.
++    dns_fresh: std::collections::HashSet<(String, u16)>,
++    resolver_epoch: u64,
+@@ -278,0 +282,2 @@ impl SessionRuntime {
++            dns_fresh: std::collections::HashSet::new(),
++            resolver_epoch: crate::resolver::policy_epoch(),
+@@ -897,0 +903 @@ impl SessionRuntime {
++        self.sync_resolver_epoch();
+@@ -968,0 +975 @@ impl SessionRuntime {
++        self.dns_fresh.clear();
+@@ -1151,0 +1159 @@ impl SessionRuntime {
++        self.sync_resolver_epoch();
+@@ -1166,0 +1175 @@ impl SessionRuntime {
++                let fresh = self.dns_fresh.remove(&(host.clone(), port));
+@@ -1170 +1179 @@ impl SessionRuntime {
+-                        && now.mono < cached.expires_at
++                        && (fresh || now.mono < cached.expires_at)
+@@ -1183,0 +1193,3 @@ impl SessionRuntime {
++                                // Synchronous Resolve implementations (local
++                                // fixtures) retain the original fallback TTL.
++                                // Native replies enter through on_resolved_until.
+@@ -1207,0 +1220,22 @@ impl SessionRuntime {
++    fn sync_resolver_epoch(&mut self) {
++        let epoch = crate::resolver::policy_epoch();
++        if self.resolver_epoch != epoch {
++            self.resolver_epoch = epoch;
++            self.forget_routes();
++        }
++    }
++
++    fn cache_dns_result(&mut self, key: (String, u16), addresses: Vec<SocketAddr>, expires_at: f64, fresh: bool) {
++        const MAX_DNS_CACHE: usize = 128;
++        if !self.dns.contains_key(&key) && self.dns.len() >= MAX_DNS_CACHE {
++            let oldest = self.dns.iter().min_by(|a, b| a.1.1.total_cmp(&b.1.1)).map(|(key, _)| key.clone());
++            if let Some(oldest) = oldest {
++                self.dns.remove(&oldest);
++                self.dns_fresh.remove(&oldest);
++                self.dns_failed.remove(&oldest);
++            }
++        }
++        if fresh { self.dns_fresh.insert(key.clone()); } else { self.dns_fresh.remove(&key); }
++        self.dns.insert(key, (addresses, expires_at));
++    }
++
+@@ -1209,0 +1244 @@ impl SessionRuntime {
++        self.sync_resolver_epoch();
+@@ -1210,0 +1246 @@ impl SessionRuntime {
++        let fresh = self.dns_fresh.remove(&key);
+@@ -1212 +1248 @@ impl SessionRuntime {
+-            && now.mono < *expires_at
++            && (fresh || now.mono < *expires_at)
+@@ -1219 +1255 @@ impl SessionRuntime {
+-            self.dns.insert(key, (addresses.clone(), now.mono + lifetime));
++            self.cache_dns_result(key, addresses.clone(), now.mono + lifetime, false);
+@@ -1225,2 +1261,20 @@ impl SessionRuntime {
+-        let lifetime = if addresses.is_empty() { RESOLVE_RETRY_MIN } else { DNS_TTL };
+-        self.dns.insert((host.to_string(), port), (addresses.clone(), now.mono + lifetime));
++        self.on_resolved_until(host, port, addresses, now, now.mono + DNS_TTL);
++    }
++
++    /// Native expiry was sampled on the resolver worker, off this reactor.
++    pub fn on_resolved_until(&mut self, host: &str, port: u16, addresses: Vec<SocketAddr>, now: Now, expires_at: f64) {
++        // An epoch can change between pick_address_at and the worker accepting
++        // its query. Preserve this matching waiter across clearing the old cache.
++        let awaited = self
++            .awaiting_resolution
++            .as_ref()
++            .is_some_and(|(awaited, awaited_port)| awaited == host && *awaited_port == port);
++        self.sync_resolver_epoch();
++        let expires_at = if addresses.is_empty() {
++            now.mono + RESOLVE_RETRY_MIN
++        } else if expires_at.is_finite() {
++            expires_at.min(now.mono + DNS_TTL)
++        } else {
++            now.mono
++        };
++        self.cache_dns_result((host.to_string(), port), addresses.clone(), expires_at, true);
+@@ -1240,4 +1293,0 @@ impl SessionRuntime {
+-        let awaited = self
+-            .awaiting_resolution
+-            .as_ref()
+-            .is_some_and(|(awaited, awaited_port)| awaited == host && *awaited_port == port);
+@@ -1255 +1305 @@ impl SessionRuntime {
+-                Some(ResolvedHost { key, addresses, expires_at: now.mono + DNS_TTL, failures_at: self.failures });
++                Some(ResolvedHost { key, addresses, expires_at, failures_at: self.failures });
+@@ -2781,0 +2832,40 @@ mod tests {
++
++    #[test]
++    fn app_resolver_zero_ttl_is_one_use_for_tcp_and_http() {
++        let now = Now { mono: 1000.0, unix: 1_727_000_000.0 };
++        let setup = SessionSetup::new(
++            2, SessionRole::Main,
++            vec![DcAddress { host: "dc.example".into(), port: 443, secret: None }],
++        );
++        let mut runtime = SessionRuntime::new(SessionHandle(1), setup, Token(1), now, &mut OsRandom::new());
++        let mut resolver = ScriptedResolver { answers: VecDeque::from([vec![address(2)], vec![address(4)]]), calls: 0 };
++        runtime.on_resolved_until("dc.example", 443, vec![address(1)], now, now.mono);
++        assert_eq!(ready_address(runtime.pick_address_at(0, &mut resolver, now)), address(1));
++        assert_eq!(resolver.calls, 0, "the reply must satisfy the lookup that requested it");
++        assert_eq!(ready_address(runtime.pick_address_at(0, &mut resolver, now)), address(2));
++        assert_eq!(resolver.calls, 1, "TTL=0 is not a reusable TCP cache entry");
++        runtime.on_resolved_until("http.example", 80, vec![address(3)], now, now.mono);
++        assert!(matches!(runtime.resolve_cached("http.example", 80, &mut resolver, now), Resolution::Resolved(v) if v == vec![address(3)]));
++        assert!(matches!(runtime.resolve_cached("http.example", 80, &mut resolver, now), Resolution::Resolved(v) if v == vec![address(4)]));
++        assert_eq!(resolver.calls, 2, "HTTP must not refresh a zero TTL to DNS_TTL");
++    }
++
++    #[test]
++    fn app_resolver_epoch_discards_cache_but_wakes_matching_waiter() {
++        let now = Now { mono: 1000.0, unix: 1_727_000_000.0 };
++        let setup = SessionSetup::new(
++            2, SessionRole::Main,
++            vec![DcAddress { host: "dc.example".into(), port: 443, secret: None }],
++        );
++        let mut runtime = SessionRuntime::new(SessionHandle(1), setup, Token(1), now, &mut OsRandom::new());
++        runtime.cache_dns_result(("old.example".into(), 443), vec![address(9)], now.mono + 100.0, true);
++        runtime.awaiting_resolution = Some(("dc.example".into(), 443));
++        runtime.next_attempt_at = now.mono + RESOLVE_WAIT;
++        runtime.resolver_epoch = crate::resolver::policy_epoch().wrapping_add(1);
++        runtime.on_resolved_until("dc.example", 443, vec![address(1)], now, now.mono + 2.0);
++        assert!(!runtime.dns.contains_key(&("old.example".into(), 443)));
++        assert!(!runtime.dns_fresh.contains(&("old.example".into(), 443)));
++        assert_eq!(runtime.next_attempt_at, now.mono);
++        assert!(runtime.awaiting_resolution.is_none());
++        assert_eq!(runtime.resolved.as_ref().unwrap().expires_at, now.mono + 2.0);
++    }
+diff --git a/crates/mtproto-engine/src/worker.rs b/crates/mtproto-engine/src/worker.rs
+index b0e3986ee63c9f82537567e5e867bfdd276ffa01..1f1dba1905124cce2a5f7bd172931a1470493371 100644
+--- a/crates/mtproto-engine/src/worker.rs
++++ b/crates/mtproto-engine/src/worker.rs
+@@ -13 +13 @@ use crate::http_link::TOKENS_PER_SESSION;
+-use crate::resolver::resolve_blocking;
++use crate::resolver::{cache_lifetime, policy_epoch, resolve_blocking_cancellable};
+@@ -57 +57,4 @@ pub enum Command {
+-    Resolved { host: String, port: u16, addresses: Vec<std::net::SocketAddr> },
++    Resolved {
++        host: String, port: u16, addresses: Vec<std::net::SocketAddr>,
++        epoch: u64, lookup_id: u64, cache_expires_at: f64,
++    },
+@@ -60,0 +64,8 @@ pub enum Command {
++struct PendingLookup {
++    waiting: Vec<SessionHandle>,
++    started_at: f64,
++    epoch: u64,
++    id: u64,
++    cancelled: Arc<AtomicBool>,
++}
++
+@@ -64 +75,29 @@ struct ThreadResolver {
+-    in_flight: HashMap<(String, u16), (Vec<SessionHandle>, f64)>,
++    in_flight: HashMap<(String, u16), PendingLookup>,
++    next_lookup_id: u64,
++}
++
++impl ThreadResolver {
++    fn forget(&mut self, session: SessionHandle) {
++        self.in_flight.retain(|_, pending| {
++            pending.waiting.retain(|value| *value != session);
++            if pending.waiting.is_empty() {
++                pending.cancelled.store(true, Ordering::Release);
++                false
++            } else {
++                true
++            }
++        });
++    }
++
++    fn cancel_all(&mut self) {
++        for pending in self.in_flight.values() {
++            pending.cancelled.store(true, Ordering::Release);
++        }
++        self.in_flight.clear();
++    }
++}
++
++impl Drop for ThreadResolver {
++    fn drop(&mut self) {
++        self.cancel_all();
++    }
+@@ -71,3 +110,4 @@ impl Resolve for ThreadResolver {
+-        if let Some((waiting, started_at)) = self.in_flight.get_mut(&key) {
+-            if !waiting.contains(&session) {
+-                waiting.push(session);
++        let epoch = policy_epoch();
++        if let Some(pending) = self.in_flight.get_mut(&key) {
++            if !pending.waiting.contains(&session) {
++                pending.waiting.push(session);
+@@ -75 +115 @@ impl Resolve for ThreadResolver {
+-            if now - *started_at < crate::session_runtime::RESOLVE_WAIT {
++            if pending.epoch == epoch && now - pending.started_at < crate::session_runtime::RESOLVE_WAIT {
+@@ -78 +117,0 @@ impl Resolve for ThreadResolver {
+-            *started_at = now;
+@@ -79,0 +119,12 @@ impl Resolve for ThreadResolver {
++        let mut waiting = vec![session];
++        if let Some(previous) = self.in_flight.remove(&key) {
++            previous.cancelled.store(true, Ordering::Release);
++            waiting = previous.waiting;
++        }
++        if self.in_flight.len() >= 128 {
++            return Resolution::Resolved(Vec::new());
++        }
++        self.next_lookup_id = self.next_lookup_id.wrapping_add(1);
++        let lookup_id = self.next_lookup_id;
++        let cancelled = Arc::new(AtomicBool::new(false));
++        let lookup_cancelled = cancelled.clone();
+@@ -85,2 +136,6 @@ impl Resolve for ThreadResolver {
+-            let addresses = resolve_blocking(&lookup_host, port);
+-            let _ = sender.send(Command::Resolved { host: lookup_host, port, addresses });
++            let addresses = resolve_blocking_cancellable(&lookup_host, port, &lookup_cancelled);
++            // The Swift cache read stays on this blocking resolver thread, never
++            // on a reactor/session queue. Transport the absolute monotonic expiry.
++            let lifetime = cache_lifetime(&lookup_host, port, crate::session_runtime::DNS_TTL);
++            let cache_expires_at = clock::monotonic_seconds() + lifetime;
++            let _ = sender.send(Command::Resolved { host: lookup_host, port, addresses, epoch, lookup_id, cache_expires_at });
+@@ -92 +147 @@ impl Resolve for ThreadResolver {
+-        self.in_flight.entry((host, port)).or_insert_with(|| (vec![session], now));
++        self.in_flight.insert((host, port), PendingLookup { waiting, started_at: now, epoch, id: lookup_id, cancelled });
+@@ -132 +187 @@ impl Worker {
+-            resolver: ThreadResolver { sender, waker, in_flight: HashMap::new() },
++            resolver: ThreadResolver { sender, waker, in_flight: HashMap::new(), next_lookup_id: 0 },
+@@ -311,0 +367 @@ impl Worker {
++                    self.resolver.forget(handle);
+@@ -452,0 +509 @@ impl Worker {
++                    self.resolver.cancel_all();
+@@ -457 +514,5 @@ impl Worker {
+-                Command::Resolved { host, port, addresses } => {
++                Command::Resolved { host, port, addresses, epoch, lookup_id, cache_expires_at } => {
++                    let key = (host.clone(), port);
++                    if epoch != policy_epoch() || !self.resolver.in_flight.get(&key).is_some_and(|pending| pending.epoch == epoch && pending.id == lookup_id) {
++                        continue;
++                    }
+@@ -462 +523 @@ impl Worker {
+-                        .map(|(waiting, _)| waiting)
++                        .map(|pending| pending.waiting)
+@@ -466 +527 @@ impl Worker {
+-                            session.on_resolved(&host, port, addresses.clone(), now);
++                            session.on_resolved_until(&host, port, addresses.clone(), now, cache_expires_at);

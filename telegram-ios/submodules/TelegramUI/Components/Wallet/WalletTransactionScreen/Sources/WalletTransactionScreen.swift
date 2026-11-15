@@ -2385,6 +2385,7 @@ private final class WalletTransactionContentComponent: Component {
                         let presentationData = self.currentPresentationData(for: component).initial
                         let translationController = await component.context.sharedContext.makeTextProcessingScreen(
                             context: component.context,
+                            capability: .userInput,
                             theme: nil,
                             mode: .translate(fromLanguage: language, applyResult: nil),
                             inputText: .plain(text: text.string, entities: []),

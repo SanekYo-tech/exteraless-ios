@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import SwiftSignalKit
@@ -352,7 +353,16 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
             return
         }
         
-        if !context.isPremium, case .inProgress = self.audioTranscriptionState {
+        let usesSelectedProvider = ExteralessAIHooks.usesSelectedTranscription(isPremium: arguments.associatedData.isPremium)
+        if case .inProgress = self.audioTranscriptionState, self.transcribeDisposable != nil {
+            self.aiTranscriptionGeneration = UUID()
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+            self.audioTranscriptionState = .collapsed
+            self.requestUpdateLayout(true)
+            return
+        }
+        if !usesSelectedProvider && !context.isPremium, case .inProgress = self.audioTranscriptionState {
             return
         }
         
@@ -360,7 +370,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
         
         let transcriptionText = self.forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(message))
-        if transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+        if !usesSelectedProvider && transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
             if premiumConfiguration.audioTransciptionTrialCount > 0 {
                 if !arguments.associatedData.isPremium {
                     if self.presentAudioTranscriptionTooltip(finished: false) {
@@ -419,14 +429,45 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 self.audioTranscriptionState = .inProgress
                 self.requestUpdateLayout(true)
                 
-                if context.sharedContext.immediateExperimentalUISettings.localTranscription {
+                if usesSelectedProvider || !context.sharedContext.immediateExperimentalUISettings.localTranscription {
+                    let generation = UUID()
+                    self.aiTranscriptionGeneration = generation
+                    let disposable = MetaDisposable()
+                    self.transcribeDisposable = disposable
+                    disposable.set((ExteralessAIHooks.transcribe(context: context, messageId: message.id, file: arguments.file) |> deliverOnMainQueue).start(next: { [weak self] stored in
+                        guard let self, self.aiTranscriptionGeneration == generation, self.arguments?.message.id == message.id else { return }
+                        self.audioTranscriptionState = stored ? .expanded : .collapsed
+                        self.requestUpdateLayout(true)
+                        self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+                    }, error: { [weak self] error in
+                        guard let self, self.aiTranscriptionGeneration == generation, self.arguments?.message.id == message.id else { return }
+                        self.transcribeDisposable?.dispose()
+                        self.transcribeDisposable = nil
+                        self.audioTranscriptionState = .collapsed
+                        self.requestUpdateLayout(true)
+                        let controller = UndoOverlayController(presentationData: presentationData, content: .universal(animation: "Transcribe", scale: 0.06, colors: [:], title: nil, text: error.errorDescription ?? "Transcription failed.", customUndoText: nil, timeout: nil), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in false })
+                        arguments.controllerInteraction.presentControllerInCurrent(controller, nil)
+                    }, completed: { [weak self] in
+                        guard let self, self.aiTranscriptionGeneration == generation else { return }
+                        self.transcribeDisposable?.dispose()
+                        self.transcribeDisposable = nil
+                        if !usesSelectedProvider && !arguments.associatedData.isPremium && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                            Queue.mainQueue().after(0.1, { [weak self] in let _ = self?.presentAudioTranscriptionTooltip(finished: true) })
+                        }
+                    }))
+                } else {
                     let appLocale = presentationData.strings.baseLanguageCode
+                    let localLease = AINativeOperationLease()
+                    let localScope = Atomic<ExteralessAIScope?>(value: nil)
+                    let localGeneration = UUID()
+                    self.aiTranscriptionGeneration = localGeneration
                     
-                    let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: message.id))
-                    |> mapToSignal { message -> Signal<String?, NoError> in
-                        guard let message = message else {
+                    let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.messages.resolveExteralessAIScope(capability: .init(messageId: message.id, expectedStableVersion: message.stableVersion, allowsExternalProcessing: false, allowsCopy: false), lease: localLease)
+                    |> mapToSignal { scope -> Signal<String?, NoError> in
+                        guard let scope, let message = scope.source else {
                             return .single(nil)
                         }
+                        _ = localScope.swap(scope)
                         guard let file = message.media.first(where: { $0 is TelegramMediaFile }) as? TelegramMediaFile else {
                             return .single(nil)
                         }
@@ -454,40 +495,30 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         return transcribeAudio(path: result, appLocale: appLocale)
                     }
                     
-                    self.transcribeDisposable = (signal
-                    |> deliverOnMainQueue).startStrict(next: { [weak self] result in
-                        guard let strongSelf = self, let arguments = strongSelf.arguments else {
+                    let localOperation = (signal
+                    |> mapToSignal { result -> Signal<Bool, NoError> in
+                        guard let result, let scope = localScope.with({ $0 }), !localLease.isCancelled else { return .single(false) }
+                        return context.engine.messages.storeExteralessAILocalTranscription(scope: scope, expectedResourceId: EngineMediaResource.Id(arguments.file.resource.id), text: result.text, isFinal: result.isFinal)
+                    }
+                    |> deliverOnMainQueue).startStrict(next: { [weak self] stored in
+                        guard let strongSelf = self, strongSelf.aiTranscriptionGeneration == localGeneration else {
                             return
                         }
                         
-                        if let result = result {
-                            let _ = arguments.context.engine.messages.storeLocallyTranscribedAudio(messageId: arguments.message.id, text: result.text, isFinal: result.isFinal, error: nil).startStandalone()
-                        } else {
+                        if !stored {
+                            strongSelf.transcribeDisposable?.dispose()
+                            strongSelf.transcribeDisposable = nil
                             strongSelf.audioTranscriptionState = .collapsed
                             strongSelf.requestUpdateLayout(true)
                         }
                     }, completed: { [weak self] in
-                        guard let strongSelf = self else {
+                        guard let strongSelf = self, strongSelf.aiTranscriptionGeneration == localGeneration else {
                             return
                         }
                         strongSelf.transcribeDisposable?.dispose()
                         strongSelf.transcribeDisposable = nil
                     })
-                } else {
-                    self.transcribeDisposable = (context.engine.messages.transcribeAudio(messageId: message.id)
-                    |> deliverOnMainQueue).startStrict(next: { [weak self] result in
-                        guard let strongSelf = self else {
-                            return
-                        }
-                        strongSelf.transcribeDisposable?.dispose()
-                        strongSelf.transcribeDisposable = nil
-                        
-                        if let arguments = strongSelf.arguments, !arguments.associatedData.isPremium && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
-                            Queue.mainQueue().after(0.1, {
-                                let _ = strongSelf.presentAudioTranscriptionTooltip(finished: true)
-                            })
-                        }
-                    })
+                    self.transcribeDisposable = ActionDisposable { localLease.cancel(); localOperation.dispose() }
                 }
             }
         }
@@ -508,6 +539,8 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         }
     }
     
+    private var aiTranscriptionGeneration = UUID()
+
     private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {
         guard let arguments = self.arguments, !arguments.associatedData.isPremium else {
             return false
@@ -767,11 +800,12 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 var updatedAudioTranscriptionState: AudioTranscriptionButtonComponent.TranscriptionState?
                 
                 var displayTranscribe = false
+                let usesSelectedProvider = ExteralessAIHooks.usesSelectedTranscription(isPremium: arguments.associatedData.isPremium)
                 if Namespaces.Message.allNonRegular.contains(arguments.message.id.namespace) {
                     displayTranscribe = false
                 } else if arguments.message.id.peerId.namespace != Namespaces.Peer.SecretChat && !isViewOnceMessage && !arguments.presentationData.isPreview {
                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
-                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                    if usesSelectedProvider || arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
                         displayTranscribe = true
                     } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
                         if arguments.incoming {
@@ -800,7 +834,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 }
                 
                 let currentTime = Int32(Date().timeIntervalSince1970)
-                if transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+                if !usesSelectedProvider, transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
                     updatedAudioTranscriptionState = .locked
                 }
                 
@@ -820,16 +854,9 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                             displayTrailingAnimatedDots = true
                             textString = modifiedString
                         } else {
-                            if let translateToLanguage = arguments.associatedData.translateToLanguage, !text.isEmpty && arguments.incoming {
-                                isTranslating = true
-                                for attribute in arguments.message.attributes {
-                                    if let attribute = attribute as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
-                                        textString = NSAttributedString(string: attribute.text, font: textFont, textColor: messageTheme.primaryTextColor)
-                                        isTranslating = false
-                                        break
-                                    }
-                                }
-                            }
+                            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(arguments.message), accountId: arguments.context.account.id.int64, accountPeerId: arguments.context.account.peerId, automaticLanguage: arguments.associatedData.translateToLanguage)
+                            isTranslating = display.isTranslating
+                            if !display.text.isEmpty { textString = NSAttributedString(string: display.text, font: textFont, textColor: messageTheme.primaryTextColor) }
                         }
                     case let .error(error):
                         let errorTextFont = Font.regular(floor(arguments.presentationData.fontSize.baseDisplaySize * 15.0 / 17.0))
@@ -969,7 +996,8 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         hasAutoremove: arguments.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(arguments.topMessage)),
                         animationCache: arguments.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: arguments.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: arguments.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(arguments.message).exteralessRetention
                     ))
                 }
                 

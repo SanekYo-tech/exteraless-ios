@@ -59,7 +59,7 @@ final class RustRequestService: NetworkEngineRequestService {
     }
 }
 
-final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
+final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler, ExteralessPillPassivePingSource {
     let datacenterId: Int
     let requestService: NetworkEngineRequestService
     let queue: Queue
@@ -112,6 +112,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
     /// requests have waited without a break: the local health check's view (`serverActivity`).
     private var lastHeardAt: Double = -Double.infinity
     private var busySince: Double?
+    private var exteralessPassivePing = RustPassivePingState()
 
     private var installedKeyId: Int64?
     private var installedKeyAt: Double = -Double.infinity
@@ -321,6 +322,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
     }
 
     private func releaseQueueResources() {
+        self.exteralessPassivePing.invalidate()
         if let keyId = self.lastCompletedKeyId {
             self.registry.noteAnswered(datacenterId: self.datacenterId, keyId: keyId, at: self.lastCompletedAt)
         }
@@ -409,6 +411,18 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         }
     }
 
+    func exteralessPillPassivePingSnapshot(_ reply: @escaping (ExteralessPillPassivePingSample?) -> Void) {
+        self.queue.async { [weak self] in
+            guard let self, self.isMain, !self.isStopped.with({ $0 }),
+                  !self.isDraining, !self.appliedPaused,
+                  self.lastConnectionFlags.map(rustEngineHasAnsweredConnection) == true else {
+                reply(nil)
+                return
+            }
+            reply(self.exteralessPassivePing.snapshot())
+        }
+    }
+
     func add(_ request: NetworkEngineRequest) -> Disposable {
         let flags = rustEngineRequestFlags(wantsQuickAck: request.acknowledged != nil, wantsProgress: request.progress != nil, needsTimeoutTimer: request.options.needsTimeoutTimer, withoutUpdates: self.withoutUpdates)
         let localId = self.runtime.nextRequestId()
@@ -454,6 +468,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
                 return
             }
             self.drainTarget = service
+            self.exteralessPassivePing.invalidate()
             self.connectionWatchdog?.invalidate()
             self.connectionWatchdog = nil
             rustEngineImportantLog("\(self.logPrefix) draining into another session: \(self.activeRequests.count) requests, deadline \(deadline) s")
@@ -503,7 +518,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         if isCancelled {
             disposable.dispose()
         }
-        rustEngineLog("\(self.logPrefix) moved #\(engineId) \(pending.request.shortMetadata.description)\(delay > 0.0 ? " after \(delay) s" : "")")
+        rustEngineLog("\(self.logPrefix) moved #\(engineId) \(pending.request.logShortDescription)\(delay > 0.0 ? " after \(delay) s" : "")")
     }
 
     private func handleReleased(_ event: RustEngineEvent) {
@@ -535,7 +550,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         case let .move(delay):
             self.moveToDrainTarget(pending, after: delay)
         case .fail:
-            rustEngineImportantLog("\(self.logPrefix) #\(event.requestId) \(pending.request.shortMetadata.description) may have run here and may not run again: \(networkEngineSwitchedError.errorDescription ?? "")")
+            rustEngineImportantLog("\(self.logPrefix) may not run again: \(RustRequestLog.failure(request: pending.request, requestId: event.requestId, code: networkEngineSwitchedError.errorCode, text: networkEngineSwitchedError.errorDescription ?? ""))")
             self.finish(pending)
             pending.request.completed(.failure(NetworkEngineRequestFailure(error: networkEngineSwitchedError, info: NetworkEngineResponseInfo(timestamp: 0.0, networkType: self.lastNetworkIsCellular ? 1 : 0, duration: 0.0))))
         }
@@ -641,7 +656,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
             request.invoke_after = invokeAfter
             mt_session_send(engine, self.handle, &request)
         }
-        rustEngineLog("\(self.logPrefix) send #\(requestId) \(pending.request.shortMetadata.description)\(invokeAfter != 0 ? " after #\(invokeAfter)" : "")")
+        rustEngineLog("\(self.logPrefix) send #\(requestId) \(pending.request.logShortDescription)\(invokeAfter != 0 ? " after #\(invokeAfter)" : "")")
     }
 
     private func cancel(_ pending: RustPendingRequest) {
@@ -728,7 +743,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
             self.handleVerificationRequired(event)
         case .authorizationRequired:
             let action = rustEngineAuthorizationRequiredAction(isMain: self.isMain)
-            rustEngineImportantLog("\(self.logPrefix) authorization required: 401 \(event.text), \(action)")
+            rustEngineImportantLog("\(self.logPrefix) authorization required: \(RustRequestLog.failure(request: self.pendingById[event.requestId]?.request, requestId: event.requestId, code: 401, text: event.text)), \(action)")
             switch action {
             case .logOut:
                 self.delegate?.networkSessionAuthorizationRequired()
@@ -736,7 +751,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
                 break
             }
         case .softAuthReset:
-            rustEngineImportantLog("\(self.logPrefix) soft auth reset: \(event.text)")
+            rustEngineImportantLog("\(self.logPrefix) soft auth reset: \(RustRequestLog.failure(request: self.pendingById[event.requestId]?.request, requestId: event.requestId, code: 406, text: event.text))")
             if self.isMain {
                 self.delegate?.networkSessionSoftAuthReset()
             }
@@ -782,9 +797,10 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         case .saltsUpdated:
             self.mergeSalts(event.salts)
         case .pong:
-            break
+            self.exteralessPassivePing.consume(event, isMain: self.isMain, active: !self.appliedPaused && !self.isDraining, receivedAt: Date())
         case .connectionState:
             let flags = RustEngineConnectionFlags(rawValue: event.flags)
+            self.exteralessPassivePing.consume(event, isMain: self.isMain, active: !self.appliedPaused && !self.isDraining, receivedAt: Date())
             if rustEngineConnectionStateRestartsSilence(previous: self.lastConnectionFlags, current: flags) {
                 self.lastHeardAt = rustEngineMonotonicNow()
             }
@@ -825,7 +841,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
                 self.registry.noteBound(datacenterId: self.datacenterId, keyId: keyId, at: rustEngineMonotonicNow())
             }
         case .temporaryKeyBindFailed:
-            rustEngineImportantLog("\(self.logPrefix) binding the temporary key failed: \(event.code) \(event.text)")
+            rustEngineImportantLog("\(self.logPrefix) binding the temporary key failed: \(RustRequestLog.failure(request: nil, requestId: event.requestId, code: event.code, text: event.text))")
             if self.runsPfs, let keyId = self.installedKeyId, rustEngineKeyProbeOutcome(code: event.code, text: event.text) == .keyUnknown {
                 self.registry.noteRefusedBind(datacenterId: self.datacenterId, keyId: keyId, at: rustEngineMonotonicNow())
             }
@@ -839,16 +855,18 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         case .routeMemoryChanged:
             break
         case .authKeyCreationFailed:
-            rustEngineLog("\(self.logPrefix) auth key creation failed: \(event.text)")
+            rustEngineLog("\(self.logPrefix) auth key creation failed: \(RustRequestLog.failure(request: nil, requestId: event.requestId, code: event.code, text: event.text))")
         case .transportFlood:
             rustEngineLog("\(self.logPrefix) transport flood (-429)")
         case .connectionDropped:
+            self.exteralessPassivePing.invalidate()
             let drop = NetworkEngineConnectionDrop(reason: event.text, answered: (event.flags & 1) != 0, age: event.value1)
             rustEngineLog("\(self.logPrefix) connection dropped: \(drop.reason), answered \(drop.answered), after \(drop.age) s")
             for observer in self.dropObservers {
                 observer(drop)
             }
         case .closed:
+            self.exteralessPassivePing.invalidate()
             if self.isDraining {
                 self.finishDrain()
             }
@@ -884,7 +902,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
     }
 
     private func handleParseFailure(_ pending: RustPendingRequest, info: NetworkEngineResponseInfo) {
-        rustEngineImportantLog("\(self.logPrefix) response for #\(pending.engineId) \(pending.request.shortMetadata.description) could not be parsed")
+        rustEngineImportantLog("\(self.logPrefix) response for #\(pending.engineId) \(pending.request.logShortDescription) could not be parsed")
         self.invalidateInitialization()
         let errorContext = pending.errorState.applyParseFailure()
         let gateAllowsRetry = pending.errorState.parseFailures < RustEngineParseFailurePolicy.maxAttempts && pending.request.shouldContinueAfterError(NetworkEngineErrorContext(floodWaitSeconds: errorContext.floodWaitSeconds, floodWaitErrorText: errorContext.floodWaitErrorText, internalServerErrorCount: errorContext.internalServerErrorCount))
@@ -932,7 +950,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
             self.finish(pending)
             return
         }
-        rustEngineLog("\(self.logPrefix) failed #\(event.requestId) \(event.code) \(event.text)")
+        rustEngineLog("\(self.logPrefix) failed \(RustRequestLog.failure(request: pending.request, requestId: event.requestId, code: event.code, text: event.text))")
         if rustEngineKeepsWaitingAfterLostAnswer(code: event.code, text: event.text) {
             rustEngineImportantLog("\(self.logPrefix) #\(event.requestId) ran on the server but its answer is gone; it stays waiting")
             self.finish(pending)
@@ -951,7 +969,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
             }
         }
         if !self.isMain && previousKind != .authTokenRequired && rustEngineWorkerShouldTransferAuthToken(code: event.code, text: event.text) {
-            rustEngineImportantLog("\(self.logPrefix) worker received 401 \(event.text)")
+            rustEngineImportantLog("\(self.logPrefix) worker received \(RustRequestLog.failure(request: pending.request, requestId: event.requestId, code: event.code, text: event.text))")
             self.workerAuthorizationRequired()
         }
         self.finish(pending)
@@ -970,7 +988,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         let errorContext = pending.errorState.applyRetryDecision(floodWaitSeconds: event.integer1, floodWaitErrorText: floodWaitText, serverErrors: event.integer2)
         let retryable = rustEngineRetryDecisionIsRetryable(code: event.code, floodWaitText: floodWaitText)
         let retry = retryable && pending.request.shouldContinueAfterError(NetworkEngineErrorContext(floodWaitSeconds: errorContext.floodWaitSeconds, floodWaitErrorText: errorContext.floodWaitErrorText, internalServerErrorCount: errorContext.internalServerErrorCount))
-        rustEngineLog("\(self.logPrefix) #\(event.requestId) \(event.code) \(event.text): \(retry ? "retry" : "fail")")
+        rustEngineLog("\(self.logPrefix) \(RustRequestLog.failure(request: pending.request, requestId: event.requestId, code: event.code, text: event.text)): \(retry ? "retry" : "fail")")
         mt_session_decide_retry(engine, self.handle, event.requestId, retry ? 1 : 0)
     }
 
@@ -1098,11 +1116,13 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         let paused = self.externallyPaused || self.holdForReplacementKey || self.holdForUnsupportedProxy
         if paused != self.appliedPaused {
             self.appliedPaused = paused
+            if paused { self.exteralessPassivePing.invalidate() }
             mt_session_set_paused(engine, self.handle, paused ? 1 : 0)
         }
     }
 
     private func resetConnection() {
+        self.exteralessPassivePing.invalidate()
         guard let engine = self.engine, self.handle != 0, !self.appliedPaused else {
             return
         }
@@ -1573,6 +1593,7 @@ final class RustNetworkSession: NetworkEngineSession, RustEngineEventHandler {
         }
         self.schemes = schemes
         self.addressFingerprint = fingerprint
+        self.exteralessPassivePing.invalidate()
         var selector = self.selector
         var obfuscationDatacenterId = self.obfuscationDatacenterId
         if let preferForMedia = schemes.first?.address.preferForMedia {
@@ -1869,6 +1890,12 @@ extension RustNetworkSession {
         let ipv6Schemes = schemes.filter { $0.address.isIpv6() }
         if !ipv6Schemes.isEmpty {
             allowIpv6 = context.chooseTransportSchemeForConnection(toDatacenterId: datacenterId, schemes: ipv6Schemes) != nil
+        }
+        let preference = MTAppNetworkResolver.addressFamilyPreference()
+        if preference >= 0 {
+            let first = schemes.filter { $0.address.isIpv6() == (preference == 1) }
+            let fallback = schemes.filter { $0.address.isIpv6() != (preference == 1) }
+            return first + fallback
         }
         return rustEngineAddressOrder(isIpv6: isIpv6, preferredIndex: preferredIndex, allowIpv6: allowIpv6).map { schemes[$0] }
     }

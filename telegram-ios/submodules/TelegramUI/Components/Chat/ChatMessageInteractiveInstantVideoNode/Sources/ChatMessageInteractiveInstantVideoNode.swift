@@ -443,7 +443,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                 forwardSource = resolvedForwardInfo.source
                 forwardAuthorSignature = resolvedForwardInfo.authorSignature
                 let availableWidth: CGFloat = max(60.0, availableContentWidth - 220.0 + 6.0)
-                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
+                forwardInfoSizeApply = makeForwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .standalone, forwardSource, forwardAuthorSignature, forwardPsaType == nil ? inlineBotNameString : nil, forwardPsaType, nil, item.message.forwardInfo?.date, CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude))
             }
             
             var notConsumed = false
@@ -583,7 +583,8 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                 hasAutoremove: item.message.isSelfExpiring,
                 canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                 animationCache: item.controllerInteraction.presentationContext.animationCache,
-                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                retention: EngineMessage(item.message).exteralessRetention
             ))
             
             let (dateAndStatusSize, dateAndStatusApply) = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)
@@ -825,10 +826,13 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                         }))
                     }
                                                             
+                    if let active = strongSelf.aiTranscriptionIdentity, active != strongSelf.currentAITranscriptionInput()?.identity {
+                        strongSelf.cancelAITranscription()
+                    }
                     var displayTranscribe = false
                     if item.message.id.peerId.namespace != Namespaces.Peer.SecretChat && statusDisplayType == .free && !isViewOnceMessage && !item.presentationData.isPreview {
                         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
-                        if item.associatedData.isPremium || item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                        if ExteralessAIHooks.usesSelectedTranscription(isPremium: item.associatedData.isPremium) || item.associatedData.isPremium || item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
                             displayTranscribe = true
                         } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
                             if incoming {
@@ -844,6 +848,18 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                     }
                     
                     if displayTranscribe, let durationBlurColor = durationBlurColor {
+                        let transcriptionState: AudioTranscriptionButtonComponent.TranscriptionState
+                        if strongSelf.transcribeDisposable != nil {
+                            transcriptionState = .inProgress
+                        } else if ExteralessAIHooks.usesSelectedTranscription(isPremium: item.associatedData.isPremium), case .locked = effectiveAudioTranscriptionState {
+                            transcriptionState = .collapsed
+                        } else {
+                            transcriptionState = effectiveAudioTranscriptionState
+                        }
+                        if strongSelf.audioTranscriptionState != transcriptionState {
+                            strongSelf.audioTranscriptionState = transcriptionState
+                            strongSelf.updateTranscriptionExpanded?(transcriptionState)
+                        }
                         var added = false
                         let audioTranscriptionButton: ComponentHostView<Empty>
                         if let current = strongSelf.audioTranscriptionButton {
@@ -856,15 +872,9 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                         }
                         let audioTranscriptionButtonSize = audioTranscriptionButton.update(
                             transition: animation.isAnimated ? .easeInOut(duration: 0.3) : .immediate,
-                            component: AnyComponent(AudioTranscriptionButtonComponent(
+                            component: AnyComponent(strongSelf.aiTranscriptionButtonComponent(
                                 theme: .freeform(durationBlurColor, durationTextColor),
-                                transcriptionState: effectiveAudioTranscriptionState,
-                                pressed: {
-                                    guard let strongSelf = self else {
-                                        return
-                                    }
-                                    strongSelf.transcribe()
-                                }
+                                transcriptionState: transcriptionState
                             )),
                             environment: {},
                             containerSize: CGSize(width: 30.0, height: 30.0)
@@ -922,6 +932,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                     }
                     
                     dateAndStatusApply(animation)
+                    strongSelf.dateAndStatusNode.configureTimeHint(message: EngineMessage(item.message)) { text in item.controllerInteraction.displayMessageTooltip(item.message.id, text, false, nil, nil) }
                     switch layoutData {
                     case let .unconstrained(width):
                         var dateAndStatusOrigin: CGPoint
@@ -1807,24 +1818,57 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
         }
     }
     
-    private func transcribe() {
-        guard let item = self.item, item.message.id.namespace == Namespaces.Message.Cloud else {
-            return
-        }
-        
-        if !item.context.isPremium, case .inProgress = self.audioTranscriptionState {
-            return
-        }
-        
+    // The real button and native fixtures use the same component/action/state
+    // machine. Only the account/message data boundary is injectable.
+    struct AITranscriptionIdentity: Equatable {
+        let accountId: Int64
+        let messageId: EngineMessage.Id
+        let resourceId: EngineMediaResource.Id
+    }
+    struct AITranscriptionInput {
+        let identity: AITranscriptionIdentity
+        let existingText: TranscribedText?
+        let usesSelectedProvider: () -> Bool
+        let allowNative: () -> Bool
+        let request: () -> Signal<Bool, ExteralessAITranscriptionError>
+        let failed: (ExteralessAITranscriptionError) -> Void
+        let finished: () -> Void
+    }
+    var aiTranscriptionInputProvider: (() -> AITranscriptionInput?)?
+    private var aiTranscriptionGeneration = UUID()
+    private var aiTranscriptionIdentity: AITranscriptionIdentity?
+
+    func aiTranscriptionButtonComponent(theme: AudioTranscriptionButtonComponent.Theme, transcriptionState: AudioTranscriptionButtonComponent.TranscriptionState) -> AudioTranscriptionButtonComponent {
+        AudioTranscriptionButtonComponent(theme: theme, transcriptionState: transcriptionState, pressed: { [weak self] in self?.transcribe() })
+    }
+
+    private func currentAITranscriptionInput() -> AITranscriptionInput? {
+        if let aiTranscriptionInputProvider { return aiTranscriptionInputProvider() }
+        guard let item = self.item, let file = self.media else { return nil }
+        return AITranscriptionInput(identity: .init(accountId: item.context.account.id.int64, messageId: item.message.id, resourceId: EngineMediaResource.Id(file.resource.id)), existingText: transcribedText(message: EngineMessage(item.message)), usesSelectedProvider: {
+            ExteralessAIHooks.usesSelectedTranscription(isPremium: item.associatedData.isPremium)
+        }, allowNative: { [weak self] in self?.allowNativeTranscription(item: item) ?? false }, request: {
+            ExteralessAIHooks.transcribe(context: item.context, messageId: item.message.id, file: file)
+        }, failed: { error in
+            let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
+            let controller = UndoOverlayController(presentationData: presentationData, content: .universal(animation: "Transcribe", scale: 0.06, colors: [:], title: nil, text: error.errorDescription ?? "Transcription failed.", customUndoText: nil, timeout: nil), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in false })
+            item.controllerInteraction.presentControllerInCurrent(controller, nil)
+        }, finished: { [weak self] in
+            if !ExteralessAIHooks.usesSelectedTranscription(isPremium: item.associatedData.isPremium), !item.associatedData.isPremium && !item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                Queue.mainQueue().after(0.1, { [weak self] in let _ = self?.presentAudioTranscriptionTooltip(finished: true) })
+            }
+        })
+    }
+
+    private func allowNativeTranscription(item: ChatMessageBubbleContentItem) -> Bool {
+        if item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost { return true }
         let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
-        
-        let transcriptionText = transcribedText(message: EngineMessage(item.message))
-        if transcriptionText == nil && !item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+        do {
             if premiumConfiguration.audioTransciptionTrialCount > 0 {
                 if !item.associatedData.isPremium {
                     if self.presentAudioTranscriptionTooltip(finished: false) {
-                        return
+                        return false
                     }
                 }
             } else {
@@ -1851,18 +1895,40 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                         }
                         return false })
                     item.controllerInteraction.presentControllerInCurrent(tipController, nil)
-                    return
+                    return false
                 }
             }
         }
-        
+        return true
+    }
+
+    private func cancelAITranscription() {
+        aiTranscriptionGeneration = UUID()
+        transcribeDisposable?.dispose()
+        transcribeDisposable = nil
+        aiTranscriptionIdentity = nil
+        audioTranscriptionState = .collapsed
+        requestUpdateLayout(true)
+        updateTranscriptionExpanded?(audioTranscriptionState)
+    }
+
+    private func transcribe() {
+        // A cached trial cooldown may have recomputed the display state while
+        // the selected provider is running. The disposable is the authority for Cancel.
+        if transcribeDisposable != nil {
+            cancelAITranscription()
+            return
+        }
+        guard let input = currentAITranscriptionInput(), input.identity.messageId.namespace == Namespaces.Message.Cloud else { return }
+        if input.existingText == nil && !input.usesSelectedProvider() && !input.allowNative() { return }
+
         var shouldBeginTranscription = false
         var shouldExpandNow = false
         
         if case .expanded = self.audioTranscriptionState {
             shouldExpandNow = true
         } else {
-            if let result = transcribedText(message: EngineMessage(item.message)) {
+            if let result = input.existingText {
                 shouldExpandNow = true
                 
                 if case let .success(_, isPending) = result {
@@ -1880,20 +1946,33 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                 self.audioTranscriptionState = .inProgress
                 self.requestUpdateLayout(true)
                 
-                self.transcribeDisposable = (item.context.engine.messages.transcribeAudio(messageId: item.message.id)
-                |> deliverOnMainQueue).startStrict(next: { [weak self] result in
-                    guard let strongSelf = self else {
-                        return
-                    }
-                    strongSelf.transcribeDisposable?.dispose()
-                    strongSelf.transcribeDisposable = nil
-                    
-                    if let item = strongSelf.item, !item.associatedData.isPremium && !item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
-                        Queue.mainQueue().after(0.1, {
-                            let _ = strongSelf.presentAudioTranscriptionTooltip(finished: true)
-                        })
-                    }
-                })
+                let generation = UUID()
+                self.aiTranscriptionGeneration = generation
+                self.aiTranscriptionIdentity = input.identity
+                let disposable = MetaDisposable()
+                self.transcribeDisposable = disposable
+                disposable.set((input.request() |> deliverOnMainQueue).start(next: { [weak self] stored in
+                    guard let self, self.aiTranscriptionGeneration == generation, self.currentAITranscriptionInput()?.identity == input.identity else { return }
+                    self.audioTranscriptionState = stored ? .expanded : .collapsed
+                    self.requestUpdateLayout(true)
+                    self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+                }, error: { [weak self] error in
+                    guard let self, self.aiTranscriptionGeneration == generation else { return }
+                    self.transcribeDisposable?.dispose()
+                    self.transcribeDisposable = nil
+                    self.aiTranscriptionIdentity = nil
+                    guard self.currentAITranscriptionInput()?.identity == input.identity else { return }
+                    self.audioTranscriptionState = .collapsed
+                    self.requestUpdateLayout(true)
+                    self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+                    input.failed(error)
+                }, completed: { [weak self] in
+                    guard let self, self.aiTranscriptionGeneration == generation else { return }
+                    self.transcribeDisposable?.dispose()
+                    self.transcribeDisposable = nil
+                    self.aiTranscriptionIdentity = nil
+                    if self.currentAITranscriptionInput()?.identity == input.identity { input.finished() }
+                }))
             }
         }
         

@@ -52,14 +52,16 @@ func saveMediaToFiles(context: AccountContext, fileReference: FileMediaReference
     let progressDisposable = progressSignal.startStrict()
     
     let disposable = MetaDisposable()
+    let toolsSaveDisposable = MetaDisposable()
     signal = signal
     |> afterDisposed {
         Queue.mainQueue().async {
             progressDisposable.dispose()
         }
     }
-    cancelImpl = { [weak disposable] in
+    cancelImpl = { [weak disposable, weak toolsSaveDisposable] in
         disposable?.set(nil)
+        toolsSaveDisposable?.set(nil)
     }
     disposable.set((signal
     |> deliverOnMainQueue).startStrict(next: { state, _ in
@@ -68,6 +70,14 @@ func saveMediaToFiles(context: AccountContext, fileReference: FileMediaReference
             break
         case let .data(data):
             if data.isComplete {
+                var configuredSaving: Disposable?
+                MainActor.assumeIsolated {
+                    configuredSaving = exteralessToolsSaveDownloaded(context: context, source: URL(fileURLWithPath: data.path), file: fileReference, present: present)
+                }
+                if let saving = configuredSaving {
+                    toolsSaveDisposable.set(saving)
+                    return
+                }
                 var symlinkPath = data.path + ".mp3"
                 try? FileManager.default.removeItem(atPath: symlinkPath)
                 let _ = try? FileManager.default.linkItem(atPath: data.path, toPath: symlinkPath)
@@ -135,5 +145,8 @@ func saveMediaToFiles(context: AccountContext, fileReference: FileMediaReference
         }
     }))
     
-    return disposable
+    return ActionDisposable {
+        disposable.dispose()
+        toolsSaveDisposable.dispose()
+    }
 }

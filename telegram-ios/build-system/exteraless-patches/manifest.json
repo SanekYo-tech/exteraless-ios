@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "repository": "third-party/mtproto-engine",
+  "base_commit": "da4b2170210aab0430c4ff18c032991f3030cf45",
+  "patch": "mtproto-engine-native-dns.patch",
+  "patch_sha256": "f1bbe44f47990d0f97df34d4a897abc3306b181de793875eae7410d562828cce",
+  "format": "git-unified-lf-with-exact-postimage-crlf-ranges",
+  "files": {
+    "crates/mtproto-engine/src/resolver.rs": {
+      "preimage_sha256": "f0ab8bbfc1814b8c2b46805c78b5fb414c47817b6a48501d7b774523c3500330",
+      "preimage_size": 1211,
+      "postimage_sha256": "bfc08ab5618867ceaccf41a08c8aeabaa4b02b9986b9cfed6dfdb33379fe7074",
+      "postimage_size": 3781,
+      "postimage_crlf_ranges": [[46, 51], [88, 108]]
+    },
+    "crates/mtproto-engine/src/session_runtime.rs": {
+      "preimage_sha256": "2f63e664433ed9d523b2fe47c5f389b5cd2b06b9d32c43f4ce410ed4bd67a3aa",
+      "preimage_size": 116330,
+      "postimage_sha256": "90c2f28f69ef2eed29b01d2f6864c4a955270b26312c914714cddf09e2b9b91e",
+      "postimage_size": 124126,
+      "postimage_crlf_ranges": [[1, 199], [204, 280], [284, 901], [904, 972], [977, 1157], [1160, 1172], [1180, 1192], [1197, 1219], [1249, 1253], [1256, 1259], [1281, 1293], [1295, 1304], [1306, 2824], [2826, 2830], [2872, 2925]]
+    },
+    "crates/mtproto-engine/src/worker.rs": {
+      "preimage_sha256": "32bc15d7c46b8f1a2bdd0ed035af8742f92407af07356e84823a4d13961485e2",
+      "preimage_size": 20157,
+      "postimage_sha256": "2eeeaac5589410c676488c6a23f96f696f8214aae023127f306f8642c4d25d51",
+      "postimage_size": 23010,
+      "postimage_crlf_ranges": [[1, 12], [14, 56], [61, 63], [105, 107], [132, 134], [142, 146], [148, 186], [188, 365], [368, 507], [510, 513], [524, 526], [528, 535]]
+    }
+  }
+}

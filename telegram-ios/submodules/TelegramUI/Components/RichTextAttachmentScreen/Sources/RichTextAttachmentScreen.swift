@@ -2184,8 +2184,10 @@ final class RichTextAttachmentScreenComponent: Component {
             }
             
             let actionBarSpacing: CGFloat = 6.0
+            let aiEditorVisible = ExteralessAIHooks.aiEditorVisible
+            let aiButtonSpacing: CGFloat = aiEditorVisible ? actionBarSpacing : 0.0
             
-            let aiButtonSize = self.aiButton.update(
+            let aiButtonSize = aiEditorVisible ? self.aiButton.update(
                 transition: transition,
                 component: AnyComponent(GlassControlGroupComponent(
                     theme: environment.theme,
@@ -2200,6 +2202,7 @@ final class RichTextAttachmentScreenComponent: Component {
                                 guard let controller = environment.controller() as? RichTextAttachmentScreen else {
                                     return
                                 }
+                                guard ExteralessAIHooks.aiEditorVisible else { return }
                                 
                                 // AI edit on the current selection: seed the edit screen with only the
                                 // selected sub-document (partial table/image coverage expanded to the whole
@@ -2215,6 +2218,7 @@ final class RichTextAttachmentScreenComponent: Component {
                                         let initialText = ComposedRichMessage.rich(instantPage: instantPage(from: subContent))
                                         let textProcessingScreen = await component.context.sharedContext.makeTextProcessingScreen(
                                             context: component.context,
+                                            capability: .userInput,
                                             theme: environment.theme,
                                             mode: .edit(
                                                 saveRestoreStateId: nil,
@@ -2258,6 +2262,7 @@ final class RichTextAttachmentScreenComponent: Component {
                                 do {
                                     let textProcessingScreen = await component.context.sharedContext.makeTextProcessingScreen(
                                         context: component.context,
+                                        capability: .userInput,
                                         theme: environment.theme,
                                         mode: .generate(
                                             completion: { [weak self] result in
@@ -2295,7 +2300,7 @@ final class RichTextAttachmentScreenComponent: Component {
                 ),
                 environment: {},
                 containerSize: CGSize(width: 44.0, height: 44.0)
-            )
+            ) : CGSize.zero
             
             var isSendEnabled = true
             let content = chatInputContent(fromDocument: self.currentDocument, media: self.currentMedia, emojiFiles: self.currentEmojiFiles)
@@ -2337,17 +2342,21 @@ final class RichTextAttachmentScreenComponent: Component {
                     actions: barActions
                 )),
                 environment: {},
-                containerSize: CGSize(width: availableSize.width - sideInset * 2.0 - bottomRowInsets.left - bottomRowInsets.right - actionBarSpacing * 2.0 - aiButtonSize.width - sendButtonSize.width, height: 44.0)
+                containerSize: CGSize(width: availableSize.width - sideInset * 2.0 - bottomRowInsets.left - bottomRowInsets.right - actionBarSpacing - aiButtonSpacing - aiButtonSize.width - sendButtonSize.width, height: 44.0)
             )
             
             var bottomInset = max(environment.inputHeight, emojiPanelHeight, environment.safeInsets.bottom)
             
             let aiButtonFrame = CGRect(origin: CGPoint(x: sideInset + bottomRowInsets.left, y: availableSize.height - bottomInset - 6.0 - aiButtonSize.height), size: aiButtonSize)
             if let aiButtonView = self.aiButton.view {
-                if aiButtonView.superview == nil {
-                    self.addSubview(aiButtonView)
+                if aiEditorVisible {
+                    if aiButtonView.superview == nil {
+                        self.addSubview(aiButtonView)
+                    }
+                    transition.setFrame(view: aiButtonView, frame: aiButtonFrame)
+                } else {
+                    aiButtonView.removeFromSuperview()
                 }
-                transition.setFrame(view: aiButtonView, frame: aiButtonFrame)
             }
             
             let sendButtonFrame = CGRect(origin: CGPoint(x: availableSize.width - (sideInset + bottomRowInsets.right) - sendButtonSize.width, y: availableSize.height - bottomInset - 6.0 - sendButtonSize.height), size: sendButtonSize)
@@ -2365,7 +2374,7 @@ final class RichTextAttachmentScreenComponent: Component {
             transition.setPosition(view: self.sendButtonExtractedContainer.contentView, position: CGPoint(x: sendButtonFrame.width * 0.5, y: sendButtonFrame.height * 0.5))
             transition.setBounds(view: self.sendButtonExtractedContainer.contentView, bounds: CGRect(origin: CGPoint(), size: sendButtonFrame.size))
             
-            let actionBarFrame = CGRect(origin: CGPoint(x: sideInset + bottomRowInsets.left + aiButtonSize.width + actionBarSpacing, y: availableSize.height - bottomInset - 6.0 - actionBarSize.height), size: actionBarSize)
+            let actionBarFrame = CGRect(origin: CGPoint(x: sideInset + bottomRowInsets.left + aiButtonSize.width + aiButtonSpacing, y: availableSize.height - bottomInset - 6.0 - actionBarSize.height), size: actionBarSize)
             if let actionBarView = self.actionBar.view {
                 if actionBarView.superview == nil {
                     self.addSubview(actionBarView)

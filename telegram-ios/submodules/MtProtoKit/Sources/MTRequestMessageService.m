@@ -85,6 +85,14 @@
 
 @implementation MTRequestMessageService
 
++ (NSString *)responseLogDescriptionForRequest:(MTRequest *)request result:(id)result error:(MTRpcError *)error {
+    MTRequestLogContext *context = request.logContext ?: [MTRequestLogContext redactedUnattributedContext];
+    if (error != nil) {
+        return [context errorDescriptionWithCode:error.errorCode text:error.errorDescription];
+    }
+    return [context responseDescription:result];
+}
+
 - (instancetype)initWithContext:(MTContext *)context
 {
     self = [super init];
@@ -132,7 +140,7 @@
         if (![_requests containsObject:request])
         {
             if (MTLogEnabled()) {
-                MTLog(@"[MTRequestMessageService#%" PRIxPTR " add request %@]", (intptr_t)self, request.metadata);
+                MTLog(@"[MTRequestMessageService#%" PRIxPTR " add request %@]", (intptr_t)self, request.metadataForLogging);
             }
             
             if (self->_handingOver) {
@@ -537,7 +545,7 @@
         [buffer appendBytes:currentData.bytes length:currentData.length];
         currentData = buffer.data;
         
-        debugDescription = [debugDescription stringByAppendingFormat:@", apnsSecret(%@, %@)", requestVerificationData.nonce, requestVerificationData.secret];
+        debugDescription = [debugDescription stringByAppendingString:@", apnsVerification(redacted)"];
     }
     
     if (recaptchaVerificationData != nil) {
@@ -549,7 +557,7 @@
         [buffer appendBytes:currentData.bytes length:currentData.length];
         currentData = buffer.data;
         
-        debugDescription = [debugDescription stringByAppendingFormat:@", recaptcha(%@)", recaptchaVerificationData.token];
+        debugDescription = [debugDescription stringByAppendingString:@", recaptchaVerification(redacted)"];
     }
     
     if (decoratedDebugDescription != nil) {
@@ -649,7 +657,7 @@
             
             NSData *decoratedRequestData = [self decorateRequestData:request initializeApi:requestsWillInitializeApi requestVerificationData:requestVerificationData recaptchaVerificationData:recaptchaVerificationData unresolvedDependencyOnRequestInternalId:&autoreleasingUnresolvedDependencyOnRequestInternalId decoratedDebugDescription:&decoratedDebugDescription];
             
-            MTOutgoingMessage *outgoingMessage = [[MTOutgoingMessage alloc] initWithData:decoratedRequestData metadata:request.metadata additionalDebugDescription:decoratedDebugDescription shortMetadata:request.shortMetadata messageId:messageId messageSeqNo:messageSeqNo];
+            MTOutgoingMessage *outgoingMessage = [[MTOutgoingMessage alloc] initWithData:decoratedRequestData metadata:request.metadataForLogging additionalDebugDescription:decoratedDebugDescription shortMetadata:request.shortMetadataForLogging messageId:messageId messageSeqNo:messageSeqNo];
             outgoingMessage.needsQuickAck = request.acknowledgementReceived != nil;
             outgoingMessage.hasHighPriority = request.hasHighPriority;
             
@@ -841,14 +849,9 @@
                         }
                     }
                     
-                    if (rpcResult != nil) {
-                        if (MTLogEnabled()) {
-                            MTLog(@"[MTRequestMessageService#%p response for %" PRId64 " is %@]", self, request.requestContext.messageId, rpcResult);
-                        }
-                    } else {
-                        if (MTLogEnabled()) {
-                            MTLog(@"[MTRequestMessageService#%p response for %" PRId64 " is error: %d: %@]", self, request.requestContext.messageId, (int)rpcError.errorCode, rpcError.errorDescription);
-                        }
+                    if (MTLogEnabled()) {
+                        MTLog(@"[MTRequestMessageService#%p response for %" PRId64 " %@]", self, request.requestContext.messageId,
+                            [MTRequestMessageService responseLogDescriptionForRequest:request result:rpcResult error:rpcError]);
                     }
                     
                     if (rpcResult != nil && request.requestContext.willInitializeApi) {
@@ -1342,7 +1345,7 @@
     }
     request.requestContext = nil;
     if (MTLogEnabled()) {
-        MTLog(@"[MTRequestMessageService#%" PRIxPTR " hands over %@ (%s, retry after %.1f s)]", (intptr_t)self, request.metadata, mayHaveReachedServer ? "may have reached the server" : "never ran", retryAfter);
+        MTLog(@"[MTRequestMessageService#%" PRIxPTR " hands over %@ (%s, retry after %.1f s)]", (intptr_t)self, request.metadataForLogging, mayHaveReachedServer ? "may have reached the server" : "never ran", retryAfter);
     }
     _handOverReleased(request, mayHaveReachedServer, retryAfter);
 }

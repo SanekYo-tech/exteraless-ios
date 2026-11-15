@@ -957,6 +957,43 @@ public final class ChatInputTextCollapsedQuoteAttachmentImpl: NSTextAttachment, 
 }
 
 public final class ChatInputTextView: ChatInputTextViewImpl, UITextViewDelegate, NSLayoutManagerDelegate, NSTextStorageDelegate {
+    /// Final text only: UIKit owns marked candidates until insertText commits them.
+    public var committedTextTransformer: ((String) -> String)?
+
+    override public func insertText(_ text: String) {
+        guard let transform = self.committedTextTransformer, text.utf16.count > 1 else {
+            super.insertText(text)
+            return
+        }
+        let range: NSRange
+        if let marked = self.markedTextRange {
+            range = NSRange(location: self.offset(from: self.beginningOfDocument, to: marked.start), length: self.offset(from: marked.start, to: marked.end))
+        } else {
+            range = self.selectedRange
+        }
+        super.insertText(self.isLiteralTextDestination(range) ? text : transform(text))
+    }
+
+    /// The panel's paste gate asks the same question BEFORE it transforms clipboard text.
+    public func isLiteralTextDestination(_ range: NSRange) -> Bool {
+        func literal(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
+            if attributes[ChatTextInputAttributes.monospace] != nil || attributes[ChatTextInputAttributes.collapsedBlock] != nil { return true }
+            if let block = attributes[ChatTextInputAttributes.block] as? ChatTextInputTextQuoteAttribute, case .code = block.kind { return true }
+            return false
+        }
+        var isLiteral = literal(self.typingAttributes)
+        if range.location >= 0, range.location <= self.textStorage.length {
+            if range.length == 0, range.location > 0 {
+                isLiteral = isLiteral || literal(self.textStorage.attributes(at: range.location - 1, effectiveRange: nil))
+            } else if range.length > 0, NSMaxRange(range) <= self.textStorage.length {
+                self.textStorage.enumerateAttributes(in: range, options: []) { attributes, _, stop in
+                    if literal(attributes) { isLiteral = true; stop.pointee = true }
+                }
+            }
+        }
+        return isLiteral
+    }
+
     public final class Theme: Equatable {
         public final class Quote: Equatable {
             public enum LineStyle: Equatable {

@@ -901,6 +901,11 @@ final class PeerSelectionControllerNode: ASDisplayNode {
         self.mainContainerNode?.updatePresentationData(presentationData)
     }
 
+    func applyInitialForwardOptions(_ options: ChatInterfaceForwardOptionsState?) {
+        guard let options else { return }
+        self.updateChatPresentationInterfaceState(animated: false, { $0.updatedInterfaceState { $0.withUpdatedForwardOptionsState(options) } })
+    }
+
     private func updateChatPresentationInterfaceState(animated: Bool = true, _ f: (ChatPresentationInterfaceState) -> ChatPresentationInterfaceState, completion: @escaping (ContainedViewLayoutTransition) -> Void = { _ in }) {
         self.updateChatPresentationInterfaceState(transition: animated ? .animated(duration: 0.4, curve: .spring) : .immediate, f, completion: completion)
     }

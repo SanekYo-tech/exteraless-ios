@@ -78,21 +78,33 @@
 
 - (instancetype)init
 {
+    return [self initWithLogContext:nil];
+}
+
+- (instancetype)initWithLogContext:(MTRequestLogContext *)logContext
+{
     self = [super init];
     if (self != nil)
     {
         _internalId = [[MTRequestInternalId alloc] init];
         _dependsOnPasswordEntry = true;
+        _logContext = logContext ?: [MTRequestLogContext contextForPayload:nil methodName:nil];
     }
     return self;
 }
 
 - (void)setPayload:(NSData *)payload metadata:(id)metadata shortMetadata:(id)shortMetadata responseParser:(id (^)(NSData *))responseParser
 {
-    _payload = payload;
+    _payload = [payload copy];
+    NSString *methodName = [shortMetadata isKindOfClass:[NSString class]] ? shortMetadata : nil;
+    MTRequestLogContext *inferred = [MTRequestLogContext contextForPayload:_payload methodName:methodName];
+    _logContext = [inferred mergingContext:_logContext];
     _metadata = metadata;
     _shortMetadata = shortMetadata;
     _responseParser = [responseParser copy];
 }
+
+- (id)metadataForLogging { return _logContext.containsCredentials ? [_logContext metadataDescription:nil] : _metadata; }
+- (id)shortMetadataForLogging { return _logContext.containsCredentials ? [_logContext metadataDescription:nil] : _shortMetadata; }
 
 @end

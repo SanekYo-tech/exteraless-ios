@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Postbox
 internal import TelegramApi
 import SwiftSignalKit
@@ -122,6 +123,8 @@ final class MultipartUploadManager {
     var bigParts: Bool
     private let forceNoBigParts: Bool
     private let useLargerParts: Bool
+    private let toolsUploadBoost: Bool
+    private let toolsHasHeader: Bool
     
     let queue = Queue()
     let fileId: Int64
@@ -143,8 +146,10 @@ final class MultipartUploadManager {
     
     let state: MultipartUploadState
     
-    init(headerSize: Int32, data: Signal<MultipartUploadData, NoError>, encryptionKey: SecretFileEncryptionKey?, hintFileSize: Int64?, hintFileIsLarge: Bool, forceNoBigParts: Bool, useLargerParts: Bool, increaseParallelParts: Bool, uploadPart: @escaping (UploadPart) -> Signal<Void, UploadPartError>, progress: @escaping (Float) -> Void, completed: @escaping (MultipartIntermediateResult?) -> Void) {
+    init(headerSize: Int32, data: Signal<MultipartUploadData, NoError>, encryptionKey: SecretFileEncryptionKey?, hintFileSize: Int64?, hintFileIsLarge: Bool, forceNoBigParts: Bool, useLargerParts: Bool, increaseParallelParts: Bool, toolsUploadBoost: Bool = false, uploadPart: @escaping (UploadPart) -> Signal<Void, UploadPartError>, progress: @escaping (Float) -> Void, completed: @escaping (MultipartIntermediateResult?) -> Void) {
         self.dataSignal = data
+        self.toolsUploadBoost = toolsUploadBoost
+        self.toolsHasHeader = headerSize != 0
         
         var fileId: Int64 = 0
         arc4random_buf(&fileId, 8)
@@ -238,6 +243,12 @@ final class MultipartUploadManager {
                         self.defaultPartSize = 16 * 1024
                     }
                     self.bigTotalParts = nil
+                }
+                self.defaultPartSize = ToolsUploadPolicy.partSize(native: self.defaultPartSize,
+                    enabled: self.toolsUploadBoost, completeSize: resourceData.size,
+                    encrypted: !self.state.aesKey.isEmpty, hasHeader: self.toolsHasHeader)
+                if self.bigParts {
+                    self.bigTotalParts = Int(resourceData.size / self.defaultPartSize) + (resourceData.size % self.defaultPartSize == 0 ? 0 : 1)
                 }
             }
         }
@@ -482,7 +493,7 @@ func multipartUpload(network: Network, postbox: Postbox, source: MultipartUpload
                 }
             }
             
-            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts, increaseParallelParts: increaseParallelParts, uploadPart: { part in
+            let manager = MultipartUploadManager(headerSize: headerSize, data: dataSignal, encryptionKey: encryptionKey, hintFileSize: hintFileSize, hintFileIsLarge: hintFileIsLarge, forceNoBigParts: forceNoBigParts, useLargerParts: useLargerParts, increaseParallelParts: increaseParallelParts, toolsUploadBoost: ClientSettings.shared.bool("tools.uploadBoost"), uploadPart: { part in
                 switch uploadInterface {
                 case let .download(download):
                     return download.uploadPart(fileId: part.fileId, index: part.index, data: part.data, asBigPart: part.bigPart, bigTotalParts: part.bigTotalParts, useCompression: useCompression, onFloodWaitError: onFloodWaitError)

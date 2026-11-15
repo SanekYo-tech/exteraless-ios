@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import SwiftSignalKit
@@ -171,6 +172,11 @@ open class NavigationController: UINavigationController, ContainableController, 
     }
     
     private let mode: NavigationControllerMode
+    public let contentLayoutRole: NavigationContentLayoutRole
+    public private(set) var contentLayoutMode: Int = 0
+    private var previousContentLayoutMode: Int = 0
+    private var previousContentLayoutOwners: NavigationContentLayoutOwners?
+    private var contentLayoutUpdateScheduled = false
     private var theme: NavigationControllerTheme
     private let isFlat: Bool
     
@@ -321,12 +327,36 @@ open class NavigationController: UINavigationController, ContainableController, 
         }
     }
     
-    public init(mode: NavigationControllerMode, theme: NavigationControllerTheme, isFlat: Bool = false) {
+    public init(mode: NavigationControllerMode, theme: NavigationControllerTheme, isFlat: Bool = false, contentLayoutRole: NavigationContentLayoutRole = .unmanaged) {
         self.mode = mode
+        self.contentLayoutRole = contentLayoutRole
         self.theme = theme
         self.isFlat = isFlat
         
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// Root-scoped content recomposition. The raw selection is retained even
+    /// when a small viewport temporarily needs the single-pane fallback.
+    @discardableResult
+    public func updateContentLayoutMode(_ rawValue: Int) -> Bool {
+        precondition(Thread.isMainThread)
+        guard self.contentLayoutRole == .applicationRoot, AppearanceLayoutModePolicy.Mode(rawValue: rawValue) != nil else { return false }
+        guard self.contentLayoutMode != rawValue else { return true }
+        self.contentLayoutMode = rawValue
+        if self.isUpdatingContainers {
+            if !self.contentLayoutUpdateScheduled {
+                self.contentLayoutUpdateScheduled = true
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.contentLayoutUpdateScheduled = false
+                    self.requestLayout(transition: .immediate)
+                }
+            }
+        } else {
+            self.requestLayout(transition: .immediate)
+        }
+        return true
     }
     
     public override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
@@ -615,9 +645,43 @@ open class NavigationController: UINavigationController, ContainableController, 
             transition.updateFrame(node: globalOverlayContainerParent, frame: CGRect(origin: CGPoint(), size: layout.size))
         }
         
-        let navigationLayout = makeNavigationLayout(mode: self.mode, layout: layout, controllers: self._viewControllers)
-        
-        var transition = transition
+        let appliedContentLayoutMode = self.contentLayoutMode
+        let contentLayout = navigationContentLayout(role: self.contentLayoutRole, rawMode: appliedContentLayoutMode, layout: layout, hasMaster: self._viewControllers.contains { if case .master = $0.navigationPresentation { return true }; return false }, hasMinimizedStack: self.minimizedContainer != nil)
+        let navigationLayout = makeNavigationLayout(mode: self.mode, layout: layout, controllers: self._viewControllers, contentLayout: contentLayout)
+        var retiredContentContainers: [ASDisplayNode] = []
+        var contentFirstResponder: UIView?
+        var contentHandoff = false
+        if self.contentLayoutRole == .applicationRoot {
+            let owners = NavigationContentLayoutOwners(navigationLayout)
+            if let previous = self.previousContentLayoutOwners,
+               (self.previousContentLayoutMode != 0 || appliedContentLayoutMode != 0),
+               (self.previousContentLayoutMode != appliedContentLayoutMode || owners.needsHandoff(from: previous)) {
+                contentHandoff = true
+                contentFirstResponder = getFirstResponderAndAccessoryHeight(self.displayNode.view).0
+                if let root = self.rootContainer {
+                    switch root {
+                    case let .flat(container):
+                        container.retireForContentLayoutChange()
+                        retiredContentContainers.append(container)
+                    case let .split(container):
+                        container.retireForContentLayoutChange()
+                        retiredContentContainers.append(container)
+                    }
+                }
+                self.rootContainer = nil
+                for container in self.modalContainers {
+                    container.retireForContentLayoutChange()
+                    retiredContentContainers.append(container)
+                }
+                self.modalContainers = []
+                self.rootModalFrame?.removeFromSupernode()
+                self.rootModalFrame = nil
+            }
+            self.previousContentLayoutOwners = owners
+            self.previousContentLayoutMode = appliedContentLayoutMode
+        }
+
+        var transition = contentHandoff ? ContainedViewLayoutTransition.immediate : transition
         var statusBarStyle: StatusBarStyle = .Ignore
         var statusBarHidden = false
         var animateStatusBarStyleTransition = transition.isAnimated
@@ -890,7 +954,7 @@ open class NavigationController: UINavigationController, ContainableController, 
             }
                         
             containerTransition.updateFrame(node: modalContainer, frame: CGRect(origin: CGPoint(), size: layout.size))
-            modalContainer.update(layout: modalContainer.isFlat ? globalOverlayLayout : layout, controllers: navigationLayout.modal[i].controllers, coveredByModalTransition: effectiveModalTransition, transition: containerTransition)
+            modalContainer.update(layout: modalContainer.isFlat ? globalOverlayLayout : layout, controllers: navigationLayout.modal[i].controllers, coveredByModalTransition: effectiveModalTransition, transition: containerTransition, contentLayout: contentLayout)
             
             if modalContainer.supernode == nil && modalContainer.isReady {
                 if let previousModalContainer {
@@ -1102,7 +1166,7 @@ open class NavigationController: UINavigationController, ContainableController, 
                         splitContainer.canHaveKeyboardFocus = false
                     }
                     splitContainer.frame = CGRect(origin: CGPoint(), size: layout.size)
-                    splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: .immediate)
+                    splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: .immediate, contentMasterWidth: contentLayout?.masterWidth)
                     flatContainer.statusBarStyleUpdated = nil
                     flatContainer.removeFromSupernode()
                     
@@ -1117,7 +1181,7 @@ open class NavigationController: UINavigationController, ContainableController, 
                         splitContainer.canHaveKeyboardFocus = false
                     }
                     transition.updateFrame(node: splitContainer, frame: CGRect(origin: CGPoint(), size: layout.size))
-                    splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: transition)
+                    splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: transition, contentMasterWidth: contentLayout?.masterWidth)
                 }
             } else {
                 let splitContainer = NavigationSplitContainer(theme: self.theme, controllerRemoved: { [weak self] controller in
@@ -1135,10 +1199,13 @@ open class NavigationController: UINavigationController, ContainableController, 
                     splitContainer.canHaveKeyboardFocus = false
                 }
                 splitContainer.frame = CGRect(origin: CGPoint(), size: layout.size)
-                splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: .immediate)
+                splitContainer.update(layout: layout, masterControllers: masterControllers, detailControllers: detailControllers, detailsPlaceholderNode: self.detailsPlaceholderNode, transition: .immediate, contentMasterWidth: contentLayout?.masterWidth)
             }
         }
         
+        if let root = self.rootContainer, case let .flat(container) = root {
+            container.minimizedContainer = self.minimizedContainer
+        }
         var rootStatusBarStyle: StatusBarStyle = .Ignore
         if let rootContainer = self.rootContainer {
             switch rootContainer {
@@ -1473,6 +1540,11 @@ open class NavigationController: UINavigationController, ContainableController, 
         self.updateWindowScrollToTopProxyViews(layout: layout)
 
         self.isUpdatingContainers = false
+
+        for container in retiredContentContainers { container.removeFromSupernode() }
+        if let responder = contentFirstResponder, !responder.isFirstResponder, responder.window != nil, responder.isDescendant(of: self.displayNode.view) {
+            let _ = responder.becomeFirstResponder()
+        }
         
         if notifyGlobalOverlayControllersUpdated {
             self.internalGlobalOverlayControllersUpdated()

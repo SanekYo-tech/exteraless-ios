@@ -405,7 +405,7 @@ public func makePresentationTheme(data: Data, themeReference: PresentationThemeR
     decoder.reference = themeReference
     decoder.resolvedWallpaper = resolvedWallpaper
     if let value = try? decoder.unbox(topLevel.data, as: PresentationTheme.self) {
-        return value
+        return exteralessMonetAppearanceTheme(value)
     }
     return nil
 }

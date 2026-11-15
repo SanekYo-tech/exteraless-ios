@@ -11,6 +11,12 @@ enum UpdateGroup {
     case updatePts(pts: Int32, ptsCount: Int32)
     case updateChannelPts(channelId: Int64, pts: Int32, ptsCount: Int32)
     case ensurePeerHasLocalState(id: PeerId)
+    case pluginContainer(ExteralessTLUpdateContainer)
+
+    var pluginContainer: ExteralessTLUpdateContainer? {
+        if case let .pluginContainer(value) = self { return value }
+        return nil
+    }
     
     var updates: [Api.Update] {
         switch self {
@@ -22,7 +28,7 @@ enum UpdateGroup {
                 return updates
             case let .withSeq(updates, _, _, _, _):
                 return updates
-            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState:
+            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState, .pluginContainer:
                 return []
         }
     }
@@ -37,7 +43,7 @@ enum UpdateGroup {
                 return users
             case let .withSeq(_, _, _, users, _):
                 return users
-            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState:
+            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState, .pluginContainer:
                 return []
         }
     }
@@ -52,7 +58,7 @@ enum UpdateGroup {
                 return chats
             case let .withSeq(_, _, _, _, chats):
                 return chats
-            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState:
+            case .reset, .updatePts, .updateChannelPts, .ensurePeerHasLocalState, .pluginContainer:
                 return []
         }
     }

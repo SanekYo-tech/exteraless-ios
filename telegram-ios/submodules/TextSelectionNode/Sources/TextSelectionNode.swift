@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import AsyncDisplayKit
@@ -791,7 +792,7 @@ public final class TextSelectionNode: ASDisplayNode {
             }))
         }
         if #available(iOS 15.0, *) {
-            if self.enableTranslate {
+            if self.enableTranslate && AITranslationPolicy().showTextTranslate {
                 actions.append(ContextMenuAction(content: .text(title: self.strings.Conversation_ContextMenuTranslate, accessibilityLabel: self.strings.Conversation_ContextMenuTranslate), action: { [weak self] in
                     self?.performAction(string, .translate)
                     self?.cancelSelection()

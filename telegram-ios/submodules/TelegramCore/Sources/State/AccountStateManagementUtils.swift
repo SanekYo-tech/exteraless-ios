@@ -703,11 +703,23 @@ func finalStateWithUpdateGroups(accountPeerId: PeerId, postbox: Postbox, network
         collectedUpdates.append(Api.Update.updateDeleteChannelMessages(.init(channelId: channelId, messages: [], pts: pts, ptsCount: ptsCount)))
     }
     
-    return finalStateWithUpdates(accountPeerId: accountPeerId, postbox: postbox, network: network, state: updatedState, updates: collectedUpdates, shouldPoll: hadReset, missingUpdates: !ptsUpdatesAfterHole.isEmpty || !qtsUpdatesAfterHole.isEmpty || !seqGroupsAfterHole.isEmpty, shouldResetChannels: false, updatesDate: updatesDate, asyncResetChannels: asyncResetChannels)
+    return finalStateWithUpdates(accountPeerId: accountPeerId, postbox: postbox, network: network, state: updatedState, updates: collectedUpdates, shouldPoll: hadReset, missingUpdates: !ptsUpdatesAfterHole.isEmpty || !qtsUpdatesAfterHole.isEmpty || !seqGroupsAfterHole.isEmpty, shouldResetChannels: false, updatesDate: updatesDate, asyncResetChannels: asyncResetChannels, containers: groups.compactMap { $0.pluginContainer })
 }
 
 func finalStateWithDifference(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, difference: Api.updates.Difference, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?) -> Signal<AccountFinalState, NoError> {
-    if PluginHookRouter.hasSubscribers(.updates) {
+    guard exteralessTLWantsContainerTransforms() else {
+        return finalStateWithDifferenceImpl(accountPeerId: accountPeerId, postbox: postbox, network: network,
+            state: state, difference: difference, asyncResetChannels: asyncResetChannels, observePlugins: true)
+    }
+    return exteralessTLDifferenceBarrier(postbox: postbox, network: network, state: state, difference: difference)
+    |> mapToSignal { effective -> Signal<AccountFinalState, NoError> in
+        return finalStateWithDifferenceImpl(accountPeerId: accountPeerId, postbox: postbox, network: network,
+            state: state, difference: effective, asyncResetChannels: asyncResetChannels, observePlugins: false)
+    }
+}
+
+private func finalStateWithDifferenceImpl(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, difference: Api.updates.Difference, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?, observePlugins: Bool) -> Signal<AccountFinalState, NoError> {
+    if observePlugins && PluginHookRouter.hasSubscribers(.updates) {
         let accountRecordId = network.accountRecordId
         PluginHookRouter.observe(.updates, makeEvent: {
             let buffer = Buffer()
@@ -926,22 +938,20 @@ private func sortedUpdates(_ updates: [Api.Update]) -> [Api.Update] {
     return result
 }
 
-private func finalStateWithUpdates(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, updates: [Api.Update], shouldPoll: Bool, missingUpdates: Bool, shouldResetChannels: Bool, updatesDate: Int32?, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?) -> Signal<AccountFinalState, NoError> {
-    // Shared by accepted live updates and getDifference.otherUpdates. Observe once here, after
-    // continuity filtering and before interpretation; never change pts, filter entries or wait.
-    if PluginHookRouter.hasSubscribers(.update) {
-        let accountRecordId = network.accountRecordId
-        let batchCount = updates.count
-        for (index, update) in updates.enumerated() {
-            PluginHookRouter.observe(.update, makeEvent: {
-                let buffer = Buffer()
-                update.serialize(buffer, true)
-                return .update(PluginUpdateObservation(
-                    accountRecordId: accountRecordId, name: update.description,
-                    source: .acceptedUpdateBatch, stage: .beforeUpdateApplication,
-                    serializedTLBytes: buffer.makeData(), batchIndex: index, batchCount: batchCount
-                ))
-            })
+private func finalStateWithUpdates(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, updates: [Api.Update], shouldPoll: Bool, missingUpdates: Bool, shouldResetChannels: Bool, updatesDate: Int32?, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?, containers: [ExteralessTLUpdateContainer] = []) -> Signal<AccountFinalState, NoError> {
+    // Empty hook gates retain the original time/interpretation path. Enabled
+    // barriers own their observation fallback and preserve the original ledger.
+    if PluginHookRouter.hasSubscribers(.update) || !containers.isEmpty {
+        return exteralessTLAcceptedUpdateBarrier(accountPeerId: accountPeerId, postbox: postbox, network: network,
+            state: state, updates: sortedUpdates(updates), containers: containers)
+        |> mapToSignal { effectiveUpdates -> Signal<AccountFinalState, NoError> in
+            return network.currentGlobalTime |> take(1)
+            |> mapToSignal { serverTime -> Signal<AccountFinalState, NoError> in
+                return finalStateWithUpdatesAndServerTime(accountPeerId: accountPeerId, postbox: postbox, network: network,
+                    state: state, updates: effectiveUpdates, shouldPoll: shouldPoll, missingUpdates: missingUpdates,
+                    shouldResetChannels: shouldResetChannels, updatesDate: updatesDate, serverTime: Int32(serverTime),
+                    asyncResetChannels: asyncResetChannels, updatesAreSorted: true)
+            }
         }
     }
     return network.currentGlobalTime
@@ -951,7 +961,7 @@ private func finalStateWithUpdates(accountPeerId: PeerId, postbox: Postbox, netw
     }
 }
     
-private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, updates: [Api.Update], shouldPoll: Bool, missingUpdates: Bool, shouldResetChannels: Bool, updatesDate: Int32?, serverTime: Int32, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?) -> Signal<AccountFinalState, NoError> {
+private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: Postbox, network: Network, state: AccountMutableState, updates: [Api.Update], shouldPoll: Bool, missingUpdates: Bool, shouldResetChannels: Bool, updatesDate: Int32?, serverTime: Int32, asyncResetChannels: (([(peer: Peer, pts: Int32?)]) -> Void)?, updatesAreSorted: Bool = false) -> Signal<AccountFinalState, NoError> {
     var updatedState = state
     
     var channelsToPoll: [PeerId: Int32?] = [:]
@@ -973,7 +983,7 @@ private func finalStateWithUpdatesAndServerTime(accountPeerId: PeerId, postbox: 
         case rich(Api.RichMessage)
     }
     
-    for update in sortedUpdates(updates) {
+    for update in updatesAreSorted ? updates : sortedUpdates(updates) {
         switch update {
             case let .updateChannelTooLong(updateChannelTooLongData):
                 let (channelId, channelPts) = (updateChannelTooLongData.channelId, updateChannelTooLongData.pts)
@@ -4651,20 +4661,23 @@ func replayFinalState(
             case let .DeleteEphemeralMessages(peerId, ids):
                 deleteEphemeralMessages(transaction: transaction, peerId: peerId, ids: ids)
             case let .DeleteMessagesWithGlobalIds(ids):
+                exteralessRetainBeforeDelete(transaction: transaction, mediaBox: mediaBox, ids: transaction.messageIdsForGlobalIds(ids))
                 var resourceIds: [MediaResourceId] = []
                 transaction.deleteMessagesWithGlobalIds(ids, forEachMedia: { media in
                     addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
                 })
                 if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    let _ = mediaBox.removeCachedResources(exteralessRetentionUnownedResources(transaction: transaction, mediaBox: mediaBox, ids: Array(Set(resourceIds))), force: true).start()
                 }
                 deletedMessageIds.append(contentsOf: ids.map { .global($0) })
             case let .DeleteMessages(ids):
+                exteralessRetainBeforeDelete(transaction: transaction, mediaBox: mediaBox, ids: ids)
                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
                     addMessageThreadStatsDifference(threadKey: id, remove: remove, addedMessagePeer: nil, addedMessageId: nil, isOutgoing: false)
                 })
                 deletedMessageIds.append(contentsOf: ids.map { .messageId($0) })
             case let .UpdateMinAvailableMessage(id):
+                exteralessRetainBeforeRangeDeletion(transaction: transaction, mediaBox: mediaBox, peerId: id.peerId, namespace: id.namespace, maxId: id.id)
                 if let message = transaction.getMessage(id) {
                     updatePeerChatInclusionWithMinTimestamp(transaction: transaction, id: id.peerId, minTimestamp: message.timestamp, forceRootGroupIfNotExists: false)
                 }
@@ -4673,7 +4686,7 @@ func replayFinalState(
                     addMessageMediaResourceIdsToRemove(media: media, resourceIds: &resourceIds)
                 })
                 if !resourceIds.isEmpty {
-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
+                    let _ = mediaBox.removeCachedResources(exteralessRetentionUnownedResources(transaction: transaction, mediaBox: mediaBox, ids: Array(Set(resourceIds))), force: true).start()
                 }
             case let .UpdatePeerChatInclusion(peerId, groupId, changedGroup):
                 if shouldExcludePeerFromChatList(transaction: transaction, peerId: peerId) {
@@ -4767,6 +4780,7 @@ func replayFinalState(
             case let .ReadInbox(messageId):
                 transaction.applyIncomingReadMaxId(messageId)
             case let .ReadOutbox(messageId, timestamp):
+                exteralessObserveOutgoingRead(transaction: transaction, maximumId: messageId, timestamp: timestamp)
                 transaction.applyOutgoingReadMaxId(messageId)
                 if messageId.peerId != accountPeerId, messageId.peerId.namespace == Namespaces.Peer.CloudUser, let timestamp = timestamp {
                     recordPeerActivityTimestamp(peerId: messageId.peerId, timestamp: timestamp, into: &peerActivityTimestamps)
@@ -5124,6 +5138,7 @@ func replayFinalState(
                     peerIdsWithAddedSecretMessages.insert(peerId)
                 }
             case let .ReadSecretOutbox(peerId, maxTimestamp, actionTimestamp):
+                exteralessObserveSecretOutgoingRead(transaction: transaction, peerId: peerId, maximumTimestamp: maxTimestamp, timestamp: actionTimestamp)
                 applyOutgoingReadMaxIndex(transaction: transaction, index: MessageIndex.upperBound(peerId: peerId, timestamp: maxTimestamp, namespace: Namespaces.Message.Local), beginCountdownAt: actionTimestamp)
             case let .AddPeerInputActivity(chatPeerId, peerId, activity):
                 if let peerId = peerId {
@@ -5176,6 +5191,9 @@ func replayFinalState(
                     liveTypingDraftUpdates[allKey]?.append(.stop(randomId: randomId, timestamp: timestamp))
                 }
             case let .UpdatePinnedItemIds(groupId, pinnedOperation):
+                if exteralessReplayDialogPinUpdate(transaction: transaction, accountPeerId: accountPeerId, groupId: groupId, operation: pinnedOperation, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs) {
+                    break
+                }
                 switch pinnedOperation {
                     case let .pin(itemId):
                         switch itemId {
@@ -5266,10 +5284,12 @@ func replayFinalState(
 
                 if let peerId = peerId {
                     for id in messageIds {
+                        exteralessObservePlayed(transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), timestamp: date)
                         markMessageContentAsConsumedRemotely(transaction: transaction, messageId: MessageId(peerId: peerId, namespace: Namespaces.Message.Cloud, id: id), consumeDate: date)
                     }
                 } else {
                     for messageId in transaction.messageIdsForGlobalIds(messageIds) {
+                        exteralessObservePlayed(transaction: transaction, messageId: messageId, timestamp: date)
                         markMessageContentAsConsumedRemotely(transaction: transaction, messageId: messageId, consumeDate: date)
                     }
                 }
@@ -5465,6 +5485,7 @@ func replayFinalState(
                     })
                 }
             case let .UpdateMessageReactions(messageId, _, reactions, _):
+                exteralessObserveReactions(transaction: transaction, accountPeerId: accountPeerId, reactions: ReactionsMessageAttribute(apiReactions: reactions))
                 transaction.updateMessage(messageId, update: { currentMessage in
                     var updatedReactions = ReactionsMessageAttribute(apiReactions: reactions)
                     

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramCore
 import AsyncDisplayKit
@@ -996,7 +997,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             isPinnedMessages = true
         }
         
-        if let starStatus = data.starStatus {
+        if let starStatus = data.starStatus, ChatMenuPolicy.enabled("showAddToFavorites") {
             var isPremiumSticker = false
             for media in messages[0].media {
                 if let file = media as? TelegramMediaFile, file.isPremiumSticker {
@@ -1317,19 +1318,11 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         }
         
         let message = messages[0]
+        let aiDisplay = ExteralessAIMessageDisplay.resolve(message: EngineMessage(message), accountId: context.account.id.int64, accountPeerId: context.account.peerId, automaticLanguage: exteralessAIEffectiveAutomaticLanguage(state: chatPresentationInterfaceState), isSummarized: controllerInteraction.summarizedMessageIds.contains(message.id), displayedRichPage: MainActor.assumeIsolated { exteralessAIDisplayedRichPage(message: EngineMessage(message), messageNode: messageNode) })
+        if !aiDisplay.text.isEmpty { messageText = aiDisplay.text }
         var richMessageMarkdown: String?
         var richMessageInstantPage: InstantPage?
-        var activeTranslateToLang: String?
-        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
-            activeTranslateToLang = translationState.toLang
-        }
-        if let richTextAttribute = message.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute {
-            let instantPage: InstantPage
-            if let activeTranslateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == activeTranslateToLang }) as? TranslationMessageAttribute, let translatedInstantPage = translation.instantPage {
-                instantPage = translatedInstantPage
-            } else {
-                instantPage = richTextAttribute.instantPage
-            }
+        if let instantPage = aiDisplay.page {
             let markdown = markdownStringFromInstantPage(instantPage)
             if !markdown.isEmpty {
                 richMessageMarkdown = markdown
@@ -1348,7 +1341,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
         }
         
         let isCopyProtected = chatPresentationInterfaceState.copyProtectionEnabled || message.isCopyProtected()
-        if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
+        if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage && ChatMenuPolicy.enabled("showCopyPhoto")) || diceEmoji != nil {
             if !isExpired {
                 if !isPoll {
                     if !isCopyProtected {
@@ -1359,6 +1352,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                 UIPasteboard.general.string = diceEmoji
                             } else {
                                 let copyTextWithEntities = {
+                                    ExteralessAIHooks.withCopyCapability(context: context, capability: .message(EngineMessage(message), canCopy: !isCopyProtected)) {
                                     if let richMessageInstantPage {
                                         // Copy a rich message in the new WYSIWYG-editor clipboard formats
                                         // (fragment + RTF + plain) so it pastes into the composer with full
@@ -1388,23 +1382,14 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                                     if let restrictedText = restrictedText {
                                         storeMessageTextInPasteboard(restrictedText, entities: nil)
                                     } else {
-                                        var translateToLang: String?
-                                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
-                                            translateToLang = translationState.toLang
-                                        }
-                                        if controllerInteraction.summarizedMessageIds.contains(message.id), let attribute = message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLang) {
-                                            storeMessageTextInPasteboard(summary.text, entities: summary.entities)
-                                        } else if let translateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
-                                            storeMessageTextInPasteboard(translation.text, entities: translation.entities)
-                                        } else {
-                                            storeMessageTextInPasteboard(messageText, entities: messageEntities)
-                                        }
+                                        storeMessageTextInPasteboard(aiDisplay.text.isEmpty ? messageText : aiDisplay.text, entities: aiDisplay.text.isEmpty ? messageEntities : aiDisplay.entities)
                                     }
                                     
                                     Queue.mainQueue().after(0.2, {
                                         let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
                                         controllerInteraction.displayUndo(content)
                                     })
+                                    }
                                 }
                                 if resourceAvailable {
                                     for media in message.effectiveMedia {
@@ -1464,7 +1449,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 if let peerId = chatPresentationInterfaceState.chatLocation.peerId, peerId.namespace == Namespaces.Peer.SecretChat {
                     canTranslate = false
                 }
-                if canTranslate {
+                if canTranslate && AITranslationPolicy().showMessageTranslate {
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuTranslate, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
@@ -1475,7 +1460,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                             }
                         }
                         
-                        controllerInteraction.performTextSelectionAction(message, !isCopyProtected, NSAttributedString(string: messageText), messageEntities, .translate)
+                        controllerInteraction.performTextSelectionAction(message, !isCopyProtected, NSAttributedString(string: aiDisplay.text.isEmpty ? messageText : aiDisplay.text), aiDisplay.text.isEmpty ? messageEntities : aiDisplay.entities, .translate)
                         f(.default)
                     })))
                 }
@@ -1484,17 +1469,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuSpeak, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Message"), color: theme.actionSheet.primaryTextColor)
                     }, action: { _, f in
-                        var text = messageText
-                        
-                        var translateToLang: String?
-                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
-                            translateToLang = translationState.toLang
-                        }
-                        if controllerInteraction.summarizedMessageIds.contains(message.id), let attribute = message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLang) {
-                            text = summary.text
-                        } else if let translateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
-                            text = translation.text
-                        }
+                        let text = aiDisplay.text.isEmpty ? messageText : aiDisplay.text
                         
                         controllerInteraction.performTextSelectionAction(message, !isCopyProtected, NSAttributedString(string: text), nil, .speak)
                         f(.default)
@@ -1806,7 +1781,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, !channel.isMonoForum, !(message.media.first is TelegramMediaAction), !isReplyThreadHead, !isMigrated {
+        if ChatMenuPolicy.enabled("showCopyLink"), let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, !channel.isMonoForum, !(message.media.first is TelegramMediaAction), !isReplyThreadHead, !isMigrated {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuCopyLink, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Link"), color: theme.actionSheet.primaryTextColor)
             }, action: { _, f in
@@ -1956,7 +1931,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
-        if data.messageActions.options.contains(.report) {
+        if data.messageActions.options.contains(.report) && ChatMenuPolicy.enabled("showReport") {
             actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuReport, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Report"), color: theme.actionSheet.primaryTextColor)
             }, action: { controller, f in
@@ -2479,6 +2454,35 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
         }
         
+        let exteralessAllowsMessageActions: Bool
+        switch chatPresentationInterfaceState.subject {
+        case .none, .some(.message): exteralessAllowsMessageActions = true
+        default: exteralessAllowsMessageActions = false
+        }
+        if exteralessAllowsMessageActions {
+            let extraActions = exteralessMessageContextActions(
+                context: context,
+                messages: selectAll || isImage ? messages : [message],
+                canForward: data.messageActions.options.contains(.forward),
+                copyProtected: isCopyProtected,
+                interfaceInteraction: interfaceInteraction,
+                controllerInteraction: controllerInteraction
+            )
+            if !extraActions.isEmpty {
+                if !actions.isEmpty { actions.append(.separator) }
+                actions.append(contentsOf: extraActions)
+            }
+            let protectedCopyAction = MainActor.assumeIsolated { () -> ContextMenuItem? in
+                guard let parent = controllerInteraction.navigationController()?.topViewController as? ViewController else {
+                    return nil
+                }
+                return exteralessProtectedCopyAction(context: context, messages: (selectAll || isImage ? messages : [message]).map(EngineMessage.init), peerProtected: chatPresentationInterfaceState.copyProtectionEnabled, parent: parent)
+            }
+            if let protectedCopyAction {
+                if !actions.isEmpty { actions.append(.separator) }
+                actions.append(protectedCopyAction)
+            }
+        }
         return ContextController.Items(content: .list(actions), tip: nil)
     }
 }

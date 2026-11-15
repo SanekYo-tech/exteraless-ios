@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -225,8 +226,9 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 }
             }
             
+            let identityAuthor = author.map { exteralessIdentityPresentation(account: arguments.context.account, peer: EnginePeer($0), surface: .reply) }
             var giftEmojiFileId: Int64?
-            switch author?.nameColor {
+            switch identityAuthor?.nameColor {
             case let .preset(nameColor):
                 let colors = arguments.context.peerNameColors.get(nameColor, dark: arguments.presentationData.theme.theme.overallDarkAppearance)
                 authorNameColor = colors.main
@@ -244,6 +246,14 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             
             if arguments.isSummarized {
                 authorNameColor = nil
+            }
+            if !ClientSettings.shared.bool("chats.replyColors", default: true) {
+                authorNameColor = nil
+                dashSecondaryColor = nil
+                dashTertiaryColor = nil
+            }
+            if !ClientSettings.shared.bool("chats.replyEmoji", default: true) || !ExteralessIdentityPresentation.shared.policy.premiumItemEmojiInReplies {
+                giftEmojiFileId = nil
             }
             
             switch arguments.type {
@@ -285,12 +295,12 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
             
             if let message = arguments.message {
                 let author = message.effectiveAuthor
-                let rawTitleString = author.flatMap(EnginePeer.init)?.displayTitle(strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder) ?? arguments.strings.User_DeletedAccount
+                let rawTitleString = author.flatMap(EnginePeer.init)?.exteralessDisplayTitle(account: arguments.context.account, strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder) ?? arguments.strings.User_DeletedAccount
                 titleString = NSAttributedString(string: rawTitleString, font: titleFont, textColor: titleColor)
                 
                 if let forwardInfo = message.forwardInfo {
                     if let author = forwardInfo.author {
-                        let rawTitleString = EnginePeer(author).displayTitle(strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
+                        let rawTitleString = EnginePeer(author).exteralessDisplayTitle(account: arguments.context.account, strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
                         titleString = NSAttributedString(string: rawTitleString, font: titleFont, textColor: titleColor)
                     } else if let authorSignature = forwardInfo.authorSignature {
                         let rawTitleString = authorSignature
@@ -364,7 +374,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 isText = isTextValue
             } else if let replyForward = arguments.replyForward {
                 if let replyAuthorId = replyForward.peerId, let replyAuthor = arguments.parentMessage.peers[replyAuthorId] {
-                    let rawTitleString = EnginePeer(replyAuthor).displayTitle(strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
+                    let rawTitleString = EnginePeer(replyAuthor).exteralessDisplayTitle(account: arguments.context.account, strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
                     titleString = NSAttributedString(string: rawTitleString, font: titleFont, textColor: titleColor)
                 } else {
                     let rawTitleString = replyForward.authorName ?? " "
@@ -390,7 +400,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 isText = replyForward.quote?.text != nil && replyForward.quote?.text != ""
             } else if let story = arguments.story {
                 if let authorPeer = arguments.parentMessage.peers[story.peerId] {
-                    let rawTitleString = EnginePeer(authorPeer).displayTitle(strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
+                    let rawTitleString = EnginePeer(authorPeer).exteralessDisplayTitle(account: arguments.context.account, strings: arguments.strings, displayOrder: arguments.presentationData.nameDisplayOrder)
                     titleString = NSAttributedString(string: rawTitleString, font: titleFont, textColor: titleColor)
                 } else {
                     let rawTitleString = arguments.strings.User_DeletedAccount
@@ -902,7 +912,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                 node.backgroundView.frame = backgroundFrame
                 
                 var pattern: MessageInlineBlockBackgroundView.Pattern?
-                if let backgroundEmojiId = author?.backgroundEmojiId {
+                if let backgroundEmojiId = identityAuthor?.backgroundEmojiId, ClientSettings.shared.bool("chats.replyEmoji", default: true) {
                     pattern = MessageInlineBlockBackgroundView.Pattern(
                         context: arguments.context,
                         fileId: backgroundEmojiId,
@@ -913,7 +923,7 @@ public class ChatMessageReplyInfoNode: ASDisplayNode {
                         emptyCorner: giftEmojiFileId != nil
                     )
                 }
-                var isTransparent: Bool = false
+                var isTransparent = !ClientSettings.shared.bool("chats.replyBackground", default: true)
                 if case .standalone = arguments.type {
                     isTransparent = true
                 }

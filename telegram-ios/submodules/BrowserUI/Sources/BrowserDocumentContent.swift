@@ -85,7 +85,7 @@ final class BrowserDocumentContent: UIView, BrowserContent, WKNavigationDelegate
         
         super.init(frame: .zero)
         
-        self.webView.allowsBackForwardNavigationGestures = true
+        self.exteralessGestures = ExteralessBrowserGestures(webView: self.webView)
         self.webView.scrollView.delegate = self
         self.webView.scrollView.clipsToBounds = false
         self.webView.navigationDelegate = self
@@ -108,6 +108,8 @@ final class BrowserDocumentContent: UIView, BrowserContent, WKNavigationDelegate
         }
     }
     
+    private var exteralessGestures: ExteralessBrowserGestures?
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }

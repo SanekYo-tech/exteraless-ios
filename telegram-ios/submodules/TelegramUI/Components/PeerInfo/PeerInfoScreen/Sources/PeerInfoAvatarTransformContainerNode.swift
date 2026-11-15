@@ -48,7 +48,8 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
     
     private var isFirstAvatarLoading = true
     var item: PeerInfoAvatarListItem?
-    /// The avatar's corner radius over its side, as last laid out: 0.5 round, 0.25 a forum's rounded square.
+    /// One resolved fraction for final image/video clipping, stories and the
+    /// expansion destination. The source bitmap deliberately remains unrounded.
     private(set) var cornerFraction: CGFloat = 0.5
     
     private let playbackStartDisposable = MetaDisposable()
@@ -176,7 +177,8 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
             colors: colors,
             lineWidth: 3.0,
             inactiveLineWidth: 1.5,
-            forceRoundedRect: isForum
+            forceRoundedRect: isForum,
+            customCornerFraction: self.cornerFraction
         ), transition: ComponentTransition(transition))
     }
     
@@ -334,20 +336,13 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
             }
             
             var isForum = false
-            let avatarCornerRadius: CGFloat
             if case let .channel(channel) = peer, channel.isForumOrMonoForum {
-                avatarCornerRadius = floor(avatarSize * 0.25)
                 isForum = true
-            } else {
-                avatarCornerRadius = avatarSize / 2.0
             }
-            self.cornerFraction = isForum ? 0.25 : 0.5
-            if self.avatarNode.layer.cornerRadius != 0.0 {
-                ContainedViewLayoutTransition.animated(duration: 0.3, curve: .easeInOut).updateCornerRadius(layer: self.avatarNode.contentNode.layer, cornerRadius: avatarCornerRadius)
-            } else {
-                self.avatarNode.contentNode.layer.cornerRadius = avatarCornerRadius
-            }
-            self.avatarNode.contentNode.layer.masksToBounds = true
+            let avatarClipStyle = (isForum ? AvatarNodeClipStyle.roundedRect : .round).withExteralessShape(size: CGSize(width: avatarSize, height: avatarSize))
+            self.cornerFraction = avatarClipStyle.exteralessResolvedCornerFraction ?? 0.5
+            let avatarCornerRadius = avatarSize * self.cornerFraction
+            avatarClipStyle.applyExteralessFinalClip(to: self.avatarNode.contentNode.layer, size: CGSize(width: avatarSize, height: avatarSize))
             
             self.isFirstAvatarLoading = false
             
@@ -410,7 +405,7 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
                     }
                     markupNode.update(markup: markup, size: CGSize(width: 320.0, height: 320.0))
                     markupNode.updateVisibility(true)
-                } else if threadInfo == nil, let video = videoRepresentations.last, let peerReference = PeerReference(peer) {
+                } else if ExteralessIdentityPresentation.shared.policy.premiumItemVideoAvatar, threadInfo == nil, let video = videoRepresentations.last, let peerReference = PeerReference(peer) {
                     let videoFileReference = FileMediaReference.avatarList(peer: peerReference, media: TelegramMediaFile(fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: 0), partialReference: nil, resource: video.representation.resource, previewRepresentations: representations.map { $0.representation }, videoThumbnails: [], immediateThumbnailData: immediateThumbnailData, mimeType: "video/mp4", size: nil, attributes: [.Animated, .Video(duration: 0, size: video.representation.dimensions, flags: [], preloadSize: nil, coverTime: nil, videoCodec: nil)], alternativeRepresentations: []))
                     let videoContent = NativeVideoContent(id: .profileVideo(videoId, nil), userLocation: .other, fileReference: videoFileReference, streamVideo: isMediaStreamable(resource: video.representation.resource) ? .conservative : .none, loopVideo: true, enableSound: false, fetchAutomatically: true, onlyFullSizeThumbnail: false, useLargeThumbnail: true, autoFetchFullSizeThumbnail: true, startTimestamp: video.representation.startTimestamp, continuePlayingWithoutSoundOnLostAudioSession: false, placeholderColor: .clear, captureProtected: peer.isCopyProtectionEnabled, storeAfterDownload: nil)
                     if videoContent.id != self.videoContent?.id {
@@ -451,16 +446,6 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
                             
                             self.videoContent = videoContent
                             self.videoNode = videoNode
-                            
-                            let maskPath: UIBezierPath
-                            if isForum {
-                                maskPath = UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: self.avatarNode.frame.size), cornerRadius: avatarCornerRadius)
-                            } else {
-                                maskPath = UIBezierPath(ovalIn: CGRect(origin: CGPoint(), size: self.avatarNode.frame.size))
-                            }
-                            let shape = CAShapeLayer()
-                            shape.path = maskPath.cgPath
-                            videoNode.layer.mask = shape
                             
                             self.avatarNode.contentNode.addSubnode(videoNode)
                         }
@@ -503,6 +488,7 @@ final class PeerInfoAvatarTransformContainerNode: ASDisplayNode {
                     videoNode.updateLayout(size: self.avatarNode.frame.size, transition: .immediate)
                 }
                 videoNode.frame = self.avatarNode.contentNode.bounds
+                avatarClipStyle.applyExteralessFinalClip(to: videoNode.layer, size: self.avatarNode.contentNode.bounds.size)
                 
                 if isExpanded == videoNode.canAttachContent {
                     self.isExpanded = isExpanded

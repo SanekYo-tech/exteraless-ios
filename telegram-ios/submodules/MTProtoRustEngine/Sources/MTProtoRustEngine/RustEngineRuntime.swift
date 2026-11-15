@@ -123,7 +123,10 @@ private func rustEngineLogCallback(context: UnsafeMutableRawPointer?, level: Int
     if level > 1 && !MTLogEnabled() {
         return
     }
-    let text = rustEngineString(message)
+    // Frozen Rust emits raw query-error traces before structured callbacks.
+    // This free-form channel has no trusted per-request classification. Do not
+    // parse or regex-mask it; structured events log the canonical method/code.
+    let text = RustRequestLog.nativeEngineMessage(level: level)
     if level <= 1 {
         Logger.shared.log(rustEngineLogTag, text)
         Logger.shared.shortLog(rustEngineLogTag, text)
@@ -146,6 +149,7 @@ final class RustEngineRuntime: NSObject, MTNetworkAvailabilityDelegate {
     private(set) var engine: OpaquePointer?
     private let lock = RustEngineLock()
     private var wakeObserver: NSObjectProtocol?
+    private var appResolverObserver: NSObjectProtocol?
     private var mailboxes: [MTSessionHandle: RustEngineMailbox] = [:]
     private var networkAvailability: MTNetworkAvailability?
     private var isNetworkAvailableValue: Bool = true
@@ -172,6 +176,12 @@ final class RustEngineRuntime: NSObject, MTNetworkAvailabilityDelegate {
     }
 
     private func start() {
+        appResolverObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
+            guard let self else { return }
+            self.networkQueue.async {
+                if let engine = self.engine { mt_engine_reset_connections(engine) }
+            }
+        }
         if let engine = self.engine, let memory = RustNetworkIdentity.storedMemory() {
             memory.withUnsafeBytes { bytes in
                 mt_engine_set_route_memory(engine, MTBytes(data: bytes.baseAddress?.assumingMemoryBound(to: UInt8.self), length: bytes.count))

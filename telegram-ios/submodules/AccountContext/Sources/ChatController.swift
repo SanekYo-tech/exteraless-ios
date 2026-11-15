@@ -1349,6 +1349,7 @@ public protocol ChatCustomContentsProtocol: AnyObject {
     var messageLimit: Int? { get }
     
     func enqueueMessages(messages: [EnqueueMessage])
+    func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError>
     func deleteMessages(ids: [EngineMessage.Id])
     func editMessage(id: EngineMessage.Id, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool)
     
@@ -1359,6 +1360,12 @@ public protocol ChatCustomContentsProtocol: AnyObject {
     
     func hashtagSearchUpdate(query: String)
     var hashtagSearchResultsUpdate: ((SearchMessagesResult, SearchMessagesState)) -> Void { get set }
+}
+
+public extension ChatCustomContentsProtocol {
+    func enqueueMessagesWithAdmission(messages: [EnqueueMessage]) -> Signal<EnqueueMessagesResult, NoError> {
+        return .single(.rejected(count: messages.count, reason: .localEnqueueUnavailable))
+    }
 }
 
 public enum ChatHistoryListDisplayHeaders {

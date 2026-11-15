@@ -1,19 +1,17 @@
 import Foundation
 import UIKit
 import TelegramCore
+import ExteralessCore
 
 struct ChatHistoryNavigationStack {
-    private var messageIndices: [EngineMessage.Index] = []
+    private var messageIndices = DialogHistoryStack<EngineMessage.Index>()
     
     mutating func add(_ index: EngineMessage.Index) {
-        self.messageIndices.append(index)
+        self.messageIndices.add(index, rememberAll: exteralessDialogPolicy().rememberAllBackMessages)
     }
     
     mutating func removeLast() -> EngineMessage.Index? {
-        if messageIndices.isEmpty {
-            return nil
-        }
-        return messageIndices.removeLast()
+        return messageIndices.pop(rememberAll: exteralessDialogPolicy().rememberAllBackMessages)
     }
     
     var isEmpty: Bool {
@@ -21,10 +19,8 @@ struct ChatHistoryNavigationStack {
     }
     
     mutating func filterOutIndicesLessThan(_ index: EngineMessage.Index) {
-        for i in (0 ..< self.messageIndices.count).reversed() {
-            if self.messageIndices[i] <= index {
-                self.messageIndices.remove(at: i)
-            }
-        }
+        self.messageIndices.prune(rememberAll: exteralessDialogPolicy().rememberAllBackMessages, where: { $0 <= index })
     }
+
+    mutating func removeAll() { self.messageIndices.removeAll() }
 }

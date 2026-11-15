@@ -23,6 +23,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
     private var isUpdatingState = false
     private var ignoreScrolling = false
     private var isDismissed = false
+    private var isRetiredForContentLayout = false
     private var isInteractiveDimissEnabled = true
     
     private var validLayout: ContainerViewLayout?
@@ -183,6 +184,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
     }
     
     @objc private func panGesture(_ recognizer: UIPanGestureRecognizer) {
+        guard !self.isRetiredForContentLayout else { return }
         switch recognizer.state {
         case .began:
             self.horizontalDismissOffset = 0.0
@@ -288,6 +290,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
     private var endDraggingVelocity: CGPoint?
     
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard !self.isRetiredForContentLayout else { return }
         let velocity = self.endDraggingVelocity ?? CGPoint()
         self.endDraggingVelocity = nil
         
@@ -349,12 +352,15 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
         return false
     }
     
-    func update(layout: ContainerViewLayout, controllers: [ViewController], coveredByModalTransition: CGFloat, transition: ContainedViewLayoutTransition) {
+    func update(layout: ContainerViewLayout, controllers: [ViewController], coveredByModalTransition: CGFloat, transition: ContainedViewLayoutTransition, contentLayout: NavigationContentLayout? = nil) {
         if self.isDismissed {
             return
         }
-        // On a device without floating panels (iPhone Duo) a modal is the phone card, also when wide.
-        let layout = layout.forOptionalFloatingPresentation
+        // Automatic uses the native device policy; an explicit root content
+        // policy supplies presentation geometry without rewriting layout metrics.
+        let layout = contentLayout == nil ? layout.forOptionalFloatingPresentation : layout
+        let contentSheetFrame = contentLayout?.sheetFrame(preferredSize: controllers.last?.preferredContentSizeForLayout(layout))
+        let contentFullScreen = contentLayout != nil && contentSheetFrame == nil
         
         self.isUpdatingState = true
         
@@ -399,7 +405,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
         let containerLayout: ContainerViewLayout
         let containerFrame: CGRect
         let containerScale: CGFloat
-        if layout.metrics.widthClass == .compact || self.isFlat {
+        if (contentLayout == nil ? layout.metrics.widthClass == .compact : contentFullScreen) || self.isFlat {
             self.panRecognizer?.isEnabled = true
             self.container.clipsToBounds = true
             if self.isFlat {
@@ -407,7 +413,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
             } else {
                 self.dim.backgroundColor = UIColor(white: 0.0, alpha: 0.25)
             }
-            if isStandaloneModal || isLandscape || (self.isFlat && !flatReceivesModalTransition) {
+            if contentFullScreen || isStandaloneModal || isLandscape || (self.isFlat && !flatReceivesModalTransition) {
                 self.container.cornerRadius = 0.0
             } else {
                 var cornerRadius: CGFloat = 10.0
@@ -426,7 +432,7 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
             }
             
             var topInset: CGFloat
-            if isStandaloneModal || isLandscape {
+            if contentFullScreen || isStandaloneModal || isLandscape {
                 topInset = 0.0
                 containerLayout = layout
                 
@@ -488,10 +494,15 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
             let maxSide = max(layout.size.width, layout.size.height)
             let minSide = min(layout.size.width, layout.size.height)
             var containerSize = CGSize(width: min(layout.size.width - 20.0, floor(maxSide / 2.0)), height: min(layout.size.height, minSide) - verticalInset * 2.0)
-            if let preferredSize = controllers.last?.preferredContentSizeForLayout(layout) {
+            if contentLayout == nil, let preferredSize = controllers.last?.preferredContentSizeForLayout(layout) {
                 containerSize = preferredSize
             }
-            containerFrame = CGRect(origin: CGPoint(x: floor((layout.size.width - containerSize.width) / 2.0), y: floor((layout.size.height - containerSize.height) / 2.0)), size: containerSize)
+            if let contentSheetFrame {
+                containerSize = contentSheetFrame.size
+                containerFrame = contentSheetFrame
+            } else {
+                containerFrame = CGRect(origin: CGPoint(x: floor((layout.size.width - containerSize.width) / 2.0), y: floor((layout.size.height - containerSize.height) / 2.0)), size: containerSize)
+            }
             containerScale = 1.0
             
             var inputHeight: CGFloat?
@@ -522,6 +533,27 @@ final class NavigationModalContainer: ASDisplayNode, ASScrollViewDelegate, ASGes
             transition.updateAlpha(node: self.dim, alpha: 1.0)
             transition.animatePositionAdditive(node: self.container, offset: CGPoint(x: 0.0, y: self.bounds.height + self.container.bounds.height / 2.0 - (self.container.position.y - self.bounds.height)))
         }
+    }
+
+    func retireForContentLayoutChange() {
+        // A layout handoff cancels presentation gestures; it never removes a
+        // controller from the application stack through a delayed completion.
+        self.isRetiredForContentLayout = true
+        self.interactivelyDismissed = nil
+        self.updateDismissProgress = nil
+        self.isReadyUpdated = nil
+        self.isDismissed = true
+        self.ignoreScrolling = true
+        self.panRecognizer?.isEnabled = false
+        if self.isNodeLoaded {
+            self.scrollNode.view.panGestureRecognizer.isEnabled = false
+            self.scrollNode.view.setContentOffset(self.scrollNode.view.contentOffset, animated: false)
+        }
+        self.container.retireForContentLayoutChange()
+        self.layer.removeAllAnimations()
+        self.dim.layer.removeAllAnimations()
+        self.scrollNode.layer.removeAllAnimations()
+        self.container.layer.removeAllAnimations()
     }
     
     func dismiss(transition: ContainedViewLayoutTransition, completion: @escaping () -> Void) -> ContainedViewLayoutTransition {

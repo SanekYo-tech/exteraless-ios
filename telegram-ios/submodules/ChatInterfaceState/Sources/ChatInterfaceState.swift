@@ -947,27 +947,6 @@ public final class ChatInterfaceState: Codable, Equatable {
     }
 
     public static func update(engine: TelegramEngine, peerId: EnginePeer.Id, threadId: Int64?, _ f: @escaping (ChatInterfaceState) -> ChatInterfaceState) -> Signal<Never, NoError> {
-        return engine.peers.getOpaqueChatInterfaceState(peerId: peerId, threadId: threadId)
-        |> mapToSignal { previousOpaqueState -> Signal<Never, NoError> in
-            let previousState = previousOpaqueState.flatMap(ChatInterfaceState.parse)
-            let updatedState = f(previousState ?? ChatInterfaceState())
-
-            let updatedOpaqueData = try? EngineEncoder.encode(updatedState)
-            
-            var mediaDraftState: MediaDraftState?
-            if let interfaceMediaDraftState = updatedState.mediaDraftState {
-                mediaDraftState = MediaDraftState(contentType: interfaceMediaDraftState.contentType, timestamp: Int32(CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970))
-            }
-            
-            return engine.peers.setOpaqueChatInterfaceState(
-                peerId: peerId,
-                threadId: threadId,
-                state: OpaqueChatInterfaceState(
-                    opaqueData: updatedOpaqueData,
-                    historyScrollMessageIndex: updatedState.historyScrollMessageIndex,
-                    mediaDraftState: mediaDraftState,
-                    synchronizeableInputState: updatedState.synchronizeableInputState
-                ))
-        }
+        return self.update(engine: engine, peerId: peerId, threadId: threadId, admission: nil, f) |> ignoreValues
     }
 }

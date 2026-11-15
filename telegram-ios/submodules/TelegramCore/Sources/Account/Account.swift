@@ -1,10 +1,558 @@
 import Foundation
+import ExteralessCore
 import Postbox
 import SwiftSignalKit
 import MtProtoKit
 internal import TelegramApi
 import CryptoUtils
 import EncryptionProvider
+
+public struct ExteralessAccountRetentionSnapshot: Sendable {
+    public let version: UInt64
+    public let result: Result<ExteralessRetentionProcessConfiguration, ExteralessRetentionError>
+
+    public var configuration: ExteralessRetentionProcessConfiguration? {
+        if case let .success(configuration) = self.result { return configuration }
+        return nil
+    }
+
+    public var error: ExteralessRetentionError? {
+        if case let .failure(error) = self.result { return error }
+        return nil
+    }
+
+    public var configurationState: ExteralessRetentionConfigurationState {
+        return ExteralessRetentionConfigurationState(version: self.version,
+            availability: self.configuration.map { .available($0) } ?? .unavailable)
+    }
+}
+
+/// Per-observer drain: no callback holds a state/publication mutex. Reentrant or
+/// concurrent producers coalesce newer versions without replaying an older state.
+private final class ExteralessRetentionStateObserver {
+    private let lock = NSLock()
+    private let next: (ExteralessAccountRetentionSnapshot) -> Void
+    private var deliveredVersion: UInt64?
+    private var pending: ExteralessAccountRetentionSnapshot?
+    private var emitting = false
+    private var disposed = false
+
+    init(next: @escaping (ExteralessAccountRetentionSnapshot) -> Void) { self.next = next }
+
+    func offer(_ state: ExteralessAccountRetentionSnapshot) {
+        self.lock.lock()
+        guard !self.disposed, self.deliveredVersion.map({ state.version > $0 }) ?? true,
+              self.pending.map({ state.version > $0.version }) ?? true else { self.lock.unlock(); return }
+        self.pending = state
+        guard !self.emitting else { self.lock.unlock(); return }
+        self.emitting = true
+        while !self.disposed, let pending = self.pending {
+            self.pending = nil
+            self.deliveredVersion = pending.version
+            self.lock.unlock()
+            self.next(pending)
+            self.lock.lock()
+        }
+        self.emitting = false
+        self.lock.unlock()
+    }
+
+    func cancel() {
+        self.lock.lock(); self.disposed = true; self.pending = nil; self.lock.unlock()
+    }
+}
+
+/// Process bootstrap supplies a validated, fully registered snapshot and the
+/// actual OS container. Account factories never infer destructive defaults.
+public final class ExteralessAccountRetentionEnvironment: @unchecked Sendable {
+    public static let shared = ExteralessAccountRetentionEnvironment()
+    private let lock = NSLock()
+    private let readSnapshot: @Sendable () -> ClientSettingsSnapshot
+    private let observeSettings: (@escaping @Sendable (Set<String>) -> Void) -> ClientSettingsObservation?
+    private var scope: ExteralessRetentionProcessConfiguration?
+    private var snapshot = ExteralessAccountRetentionSnapshot(version: 0, result: .failure(.unavailable))
+    private var version: UInt64 = 0
+    private var observation: ClientSettingsObservation?
+    private var writerObservers: [UUID: ExteralessRetentionStateObserver] = [:]
+    private var observers: [UUID: ExteralessRetentionStateObserver] = [:]
+
+    public init(settings: ClientSettings = .shared) {
+        self.readSnapshot = { settings.readSnapshot() }
+        self.observeSettings = { settings.observe($0) }
+    }
+
+    // The production environment and publication code are exercised with an
+    // immutable synthetic settings source, without opening a user settings file.
+    init(readSnapshot: @escaping @Sendable () -> ClientSettingsSnapshot) {
+        self.readSnapshot = readSnapshot
+        self.observeSettings = { _ in nil }
+    }
+
+    deinit { self.observation?.cancel() }
+
+    public var current: ExteralessAccountRetentionSnapshot {
+        self.lock.lock(); defer { self.lock.unlock() }; return self.snapshot
+    }
+
+    public var states: Signal<ExteralessAccountRetentionSnapshot, NoError> { self.stateSignal(writer: false) }
+
+    private func stateSignal(writer: Bool) -> Signal<ExteralessAccountRetentionSnapshot, NoError> {
+        return Signal { [weak self] subscriber in
+            guard let self else { subscriber.putCompletion(); return EmptyDisposable }
+            let id = UUID()
+            let observer = ExteralessRetentionStateObserver(next: subscriber.putNext)
+            self.lock.lock()
+            if writer { self.writerObservers[id] = observer }
+            else { self.observers[id] = observer }
+            let current = self.snapshot
+            self.lock.unlock()
+            // Initial replay reads the authoritative current state, even while
+            // another subscriber is inside a reentrant/blocked error callback.
+            observer.offer(current)
+            return ActionDisposable { [weak self] in
+                observer.cancel()
+                guard let self else { return }
+                self.lock.lock()
+                self.writerObservers.removeValue(forKey: id)
+                self.observers.removeValue(forKey: id)
+                self.lock.unlock()
+            }
+        }
+    }
+
+    public var errors: Signal<ExteralessAccountRetentionSnapshot, NoError> {
+        return self.states |> filter { $0.error != nil }
+    }
+
+    fileprivate var updates: Signal<ExteralessAccountRetentionSnapshot, NoError> { self.stateSignal(writer: true) }
+
+    private func store(_ result: Result<ExteralessRetentionProcessConfiguration, ExteralessRetentionError>) -> (ExteralessAccountRetentionSnapshot, [ExteralessRetentionStateObserver]) {
+        self.version &+= 1
+        let snapshot = ExteralessAccountRetentionSnapshot(version: self.version, result: result)
+        self.snapshot = snapshot
+        // Revoke writer admission before notifying presentation/error observers.
+        return (snapshot, Array(self.writerObservers.values) + Array(self.observers.values))
+    }
+
+    private func publish(_ publication: (ExteralessAccountRetentionSnapshot, [ExteralessRetentionStateObserver])) {
+        for observer in publication.1 { observer.offer(publication.0) }
+    }
+
+    public func setUnavailable(_ error: ExteralessRetentionError = .unavailable) {
+        self.lock.lock()
+        let publication = self.store(.failure(error))
+        self.lock.unlock()
+        self.publish(publication)
+    }
+
+    public func configure(_ configuration: ExteralessRetentionProcessConfiguration) throws {
+        self.lock.lock()
+        if let scope = self.scope, scope.role != configuration.role || scope.durabilityRootURL != configuration.durabilityRootURL {
+            let publication = self.store(.failure(.unavailable))
+            self.lock.unlock()
+            self.publish(publication)
+            throw ExteralessRetentionError.unavailable
+        }
+        if self.observation == nil {
+            // Observe before sampling, so a first configure cannot lose a commit
+            // between its cache read and observer installation.
+            self.observation = self.observeSettings { [weak self] keys in
+                guard let self else { return }
+                guard keys.isEmpty || !keys.isDisjoint(with: RetentionFeatures.keys)
+                    || self.readSnapshot().lastError != nil || self.current.error != nil else { return }
+                self.refreshSnapshot()
+            }
+        }
+        let currentConfiguration: ExteralessRetentionProcessConfiguration
+        do {
+            // This is a memory-only coherent read. Serializing it with
+            // publication prevents a slow observer from restoring an older policy.
+            currentConfiguration = try ExteralessRetentionProcessConfiguration(role: configuration.role,
+                snapshot: self.readSnapshot(), durabilityRootURL: configuration.durabilityRootURL)
+        } catch {
+            let publication = self.store(.failure(.unavailable))
+            self.lock.unlock()
+            self.publish(publication)
+            throw error
+        }
+        self.scope = currentConfiguration
+        let publication = self.store(.success(currentConfiguration))
+        self.lock.unlock()
+        self.publish(publication)
+    }
+
+    private func refreshSnapshot() {
+        self.lock.lock(); let scope = self.scope; self.lock.unlock()
+        guard let scope else { return }
+        try? self.configure(scope)
+    }
+}
+
+/// Both writer bindings use this immediate, versioned stream. Unavailable is a
+/// revocation event, never a missing value to skip on a later presentation queue.
+func exteralessObserveRetentionConfiguration(environment: ExteralessAccountRetentionEnvironment = .shared,
+                                             receive: @escaping (ExteralessRetentionConfigurationState) -> Void) -> Disposable {
+    return environment.updates.start(next: { receive($0.configurationState) })
+}
+
+/// The transfer and cancellation boundary shared by the real writer scope and
+/// injected lifetime recorders. Disposal callbacks never run under its mutex.
+final class ExteralessRetentionWriterLease: Disposable {
+    private let lock = NSLock()
+    private var transferred = false
+    private var disposeImpl: (() -> Void)?
+
+    init(dispose: @escaping () -> Void) { self.disposeImpl = dispose }
+
+    func transferToWriter() -> Bool {
+        self.lock.lock(); defer { self.lock.unlock() }
+        guard self.disposeImpl != nil, !self.transferred else { return false }
+        self.transferred = true
+        return true
+    }
+
+    func cancelBeforeTransfer() {
+        self.lock.lock()
+        let dispose = self.transferred ? nil : self.disposeImpl
+        if !self.transferred { self.disposeImpl = nil }
+        self.lock.unlock()
+        dispose?()
+    }
+
+    func dispose() {
+        self.lock.lock()
+        let dispose = self.disposeImpl
+        self.disposeImpl = nil
+        self.lock.unlock()
+        dispose?()
+    }
+
+    deinit { self.dispose() }
+}
+
+/// Created before Account/network replay, then retained by the actual writer's
+/// StateManager. There is one owner and one configuration binding per Postbox.
+final class ExteralessAccountRetentionScope: Disposable {
+    let account: ExteralessRetentionAccount
+    private let lease: ExteralessRetentionWriterLease
+
+    convenience init(postbox: Postbox, accountPeerId: PeerId, snapshot: ExteralessAccountRetentionSnapshot) {
+        self.init(account: ExteralessRetentionAccount(postbox: postbox, accountPeerId: accountPeerId,
+            configurationState: snapshot.configurationState))
+    }
+
+    init(account: ExteralessRetentionAccount, environment: ExteralessAccountRetentionEnvironment = .shared) {
+        self.account = account
+        let configurationDisposable = MetaDisposable()
+        self.lease = ExteralessRetentionWriterLease(dispose: {
+            configurationDisposable.dispose()
+            account.dispose()
+        })
+        configurationDisposable.set(exteralessObserveRetentionConfiguration(environment: environment, receive: { [weak account] state in
+            account?.updateConfiguration(state)
+        }))
+    }
+
+    func transferToWriter() -> Bool { self.lease.transferToWriter() }
+    func cancelBeforeTransfer() { self.lease.cancelBeforeTransfer() }
+    func dispose() { self.lease.dispose() }
+    deinit { self.dispose() }
+}
+
+public final class ExteralessStateManagerStartupToken: @unchecked Sendable {
+    private weak var lifetime: ExteralessStateManagerStartupLifetime?
+    fileprivate let generation: UInt64
+
+    fileprivate init(lifetime: ExteralessStateManagerStartupLifetime, generation: UInt64) {
+        self.lifetime = lifetime
+        self.generation = generation
+    }
+
+    public var isCurrent: Bool { self.lifetime?.isCurrent(self.generation) ?? false }
+
+    // Only the metadata ownership transfer is run under the lifetime mutex.
+    // Network construction, subscriber callbacks and disposal remain outside it.
+    func admitTransfer(_ transfer: () -> Bool) -> Bool {
+        return self.lifetime?.admitTransfer(generation: self.generation, transfer) ?? false
+    }
+}
+
+/// Shared by the actual notification delivery and its handler. Cancelling a
+/// delivery revokes startup synchronously, before QueueLocalObject destruction.
+public final class ExteralessStateManagerStartupLifetime: Disposable, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+    private var generation: UInt64 = 0
+    private var subscription: MetaDisposable?
+
+    public init() {}
+    public var isDisposed: Bool { self.lock.lock(); defer { self.lock.unlock() }; return self.stopped }
+
+    fileprivate func isCurrent(_ generation: UInt64) -> Bool {
+        self.lock.lock(); defer { self.lock.unlock() }
+        return !self.stopped && self.generation == generation
+    }
+
+    fileprivate func admitTransfer(generation: UInt64, _ transfer: () -> Bool) -> Bool {
+        self.lock.lock(); defer { self.lock.unlock() }
+        guard !self.stopped, self.generation == generation else { return false }
+        return transfer()
+    }
+
+    public func start<T, E>(_ makeSignal: @escaping (ExteralessStateManagerStartupToken) -> Signal<T, E>,
+                            next: @escaping (T) -> Void, error: @escaping (E) -> Void = { _ in },
+                            completed: @escaping () -> Void = {}) {
+        let holder = MetaDisposable()
+        self.lock.lock()
+        guard !self.stopped else { self.lock.unlock(); return }
+        self.generation &+= 1
+        let token = ExteralessStateManagerStartupToken(lifetime: self, generation: self.generation)
+        let previous = self.subscription
+        self.subscription = holder
+        self.lock.unlock()
+        previous?.dispose()
+        let signal: Signal<T, E> = deferred {
+            guard token.isCurrent else { return .complete() }
+            return makeSignal(token)
+        }
+        holder.set(signal.start(next: { value in
+            guard token.isCurrent else { return }
+            next(value)
+        }, error: { value in
+            guard token.isCurrent else { return }
+            error(value)
+        }, completed: {
+            guard token.isCurrent else { return }
+            completed()
+        }))
+    }
+
+    public func dispose() {
+        self.lock.lock()
+        self.stopped = true
+        self.generation &+= 1
+        let subscription = self.subscription
+        self.subscription = nil
+        self.lock.unlock()
+        subscription?.dispose()
+    }
+
+    deinit { self.dispose() }
+}
+
+public enum ExteralessAccountRecoveryStatus: Equatable {
+    case checking
+    case failed(ExteralessRetentionReadinessFailure)
+    case ready
+    case cancelled
+}
+
+/// A pre-Account recovery handle. Retry/reset are explicit, replace the previous
+/// attempt, and retain the real writer owner instead of deleting an account record.
+public final class ExteralessAccountRetentionRecovery: Disposable, @unchecked Sendable {
+    public let id = UUID()
+    public let accountRecordId: Int64
+    public let canResetArchive: Bool
+    private let queue = Queue(name: "Exteraless.AccountRecovery")
+    private let lifetime = ExteralessStateManagerStartupLifetime()
+    private let stopped = Atomic<Bool>(value: false)
+    private let status = Atomic<ExteralessAccountRecoveryStatus>(value: .checking)
+    private let output = ValuePipe<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>>()
+    private let awaitReady: () -> Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError>
+    private let retryReady: () -> Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError>
+    private let resetArchive: () -> Signal<Result<Void, ExteralessRetentionError>, NoError>
+    private let isCurrent: (ExteralessRetentionReadinessToken) -> Bool
+    private var started = false
+    private var finished = false
+    private var attempt: UInt64 = 0
+    private var offered: (UInt64, ExteralessRetentionReadinessToken)?
+
+    convenience init(accountRecordId: Int64, owner: ExteralessRetentionAccount, canResetArchive: Bool) {
+        self.init(accountRecordId: accountRecordId, canResetArchive: canResetArchive,
+            awaitReady: { owner.awaitReadiness(timeout: 5) }, retryReady: { owner.retryReadiness(timeout: 5) },
+            resetArchive: { owner.resetArchiveForRecovery() }, isCurrent: { owner.isReadinessCurrent($0) })
+    }
+
+    // The real controller is also used with an injected, bounded owner in fixtures.
+    init(accountRecordId: Int64, canResetArchive: Bool,
+         awaitReady: @escaping () -> Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError>,
+         retryReady: @escaping () -> Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError>,
+         resetArchive: @escaping () -> Signal<Result<Void, ExteralessRetentionError>, NoError>,
+         isCurrent: @escaping (ExteralessRetentionReadinessToken) -> Bool) {
+        self.accountRecordId = accountRecordId
+        self.canResetArchive = canResetArchive
+        self.awaitReady = awaitReady
+        self.retryReady = retryReady
+        self.resetArchive = resetArchive
+        self.isCurrent = isCurrent
+    }
+
+    public var currentStatus: ExteralessAccountRecoveryStatus { self.status.with { $0 } }
+    public var isDisposed: Bool { self.stopped.with { $0 } }
+    var results: Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError> { self.output.signal() }
+
+    func start() {
+        self.queue.async { [weak self] in
+            guard let self, !self.started else { return }
+            self.started = true
+            self.begin(retry: false, reset: false)
+        }
+    }
+
+    public func retry() { self.queue.async { [weak self] in self?.begin(retry: true, reset: false) } }
+    public func resetRetainedArchive() { self.queue.async { [weak self] in self?.begin(retry: true, reset: true) } }
+
+    private func begin(retry: Bool, reset: Bool) {
+        guard !self.isDisposed, !self.finished else { return }
+        guard !reset || self.canResetArchive else { self.fail(.configurationUnavailable); return }
+        self.attempt &+= 1
+        let attempt = self.attempt
+        self.offered = nil
+        _ = self.status.swap(.checking)
+        ExteralessAccountRecoveryCenter.shared.update(self)
+        self.lifetime.start({ [self] _ in
+            let signal: Signal<Result<ExteralessRetentionReadinessToken, ExteralessRetentionReadinessFailure>, NoError>
+            if reset {
+                signal = self.resetArchive() |> mapToSignal { result in
+                    switch result {
+                    case .success: return self.retryReady()
+                    case let .failure(error): return .single(.failure(.archive(error)))
+                    }
+                }
+            } else { signal = retry ? self.retryReady() : self.awaitReady() }
+            return signal |> take(1) |> deliverOn(self.queue)
+        }, next: { [weak self] result in
+            guard let self, !self.isDisposed, !self.finished, self.attempt == attempt else { return }
+            switch result {
+            case let .success(token):
+                guard self.isCurrent(token) else { self.fail(.configurationUnavailable); return }
+                self.offered = (attempt, token)
+                self.output.putNext(.success(token))
+            case let .failure(error): self.fail(error)
+            }
+        })
+    }
+
+    private func fail(_ error: ExteralessRetentionReadinessFailure) {
+        guard !self.isDisposed, !self.finished else { return }
+        self.offered = nil
+        _ = self.status.swap(.failed(error))
+        ExteralessAccountRecoveryCenter.shared.update(self)
+        self.output.putNext(.failure(error))
+    }
+
+    /// Own the network/preparation subscription too. Retry replaces it, and the
+    /// readiness + caller lifetime tokens are checked again at final transfer.
+    func continueStartup<Prepared, Writer>(_ token: ExteralessRetentionReadinessToken,
+        prepare: @escaping (ExteralessStateManagerStartupToken) -> Signal<Prepared, NoError>,
+        construct: @escaping (Prepared, ExteralessStateManagerStartupToken) -> Writer?,
+        ready: @escaping (Writer) -> Void) {
+        self.queue.async { [weak self] in
+            guard let self, !self.isDisposed, !self.finished,
+                  let offered = self.offered, offered.0 == self.attempt, offered.1 == token else { return }
+            guard self.isCurrent(token) else { self.fail(.configurationUnavailable); return }
+            let attempt = self.attempt
+            self.lifetime.start({ startup in
+                prepare(startup) |> take(1) |> map { ($0, startup) } |> deliverOn(self.queue)
+            }, next: { [weak self] prepared, startup in
+                guard let self, !self.isDisposed, !self.finished, self.attempt == attempt,
+                      self.offered?.1 == token else { return }
+                guard self.isCurrent(token) else { self.fail(.configurationUnavailable); return }
+                guard let writer = construct(prepared, startup) else {
+                    self.fail(.configurationUnavailable)
+                    return
+                }
+                self.finished = true
+                self.offered = nil
+                _ = self.status.swap(.ready)
+                ExteralessAccountRecoveryCenter.shared.remove(self.id)
+                ready(writer)
+            }, completed: { [weak self] in
+                guard let self, !self.isDisposed, !self.finished, self.attempt == attempt, self.offered?.1 == token else { return }
+                self.fail(self.isCurrent(token) ? .cancelled : .configurationUnavailable)
+            })
+        }
+    }
+
+    public func dispose() {
+        guard !self.stopped.swap(true) else { return }
+        self.lifetime.dispose()
+        ExteralessAccountRecoveryCenter.shared.remove(self.id)
+        self.queue.async { [weak self] in
+            guard let self else { return }
+            self.offered = nil
+            if !self.finished { _ = self.status.swap(.cancelled) }
+        }
+    }
+
+    deinit { self.dispose() }
+}
+
+enum ExteralessAccountStartupResult<Writer> {
+    case recovery(ExteralessAccountRetentionRecovery)
+    case ready(Writer)
+}
+
+/// Account factory's actual pre-Account pipeline. Fixtures inject only the
+/// network producer/final writer; typed readiness and retry ownership are real.
+func exteralessAccountRetentionStartup<Prepared, Writer>(recovery: ExteralessAccountRetentionRecovery,
+    prepare: @escaping (ExteralessRetentionReadinessToken, ExteralessStateManagerStartupToken) -> Signal<Prepared, NoError>,
+    construct: @escaping (Prepared, ExteralessRetentionReadinessToken, ExteralessStateManagerStartupToken) -> Writer?,
+    disposed: @escaping () -> Void) -> Signal<ExteralessAccountStartupResult<Writer>, NoError> {
+    return Signal { subscriber in
+        let results = recovery.results.start(next: { result in
+            switch result {
+            case .failure:
+                subscriber.putNext(.recovery(recovery))
+            case let .success(token):
+                recovery.continueStartup(token, prepare: { startup in prepare(token, startup) }, construct: { prepared, startup in
+                    construct(prepared, token, startup)
+                }, ready: { writer in
+                    subscriber.putNext(.ready(writer))
+                    subscriber.putCompletion()
+                })
+            }
+        })
+        recovery.start()
+        return ActionDisposable {
+            recovery.dispose()
+            results.dispose()
+            disposed()
+        }
+    }
+}
+
+/// UI recovery is available before any AuthorizedApplicationContext exists.
+/// A single queue publishes the retained handles; no credentials/message text are exposed.
+public struct ExteralessAccountRecoveryEntry {
+    public let recovery: ExteralessAccountRetentionRecovery
+    public let status: ExteralessAccountRecoveryStatus
+}
+
+public final class ExteralessAccountRecoveryCenter: @unchecked Sendable {
+    public static let shared = ExteralessAccountRecoveryCenter()
+    private let queue = Queue(name: "Exteraless.AccountRecoveryCenter")
+    private var entries: [UUID: ExteralessAccountRecoveryEntry] = [:]
+    private let value = ValuePromise<[ExteralessAccountRecoveryEntry]>([])
+    private init() {}
+    public var pending: Signal<[ExteralessAccountRecoveryEntry], NoError> { self.value.get() }
+
+    fileprivate func update(_ recovery: ExteralessAccountRetentionRecovery) {
+        let entry = ExteralessAccountRecoveryEntry(recovery: recovery, status: recovery.currentStatus)
+        self.queue.async {
+            if recovery.isDisposed { self.entries.removeValue(forKey: recovery.id) }
+            else { self.entries[recovery.id] = entry }
+            self.value.set(self.entries.values.sorted { $0.recovery.accountRecordId < $1.recovery.accountRecordId })
+        }
+    }
+
+    fileprivate func remove(_ id: UUID) {
+        self.queue.async {
+            self.entries.removeValue(forKey: id)
+            self.value.set(self.entries.values.sorted { $0.recovery.accountRecordId < $1.recovery.accountRecordId })
+        }
+    }
+}
 
 private let accountRecordToActiveKeychainId = Atomic<[AccountRecordId: Int]>(value: [:])
 
@@ -233,11 +781,7 @@ public class UnauthorizedAccount {
         
         self.stateManager.reset()
 
-        self.proxySettingsDisposable.set((accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
-        |> map { sharedData -> ProxyServerSettings? in
-            return sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self)?.effectiveActiveServer
-        }
-        |> distinctUntilChanged).start(next: { [weak network] activeServer in
+        self.proxySettingsDisposable.set(exteralessEffectiveProxySettings(accountManager: accountManager).start(next: { [weak network] activeServer in
             network?.updateProxySettings(activeServer)
         }))
         
@@ -296,6 +840,7 @@ public func accountRecordIdPathName(_ id: AccountRecordId) -> String {
 
 public enum AccountResult {
     case upgrading(Float)
+    case retentionRecovery(ExteralessAccountRetentionRecovery)
     case unauthorized(UnauthorizedAccount)
     case authorized(Account)
 }
@@ -361,6 +906,26 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                         return (state, localizationSettings, proxySettings, transaction.getPreferencesEntry(key: PreferencesKeys.networkSettings)?.get(NetworkSettings.self), appConfig)
                     }
                     |> mapToSignal { (accountState, localizationSettings, proxySettings, networkSettings, appConfig) -> Signal<AccountResult, NoError> in
+                        if !(accountState is AuthorizedAccountState), ExteralessAccountRetentionEnvironment.shared.current.configuration == nil {
+                            return .complete()
+                        }
+                        let originalNetworkArguments = networkArguments
+                        let apiTestingEnvironment: Bool
+                        if let state = accountState as? AuthorizedAccountState {
+                            apiTestingEnvironment = state.isTestingEnvironment
+                        } else if let state = accountState as? UnauthorizedAccountState {
+                            apiTestingEnvironment = state.isTestingEnvironment
+                        } else {
+                            apiTestingEnvironment = beginWithTestingEnvironment
+                        }
+                        let networkArguments: NetworkInitializationArguments
+                        do {
+                            networkArguments = try ExteralessClientAPIEnvironment.shared.arguments(originalNetworkArguments,
+                                recordId: id.int64, testingEnvironment: apiTestingEnvironment,
+                                existingAuthorization: accountState is AuthorizedAccountState)
+                        } catch {
+                            return .complete()
+                        }
                         let keychain = makeExclusiveKeychain(id: id, postbox: postbox)
                         
                         var useRequestTimeoutTimers: Bool = true
@@ -378,13 +943,29 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                             return .unauthorized(UnauthorizedAccount(accountManager: accountManager, networkArguments: networkArguments, id: id, rootPath: rootPath, basePath: path, testingEnvironment: unauthorizedState.isTestingEnvironment, postbox: postbox, network: network, shouldKeepAutoConnection: shouldKeepAutoConnection))
                                         }
                                 case let authorizedState as AuthorizedAccountState:
-                                    return postbox.transaction { transaction -> String? in
-                                        return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
-                                    }
-                                    |> mapToSignal { phoneNumber in
-                                        return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, networkEngine: networkEngine, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
-                                        |> map { network -> AccountResult in
-                                            return .authorized(Account(accountManager: accountManager, id: id, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, postbox: postbox, network: network, networkArguments: networkArguments, peerId: authorizedState.peerId, auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser))
+                                    let retentionSnapshot = ExteralessAccountRetentionEnvironment.shared.current
+                                    let retentionScope = ExteralessAccountRetentionScope(postbox: postbox,
+                                        accountPeerId: authorizedState.peerId, snapshot: retentionSnapshot)
+                                    let recovery = ExteralessAccountRetentionRecovery(accountRecordId: id.int64,
+                                        owner: retentionScope.account, canResetArchive: !supplementary)
+                                    return exteralessAccountRetentionStartup(recovery: recovery, prepare: { readiness, startup in
+                                        postbox.transaction { transaction -> String? in
+                                            return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
+                                        }
+                                        |> mapToSignal { phoneNumber in
+                                            guard startup.isCurrent, retentionScope.account.isReadinessCurrent(readiness) else { return .complete() }
+                                            return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, networkEngine: networkEngine, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
+                                        }
+                                    }, construct: { network, readiness, startup -> Account? in
+                                        guard startup.admitTransfer({
+                                            retentionScope.account.isReadinessCurrent(readiness) && retentionScope.transferToWriter()
+                                        }) else { return nil }
+                                        return Account(accountManager: accountManager, id: id, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, postbox: postbox, network: network, networkArguments: networkArguments, peerId: authorizedState.peerId, auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser, retentionScope: retentionScope)
+                                    }, disposed: { retentionScope.cancelBeforeTransfer() })
+                                    |> map { result -> AccountResult in
+                                        switch result {
+                                        case let .recovery(recovery): return .retentionRecovery(recovery)
+                                        case let .ready(account): return .authorized(account)
                                         }
                                     }
                                 case _:
@@ -1270,6 +1851,8 @@ public class Account {
     private let managedOperationsDisposable = DisposableSet()
     private var storageSettingsDisposable: Disposable?
     private var automaticCacheEvictionContext: AutomaticCacheEvictionContext?
+    private let exteralessRetentionScope: ExteralessAccountRetentionScope
+    private var exteralessRetentionAccount: ExteralessRetentionAccount { self.exteralessRetentionScope.account }
     
     private var taskManager: AccountTaskManager?
     
@@ -1319,7 +1902,16 @@ public class Account {
     public let filteredStorySubscriptionsContext: StorySubscriptionsContext?
     public let hiddenStorySubscriptionsContext: StorySubscriptionsContext?
     
-    public init(accountManager: AccountManager<TelegramAccountManagerTypes>, id: AccountRecordId, basePath: String, testingEnvironment: Bool, postbox: Postbox, network: Network, networkArguments: NetworkInitializationArguments, peerId: PeerId, auxiliaryMethods: AccountAuxiliaryMethods, supplementary: Bool, isSupportUser: Bool) {
+    public convenience init(accountManager: AccountManager<TelegramAccountManagerTypes>, id: AccountRecordId, basePath: String, testingEnvironment: Bool, postbox: Postbox, network: Network, networkArguments: NetworkInitializationArguments, peerId: PeerId, auxiliaryMethods: AccountAuxiliaryMethods, supplementary: Bool, isSupportUser: Bool) {
+        let retentionScope = ExteralessAccountRetentionScope(postbox: postbox, accountPeerId: peerId,
+            snapshot: ExteralessAccountRetentionEnvironment.shared.current)
+        _ = retentionScope.transferToWriter()
+        self.init(accountManager: accountManager, id: id, basePath: basePath, testingEnvironment: testingEnvironment,
+            postbox: postbox, network: network, networkArguments: networkArguments, peerId: peerId,
+            auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser, retentionScope: retentionScope)
+    }
+
+    fileprivate init(accountManager: AccountManager<TelegramAccountManagerTypes>, id: AccountRecordId, basePath: String, testingEnvironment: Bool, postbox: Postbox, network: Network, networkArguments: NetworkInitializationArguments, peerId: PeerId, auxiliaryMethods: AccountAuxiliaryMethods, supplementary: Bool, isSupportUser: Bool, retentionScope: ExteralessAccountRetentionScope) {
         self.accountManager = accountManager
         self.id = id
         self.basePath = basePath
@@ -1328,6 +1920,7 @@ public class Account {
         self.network = network
         self.networkArguments = networkArguments
         self.peerId = peerId
+        self.exteralessRetentionScope = retentionScope
         
         self.auxiliaryMethods = auxiliaryMethods
         self.supplementary = supplementary
@@ -1353,7 +1946,7 @@ public class Account {
         
         self.stateManager = AccountStateManager(accountPeerId: self.peerId, accountManager: accountManager, postbox: self.postbox, network: self.network, callSessionManager: self.callSessionManager, addIsContactUpdates: { [weak self] updates in
             self?.contactSyncManager?.addIsContactUpdates(updates)
-        }, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods)
+        }, shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), peerInputActivityManager: self.peerInputActivityManager, auxiliaryMethods: auxiliaryMethods, retentionScope: retentionScope)
         
         self.viewTracker = AccountViewTracker(account: self)
         self.viewTracker.resetPeerHoleManagement = { [weak self] peerId in
@@ -1579,15 +2172,9 @@ public class Account {
                 strongSelf._importantTasksRunning.set(value)
             }
         }))
-        self.managedOperationsDisposable.add((accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
-        |> map { sharedData -> ProxyServerSettings? in
-            if let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) {
-                return settings.effectiveActiveServer
-            } else {
-                return nil
-            }
-        }
-        |> distinctUntilChanged).start(next: { activeServer in
+        self.managedOperationsDisposable.add(exteralessInstallPrivacyAccount(account: self))
+        self.managedOperationsDisposable.add(exteralessInstallTLAccount(account: self))
+        self.managedOperationsDisposable.add(exteralessEffectiveProxySettings(accountManager: accountManager).start(next: { activeServer in
             network.updateProxySettings(activeServer)
         }))
         #if os(macOS)
@@ -1613,14 +2200,16 @@ public class Account {
 
         if !supplementary {
             let mediaBox = postbox.mediaBox
-            let _ = (accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings])
-            |> take(1)).start(next: { [weak mediaBox] sharedData in
-                guard let mediaBox = mediaBox else {
+            let retention = self.exteralessRetentionAccount
+            self.managedOperationsDisposable.add((combineLatest(retention.awaitReadiness(),
+                accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings]))
+            |> take(1)).start(next: { [weak mediaBox] result, sharedData in
+                guard let mediaBox = mediaBox, case let .success(token) = result, retention.isReadinessCurrent(token) else {
                     return
                 }
                 let settings: CacheStorageSettings = sharedData.entries[SharedDataKeys.cacheStorageSettings]?.get(CacheStorageSettings.self) ?? CacheStorageSettings.defaultSettings
                 mediaBox.setMaxStoreTimes(general: settings.defaultCacheStorageTimeout, shortLived: 60 * 60, gigabytesLimit: settings.defaultCacheStorageLimitGigabytes)
-            })
+            }))
         }
         
         let _ = masterNotificationsKey(masterNotificationKeyValue: self.masterNotificationKey, postbox: self.postbox, ignoreDisabled: false, createIfNotExists: true).start(next: { key in
@@ -1636,7 +2225,12 @@ public class Account {
         }
         self.restartConfigurationUpdates()
         
-        self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
+        self.managedOperationsDisposable.add((self.exteralessRetentionAccount.awaitReadiness()
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { [weak self] result in
+            guard let self, case let .success(token) = result, self.exteralessRetentionAccount.isReadinessCurrent(token) else { return }
+            self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
+        }))
         
         /*#if DEBUG
         self.managedOperationsDisposable.add(debugFetchAllStickers(account: self).start(completed: {
@@ -1795,14 +2389,18 @@ public func setupAccount(_ account: Account, fetchCachedResourceRepresentation: 
     account.pendingUpdateMessageManager.transformOutgoingMessageMedia = transformOutgoingMessageMedia
 }
 
+public typealias ExteralessStandaloneStateManagerResult = Result<AccountStateManager?, ExteralessRetentionReadinessFailure>
+
 public func standaloneStateManager(
     accountManager: AccountManager<TelegramAccountManagerTypes>,
     networkArguments: NetworkInitializationArguments,
     id: AccountRecordId,
     encryptionParameters: ValueBoxEncryptionParameters,
     rootPath: String,
-    auxiliaryMethods: AccountAuxiliaryMethods
-) -> Signal<AccountStateManager?, NoError> {
+    auxiliaryMethods: AccountAuxiliaryMethods,
+    startupToken: ExteralessStateManagerStartupToken? = nil
+) -> Signal<ExteralessStandaloneStateManagerResult, NoError> {
+    if let startupToken, !startupToken.isCurrent { return .single(.failure(.cancelled)) }
     let path = "\(rootPath)/\(accountRecordIdPathName(id))"
 
     let postbox = openPostbox(
@@ -1822,23 +2420,23 @@ public func standaloneStateManager(
 
     return postbox
     |> take(1)
-    |> mapToSignal { result -> Signal<AccountStateManager?, NoError> in
+    |> mapToSignal { result -> Signal<ExteralessStandaloneStateManagerResult, NoError> in
         switch result {
         case .upgrading:
             Logger.shared.log("StandaloneStateManager", "Received postbox: upgrading")
             
-            return .single(nil)
+            return .single(.success(nil))
         case .error:
             Logger.shared.log("StandaloneStateManager", "Received postbox: error")
             
-            return .single(nil)
+            return .single(.success(nil))
         case let .postbox(postbox):
             Logger.shared.log("StandaloneStateManager", "Received postbox: valid")
             
             return accountManager.transaction { transaction -> (LocalizationSettings?, ProxySettings?, NetworkEngineInputs) in
                 return (nil, transaction.getSharedData(SharedDataKeys.proxySettings)?.get(ProxySettings.self), networkEngineInputs(transaction: transaction))
             }
-            |> mapToSignal { localizationSettings, proxySettings, networkEngine -> Signal<AccountStateManager?, NoError> in
+            |> mapToSignal { localizationSettings, proxySettings, networkEngine -> Signal<ExteralessStandaloneStateManagerResult, NoError> in
                 Logger.shared.log("StandaloneStateManager", "Received settings")
                 
                 return postbox.transaction { transaction -> (PostboxCoding?, LocalizationSettings?, ProxySettings?, NetworkSettings?) in
@@ -1848,7 +2446,7 @@ public func standaloneStateManager(
 
                     return (state, localizationSettings, proxySettings, transaction.getPreferencesEntry(key: PreferencesKeys.networkSettings)?.get(NetworkSettings.self))
                 }
-                |> mapToSignal { accountState, localizationSettings, proxySettings, networkSettings -> Signal<AccountStateManager?, NoError> in
+                |> mapToSignal { accountState, localizationSettings, proxySettings, networkSettings -> Signal<ExteralessStandaloneStateManagerResult, NoError> in
                     Logger.shared.log("StandaloneStateManager", "Received state")
                     
                     let keychain = makeExclusiveKeychain(id: id, postbox: postbox)
@@ -1858,88 +2456,124 @@ public func standaloneStateManager(
                         case _ as UnauthorizedAccountState:
                             Logger.shared.log("StandaloneStateManager", "state is UnauthorizedAccountState")
                             
-                            return .single(nil)
+                            return .single(.success(nil))
                         case let authorizedState as AuthorizedAccountState:
                             Logger.shared.log("StandaloneStateManager", "state is valid")
+                            let retentionSnapshot = ExteralessAccountRetentionEnvironment.shared.current
+                            let originalNetworkArguments = networkArguments
+                            let networkArguments: NetworkInitializationArguments
+                            do {
+                                networkArguments = try ExteralessClientAPIEnvironment.shared.arguments(originalNetworkArguments,
+                                    recordId: id.int64, testingEnvironment: authorizedState.isTestingEnvironment,
+                                    existingAuthorization: true)
+                            } catch {
+                                return .single(.success(nil))
+                            }
                             
                             return postbox.transaction { transaction -> String? in
                                 return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
                             }
-                            |> mapToSignal { phoneNumber in
+                            |> mapToSignal { phoneNumber -> Signal<ExteralessStandaloneStateManagerResult, NoError> in
+                                if let startupToken, !startupToken.isCurrent { return .single(.failure(.cancelled)) }
                                 Logger.shared.log("StandaloneStateManager", "received phone number")
                                 
                                 let mediaReferenceRevalidationContext = MediaReferenceRevalidationContext()
                                 let networkStatsContext = NetworkStatsContext(postbox: postbox)
+                                let retentionScope = ExteralessAccountRetentionScope(postbox: postbox,
+                                    accountPeerId: authorizedState.peerId, snapshot: retentionSnapshot)
                                 
-                                return initializedNetwork(
-                                    accountId: id,
-                                    arguments: networkArguments,
-                                    supplementary: true,
-                                    datacenterId: Int(authorizedState.masterDatacenterId),
-                                    keychain: keychain,
-                                    basePath: path,
-                                    testingEnvironment: authorizedState.isTestingEnvironment,
-                                    languageCode: localizationSettings?.primaryComponent.languageCode,
-                                    proxySettings: proxySettings,
-                                    networkSettings: networkSettings,
-                                    networkEngine: networkEngine,
-                                    phoneNumber: phoneNumber,
-                                    useRequestTimeoutTimers: false,
-                                    appConfiguration: .defaultValue
-                                )
-                                |> map { [postbox] network -> AccountStateManager? in
-                                    Logger.shared.log("StandaloneStateManager", "received network")
-                                    
-                                    postbox.mediaBox.fetchResource = { [weak postbox] resource, intervals, parameters -> Signal<MediaResourceDataFetchResult, MediaResourceDataFetchError> in
-                                        guard let postbox = postbox else {
-                                            return .never()
+                                return (retentionScope.account.awaitReadiness()
+                                |> mapToSignal { result -> Signal<ExteralessStandaloneStateManagerResult, NoError> in
+                                    let readiness: ExteralessRetentionReadinessToken
+                                    switch result {
+                                    case let .failure(error): return .single(.failure(error))
+                                    case let .success(token): readiness = token
+                                    }
+                                    if let startupToken, !startupToken.isCurrent { return .single(.failure(.cancelled)) }
+                                    guard retentionScope.account.isReadinessCurrent(readiness) else { return .single(.failure(.configurationUnavailable)) }
+                                    return initializedNetwork(
+                                        accountId: id,
+                                        arguments: networkArguments,
+                                        supplementary: true,
+                                        datacenterId: Int(authorizedState.masterDatacenterId),
+                                        keychain: keychain,
+                                        basePath: path,
+                                        testingEnvironment: authorizedState.isTestingEnvironment,
+                                        languageCode: localizationSettings?.primaryComponent.languageCode,
+                                        proxySettings: proxySettings,
+                                        networkSettings: networkSettings,
+                                        networkEngine: networkEngine,
+                                        phoneNumber: phoneNumber,
+                                        useRequestTimeoutTimers: false,
+                                        appConfiguration: .defaultValue
+                                    )
+                                    |> take(1)
+                                    |> map { [postbox] network -> ExteralessStandaloneStateManagerResult in
+                                        let transferred: Bool
+                                        if let startupToken {
+                                            transferred = startupToken.admitTransfer {
+                                                retentionScope.account.isReadinessCurrent(readiness) && retentionScope.transferToWriter()
+                                            }
+                                        } else {
+                                            transferred = retentionScope.account.isReadinessCurrent(readiness) && retentionScope.transferToWriter()
                                         }
-                                        if let result = auxiliaryMethods.fetchResource(
-                                            postbox,
-                                            resource,
-                                            intervals,
-                                            parameters
-                                        ) {
-                                            return result
-                                        } else if let result = fetchResource(
+                                        guard transferred else {
+                                            return .failure(startupToken?.isCurrent == false ? .cancelled : .configurationUnavailable)
+                                        }
+                                        Logger.shared.log("StandaloneStateManager", "received network")
+
+                                        postbox.mediaBox.fetchResource = { [weak postbox] resource, intervals, parameters -> Signal<MediaResourceDataFetchResult, MediaResourceDataFetchError> in
+                                            guard let postbox = postbox else {
+                                                return .never()
+                                            }
+                                            if let result = auxiliaryMethods.fetchResource(
+                                                postbox,
+                                                resource,
+                                                intervals,
+                                                parameters
+                                            ) {
+                                                return result
+                                            } else if let result = fetchResource(
+                                                accountPeerId: authorizedState.peerId,
+                                                postbox: postbox,
+                                                network: network,
+                                                mediaReferenceRevalidationContext: mediaReferenceRevalidationContext,
+                                                networkStatsContext: networkStatsContext,
+                                                isTestingEnvironment: authorizedState.isTestingEnvironment,
+                                                resource: resource,
+                                                intervals: intervals,
+                                                parameters: parameters
+                                            ) {
+                                                return result
+                                            } else {
+                                                return .never()
+                                            }
+                                        }
+
+                                        return .success(AccountStateManager(
                                             accountPeerId: authorizedState.peerId,
+                                            accountManager: accountManager,
                                             postbox: postbox,
                                             network: network,
-                                            mediaReferenceRevalidationContext: mediaReferenceRevalidationContext,
-                                            networkStatsContext: networkStatsContext,
-                                            isTestingEnvironment: authorizedState.isTestingEnvironment,
-                                            resource: resource,
-                                            intervals: intervals,
-                                            parameters: parameters
-                                        ) {
-                                            return result
-                                        } else {
-                                            return .never()
-                                        }
+                                            callSessionManager: nil,
+                                            addIsContactUpdates: { _ in
+                                            },
+                                            shouldKeepOnlinePresence: .single(false),
+                                            peerInputActivityManager: nil,
+                                            auxiliaryMethods: auxiliaryMethods,
+                                            retentionScope: retentionScope
+                                        ))
                                     }
-                                    
-                                    return AccountStateManager(
-                                        accountPeerId: authorizedState.peerId,
-                                        accountManager: accountManager,
-                                        postbox: postbox,
-                                        network: network,
-                                        callSessionManager: nil,
-                                        addIsContactUpdates: { _ in
-                                        },
-                                        shouldKeepOnlinePresence: .single(false),
-                                        peerInputActivityManager: nil,
-                                        auxiliaryMethods: auxiliaryMethods
-                                    )
-                                }
+                                }) |> afterDisposed { retentionScope.cancelBeforeTransfer() }
                             }
                         default:
                             Logger.shared.log("StandaloneStateManager", "Unexpected accountState")
                             
                             assertionFailure("Unexpected accountState \(accountState)")
-                            return .single(nil)
+                            return .single(.success(nil))
                         }
                     } else {
-                        return .single(nil)
+                        return .single(.success(nil))
                     }
                 }
             }

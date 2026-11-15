@@ -371,7 +371,7 @@ public final class SharedNotificationManager {
             }
             
             if isForcedLogOut {
-                self.clearNotificationsManager?.clearAll()
+                ExteralessNotificationClearing.clearAll(accountId: account.id.int64)
                 
                 if let accountManager = self.accountManager {
                     let _ = logoutFromAccount(id: account.id, accountManager: accountManager, alreadyLoggedOutRemotely: true).startStandalone()
@@ -391,12 +391,10 @@ public final class SharedNotificationManager {
             }
             
             if let readMessageId = readMessageId {
-                self.clearNotificationsManager?.append(readMessageId)
+                ExteralessNotificationClearing.removeReadMessages(accountId: account.id.int64, ids: [readMessageId])
             }
             
-            for messageId in messagesDeleted {
-                self.clearNotificationsManager?.append(messageId)
-            }
+            ExteralessNotificationClearing.removeDeletedMessages(accountId: account.id.int64, ids: messagesDeleted)
             
             if !messagesDeleted.isEmpty {
             }

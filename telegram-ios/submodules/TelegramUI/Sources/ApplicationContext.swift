@@ -137,10 +137,7 @@ final class AuthorizedApplicationContext {
     }
     
     var applicationBadge: Signal<Int32, NoError> {
-        return renderedTotalUnreadCount(accountManager: self.context.sharedContext.accountManager, engine: self.context.engine)
-        |> map {
-            $0.0
-        }
+        return exteralessPrivacyExtrasApplicationBadge(context: self.context)
     }
     
     let isReady = Promise<Bool>()
@@ -294,8 +291,10 @@ final class AuthorizedApplicationContext {
         }))
 
         let engine = context.engine
-        self.notificationMessagesDisposable.set((context.account.stateManager.notificationMessages
-        |> mapToSignal { messageList in
+        self.notificationMessagesDisposable.set((exteralessPrivacyExtrasNotifications(account: context.account, source: context.account.stateManager.notificationMessages)
+        |> mapToSignal { delivery in
+            let messageList = delivery.messages
+            let admission = delivery.admission
             return engine.data.get(EngineDataMap(
                 messageList.compactMap { item -> TelegramEngine.EngineData.Item.Messages.ChatListIndex? in
                     if let message = item.0.first {
@@ -306,7 +305,7 @@ final class AuthorizedApplicationContext {
                 }
             ))
             |> map { chatListIndexMap in
-                return messageList.filter { item in
+                let filtered = messageList.filter { item in
                     guard let message = item.0.first else {
                         return false
                     }
@@ -316,14 +315,17 @@ final class AuthorizedApplicationContext {
                         return false
                     }
                 }
+                if filtered.isEmpty { admission.cancel() }
+                return (filtered, admission)
             }
         }
-        |> deliverOn(Queue.mainQueue())).start(next: { [weak self] messageList in
+        |> deliverOn(Queue.mainQueue())).start(next: { [weak self] messageList, admission in
             if messageList.isEmpty {
                 return
             }
 
             if let strongSelf = self, let (messages, _, notify, threadData) = messageList.last, let firstMessage = messages.first {
+                guard admission.isCurrent(account: strongSelf.context.account) else { return }
                 if UIApplication.shared.applicationState == .active {
                     let chatLocation: NavigateToChatControllerParams.Location
                     if let _ = threadData, let threadId = firstMessage.threadId {
@@ -373,7 +375,8 @@ final class AuthorizedApplicationContext {
                                 return
                             }
                             
-                            guard !locked else {
+                            guard !locked, UIApplication.shared.applicationState == .active,
+                                  strongSelf.mainWindow.viewController === strongSelf.rootController else {
                                 return
                             }
                             let isMuted = firstMessage.attributes.contains(where: { attribute in
@@ -387,10 +390,14 @@ final class AuthorizedApplicationContext {
                                 if firstMessage.id.peerId == context.account.peerId, !firstMessage.flags.contains(.WasScheduled) {
                                 } else {
                                     if inAppNotificationSettings.playSounds {
-                                        serviceSoundManager.playIncomingMessageSound()
+                                        admission.performIfCurrent(account: strongSelf.context.account, effect: .sound) {
+                                            serviceSoundManager.playIncomingMessageSound()
+                                        }
                                     }
                                     if inAppNotificationSettings.vibrate {
-                                        serviceSoundManager.playVibrationSound()
+                                        admission.performIfCurrent(account: strongSelf.context.account, effect: .vibration) {
+                                            serviceSoundManager.playVibrationSound()
+                                        }
                                     }
                                 }
                             }
@@ -422,6 +429,7 @@ final class AuthorizedApplicationContext {
                             
                             if inAppNotificationSettings.displayPreviews {
                                 let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
+                                admission.performIfCurrent(account: strongSelf.context.account, effect: .enqueue) {
                                 strongSelf.notificationController.enqueue(ChatMessageNotificationItem(context: strongSelf.context, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat, nameDisplayOrder: presentationData.nameDisplayOrder, messages: messages, threadData: threadData, tapAction: {
                                     if let strongSelf = self {
                                         var foundOverlay = false
@@ -509,6 +517,7 @@ final class AuthorizedApplicationContext {
                                         (strongSelf.rootController.viewControllers.last as? ViewController)?.present(chatController, in: .window(.root), with: ChatControllerOverlayPresentationData(expandData: expandData()))
                                     }
                                 }))
+                                }
                             }
                         })
                     }
@@ -774,7 +783,7 @@ final class AuthorizedApplicationContext {
         self.removeNotificationsDisposable = (context.account.stateManager.appliedIncomingReadMessages
         |> deliverOnMainQueue).start(next: { [weak self] ids in
             if let strongSelf = self {
-                strongSelf.context.sharedContext.applicationBindings.clearMessageNotifications(ids)
+                ExteralessNotificationClearing.removeReadMessages(accountId: strongSelf.context.account.id.int64, ids: ids)
             }
         })
        
@@ -992,7 +1001,7 @@ final class AuthorizedApplicationContext {
         let _ = (activeAccountsAndPeers(context: self.context)
         |> take(1)
         |> map { primaryAndAccounts -> (AccountContext, EnginePeer, Int32)? in
-            return primaryAndAccounts.1.first
+            return primaryAndAccounts.1.first(where: { !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity($0.0.account)) })
         }
         |> map { accountAndPeer -> AccountContext? in
             if let (context, _, _) = accountAndPeer {

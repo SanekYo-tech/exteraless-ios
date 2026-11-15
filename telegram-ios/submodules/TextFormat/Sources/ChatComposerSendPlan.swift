@@ -39,8 +39,8 @@ public struct ChatComposerTextMessages {
 /// expanded by `expandedInputStateAttributedString`): typed markdown converted, the ends trimmed, split
 /// at the message length limit, and each piece's entities generated. `businessLinkSetup` is the business
 /// link editor's variant, which generates no links of its own.
-public func chatComposerTextMessages(effectiveInputText: NSAttributedString, businessLinkSetup: Bool = false) -> ChatComposerTextMessages {
-    let inputText = convertMarkdownToAttributes(effectiveInputText)
+public func chatComposerTextMessages(effectiveInputText: NSAttributedString, businessLinkSetup: Bool = false, parseMarkdown: Bool = true) -> ChatComposerTextMessages {
+    let inputText = parseMarkdown ? exteralessComposerMarkdown(effectiveInputText) : effectiveInputText
     var pieces: [(text: NSAttributedString, entities: [MessageTextEntity])] = []
     for text in breakChatInputText(trimChatInputText(inputText)) {
         if text.length == 0 {

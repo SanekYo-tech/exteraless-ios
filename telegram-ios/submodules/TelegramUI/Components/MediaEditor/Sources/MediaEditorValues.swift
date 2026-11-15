@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import TelegramCore
@@ -2027,6 +2028,10 @@ public func recommendedVideoExportConfiguration(values: MediaEditorValues, durat
         }
     }
     
+    if !image && !isSticker && !isAvatar && values.qualityPreset != .videoMessage {
+        videoBitrate = ToolsNativeModePolicy.videoBitrateKbps(native: videoBitrate, width: width, height: height,
+            enabled: ClientSettings.shared.bool("tools.enhancedVideoBitrate"))
+    }
     if useVP9 {
         codecType = "VP9"
         compressionProperties = [:]

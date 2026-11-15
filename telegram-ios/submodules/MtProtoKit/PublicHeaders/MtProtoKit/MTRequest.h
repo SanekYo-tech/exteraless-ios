@@ -1,6 +1,7 @@
 
 
 #import <Foundation/Foundation.h>
+#import <MtProtoKit/MTRequestLogContext.h>
 
 @class MTRequestContext;
 @class MTRequestErrorContext;
@@ -23,6 +24,11 @@
 @property (nonatomic, strong, readonly) NSData *payload;
 @property (nonatomic, strong, readonly) id metadata;
 @property (nonatomic, strong, readonly) id shortMetadata;
+/// Immutable context value, established during payload setup; replacements may
+/// only strengthen its classification. Does not alter metadata used by dependencies.
+@property (nonatomic, strong, readonly) MTRequestLogContext *logContext;
+@property (nonatomic, strong, readonly) id metadataForLogging;
+@property (nonatomic, strong, readonly) id shortMetadataForLogging;
 @property (nonatomic, strong, readonly) id (^responseParser)(NSData *);
 
 @property (nonatomic, strong) NSArray *decorators;
@@ -51,5 +57,6 @@
 - (id)scanInternalId __attribute__((objc_direct));
 
 - (void)setPayload:(NSData *)payload metadata:(id)metadata shortMetadata:(id)shortMetadata responseParser:(id (^)(NSData *))responseParser;
+- (instancetype)initWithLogContext:(MTRequestLogContext * _Nullable)logContext;
 
 @end

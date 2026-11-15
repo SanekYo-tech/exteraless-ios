@@ -179,6 +179,20 @@ func tlFunctionParts(_ call: TLObject) -> (FunctionDescription, Buffer, (Buffer)
     return (description, buffer, { buffer in tlParseFunctionResult(buffer, info) })
 }
 
+/// Descriptor-only seam for the schema-validated native plugin codec. Function
+/// payload fields are not copied into log metadata; the layout hash must match
+/// the exact native build before a request can be submitted.
+public func tlBridgeFunctionDescription(name: String, expectedSchemaHash: UInt64) -> FunctionDescription? {
+    guard TLApiSchemaHash == expectedSchemaHash else { return nil }
+    for index in 0 ..< TLApiFunctionCount {
+        let info = TLApiFunctionAt(index)
+        if String(cString: info.pointee.constructor.name) == name {
+            return FunctionDescription(name: name, parameters: [])
+        }
+    }
+    return nil
+}
+
 /// Never specialized: one shared response closure for all 837 builders instead of one per
 /// result type (measured: 42 → 1 closure copies at -O). Pinned in CLAUDE.md / plan Task 7.
 @_semantics("optimize.sil.specialize.generic.never")

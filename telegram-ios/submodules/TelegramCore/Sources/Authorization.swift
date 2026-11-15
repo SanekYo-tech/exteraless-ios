@@ -1649,6 +1649,8 @@ public func test_loginAndDeleteAccount(
             switch account {
             case .upgrading:
                 preconditionFailure("Unexpected account state: upgrading")
+            case .retentionRecovery:
+                return .fail(.generic)
             case let .unauthorized(account):
                 return .single(account)
             case .authorized:

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import ComponentFlow
@@ -193,10 +194,11 @@ private let allMediaRightItems: [MediaRight] = [
     .reactions
 ]
 
-private enum AdminUserActionOptionSection {
+private enum AdminUserActionOptionSection: Equatable {
     case report
     case deleteAll
     case ban
+    case commonGroups
 }
 
 private enum AdminUserDeleteAllOption {
@@ -240,6 +242,7 @@ private struct AdminUserActionsSheetState: Equatable {
     var mediaRights: MediaRight
     var communityBanContext: AdminUserActionsCommunityBanContext?
     var banFromCommunity: Bool
+    var applyInCommonGroups: Bool
 }
 
 private func availableAdminUserActionOptionSections(
@@ -291,6 +294,9 @@ private func availableAdminUserActionOptionSections(
         result.append(.ban)
     }
     
+    if case .chat = mode, peers.contains(where: { if case .user = $0.peer { return true }; return false }), result.contains(.deleteAll) || result.contains(.ban) {
+        result.append(.commonGroups)
+    }
     return result
 }
 
@@ -420,6 +426,11 @@ private final class AdminUserActionsContentComponent: Component {
                 let title: String
                 
                 switch section {
+                case .commonGroups:
+                    sectionId = "common-groups"
+                    selectedPeers = component.sheetState.applyInCommonGroups ? Set(component.peers.map { $0.peer.id }) : []
+                    isExpanded = false
+                    title = "Also apply in common groups"
                 case .report:
                     sectionId = "report"
                     selectedPeers = component.sheetState.optionReportSelectedPeers
@@ -465,7 +476,7 @@ private final class AdminUserActionsContentComponent: Component {
                 
                 var accessory: ListActionItemComponent.Accessory?
                 var isExpandable = false
-                if component.peers.count > 1 {
+                if component.peers.count > 1 && section != .commonGroups {
                     let selectedCount = selectedPeers.union(additionalSelectedPeers).count
                     accessory = .custom(ListActionItemComponent.CustomAccessory(
                         component: AnyComponentWithIdentity(id: 0, component: AnyComponent(PlainButtonComponent(
@@ -529,6 +540,9 @@ private final class AdminUserActionsContentComponent: Component {
                 let selectedPeers: Set<EnginePeer.Id>
                 var additionalSelectedPeers = Set<EnginePeer.Id>()
                 switch section {
+                case .commonGroups:
+                    sectionId = "common-groups-peers"
+                    selectedPeers = []
                 case .report:
                     sectionId = "report-peers"
                     selectedPeers = component.sheetState.optionReportSelectedPeers
@@ -624,6 +638,8 @@ private final class AdminUserActionsContentComponent: Component {
             for option in availableOptions {
                 let isExpanded: Bool
                 switch option {
+                case .commonGroups:
+                    isExpanded = false
                 case .report:
                     isExpanded = component.sheetState.isOptionReportExpanded
                 case .deleteAll:
@@ -1135,6 +1151,7 @@ private final class AdminUserActionsSheetComponent: Component {
         private var mediaRights: MediaRight = []
         private var communityBanContext: AdminUserActionsCommunityBanContext?
         private var banFromCommunity: Bool = false
+        private var applyInCommonGroups: Bool = false
         private var communityBanContextKey: (communityId: EnginePeer.Id, participantId: EnginePeer.Id)?
         private let communityBanDisposable = MetaDisposable()
         
@@ -1299,7 +1316,8 @@ private final class AdminUserActionsSheetComponent: Component {
                 deleteAllReactionsFromPeers: deleteAllReactionsFromPeers,
                 banPeers: banPeers,
                 updateBannedRights: updateBannedRights,
-                banFromCommunity: banFromCommunity
+                banFromCommunity: banFromCommunity,
+                applyInCommonGroups: self.applyInCommonGroups
             )
         }
         
@@ -1318,6 +1336,18 @@ private final class AdminUserActionsSheetComponent: Component {
             }
             
             if self.component == nil {
+                if case .chat = component.mode {
+                    let defaults = ChatDeleteMenuDefaults.current()
+                    let options = availableAdminUserActionOptionSections(accountPeerId: component.context.account.peerId, chatPeer: component.chatPeer, peers: component.peers, mode: component.mode)
+                    let peers = Set(component.peers.map { $0.peer.id })
+                    if options.contains(.ban) && defaults.contains(.banUsers) { self.optionBanSelectedPeers = peers }
+                    if options.contains(.report) && defaults.contains(.reportSpam) { self.optionReportSelectedPeers = peers }
+                    if options.contains(.deleteAll) && defaults.contains(.deleteAll) {
+                        self.optionDeleteAllSelectedPeers = peers
+                        self.optionDeleteAllReactionsSelectedPeers = peers
+                    }
+                    self.applyInCommonGroups = options.contains(.commonGroups) && defaults.contains(.commonGroups)
+                }
                 let _ = (component.context.account.postbox.peerView(id: component.chatPeer.id)
                 |> take(1)).start(next: { [weak self] peerView in
                     guard let self else {
@@ -1437,7 +1467,8 @@ private final class AdminUserActionsSheetComponent: Component {
                 participantRights: self.participantRights,
                 mediaRights: self.mediaRights,
                 communityBanContext: self.communityBanContext,
-                banFromCommunity: self.banFromCommunity
+                banFromCommunity: self.banFromCommunity,
+                applyInCommonGroups: self.applyInCommonGroups
             )
             
             let commitMainAction: () -> Void = { [weak self] in
@@ -1535,6 +1566,10 @@ private final class AdminUserActionsSheetComponent: Component {
                             
                             var selectedPeers: Set<EnginePeer.Id>
                             switch section {
+                            case .commonGroups:
+                                self.applyInCommonGroups.toggle()
+                                self.state?.updated(transition: .spring(duration: 0.35))
+                                return
                             case .report:
                                 selectedPeers = self.optionReportSelectedPeers
                             case .deleteAll:
@@ -1562,6 +1597,8 @@ private final class AdminUserActionsSheetComponent: Component {
                             }
                             
                             switch section {
+                            case .commonGroups:
+                                break
                             case .report:
                                 self.optionReportSelectedPeers = selectedPeers
                             case .deleteAll:
@@ -1581,6 +1618,8 @@ private final class AdminUserActionsSheetComponent: Component {
                             }
                             
                             switch section {
+                            case .commonGroups:
+                                return
                             case .report:
                                 self.isOptionReportExpanded = !self.isOptionReportExpanded
                             case .deleteAll:
@@ -1598,6 +1637,8 @@ private final class AdminUserActionsSheetComponent: Component {
                             
                             var selectedPeers: Set<EnginePeer.Id>
                             switch section {
+                            case .commonGroups:
+                                return
                             case .report:
                                 selectedPeers = self.optionReportSelectedPeers
                             case .deleteAll:
@@ -1622,6 +1663,8 @@ private final class AdminUserActionsSheetComponent: Component {
                             }
                             
                             switch section {
+                            case .commonGroups:
+                                break
                             case .report:
                                 self.optionReportSelectedPeers = selectedPeers
                             case .deleteAll:
@@ -1861,14 +1904,16 @@ public class AdminUserActionsSheet: ViewControllerComponentContainer {
         public let banPeers: [EnginePeer.Id]
         public let updateBannedRights: [EnginePeer.Id: TelegramChatBannedRights]
         public let banFromCommunity: CommunityBanResult?
+        public let applyInCommonGroups: Bool
         
-        init(reportSpamPeers: [EnginePeer.Id], deleteAllFromPeers: [EnginePeer.Id], deleteAllReactionsFromPeers: [EnginePeer.Id], banPeers: [EnginePeer.Id], updateBannedRights: [EnginePeer.Id: TelegramChatBannedRights], banFromCommunity: CommunityBanResult?) {
+        init(reportSpamPeers: [EnginePeer.Id], deleteAllFromPeers: [EnginePeer.Id], deleteAllReactionsFromPeers: [EnginePeer.Id], banPeers: [EnginePeer.Id], updateBannedRights: [EnginePeer.Id: TelegramChatBannedRights], banFromCommunity: CommunityBanResult?, applyInCommonGroups: Bool = false) {
             self.reportSpamPeers = reportSpamPeers
             self.deleteAllFromPeers = deleteAllFromPeers
             self.deleteAllReactionsFromPeers = deleteAllReactionsFromPeers
             self.banPeers = banPeers
             self.updateBannedRights = updateBannedRights
             self.banFromCommunity = banFromCommunity
+            self.applyInCommonGroups = applyInCommonGroups
         }
     }
     

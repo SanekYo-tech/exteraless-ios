@@ -1541,10 +1541,16 @@ final class GlobalPeerSearchContext {
     private struct SearchKey: Hashable {
         var query: String
         var scope: TelegramSearchPeersScope?
+        var accountRecordId: Int64
+        var accountPeerId: Int64
+        var testingEnvironment: Bool
 
-        init(query: String, scope: TelegramSearchPeersScope?) {
+        init(query: String, scope: TelegramSearchPeersScope?, engine: TelegramEngine) {
             self.query = query
             self.scope = scope
+            self.accountRecordId = engine.account.id.int64
+            self.accountPeerId = engine.account.peerId.toInt64()
+            self.testingEnvironment = engine.account.testingEnvironment
         }
     }
 
@@ -1577,7 +1583,7 @@ final class GlobalPeerSearchContext {
             default:
                 break
             }
-            let searchKey = SearchKey(query: query, scope: keyScope)
+            let searchKey = SearchKey(query: query, scope: keyScope, engine: engine)
             let queryContext: QueryContext
             if let current = self.queryContexts[searchKey] {
                 queryContext = current
@@ -1612,7 +1618,7 @@ final class GlobalPeerSearchContext {
                     guard let self, let queryContext else {
                         return
                     }
-                    guard let currentContext = self.queryContexts[searchKey], queryContext === queryContext else {
+                    guard let currentContext = self.queryContexts[searchKey], currentContext === queryContext else {
                         return
                     }
                     currentContext.subscribers.remove(index)
@@ -1637,9 +1643,10 @@ final class GlobalPeerSearchContext {
     }
 
     func searchRemotePeers(engine: TelegramEngine, query: String, scope: TelegramSearchPeersScope = .everywhere) -> Signal<([FoundPeer], [FoundPeer]), NoError> {
-        return self.impl.signalWith { impl, subscriber in
+        let source: Signal<([FoundPeer], [FoundPeer]), NoError> = self.impl.signalWith { impl, subscriber in
             return impl.searchRemotePeers(engine: engine, query: query, scope: scope, onNext: subscriber.putNext)
         }
+        return exteralessDialogRemotePeerResults(engine: engine, source: source)
     }
 }
 

@@ -1,0 +1,28 @@
+Native Monet theme adaptation
+
+HCT / CAM16 / Blend math:
+Copyright 2023 Google LLC. Apache License 2.0; see MaterialColorUtilities-LICENSE.txt.
+material-foundation/material-color-utilities commit
+194144d75ed7d34f06264a625e086db81a7ab9aa
+The seven Swift math files are unmodified upstream source.
+
+Classic Light/Dark surface-token references:
+exteraGram, Copyright (C) 2023 exteraSquad, immat0x1.
+GPL version 2 or (at your option) any later version, as stated in that revision's LICENSE.
+exteraSquad/exteraGram commit 6f78031aafd7f27e0dfaa31a207715569a6df1a2
+TMessagesProj/src/main/assets/monet_light.attheme
+SHA256 3eeca58882fc503e36917e53554c99badf2afb549fc134cecc323c1eeca459f5
+TMessagesProj/src/main/assets/monet_dark.attheme
+SHA256 f8a866697ade7f55a1637abb06aa35f6960d6c308f0972a33260abd871e315d6
+LICENSE SHA256 3f0901488e52e36314c701ba4cc0c0086db7377633334c04a7c17cd173077bb0
+https://raw.githubusercontent.com/exteraSquad/exteraGram/6f78031aafd7f27e0dfaa31a207715569a6df1a2/LICENSE
+
+Telemone's role table follows the supplied Original MonetHelper.java.
+The native surface mapping, seed generation, AMOLED black planes and text
+contrast correction are iOS adaptations, authored November 2026. The upstream
+Classic references are not claimed to be Original's absent *_gram assets.
+iOS does not provide the Android system wallpaper palette or framework M3 roles.
+
+See docs/wave-2/monet-parity.md and monet-source-pins.json for the exact scope,
+input hashes, native APIs and reference vectors. No network resource is fetched
+at build time or while generating a theme.

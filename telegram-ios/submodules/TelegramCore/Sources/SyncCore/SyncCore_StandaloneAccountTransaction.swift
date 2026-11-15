@@ -172,7 +172,8 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
                     updated.append(previousDerivedData)
                 }
             }
-            if let previousRichText, previousRichText.fullInstantPage != nil {
+            if let previousRichText, previousRichText.fullInstantPage != nil,
+               exteralessAIServerSourceRevision(previous) == exteralessAIServerSourceRevision(updated) {
                 for i in 0 ..< updated.count {
                     if let attribute = updated[i] as? RichTextMessageAttribute {
                         if attribute.fullInstantPage == nil {

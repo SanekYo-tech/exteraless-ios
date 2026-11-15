@@ -117,8 +117,9 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                 contactPeer = EnginePeer(peer)
             }
             
+            let identityContact = contactPeer.map { exteralessIdentityPresentation(account: item.context.account, peer: $0, surface: .reply) }
             let nameColors: PeerNameColors.Colors?
-            switch contactPeer?.nameColor {
+            switch identityContact?.nameColor {
             case let .preset(nameColor):
                 nameColors = item.context.peerNameColors.get(nameColor, dark: item.presentationData.theme.theme.overallDarkAppearance)
             case let .collectible(collectibleColor):
@@ -160,17 +161,11 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
             var canAdd = false
             
             var displayName: String = ""
+            var contactNamePresentation: ExteralessIdentityContactPresentation?
             if let selectedContact = selectedContact {
-                if !selectedContact.firstName.isEmpty && !selectedContact.lastName.isEmpty {
-                    displayName = "\(selectedContact.firstName) \(selectedContact.lastName)"
-                } else if !selectedContact.firstName.isEmpty {
-                    displayName = selectedContact.firstName
-                } else {
-                    displayName = selectedContact.lastName
-                }
-                if displayName.isEmpty {
-                    displayName = item.presentationData.strings.Message_Contact
-                }
+                var namePresentation = exteralessIdentityContactPresentation(account: item.context.account,
+                    contact: selectedContact, peer: contactPeer, fallbackName: item.presentationData.strings.Message_Contact)
+                displayName = namePresentation.name
                 
                 if selectedContact.peerId != nil {
                     canMessage = true
@@ -182,7 +177,9 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                 } else {
                     if let vCard = selectedContact.vCardData, let vCardData = vCard.data(using: .utf8), let contactData = DeviceContactExtendedData(vcard: vCardData) {
                         if displayName.isEmpty && !contactData.organization.isEmpty {
-                            displayName = contactData.organization
+                            namePresentation = exteralessIdentityContactPresentation(account: item.context.account,
+                                contact: selectedContact, peer: contactPeer, fallbackName: contactData.organization)
+                            displayName = namePresentation.name
                         }
                         
                         let infoLineLimit = 5
@@ -218,6 +215,7 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                     
                 updatedContactInfo = info
                 
+                contactNamePresentation = namePresentation
                 titleString = NSAttributedString(string: displayName, font: titleFont, textColor: mainColor)
                 textString = NSAttributedString(string: info, font: textFont, textColor: messageTheme.primaryTextColor)
             } else {
@@ -317,7 +315,8 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                         hasAutoremove: item.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                         animationCache: item.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(item.message).exteralessRetention
                     ))
                 }
                 
@@ -388,20 +387,7 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                     let addButtonFrame = CGRect(origin: CGPoint(x: layoutConstants.text.bubbleInsets.right + lineWidth + (canMessage ? buttonWidth : 0.0), y: layoutSize.height - 24.0 - addButtonSize.height), size: addButtonSize)
                     let avatarFrame = baseAvatarFrame.offsetBy(dx: 9.0, dy: 14.0)
                     
-                    var customLetters: [String] = []
-                    if let selectedContact = selectedContact, selectedContact.peerId == nil {
-                        let firstName = selectedContact.firstName
-                        let lastName = selectedContact.lastName
-                        if !firstName.isEmpty && !lastName.isEmpty {
-                            customLetters = [String(firstName[..<firstName.index(after: firstName.startIndex)]).uppercased(), String(lastName[..<lastName.index(after: lastName.startIndex)]).uppercased()]
-                        } else if !firstName.isEmpty {
-                            customLetters = [String(firstName[..<firstName.index(after: firstName.startIndex)]).uppercased()]
-                        } else if !lastName.isEmpty {
-                            customLetters = [String(lastName[..<lastName.index(after: lastName.startIndex)]).uppercased()]
-                        } else if !displayName.isEmpty {
-                            customLetters = [String(displayName[..<displayName.index(after: displayName.startIndex)]).uppercased()]
-                        }
-                    }
+                    let customLetters = contactNamePresentation?.initials ?? []
                     
                     return (layoutSize, { [weak self] animation, synchronousLoads, _ in
                         if let strongSelf = self {
@@ -455,8 +441,8 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                                 }
                             }
                             
-                            if let peerId = selectedContact?.peerId, let peer = item.message.peers[peerId] {
-                                strongSelf.avatarNode.setPeer(context: item.context, theme: item.presentationData.theme.theme, peer: EnginePeer(peer), emptyColor: avatarPlaceholderColor, synchronousLoad: synchronousLoads)
+                            if let peer = contactNamePresentation?.avatarPeer {
+                                strongSelf.avatarNode.setPeer(context: item.context, theme: item.presentationData.theme.theme, peer: peer, overrideLetters: customLetters, emptyColor: avatarPlaceholderColor, synchronousLoad: synchronousLoads)
                             } else {
                                 strongSelf.avatarNode.setCustomLetters(customLetters)
                             }
@@ -480,7 +466,7 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                             }
                             
                             var pattern: MessageInlineBlockBackgroundView.Pattern?
-                            if let contactPeer, let backgroundEmojiId = contactPeer.backgroundEmojiId {
+                            if let backgroundEmojiId = identityContact?.backgroundEmojiId {
                                 pattern = MessageInlineBlockBackgroundView.Pattern(
                                     context: item.context,
                                     fileId: backgroundEmojiId,

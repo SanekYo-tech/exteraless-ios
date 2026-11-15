@@ -199,6 +199,7 @@ private final class MKMapViewDelegateImpl: NSObject, MKMapViewDelegate {
 
 public final class LocationMapNode: ASDisplayNode, MKMapViewDelegateTarget {
     private var delegateImpl: MKMapViewDelegateImpl?
+    private var exteralessMapProvider: ExteralessLocationMapProvider?
     
     public static let defaultMapSpan = MKCoordinateSpan(latitudeDelta: 0.016, longitudeDelta: 0.016)
     public static let viewMapSpan = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
@@ -375,6 +376,8 @@ public final class LocationMapNode: ASDisplayNode, MKMapViewDelegateTarget {
         
         mapView.delegate = delegateImpl
         mapView.mapType = self.mapMode.mapType
+        self.exteralessMapProvider = ExteralessLocationMapProvider(mapView: mapView)
+        self.exteralessMapProvider?.update(mapType: self.mapMode.mapType)
         mapView.isRotateEnabled = self.isRotateEnabled
         mapView.showsUserLocation = true
         mapView.pointOfInterestFilter = .excludingAll
@@ -415,6 +418,7 @@ public final class LocationMapNode: ASDisplayNode, MKMapViewDelegateTarget {
     var mapMode: LocationMapMode = .map {
         didSet {
             self.mapView?.mapType = self.mapMode.mapType
+            self.exteralessMapProvider?.update(mapType: self.mapMode.mapType)
         }
     }
     
@@ -631,7 +635,9 @@ public final class LocationMapNode: ASDisplayNode, MKMapViewDelegateTarget {
     }
         
     public func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-        if let circle = overlay as? MKCircle {
+        if let tiles = overlay as? MKTileOverlay {
+            return MKTileOverlayRenderer(tileOverlay: tiles)
+        } else if let circle = overlay as? MKCircle {
             let renderer = ProximityCircleRenderer(circle: circle)
             renderer.fillColor = .clear
             renderer.strokeColor = UIColor(rgb: 0xc3baaf)
@@ -904,6 +910,7 @@ public final class LocationMapNode: ASDisplayNode, MKMapViewDelegateTarget {
     }
     
     public func updateLayout(size: CGSize, topPadding: CGFloat, inset: CGFloat, transition: ContainedViewLayoutTransition) {
+        self.exteralessMapProvider?.updateLayout(size: size, topInset: inset + topPadding)
         self.hasValidLayout = true
         
         self.topPadding = topPadding

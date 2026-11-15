@@ -219,6 +219,7 @@ class ChatImageGalleryItem: GalleryItem {
 
 final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let context: AccountContext
+    private let exteralessSaveLifetime = ExteralessGallerySaveLifetime()
     private var message: Message?
     private var mediaSubject: GalleryMediaSubject?
     private var displayInfo: Bool = false
@@ -230,6 +231,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private var sendSticker: ((FileMediaReference) -> Void)?
     
     private let imageNode: TransformImageNode
+    private var exteralessHDRPhoto: ExteralessHDRPhoto?
     private var recognizedContentNode: RecognizedContentContainer?
     
     private let recognitionOverlayContentNode: ImageRecognitionOverlayContentNode
@@ -339,6 +341,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     }
     
     deinit {
+        self.exteralessSaveLifetime.invalidate()
         //self.fetchDisposable.dispose()
         self.statusDisposable.dispose()
         self.dataDisposable.dispose()
@@ -420,6 +423,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                                     let presentationData = strongSelf.context.sharedContext.currentPresentationData.with({ $0 })
                                     let controller = await strongSelf.context.sharedContext.makeTextProcessingScreen(
                                         context: strongSelf.context,
+                                        capability: strongSelf.message.map { .message(EngineMessage($0), canCopy: !$0.isCopyProtected() && !strongSelf.peerIsCopyProtected) } ?? .nativeOnly,
                                         theme: nil,
                                         mode: .translate(fromLanguage: nil, applyResult: nil),
                                         inputText: .plain(text: string, entities: []),
@@ -458,6 +462,9 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     }
     
     fileprivate func setMessage(_ message: Message, mediaSubject: GalleryMediaSubject?, displayInfo: Bool, translateToLanguage: String?, peerIsCopyProtected: Bool, isSecret: Bool, location: MessageHistoryEntryLocation?) {
+        if self.message?.id != message.id || self.message?.stableId != message.stableId || self.message?.stableVersion != message.stableVersion || self.mediaSubject != mediaSubject || self.peerIsCopyProtected != peerIsCopyProtected || self.isSecret != isSecret {
+            self.exteralessSaveLifetime.invalidate()
+        }
         self.message = message
         self.mediaSubject = mediaSubject
         self.displayInfo = displayInfo
@@ -494,6 +501,8 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     
     fileprivate func setImage(userLocation: MediaResourceUserLocation, imageReference: ImageMediaReference) {
         if self.contextAndMedia == nil || !self.contextAndMedia!.1.media.isEqual(to: imageReference.media) {
+            self.exteralessSaveLifetime.invalidate()
+            self.exteralessHDRPhoto = nil
             if let largestSize = largestRepresentationForPhoto(imageReference.media, maxSize: PixelDimensions(fullScreenImageMaxSize)) {
                 let displaySize = largestSize.dimensions.cgSize.fitted(fullScreenImageMaxSize).dividedByScreenScale().integralFloor
                 self.imageNode.asyncLayout()(TransformImageArguments(corners: ImageCorners(), imageSize: displaySize, boundingSize: displaySize, intrinsicInsets: UIEdgeInsets()))()
@@ -524,6 +533,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 
                 self.fetchDisposable.set(self.context.engine.resources.fetch(reference: imageReference.resourceReference(largestSize.resource), userLocation: userLocation, userContentType: .image).start())
                 self.setupStatus(resource: largestSize.resource)
+                self.exteralessHDRPhoto = ExteralessHDRPhoto(context: self.context, resource: EngineMediaResource(largestSize.resource), parent: self.imageNode)
             } else {
                 self._ready.set(.single(Void()))
             }
@@ -706,6 +716,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     }
 
     private func contextMenuMainItems() -> Signal<[ContextMenuItem], NoError> {
+        let save = MainActor.assumeIsolated { self.exteralessSaveLifetime.capture(from: self.galleryController(), accountId: self.context.account.id.int64) }
         let peer: Signal<EnginePeer?, NoError>
         if let message = self.message {
             peer = self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: message.id.peerId))
@@ -769,17 +780,20 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                     
                     items.append(.action(ContextMenuActionItem(text: self.presentationData.strings.Gallery_SaveImage, icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Download"), color: theme.actionSheet.primaryTextColor) }, action: { [weak self] _, f in
                         f(.default)
-                                                
-                        let _ = (SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: media)
-                        |> deliverOnMainQueue).start(completed: { [weak self] in
-                            guard let strongSelf = self else {
-                                return
-                            }
-                            guard let controller = strongSelf.galleryController() else {
-                                return
-                            }
-                            controller.present(UndoOverlayController(presentationData: strongSelf.presentationData, content: .mediaSaved(text: strongSelf.presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
-                        })
+                        guard let save = MainActor.assumeIsolated({ save?.operation() }) else { return }
+                        MainActor.assumeIsolated {
+                            let signal = SaveToCameraRoll.saveToCameraRoll(context: context, userLocation: .peer(message.id.peerId), mediaReference: media, exportPermit: save.permit, exportReference: save.reference, exportCurrent: save.current, exportValidity: save.validity, presentForExport: { controller, arguments in
+                                MainActor.assumeIsolated { save.present(controller, arguments: arguments) }
+                            })
+                            let _ = (signal |> deliverOnMainQueue).start(next: { progress in
+                                save.receive(progress)
+                            }, completed: { [weak self] in
+                                guard save.canReportSuccess() else { return }
+                                guard let strongSelf = self else { return }
+                                guard let controller = strongSelf.galleryController() else { return }
+                                controller.present(UndoOverlayController(presentationData: strongSelf.presentationData, content: .mediaSaved(text: strongSelf.presentationData.strings.Gallery_ImageSaved), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .window(.root))
+                            })
+                        }
                     })))
                 }
             }
@@ -897,6 +911,8 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     
     func setFile(context: AccountContext, userLocation: MediaResourceUserLocation, fileReference: FileMediaReference, force: Bool = false) {
         if self.contextAndMedia == nil || !self.contextAndMedia!.1.media.isEqual(to: fileReference.media) || force {
+            self.exteralessSaveLifetime.invalidate()
+            self.exteralessHDRPhoto = nil
             if var largestSize = (fileReference.media.dimensions ?? self.fetchedDimensions) {
                 var displaySize = largestSize.cgSize.dividedByScreenScale()
                 if let previewDimensions = largestImageRepresentation(fileReference.media.previewRepresentations)?.dimensions {
@@ -938,6 +954,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
                 
                 self.zoomableContent = (largestSize.cgSize, self.imageNode)
                 self.setupStatus(resource: fileReference.media.resource)
+                self.exteralessHDRPhoto = ExteralessHDRPhoto(context: context, resource: EngineMediaResource(fileReference.media.resource), parent: self.imageNode)
                 
                 var barButtonItems: [UIBarButtonItem] = []
                 if self.message != nil {
@@ -1170,7 +1187,18 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         self.statusNodeContainer.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.15, timingFunction: CAMediaTimingFunctionName.easeIn.rawValue, removeOnCompletion: false)
     }
     
+    override func didExitHierarchy() {
+        self.exteralessSaveLifetime.invalidate()
+        super.didExitHierarchy()
+    }
+
+    override func centralityUpdated(isCentral: Bool) {
+        if !isCentral { self.exteralessSaveLifetime.invalidate() }
+        super.centralityUpdated(isCentral: isCentral)
+    }
+
     override func visibilityUpdated(isVisible: Bool) {
+        if !isVisible { self.exteralessSaveLifetime.invalidate() }
         super.visibilityUpdated(isVisible: isVisible)
         
         /*if let (_, mediaReference) = self.contextAndMedia, let _ = mediaReference.concrete(TelegramMediaFile.self) {

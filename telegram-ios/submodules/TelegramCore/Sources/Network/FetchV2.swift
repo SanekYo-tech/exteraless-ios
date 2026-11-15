@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Postbox
 import SwiftSignalKit
 import MtProtoKit
@@ -460,14 +461,19 @@ private final class FetchImpl {
             }
             
             self.fastDownloads = network.engineKind == .rust
-            if isStory {
-                self.defaultPartSize = 512 * 1024
-            } else {
-                self.defaultPartSize = 128 * 1024
-            }
+            let nativePartSize: Int64 = isStory ? 512 * 1024 : 128 * 1024
+            let nativeMasterParts = self.fastDownloads ? fastDownloadMasterPendingParts : 6
+            let nativeCdnParts = self.fastDownloads ? fastDownloadCdnPendingParts : 6
+            let budget = ToolsDownloadPolicy.budget(level: ClientSettings.shared.integer("tools.downloadSpeedBoost"), size: size,
+                isStory: isStory, encrypted: encryptionKey != nil,
+                native: ToolsDownloadBudget(partBytes: nativePartSize, parallelParts: nativeMasterParts))
+            self.defaultPartSize = budget.partBytes
             self.cdnPartSize = 128 * 1024
-            self.masterPendingParts = self.fastDownloads ? fastDownloadMasterPendingParts : 6
-            self.cdnPendingParts = self.fastDownloads ? fastDownloadCdnPendingParts : 6
+            self.masterPendingParts = budget.parallelParts
+            // Keep CDN hash geometry; only its bounded request window can grow.
+            self.cdnPendingParts = ToolsDownloadPolicy.budget(level: ClientSettings.shared.integer("tools.downloadSpeedBoost"), size: size,
+                isStory: isStory, encrypted: encryptionKey != nil,
+                native: ToolsDownloadBudget(partBytes: 128 * 1024, parallelParts: nativeCdnParts)).parallelParts
             
             // The resource id tells concurrent downloads apart; an Api value prints only its constructor name.
             self.loggingIdentifier = resource.id.stringRepresentation

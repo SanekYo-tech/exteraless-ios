@@ -16,6 +16,23 @@ extension RichTextEngineEditorView {
     }
 
     internal func installTextInputGate() {
+        engine.tgid_committedTextTransformer = { [weak self] range, text in
+            guard let self, let transform = self.committedTextTransformer,
+                  !self.isDecidingAtGate, !self.isSettling, !self.isIssuingHostEdit,
+                  text.utf16.count > 1, !self.isLiteralTextDestination(range) else { return text }
+            return transform(text)
+        }
+        engine.tgid_pastedTextTransformer = { [weak self] text in
+            guard let self, let transform = self.pastedLinkTargetTransformer,
+                  text.length <= 65536, !self.isLiteralTextDestination(self.engineSelectedRange) else { return text }
+            let result = NSMutableAttributedString(attributedString: text)
+            text.enumerateAttributes(in: NSRange(location: 0, length: text.length), options: []) { attributes, range, _ in
+                guard (attributes[.rtInlineCode] as? Bool) != true else { return }
+                let target = (attributes[.link] as? String) ?? (attributes[.link] as? URL)?.absoluteString
+                if let target { result.addAttribute(.link, value: transform(target), range: range) }
+            }
+            return result
+        }
         engine.tgid_textInputGate = { [weak self] range, text in
             guard let self else { return text }
             // The host's own edits (`replaceFlat`, `restyleFlat`) reach this surface too, issued by
@@ -46,6 +63,36 @@ extension RichTextEngineEditorView {
                 return nil
             }
         }
+    }
+
+    /// Any code region crossed by a replacement keeps the entire delivery literal.
+    internal func isLiteralTextDestination(_ range: NSRange) -> Bool {
+        guard let first = roleIndex(atFlatOffset: range.location),
+              let last = roleIndex(atFlatOffset: NSMaxRange(range)), first <= last else { return true }
+        for index in first ... last {
+            if currentRoles[index].secondaryKind == .codeLanguage { return true }
+            if case .code = currentRoles[index].shape { return true }
+        }
+        if isInlineCodeActive() { return true }
+        let blocks = engine.attributedBlocks
+        for index in first ... last where index < blocks.count {
+            let start = flatOffset(ofRoleAt: index)
+            let block = blocks[index]
+            let local = max(0, range.location - start)
+            if range.length == 0 {
+                if local > 0, local <= block.length, (block.attribute(.rtInlineCode, at: local - 1, effectiveRange: nil) as? Bool) == true { return true }
+            } else {
+                let clipped = NSIntersectionRange(range, NSRange(location: start, length: block.length))
+                var literal = false
+                if clipped.length > 0 {
+                    block.enumerateAttribute(.rtInlineCode, in: NSRange(location: clipped.location - start, length: clipped.length), options: []) { value, _, stop in
+                        if (value as? Bool) == true { literal = true; stop.pointee = true }
+                    }
+                }
+                if literal { return true }
+            }
+        }
+        return false
     }
 
     /// The decision for `text` replacing `range` (engine axis). Only a text containing a newline or

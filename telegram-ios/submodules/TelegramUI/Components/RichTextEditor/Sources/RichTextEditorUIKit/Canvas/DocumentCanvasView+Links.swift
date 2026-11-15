@@ -51,19 +51,22 @@ extension DocumentCanvasView {
     /// Removes the link over the selection and its render-only styling (resets foreground to the
     /// mapper's default so the text renders like any other unlinked run).
     func removeLink() {
+        var colors: [ObjectIdentifier: UIColor] = [:]
+        for region in allLeafRegions() {
+            guard let storage = region.layout.backingStorage else { continue }
+            let color: UIColor
+            switch region.ref {
+            case .caption: color = mapper.theme.secondaryText
+            case .quoteAuthor: color = mapper.theme.quoteAuthorText
+            default: color = mapper.theme.primaryText
+            }
+            colors[ObjectIdentifier(storage)] = color
+        }
         applyCharacterAttribute { storage, range in
             storage.removeAttribute(.link, range: range)
-            // Defensive: storage written before 6a may carry a link underline; clear it.
-            storage.removeAttribute(.underlineStyle, range: range)
-            // Restore the mapper's default unlinked-run foreground so the text renders like any other run
-            // (the mapper writes ca.foreground ?? primaryText, or secondaryText for .caption). We don't
-            // removeAttribute(.foregroundColor) — that would leave live storage colorless (black) until the
-            // next rebuild. KNOWN LIMITATION: this writes primaryText regardless of style, so removing a link
-            // inside a .caption run under a theme where primaryText != secondaryText leaves an explicit
-            // foreground that the read-back strip (which compares captions against secondaryText) won't clear,
-            // lightly polluting the model for that run. Latent until a host sets such a theme; revisit with the
-            // host-wiring work.
-            storage.addAttribute(.foregroundColor, value: self.mapper.theme.primaryText, range: range)
+            // Link creation never adds underline: any underline here is authored. Restore only the
+            // link's color, using the owning region's default (captions/authors are not body text).
+            storage.addAttribute(.foregroundColor, value: colors[ObjectIdentifier(storage)] ?? self.mapper.theme.primaryText, range: range)
         }
     }
 

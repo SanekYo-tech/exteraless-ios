@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import Display
@@ -66,7 +67,8 @@ struct CameraState: Equatable {
         var color: UIColor {
             switch self {
             case .white:
-                return .white
+                let color = ToolsCameraPolicy.flashColor(warmth: ClientSettings.shared.integer("tools.flashWarmth", default: 50))
+                return UIColor(red: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: 1)
             case .yellow:
                 return UIColor(rgb: 0xffed8c)
             case .blue:
@@ -257,6 +259,10 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         private let getController: () -> VideoMessageCameraScreen?
         
         private var resultDisposable = MetaDisposable()
+        private var choosingInitialCamera = false
+        private var choseInitialCamera = false
+        private var cameraChoiceGeneration = UUID()
+        private weak var cameraChoiceController: ViewController?
                 
         var cameraState: CameraState?
         
@@ -291,9 +297,6 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
                 if let self, let controller = getController() {
                     self.startVideoRecording(pressing: !controller.scheduledLock)
                     controller.scheduledLock = false
-                    if controller.recordingStartTime == nil {
-                        controller.recordingStartTime = CACurrentMediaTime()
-                    }
                 }
             })
             self.stopRecording.connect({ [weak self] _ in
@@ -307,6 +310,8 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         
         deinit {
             self.resultDisposable.dispose()
+            let choice = self.cameraChoiceController
+            Queue.mainQueue().async { choice?.dismiss() }
         }
         
         func toggleViewOnce() {
@@ -329,6 +334,9 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
             
             let isFrontCamera = controller.cameraState.position == .back
             camera.togglePosition()
+            if ClientSettings.shared.bool("tools.rememberLastUsedCamera") && ClientSettings.shared.integer("tools.videoMessageCameraFacing") != 2 {
+                try? ClientSettings.shared.applyPublic(["tools.videoMessageCameraFacing": .integer(isFrontCamera ? 0 : 1)])
+            }
                                     
             self.hapticFeedback.impact(.veryLight)
             
@@ -378,7 +386,8 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
             if isFrontCamera && isFlashOn {
                 if self.initialBrightness == nil {
                     self.initialBrightness = mainWindowScreen.brightness
-                    self.brightnessArguments = (CACurrentMediaTime(), 0.2, mainWindowScreen.brightness, 1.0)
+                    let intensity = CGFloat(ClientSettings.shared.integer("tools.flashIntensity", default: 100)) / 100.0
+                    self.brightnessArguments = (CACurrentMediaTime(), 0.2, mainWindowScreen.brightness, min(1.0, max(0.0, intensity)))
                     self.animateBrightnessChange()
                 }
             } else {
@@ -426,12 +435,19 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
             guard case .none = controller.cameraState.recording else {
                 return
             }
+            if choosingInitialCamera { return }
+            if !choseInitialCamera, ClientSettings.shared.integer("tools.videoMessageCameraFacing") == 2,
+               (controller.node.previewState?.composition.duration.seconds ?? 0.0).isZero {
+                chooseInitialCamera()
+                return
+            }
             
             let currentTimestamp = CACurrentMediaTime()
             if let lastActionTimestamp = controller.lastActionTimestamp, currentTimestamp - lastActionTimestamp < 0.5 {
                 return
             }
             controller.lastActionTimestamp = currentTimestamp
+            if controller.recordingStartTime == nil { controller.recordingStartTime = currentTimestamp }
         
             let initialDuration = controller.node.previewState?.composition.duration.seconds ?? 0.0
             let isFirstRecording = initialDuration.isZero
@@ -477,6 +493,7 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         }
         
         func stopVideoRecording() {
+            guard !choosingInitialCamera else { return }
             guard let controller = self.getController(), let camera = controller.camera else {
                 return
             }
@@ -516,6 +533,14 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
         }
         
         func cancelVideoRecording() {
+            getController()?.toolsCameraChoicePending = false
+            cameraChoiceController?.dismiss()
+            cameraChoiceController = nil
+            if choosingInitialCamera {
+                cameraChoiceGeneration = UUID()
+                choosingInitialCamera = false
+                resultDisposable.set(nil)
+            }
             if let initialBrightness = self.initialBrightness {
                 self.initialBrightness = nil
                 self.brightnessArguments = (CACurrentMediaTime(), 0.2, mainWindowScreen.brightness, initialBrightness)
@@ -528,6 +553,74 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
                 return
             }
             camera.setZoomLevel(fraction)
+        }
+
+        private func chooseInitialCamera() {
+            guard let controller = getController(), let camera = controller.camera else { return }
+            choosingInitialCamera = true
+            controller.toolsCameraChoicePending = true
+            let generation = UUID()
+            cameraChoiceGeneration = generation
+            weak var alert: ViewController?
+            let complete: (Bool) -> Void = { [weak self, weak controller] ready in
+                guard let self, let controller, self.getController() === controller,
+                      self.cameraChoiceGeneration == generation, self.choosingInitialCamera else { return }
+                self.choosingInitialCamera = false
+                controller.toolsCameraChoicePending = false
+                guard controller.viewIfLoaded?.window != nil else { return }
+                if ready {
+                    self.choseInitialCamera = true
+                    self.startVideoRecording(pressing: false)
+                } else {
+                    weak var errorController: ViewController?
+                    let value = textAlertController(context: self.context, title: "Camera unavailable", text: "The selected camera did not become ready. No recording was started.", actions: [
+                        TextAlertAction(type: .defaultAction, title: "OK", action: { errorController?.dismiss() })
+                    ])
+                    errorController = value
+                    self.cameraChoiceController = value
+                    self.present(value)
+                }
+            }
+            let choose: (Camera.Position) -> Void = { [weak self, weak controller] position in
+                alert?.dismiss()
+                guard let self, let controller, self.getController() === controller,
+                      self.cameraChoiceGeneration == generation else { return }
+                self.cameraChoiceController = nil
+                guard controller.viewIfLoaded?.window != nil else {
+                    self.choosingInitialCamera = false
+                    controller.toolsCameraChoicePending = false
+                    return
+                }
+                if controller.cameraState.position == position {
+                    Queue.mainQueue().async { complete(true) }
+                } else {
+                    self.resultDisposable.set((camera.position
+                    |> map { Optional($0) }
+                    |> filter { $0 == position }
+                    |> take(1)
+                    |> timeout(2.0, queue: .mainQueue(), alternate: .single(nil))
+                    |> deliverOnMainQueue).start(next: { value in
+                        // Defer until MetaDisposable has installed the wait signal,
+                        // so a synchronous emission cannot replace the recording lease.
+                        Queue.mainQueue().async { complete(value == position) }
+                    }))
+                    camera.togglePosition()
+                }
+            }
+            let value = textAlertController(context: context, title: "Video-message camera", text: "Choose a camera before recording starts.", actions: [
+                TextAlertAction(type: .defaultAction, title: "Front", action: { choose(.front) }),
+                TextAlertAction(type: .defaultAction, title: "Rear", action: { choose(.back) }),
+                TextAlertAction(type: .defaultAction, title: "Cancel", action: { [weak self] in
+                    alert?.dismiss()
+                    self?.cameraChoiceGeneration = UUID()
+                    self?.choosingInitialCamera = false
+                    self?.cameraChoiceController = nil
+                    self?.getController()?.toolsCameraChoicePending = false
+                })
+            ])
+            alert = value
+            cameraChoiceController = value
+            present(value)
         }
     }
     
@@ -601,7 +694,7 @@ private final class VideoMessageCameraScreenComponent: CombinedComponent {
                         height: max(abs(frontFlashPosition.y), abs(context.availableSize.height - frontFlashPosition.y)) * 2.0
                     )
                     let frontFlash = frontFlash.update(
-                        component: Image(image: state.image(.flashImage, theme: environment.theme), tintColor: component.cameraState.flashTint.color, contentMode: .scaleAspectFill),
+                        component: Image(image: state.image(.flashImage, theme: environment.theme), tintColor: component.cameraState.flashTint.color.withAlphaComponent(CGFloat(ClientSettings.shared.integer("tools.flashIntensity", default: 100)) / 100.0), contentMode: .scaleAspectFill),
                         availableSize: frontFlashSize,
                         transition: .easeInOut(duration: 0.2)
                     )
@@ -884,6 +977,7 @@ public class VideoMessageCameraScreen: ViewController {
         private let context: AccountContext
         private let cameraImpl: CameraImpl
         fileprivate var camera: CameraProtocol?
+        private let toolsZoomControl = ExteralessCameraZoomControl(frame: .zero)
         private var pinchStartTimestamp: Double?
         private let updateState: ActionSlot<CameraState>
         
@@ -995,7 +1089,12 @@ public class VideoMessageCameraScreen: ViewController {
             self.previewContainerView.addSubview(self.previewContainerContentView)
                         
             let isDualCameraEnabled = cameraImpl.isDualCameraSupported(forRoundVideo: true)
-            let isFrontPosition = "".isEmpty
+            let toolsSettings = ClientSettings.shared.readSnapshot()
+            let isFrontPosition = ToolsCameraPolicy.initialCameraIsFront(
+                facing: toolsSettings.values["tools.videoMessageCameraFacing"] == .integer(2) ? 2 : toolsSettings.values["tools.videoMessageCameraFacing"] == .integer(1) ? 1 : 0,
+                explicitFacing: toolsSettings.storedKeys.contains("tools.videoMessageCameraFacing"),
+                remember: toolsSettings.values["tools.rememberLastUsedCamera"] == .bool(true),
+                lastFront: UserDefaults.standard.object(forKey: "ExteralessRoundCameraUseFrontPosition") as? Bool)
             
             self.mainPreviewView = cameraImpl.makeCameraSimplePreviewView(frame: .zero, main: true, roundVideo: true)
             self.additionalPreviewView = cameraImpl.makeCameraSimplePreviewView(frame: .zero, main: false, roundVideo: true)
@@ -1137,6 +1236,9 @@ public class VideoMessageCameraScreen: ViewController {
                     return
                 }
                 self.cameraState = self.cameraState.updatedPosition(position).updatedFlashMode(flashMode)
+                if ClientSettings.shared.bool("tools.rememberLastUsedCamera") {
+                    UserDefaults.standard.set(position == .front, forKey: "ExteralessRoundCameraUseFrontPosition")
+                }
                 
                 if !self.cameraState.isDualCameraEnabled {
                     self.animatePositionChange()
@@ -1149,6 +1251,7 @@ public class VideoMessageCameraScreen: ViewController {
             camera.startCapture()
             
             self.camera = camera
+            self.toolsZoomControl.bind(camera)
             
             Queue.mainQueue().justDispatch {
                 self.startRecording.invoke(Void())
@@ -1172,10 +1275,14 @@ public class VideoMessageCameraScreen: ViewController {
                 if let pinchStartTimestamp, CACurrentMediaTime() - pinchStartTimestamp <= 0.5 {
                     return
                 }
-                self.camera?.rampZoom(1.0, rate: 8.0)
+                if !ClientSettings.shared.bool("tools.staticZoom") {
+                    self.toolsZoomControl.resetZoom(startWide: ClientSettings.shared.bool("tools.startWithWideAngleCamera"))
+                }
             case .cancelled:
                 self.pinchStartTimestamp = nil
-                self.camera?.rampZoom(1.0, rate: 8.0)
+                if !ClientSettings.shared.bool("tools.staticZoom") {
+                    self.toolsZoomControl.resetZoom(startWide: ClientSettings.shared.bool("tools.startWithWideAngleCamera"))
+                }
             case .failed:
                 self.pinchStartTimestamp = nil
             default:
@@ -1674,6 +1781,24 @@ public class VideoMessageCameraScreen: ViewController {
                 let componentFrame = CGRect(origin: .zero, size: componentSize)
                 transition.setFrame(view: componentView, frame: componentFrame)
             }
+
+            if self.toolsZoomControl.superview == nil { self.containerView.addSubview(self.toolsZoomControl) }
+            let zoomWidth = min(320.0, max(0.0, previewBandWidth - 24.0))
+            var zoomFrame = CGRect(x: previewBandInsets.left + (previewBandWidth - zoomWidth) / 2.0,
+                                   y: previewFrame.maxY + 12.0, width: zoomWidth, height: 88.0)
+            var zoomFits = zoomFrame.maxY <= backgroundFrame.height - 16.0
+            if !zoomFits && previewFrame.minX >= 212.0 {
+                zoomFrame = CGRect(x: previewBandInsets.left + 16.0, y: max(16.0, (backgroundFrame.height - 88.0) / 2.0),
+                                   width: min(320.0, previewFrame.minX - previewBandInsets.left - 32.0), height: 88.0)
+                zoomFits = true
+            } else if !zoomFits && layout.size.width - previewFrame.maxX >= 212.0 {
+                zoomFrame = CGRect(x: previewFrame.maxX + 16.0, y: max(16.0, (backgroundFrame.height - 88.0) / 2.0),
+                                   width: min(320.0, layout.size.width - previewFrame.maxX - previewBandInsets.right - 32.0), height: 88.0)
+                zoomFits = true
+            }
+            transition.setFrame(view: self.toolsZoomControl, frame: zoomFrame)
+            self.toolsZoomControl.visibilityAllowed = zoomFits && !self.animatingIn && self.previewState == nil
+                && !self.transitioningToPreview && self.cameraIsActive && ClientSettings.shared.bool("tools.zoomSlider", default: true)
             
             if let previewState = self.previewState {
                 if previewState.composition !== self.resultPreviewView?.composition {
@@ -2154,6 +2279,9 @@ public class VideoMessageCameraScreen: ViewController {
         guard !self.didSend else {
             return false
         }
+        // Releasing the original hold while the modal choice is open is handled,
+        // but must not queue a send/preview transition for a recording not begun.
+        if self.toolsCameraChoicePending { return true }
         
         self.node.dismissAllTooltips()
         
@@ -2167,6 +2295,7 @@ public class VideoMessageCameraScreen: ViewController {
     }
 
     fileprivate var recordingStartTime: Double?
+    fileprivate var toolsCameraChoicePending = false
     fileprivate var scheduledLock = false
     public func lockVideoRecording() {
         guard !self.didSend else {

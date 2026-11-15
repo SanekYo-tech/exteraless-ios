@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Display
@@ -777,7 +778,19 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
 
     private var overscrollView: ComponentHostView<Empty>?
     var nextChannelToRead: (peer: EnginePeer, threadData: (id: Int64, data: MessageHistoryThreadData)?, unreadCount: Int, location: TelegramEngine.NextUnreadChannelLocation)?
-    var offerNextChannelToRead: Bool = false
+    var offerNextChannelToRead: Bool = false {
+        didSet {
+            if oldValue && !self.offerNextChannelToRead {
+                self.currentOverscrollExpandProgress = 0.0
+                if !self.freezeOverscrollControl {
+                    self.cancelOverscrollActionLanding()
+                    self.freezeOverscrollControlProgress = false
+                    self.listView.holdOverscrollAction(distance: 0.0, movesContent: false)
+                    self.maybeUpdateOverscrollAction(offset: nil)
+                }
+            }
+        }
+    }
     var nextChannelToReadDisplayName: Bool = false
     private var currentOverscrollExpandProgress: CGFloat = 0.0
     private var freezeOverscrollControl: Bool = false
@@ -1270,6 +1283,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                         if matches {
                             var maxItemIndex: MessageIndex?
                             for (message, _) in item.content {
+                                if EngineMessage(message).exteralessRetention != nil { continue }
                                 if let maxItemIndexValue = maxItemIndex {
                                     if maxItemIndexValue < message.index {
                                         maxItemIndex = message.index
@@ -1341,7 +1355,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             strongSelf.isDraggingForOverscrollAction = false
             let expandProgress = strongSelf.currentOverscrollExpandProgress
             strongSelf.currentOverscrollExpandProgress = 0.0
-            if strongSelf.offerNextChannelToRead, expandProgress >= 0.99 {
+            if strongSelf.offerNextChannelToRead, exteralessDialogPolicy().allowsSwipeToNext(isTopic: strongSelf.chatLocation.threadId != nil), expandProgress >= 0.99 {
                 if let nextChannelToRead = strongSelf.nextChannelToRead {
                     // A landing may already be running from an earlier release — the control stays at
                     // full expansion for its whole duration, so a second qualifying release inside it
@@ -2054,8 +2068,13 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         let startTime = CFAbsoluteTimeGetCurrent()
         var measure_isFirstTime = true
         let messageViewQueue = Queue.mainQueue()
+        let includeRetained: Bool
+        if case .default = self.source {
+            includeRetained = !isScheduledMessages && tag == nil && subject != .pinnedMessages && mode == .bubbles
+        } else { includeRetained = false }
+        let retentionHistoryUpdate = exteralessRetentionHistoryUpdates(context: context, location: chatLocation, source: historyViewUpdate, enabled: includeRetained)
         let historyViewTransitionDisposable = (combineLatest(queue: messageViewQueue,
-            historyViewUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
+            retentionHistoryUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
             self.chatPresentationDataPromise.get() |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_chatPresentationData"),
             selectedMessages |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_selectedMessages"),
             updatingMedia |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_updatingMedia"),
@@ -2316,13 +2335,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 )
                 
                 var translateToLanguage: (fromLang: String, toLang: String)?
-                if let translationState, (isPremium || autoTranslate)  && translationState.isEnabled {
-                    var languageCode = translationState.toLang ?? chatPresentationData.strings.baseLanguageCode
-                    let rawSuffix = "-raw"
-                    if languageCode.hasSuffix(rawSuffix) {
-                        languageCode = String(languageCode.dropLast(rawSuffix.count))
-                    }
-                    translateToLanguage = (normalizeTranslationLanguage(translationState.fromLang), normalizeTranslationLanguage(languageCode))
+                if let translationState, let target = AINativeTranslationTarget.resolve(isEnabled: translationState.isEnabled, toLanguage: translationState.toLang, appLanguage: chatPresentationData.strings.baseLanguageCode, isPremium: isPremium, peerAutoTranslate: autoTranslate, policy: AITranslationPolicy()) {
+                    translateToLanguage = (AINativeTranslationTarget.normalize(translationState.fromLang), target)
                 }
                 
                 let isSuspiciousPeer = (data.cachedData as? CachedUserData)?.isSuspiciousPeer ?? false
@@ -2369,7 +2383,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 }
                                 
                 let previousChatHistoryEntriesForViewState = chatHistoryEntriesForViewState.with({ $0 })
-                let (filteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
+                let (baseFilteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
                     currentState: previousChatHistoryEntriesForViewState,
                     context: context,
                     location: chatLocation,
@@ -2398,6 +2412,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     isMusicPlaylist: isMusicPlaylist,
                     pinToTopStableId: pinToTopStableId
                 )
+                let visibleRetained = context.engine.messages.filterRetainedHistoryEntries(update.5, liveMessages: view.entries.map { EngineMessage($0.message) }, translated: associatedData.translateToLanguage != nil)
+                let filteredEntries = exteralessRetentionMergeDisplayEntries(baseFilteredEntries, retained: visibleRetained, presentationData: chatPresentationData, groupMessages: mode == .bubbles, reverse: reverse, reverseGroups: reverseGroups, historyAppearsCleared: historyAppearsCleared, pendingRemovedMessages: pendingRemovedMessages)
                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0
                 let processedView = ChatHistoryView(originalView: view, filteredEntries: filteredEntries, associatedData: associatedData, lastHeaderId: lastHeaderId, id: id, locationInput: update.2, ignoreMessagesInTimestampRange: update.3, ignoreMessageIds: update.4)
                 let previousValueAndVersion = previousView.swap((processedView, update.1, selectedMessages, allAdMessages.version))
@@ -3028,12 +3044,14 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     
                     switch historyView.filteredEntries[i] {
                     case let .MessageEntry(message, _, _, _, _, _):
+                        if EngineMessage(message).exteralessRetention != nil { continue }
                         if message.id.namespace == Namespaces.Message.Cloud {
                             insertionTimestamp = message.timestamp
                             break outer
                         }
                     case let .MessageGroupEntry(_, messages, _):
                         for (message, _, _, _, _) in messages {
+                            if EngineMessage(message).exteralessRetention != nil { continue }
                             if message.id.namespace == Namespaces.Message.Cloud {
                                 insertionTimestamp = message.timestamp
                                 break outer
@@ -3047,12 +3065,14 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                 outer: for i in (selectedRange.0 ... selectedRange.1).reversed() {
                     switch historyView.filteredEntries[i] {
                     case let .MessageEntry(message, _, _, _, _, _):
+                        if EngineMessage(message).exteralessRetention != nil { continue }
                         if message.id.namespace == Namespaces.Message.Cloud {
                             insertionTimestamp = message.timestamp
                             break outer
                         }
                     case let .MessageGroupEntry(_, messages, _):
                         for (message, _, _, _, _) in messages {
+                            if EngineMessage(message).exteralessRetention != nil { continue }
                             if message.id.namespace == Namespaces.Message.Cloud {
                                 insertionTimestamp = message.timestamp
                                 break outer
@@ -3150,6 +3170,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                             guard message.adAttribute == nil && message.id.namespace == Namespaces.Message.Cloud else {
                                 continue
                             }
+                            if EngineMessage(message).exteralessRetention != nil { continue }
                             guard message.author?.id != self.context.account.peerId else {
                                 continue
                             }
@@ -3168,6 +3189,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                                 guard message.adAttribute == nil && message.id.namespace == Namespaces.Message.Cloud else {
                                     continue
                                 }
+                                if EngineMessage(message).exteralessRetention != nil { continue }
                                 guard message.author?.id != self.context.account.peerId else {
                                     continue
                                 }
@@ -3212,6 +3234,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     
                     switch historyView.filteredEntries[i] {
                     case let .MessageEntry(message, _, _, _, _, _):
+                        if EngineMessage(message).exteralessRetention != nil { continue }
                         if let author = message.author as? TelegramUser {
                             peerIdsWithRefreshStories.append(author.id)
                         }
@@ -3335,11 +3358,12 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                             allVisibleAnchorMessageIds.append((message.id, nodeIndex))
                         }
                     case let .MessageGroupEntry(_, messages, _):
-                        if let author = messages.first?.0.author as? TelegramUser {
+                        if let author = messages.first(where: { EngineMessage($0.0).exteralessRetention == nil })?.0.author as? TelegramUser {
                             peerIdsWithRefreshStories.append(author.id)
                         }
                         
                         for (message, _, _, _, _) in messages {
+                            if EngineMessage(message).exteralessRetention != nil { continue }
                             var hasUnconsumedMention = false
                             var hasUnconsumedContent = false
                             var hasUnseenReactionsOrPollVotes = false
@@ -3399,7 +3423,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                                 topVisibleMessageRange = ChatTopVisibleMessageRange(lowerBound: message.index, upperBound: message.index, isLast: i == historyView.filteredEntries.count - 1, isLoading: isLoading)
                             }
                         }
-                        if let message = messages.first {
+                        if let message = messages.first(where: { EngineMessage($0.0).exteralessRetention == nil }) {
                             if message.0.id.namespace == Namespaces.Message.Cloud, self.remainingDynamicAdMessageInterval != nil {
                                 allVisibleAnchorMessageIds.append((message.0.id, nodeIndex))
                             }
@@ -3414,6 +3438,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             for entry in historyView.filteredEntries {
                 switch entry {
                 case let .MessageEntry(message, _, _, _, _, _):
+                    if EngineMessage(message).exteralessRetention != nil { continue }
                     if let _ = message.inlineBotAttribute {
                         if let visibleBusinessBotMessageIdValue = visibleBusinessBotMessageId {
                             if visibleBusinessBotMessageIdValue < message.id {
@@ -3440,6 +3465,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
                     }
                 case let .MessageGroupEntry(_, messages, _):
                     for (message, _, _, _, _) in messages {
+                        if EngineMessage(message).exteralessRetention != nil { continue }
                         if let _ = message.inlineBotAttribute {
                             if let visibleBusinessBotMessageIdValue = visibleBusinessBotMessageId {
                                 if visibleBusinessBotMessageIdValue < message.id {
@@ -3471,6 +3497,7 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             }
             
             func addMediaToPrefetch(_ message: Message, _ media: Media, _ messages: inout [(Message, Media)]) -> Bool {
+                if EngineMessage(message).exteralessRetention != nil { return true }
                 if media is TelegramMediaImage || media is TelegramMediaFile {
                     messages.append((message, media))
                 }
@@ -3831,7 +3858,8 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
             guard let item = itemView.item else {
                 return
             }
-            let messageId = item.message.id
+            guard let message = item.content.first(where: { EngineMessage($0.0).exteralessRetention == nil })?.0 else { return }
+            let messageId = message.id
             if messageId.namespace != Namespaces.Message.Cloud {
                 return
             }

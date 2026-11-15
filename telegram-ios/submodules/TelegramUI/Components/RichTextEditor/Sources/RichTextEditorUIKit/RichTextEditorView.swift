@@ -210,6 +210,8 @@ public final class RichTextEditorView: UIView, UIScrollViewDelegate {
     /// falls back to the built-in behavior. The package attaches no meaning to the string — a host uses
     /// this to convert e.g. markdown to rich content without the package depending on any markdown code.
     public var plainTextFragmentTransformer: ((String) -> Document?)? { didSet { canvas.plainTextFragmentTransformer = plainTextFragmentTransformer } }
+    public var pastedLinkTargetTransformer: ((String) -> String)? { didSet { canvas.pastedLinkTargetTransformer = pastedLinkTargetTransformer } }
+    public var committedTextTransformer: ((String) -> String)? { didSet { canvas.committedTextTransformer = committedTextTransformer } }
 
     /// A HARDWARE-keyboard Return (plain or ⌘) is offered to the host before the editor inserts a newline, so
     /// a chat composer can implement send-on-Enter / send-on-⌘-Enter. Return `true` to have the editor insert
@@ -341,6 +343,11 @@ public final class RichTextEditorView: UIView, UIScrollViewDelegate {
 
     public func currentState() -> EditorState { canvas.currentState() }
 
+    /// Input leases use the content counter, never the layout generation or the deferred host echo.
+    public var documentRevision: UInt64 { canvas.documentRevision }
+    public private(set) var selectionRevision: UInt64 = 0
+    public var hasMarkedText: Bool { canvas.markedTextRange != nil }
+
     public override convenience init(frame: CGRect) {
         self.init(frame: frame, inputBackend: .legacy)
     }
@@ -397,6 +404,7 @@ public final class RichTextEditorView: UIView, UIScrollViewDelegate {
         // next pass decides. The scroll that used to sit on this line decided against geometry the
         // host was about to change, which is the whole of what this design replaces.
         canvas.onSelectionChange = { [weak self] in
+            self?.selectionRevision &+= 1
             self?.isCaretRevealOwed = true
             self?.onCaretRevealNeeded?()
             self?.scheduleSelectionDrivenOnChange()

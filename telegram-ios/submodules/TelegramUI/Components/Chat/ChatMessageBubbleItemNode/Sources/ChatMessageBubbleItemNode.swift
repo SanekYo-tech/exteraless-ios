@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -127,7 +128,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
     var previousItemIsFile = false
     var hasFiles = false
     
-    var needReactions = true
+    var needReactions = !exteralessHideMessageReactions(message: EngineMessage(item.message))
     
     let hideAllAdditionalInfo = item.presentationData.isPreview
     
@@ -484,7 +485,7 @@ private func contentNodeMessagesAndClassesForItem(_ item: ChatMessageItem) -> ([
         }
     }
     
-    if !reactionsAreInline && !hideAllAdditionalInfo, let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
+    if !reactionsAreInline && !hideAllAdditionalInfo && !exteralessHideMessageReactions(message: EngineMessage(firstMessage)), let reactionsAttribute = mergedMessageReactions(attributes: firstMessage.attributes, isTags: firstMessage.areReactionsTags(accountPeerId: item.context.account.peerId)), !reactionsAttribute.reactions.isEmpty {
         if result.last?.1 == ChatMessageTextBubbleContentNode.self {
         } else {
             if result.last?.1 == ChatMessagePollBubbleContentNode.self ||
@@ -1682,7 +1683,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 if let addressName = botPeer?.addressName, !addressName.isEmpty {
                     botName = "@\(addressName)"
                 } else if let botPeer {
-                    botName = EnginePeer(botPeer).compactDisplayTitle
+                    botName = EnginePeer(botPeer).exteralessCompactDisplayTitle(account: item.context.account)
                 } else {
                     botName = "bot"
                 }
@@ -2023,6 +2024,18 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             allowFullWidth = true
         }
 
+        if exteralessHideChannelShare(message: EngineMessage(item.message)) && !(mayHaveSeparateCommentsButton && hasCommentButton(item: item)) {
+            needsShareButton = false
+        }
+        var useWideChannelPosts = false
+        if !item.presentationData.isPreview, let channel = item.message.peers[item.message.id.peerId] as? TelegramChannel,
+           case .broadcast = channel.info, ClientSettings.shared.bool("chats.wideChannelPosts") {
+            useWideChannelPosts = true
+            allowFullWidth = true
+        }
+
+        needsSummarizeButton = needsSummarizeButton && ExteralessAIHooks.messageSummaryVisible
+
         var tmpWidth: CGFloat
         if allowFullWidth {
             tmpWidth = baseWidth
@@ -2157,7 +2170,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         for attribute in firstMessage.attributes {
             if let attribute = attribute as? GuestChatMessageAttribute {
                 if let peer = firstMessage.peers[attribute.peerId] {
-                    guestChatViaFromNameString = EnginePeer(peer).compactDisplayTitle
+                    guestChatViaFromNameString = EnginePeer(peer).exteralessCompactDisplayTitle(account: item.context.account)
                 }
             } else if let attribute = attribute as? InlineBotMessageAttribute {
                 if let peerId = attribute.peerId, let bot = firstMessage.peers[peerId] as? TelegramUser {
@@ -2402,7 +2415,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         var bottomNodeMergeStatus: ChatMessageBubbleMergeStatus = mergedBottom.merged ? (incoming ? .Left : .Right) : .None(incoming ? .Incoming : .Outgoing)
         
         let bubbleReactions: ReactionsMessageAttribute
-        if needReactions || forceReactionsOutside {
+        if (needReactions || forceReactionsOutside) && !exteralessHideMessageReactions(message: EngineMessage(item.message)) {
             bubbleReactions = mergedMessageReactions(attributes: item.message.attributes, isTags: item.message.areReactionsTags(accountPeerId: item.context.account.peerId)) ?? ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
         } else {
             bubbleReactions = ReactionsMessageAttribute(canViewList: false, isTags: false, reactions: [], recentPeers: [], topPeers: [])
@@ -2457,7 +2470,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         if let peer = firstMessage.peers[firstMessage.id.peerId] as? TelegramChannel, case .broadcast = peer.info, item.content.firstMessage.adAttribute == nil {
             let peer = (peer as Peer)
             let nameColors: PeerNameColors.Colors?
-            switch peer.nameColor {
+            switch exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(peer)).nameColor {
             case let .preset(nameColor):
                 nameColors = item.context.peerNameColors.get(nameColor, dark: item.presentationData.theme.theme.overallDarkAppearance)
             case let .collectible(collectibleColor):
@@ -2468,7 +2481,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             authorNameColor = nameColors?.main
         } else if let effectiveAuthor = effectiveAuthor {
             let nameColors: PeerNameColors.Colors
-            switch effectiveAuthor.nameColor {
+            switch exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(effectiveAuthor)).nameColor {
             case let .preset(nameColor):
                 nameColors = item.context.peerNameColors.get(nameColor, dark: item.presentationData.theme.theme.overallDarkAppearance)
             case let .collectible(collectibleColor):
@@ -2487,11 +2500,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 
         if initialDisplayHeader && displayAuthorInfo {
             if let peer = firstMessage.peers[firstMessage.id.peerId] as? TelegramChannel, case .broadcast = peer.info, item.content.firstMessage.adAttribute == nil, !overrideEffectiveAuthor {
-                authorNameString = EnginePeer(peer).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                authorNameString = EnginePeer(peer).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 
                 let peer = (peer as Peer)
                 let nameColors: PeerNameColors.Colors?
-                switch peer.nameColor {
+                switch exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(peer)).nameColor {
                 case let .preset(nameColor):
                     nameColors = item.context.peerNameColors.get(nameColor, dark: item.presentationData.theme.theme.overallDarkAppearance)
                 case let .collectible(collectibleColor):
@@ -2501,10 +2514,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 }
                 authorNameColor = nameColors?.main
             } else if let effectiveAuthor = effectiveAuthor {
-                authorNameString = EnginePeer(effectiveAuthor).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                authorNameString = EnginePeer(effectiveAuthor).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 
                 let nameColors: PeerNameColors.Colors
-                switch effectiveAuthor.nameColor {
+                switch exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(effectiveAuthor)).nameColor {
                 case let .preset(nameColor):
                     nameColors = item.context.peerNameColors.get(nameColor, dark: item.presentationData.theme.theme.overallDarkAppearance)
                 case let .collectible(collectibleColor):
@@ -2521,18 +2534,18 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 authorNameColor = color
 
                 if case let .peer(peerId) = item.chatLocation, let authorPeerId = item.message.author?.id, authorPeerId == peerId {
-                    if effectiveAuthor is TelegramChannel, let emojiStatus = effectiveAuthor.emojiStatus {
+                    if effectiveAuthor is TelegramChannel, let emojiStatus = exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(effectiveAuthor), surface: .messageAuthor).emojiStatus {
                         currentCredibilityIcon = (.animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: incoming ? item.presentationData.theme.theme.chat.message.incoming.mediaPlaceholderColor : item.presentationData.theme.theme.chat.message.outgoing.mediaPlaceholderColor, themeColor: color.withMultipliedAlpha(0.4), loopMode: .count(2)), nil)
                     }
                 } else if effectiveAuthor.isScam {
                     currentCredibilityIcon = (.text(color: incoming ? item.presentationData.theme.theme.chat.message.incoming.scamColor : item.presentationData.theme.theme.chat.message.outgoing.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased()), nil)
                 } else if effectiveAuthor.isFake {
                     currentCredibilityIcon = (.text(color: incoming ? item.presentationData.theme.theme.chat.message.incoming.scamColor : item.presentationData.theme.theme.chat.message.outgoing.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased()), nil)
-                } else if let emojiStatus = effectiveAuthor.emojiStatus {
+                } else if let emojiStatus = exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(effectiveAuthor), surface: .messageAuthor).emojiStatus {
                     currentCredibilityIcon = (.animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 20.0, height: 20.0), placeholderColor: incoming ? item.presentationData.theme.theme.chat.message.incoming.mediaPlaceholderColor : item.presentationData.theme.theme.chat.message.outgoing.mediaPlaceholderColor, themeColor: color.withMultipliedAlpha(0.4), loopMode: .count(2)), emojiStatus.color.flatMap { UIColor(rgb: UInt32(bitPattern: $0)) })
                 } else if effectiveAuthor.isVerified {
                     currentCredibilityIcon = (.verified(fillColor: item.presentationData.theme.theme.list.itemCheckColors.fillColor, foregroundColor: item.presentationData.theme.theme.list.itemCheckColors.foregroundColor, sizeType: .compact), nil)
-                } else if effectiveAuthor.isPremium {
+                } else if exteralessIdentityPresentation(account: item.context.account, peer: EnginePeer(effectiveAuthor), surface: .messageAuthor).premiumBadge {
                     currentCredibilityIcon = (.premium(color: color.withMultipliedAlpha(0.4)), nil)
                 }
             }
@@ -2722,7 +2735,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     hasAutoremove: message.isSelfExpiring,
                     canViewReactionList: canViewMessageReactionList(message: EngineMessage(message)),
                     animationCache: item.controllerInteraction.presentationContext.animationCache,
-                    animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                    animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                    retention: EngineMessage(item.message).exteralessRetention
                 ))
                 
                 mosaicStatusSizeAndApply = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)
@@ -2866,7 +2880,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 }
                 
                 var boostCount: Int = 0
-                if incoming {
+                if incoming && ExteralessIdentityPresentation.shared.policy.premiumItemBoosts {
                     for attribute in item.message.attributes {
                         if let attribute = attribute as? BoostCountMessageAttribute {
                             boostCount = attribute.count
@@ -2956,11 +2970,11 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 let forwardPsaType: String? = forwardInfo.psaType
                 
                 let resolvedForwardInfo = chatMessageForwardInfoDisplay(forwardInfo: forwardInfo, messageId: firstMessage.id, previouslyApplied: currentForwardInfo, peerDisplayTitle: { peer in
-                    return peer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                    return peer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 })
                 forwardSource = resolvedForwardInfo.source
                 forwardAuthorSignature = resolvedForwardInfo.authorSignature
-                let sizeAndApply = forwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .bubble(incoming: incoming), forwardSource, forwardAuthorSignature, forwardInlineBotNameString, forwardPsaType, nil, CGSize(width: maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right, height: CGFloat.greatestFiniteMagnitude))
+                let sizeAndApply = forwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .bubble(incoming: incoming), forwardSource, forwardAuthorSignature, forwardInlineBotNameString, forwardPsaType, nil, item.message.forwardInfo?.date, CGSize(width: maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right, height: CGFloat.greatestFiniteMagnitude))
                 forwardInfoSizeApply = (sizeAndApply.0, { width in sizeAndApply.1(width) })
                 
                 headerSize.height += 2.0
@@ -2991,7 +3005,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                     }
                 }
                 
-                let sizeAndApply = forwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .bubble(incoming: incoming), forwardSource, nil, nil, nil, ChatMessageForwardInfoNode.StoryData(storyType: storyType), CGSize(width: maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right, height: CGFloat.greatestFiniteMagnitude))
+                let sizeAndApply = forwardInfoLayout(item.context, item.presentationData, item.presentationData.strings, .bubble(incoming: incoming), forwardSource, nil, nil, nil, ChatMessageForwardInfoNode.StoryData(storyType: storyType), nil, CGSize(width: maximumNodeWidth - layoutConstants.text.bubbleInsets.left - layoutConstants.text.bubbleInsets.right, height: CGFloat.greatestFiniteMagnitude))
                 forwardInfoSizeApply = (sizeAndApply.0, { width in sizeAndApply.1(width) })
                 
                 if storyType != .regular {
@@ -3112,7 +3126,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         
         var contentNodePropertiesAndFinalize: [(ChatMessageBubbleContentProperties, ChatMessageBubbleContentPosition?, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool, ListViewItemApply?) -> Void), UInt32?, Bool?)] = []
         
-        var maxContentWidth: CGFloat = headerSize.width
+        var maxContentWidth: CGFloat = useWideChannelPosts ? max(headerSize.width, maximumNodeWidth) : headerSize.width
         
         var actionButtonsFinalize: ((CGFloat) -> (CGSize, (_ animation: ListViewItemUpdateAnimation) -> ChatMessageActionButtonsNode))?
         if let additionalContent = item.additionalContent, case let .eventLogGroupedMessages(messages, hasButton) = additionalContent, hasButton {
@@ -3430,7 +3444,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     bottomLeft = .none(tail: false)
                                 case let .None(tailStatus):
                                     if case .Incoming = tailStatus {
-                                        bottomLeft = .none(tail: true)
+                                        bottomLeft = .none(tail: !ClientSettings.shared.bool("chats.removeMessageTail", default: true))
                                     } else {
                                         bottomLeft = .none(tail: false)
                                     }
@@ -3447,7 +3461,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                                     bottomRight = .mergedBubble
                                 case let .None(tailStatus):
                                     if case .Outgoing = tailStatus {
-                                        bottomRight = .none(tail: true)
+                                        bottomRight = .none(tail: !ClientSettings.shared.bool("chats.removeMessageTail", default: true))
                                     } else {
                                         bottomRight = .none(tail: false)
                                     }
@@ -3942,6 +3956,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         
         strongSelf.currentInputParams = inputParams
         strongSelf.currentApplyParams = applyInfo
+        strongSelf.mainContainerNode.alpha = exteralessRetentionOpacity(messages: item.content.map { EngineMessage($0.0) })
         strongSelf.contentLayoutInsets = layoutInsets
         
         if item.message.id.namespace == Namespaces.Message.Local || item.message.id.namespace == Namespaces.Message.ScheduledLocal || item.message.id.namespace == Namespaces.Message.QuickReplyLocal {
@@ -4350,7 +4365,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             }
             
             var boostCount: Int = 0
-            if incoming {
+            if incoming && ExteralessIdentityPresentation.shared.policy.premiumItemBoosts {
                 for attribute in item.message.attributes {
                     if let attribute = attribute as? BoostCountMessageAttribute {
                         boostCount = attribute.count
@@ -5829,7 +5844,22 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         switch recognizer.state {
         case .ended:
             if let (gesture, location) = recognizer.lastRecognizedGestureAndLocation, let item = self.item {
-                if let action = self.gestureRecognized(gesture: gesture, location: location, recognizer: nil) {
+                let action = self.gestureRecognized(gesture: gesture, location: location, recognizer: nil)
+                let doubleTapMessage: Message
+                if case let .openContextMenu(menu)? = action {
+                    doubleTapMessage = menu.tapMessage
+                } else {
+                    doubleTapMessage = item.message
+                }
+                if case .doubleTap = gesture, exteralessPerformDoubleTap(message: EngineMessage(doubleTapMessage), accountPeerId: item.context.account.peerId, host: item.controllerInteraction.chatControllerNode() as? ExteralessChatMessageActionHost, openMenu: {
+                    item.controllerInteraction.openMessageContextMenu(doubleTapMessage, false, self, self.bounds, nil, nil)
+                }, reply: {
+                    if case .reply = item.controllerInteraction.canSetupReply(doubleTapMessage) { item.controllerInteraction.setupReply(doubleTapMessage.id) }
+                }) {
+                    self.mainContainerNode.cancelGesture()
+                    return
+                }
+                if let action = action {
                     if case .doubleTap = gesture {
                         self.mainContainerNode.cancelGesture()
                     }
@@ -7779,19 +7809,24 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         self.updateVisibility(isScroll: false)
     }
     
+    private let aiSummaryOperations = AINativeOperationRegistry<EngineMessage.Id>()
+
     private func toggleSummarization() {
         guard let item = self.item else {
             return
         }
         
         if item.controllerInteraction.summarizedMessageIds.contains(item.message.id) {
+            self.aiSummaryOperations.cancel(item.message.id)
             item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
             let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
         } else {
+            guard ExteralessAIHooks.messageSummaryVisible else { return }
             item.controllerInteraction.summarizedMessageIds.insert(item.message.id)
             let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
             
-            let translateToLanguage = item.associatedData.translateToLanguage
+            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: true)
+            let translateToLanguage = display.selection.language
             var requestSummary = true
             for attribute in item.message.attributes {
                 if let attribute = attribute as? SummarizationMessageAttribute, attribute.summaryForLang(translateToLanguage) != nil {
@@ -7800,8 +7835,16 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 }
             }
             if requestSummary {
-                let _ = (item.context.engine.messages.summarizeMessage(messageId: item.message.id, translateToLang: translateToLanguage)
-                |> deliverOnMainQueue).start(error: { error in
+                let generation = self.aiSummaryOperations.begin(item.message.id)
+                let disposable = MetaDisposable()
+                self.aiSummaryOperations.bind(item.message.id, generation: generation, cancel: { disposable.dispose() })
+                disposable.set((ExteralessAIHooks.summarize(context: item.context, messageId: item.message.id, toLanguage: translateToLanguage, fallback: {
+                    item.context.engine.messages.summarizeMessage(messageId: item.message.id, translateToLang: translateToLanguage)
+                })
+                |> deliverOnMainQueue).start(error: { [weak self] error in
+                    guard let self, self.aiSummaryOperations.finish(item.message.id, generation: generation) else { return }
+                    item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
+                    let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
                     if case .limitExceededPremium = error, let parentController = item.controllerInteraction.navigationController()?.topViewController as? ViewController {
                         item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
                         let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
@@ -7813,7 +7856,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                         )
                         parentController.present(controller, in: .window(.root))
                     }
-                })
+                }, completed: { [weak self] in
+                    guard let self, self.aiSummaryOperations.finish(item.message.id, generation: generation) else { return }
+                    let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
+                }))
             }
         }
     }

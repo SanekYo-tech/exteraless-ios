@@ -301,9 +301,11 @@ func processSecretChatIncomingDecryptedOperations(encryptionProvider: Encryption
                                                 }
                                             }
                                         }
+                                        exteralessRetainBeforeDelete(transaction: transaction, mediaBox: mediaBox, ids: filteredMessageIds)
                                         _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: filteredMessageIds)
                                     }
                                 case .clearHistory:
+                                    exteralessRetainBeforeRangeDeletion(transaction: transaction, mediaBox: mediaBox, peerId: peerId, namespaces: [Namespaces.Message.Local, Namespaces.Message.SecretIncoming], maxId: Int32.max)
                                     _internal_clearHistory(transaction: transaction, mediaBox: mediaBox, peerId: peerId, threadId: nil, namespaces: .all)
                                 case let .markMessagesContentAsConsumed(globallyUniqueIds):
                                     var messageIds: [MessageId] = []

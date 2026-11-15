@@ -111,8 +111,7 @@ func managedSynchronizeConsumeMessageContentOperations(postbox: Postbox, network
 
 private func synchronizeConsumeMessageContents(transaction: Transaction, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeConsumeMessageContentsOperation) -> Signal<Void, NoError> {
     if peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudGroup {
-        return network.request(Api.functions.messages.readMessageContents(id: operation.messageIds.map { $0.id }))
-        |> map(Optional.init)
+        return exteralessReadMessageContents(network: network, peerId: peerId, ids: operation.messageIds.map { $0.id })
         |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
             return .single(nil)
         }
@@ -128,7 +127,7 @@ private func synchronizeConsumeMessageContents(transaction: Transaction, network
         }
     } else if peerId.namespace == Namespaces.Peer.CloudChannel {
         if let peer = transaction.getPeer(peerId), let inputChannel = apiInputChannel(peer) {
-            return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: operation.messageIds.map { $0.id }))
+            return exteralessReadChannelMessageContents(network: network, peerId: peerId, channel: inputChannel, ids: operation.messageIds.map { $0.id })
             |> map(Optional.init)
             |> `catch` { _ -> Signal<Api.Bool?, NoError> in
                 return .single(nil)

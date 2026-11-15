@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import TelegramCore
@@ -21,6 +22,7 @@ import ChatPresentationInterfaceState
 
 extension ChatControllerImpl {
     func openMessageContextMenu(message: EngineMessage, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
+        if MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: message) }) { return }
         if self.presentationInterfaceState.interfaceState.selectionState != nil {
             return
         }
@@ -30,7 +32,7 @@ extension ChatControllerImpl {
         
         let recognizer: TapLongTapOrDoubleTapGestureRecognizer? = anyRecognizer as? TapLongTapOrDoubleTapGestureRecognizer
         let gesture: ContextGesture? = anyRecognizer as? ContextGesture
-        if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id) {
+        if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id)?.filter({ EngineMessage($0).exteralessRetention == nil }) {
             (self.view.window as? WindowHost)?.cancelInteractiveKeyboardGestures()
             self.chatDisplayNode.cancelInteractiveKeyboardGestures()
             var updatedMessages = messages
@@ -54,8 +56,9 @@ extension ChatControllerImpl {
                 peerMessageAllowedReactions(context: self.context, message: topMessage, ignoreDefault: canBypassReactionRestrictions),
                 peerMessageSelectedReactions(context: self.context, message: EngineMessage(topMessage)),
                 topMessageReactions(context: self.context, message: topMessage, subPeerId: self.chatLocation.threadId.flatMap(EnginePeer.Id.init), ignoreDefault: canBypassReactionRestrictions),
-                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager)
-            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips in
+                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager),
+                self.exteralessRetentionContextItems(message: message)
+            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips, retentionItems in
                 guard let self else {
                     return
                 }
@@ -63,9 +66,23 @@ extension ChatControllerImpl {
                 var (allowedReactions, _) = allowedReactionsAndStars
                 
                 var actions = actions
+                if case let .list(items) = actions.content {
+                    let aiItems = MainActor.assumeIsolated {
+                        self.exteralessAIContextItems(message: message)
+                    }
+                    if !aiItems.isEmpty || !retentionItems.isEmpty {
+                        let separator: [ContextMenuItem] = items.isEmpty ? [] : [.separator]
+                        actions.content = .list(items + separator + aiItems + retentionItems)
+                    }
+                }
                 switch actions.content {
                 case let .list(itemList):
-                    if itemList.isEmpty {
+                    if itemList.isEmpty && MainActor.assumeIsolated({
+                        ExteralessPluginMenuEntry.appending(to: [], context: self.context,
+                            placement: "MESSAGE_CONTEXT_MENU",
+                            peer: self.presentationInterfaceState.renderedPeer?.chatMainPeer.map(EnginePeer.init),
+                            message: message, source: self).isEmpty
+                    }) {
                         return
                     }
                 case .custom, .twoLists:
@@ -128,8 +145,8 @@ extension ChatControllerImpl {
                 actions.context = self.context
                 actions.animationCache = self.controllerInteraction?.presentationContext.animationCache
                                                          
-                if canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty {
-                    actions.reactionItems = topReactions.map { ReactionContextItem.reaction(item: $0, icon: .none) }
+                if ChatMenuPolicy.enabled("showReactions"), canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty {
+                    actions.reactionItems = topReactions.filter { ExteralessIdentityPresentation.shared.policy.premiumItemStarInReactions || $0.reaction.rawValue != .stars }.map { ReactionContextItem.reaction(item: $0, icon: .none) }
                     actions.selectedReactionItems = selectedReactions.reactions
                     if message.areReactionsTags(accountPeerId: self.context.account.peerId) {
                         if self.presentationInterfaceState.isPremium {
@@ -336,6 +353,10 @@ extension ChatControllerImpl {
                 }
                 
                 let isSecret = self.presentationInterfaceState.copyProtectionEnabled || self.presentationInterfaceState.myCopyProtectionEnabled || self.chatLocation.peerId?.namespace == Namespaces.Peer.SecretChat
+                actionsSignal = ExteralessPluginMenuEntry.updating(items: actionsSignal,
+                    context: self.context, placement: "MESSAGE_CONTEXT_MENU",
+                    peer: self.presentationInterfaceState.renderedPeer?.chatMainPeer.map(EnginePeer.init),
+                    message: message, source: self)
                 let controller = makeContextController(presentationData: self.presentationData, source: source, items: actionsSignal, recognizer: recognizer, gesture: gesture, disableScreenshots: isSecret, hideReactionPanelTail: hideReactionPanelTail)
                 controller.dismissed = { [weak self] in
                     self?.canReadHistory.set(true)

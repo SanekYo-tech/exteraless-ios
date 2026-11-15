@@ -2086,7 +2086,9 @@ func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPi
             }
             #endif
             
-            return account.network.request(Api.functions.stories.incrementStoryViews(peer: inputPeer, id: [id]))
+            return exteralessPrivacyRequest(allow: { exteralessAllowsStoryRead(network: account.network, peerId: peerId) }, suppressed: { Api.Bool.boolFalse }, request: {
+                account.network.request(Api.functions.stories.incrementStoryViews(peer: inputPeer, id: [id]))
+            })
             |> `catch` { _ -> Signal<Api.Bool, NoError> in
                 return .single(.boolFalse)
             }
@@ -2102,7 +2104,11 @@ func _internal_markStoryAsSeen(account: Account, peerId: PeerId, id: Int32, asPi
             
             #if DEBUG && false
             #else
-            _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            // Capture a private viewer session while it is still alive, rather than
+            // replaying its views when its operation log runs after the viewer closes.
+            if exteralessAllowsStoryRead(network: account.network, peerId: peerId) {
+                _internal_addSynchronizeViewStoriesOperation(peerId: peerId, storyId: id, transaction: transaction)
+            }
             #endif
             
             return transaction.getPeer(peerId).flatMap(apiInputUser)

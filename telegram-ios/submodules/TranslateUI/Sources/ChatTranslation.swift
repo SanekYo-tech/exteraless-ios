@@ -201,7 +201,9 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
         default:
             break
         }
-        return context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible)
+        return ExteralessAIHooks.translateMessages(context: context, messageIds: messageIdsToTranslate, fromLanguage: fromLang, toLanguage: toLang, automatic: true, fallback: {
+            context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible)
+        })
         |> `catch` { _ -> Signal<Never, NoError> in
             return .complete()
         }
@@ -209,6 +211,12 @@ public func translateMessageIds(context: AccountContext, messageIds: [EngineMess
 }
 
 public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64?) -> Signal<ChatTranslationState?, NoError> {
+    ExteralessAIHooks.policyChanges() |> mapToSignal { _ in
+        exteralessBaseChatTranslationState(context: context, peerId: peerId, threadId: threadId)
+    }
+}
+
+private func exteralessBaseChatTranslationState(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64?) -> Signal<ChatTranslationState?, NoError> {
     if peerId.id == EnginePeer.Id.Id._internalFromInt64Value(777000) {
         return .single(nil)
     }

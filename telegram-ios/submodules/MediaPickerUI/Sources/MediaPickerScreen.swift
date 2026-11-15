@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import Display
@@ -36,6 +37,35 @@ import GlassBarButtonComponent
 import GlassControls
 import AlertComponent
 import MultilineTextComponent
+
+func mediaPickerSendParameters(_ parameters: ChatSendMessageActionSheetController.SendParameters?, textIsAboveMedia: Bool) -> ChatSendMessageActionSheetController.SendParameters {
+    return parameters ?? ChatSendMessageActionSheetController.SendParameters(effect: nil, textIsAboveMedia: textIsAboveMedia)
+}
+
+func mediaPickerScheduleCompletion(parameters: ChatSendMessageActionSheetController.SendParameters?, textIsAboveMedia: Bool, send: @escaping (Bool, Int32, ChatSendMessageActionSheetController.SendParameters) -> Void) -> (ChatSendMessageActionSheetController.SendParameters.Schedule) -> Void {
+    let parameters = mediaPickerSendParameters(parameters, textIsAboveMedia: textIsAboveMedia)
+    return { result in
+        send(result.silentPosting, result.time, parameters.withUpdatedSchedule(result))
+    }
+}
+
+/// The ObjC gallery calls its completed callback synchronously from schedule done.
+/// Keep the complete result only for that invocation, never on the picker/draft.
+final class MediaPickerLegacyScheduleBridge {
+    private var result: ChatSendMessageActionSheetController.SendParameters.Schedule?
+
+    func complete(_ result: ChatSendMessageActionSheetController.SendParameters.Schedule, legacyCompletion: (Int32, Bool) -> Void) {
+        self.result = result
+        defer { self.result = nil }
+        legacyCompletion(result.time, result.silentPosting)
+    }
+
+    func parameters(textIsAboveMedia: Bool) -> ChatSendMessageActionSheetController.SendParameters? {
+        return self.result.map { result in
+            mediaPickerSendParameters(nil, textIsAboveMedia: textIsAboveMedia).withUpdatedSchedule(result)
+        }
+    }
+}
 
 final class MediaPickerInteraction {
     let downloadManager: AssetDownloadManager
@@ -286,6 +316,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     
     public var openCamera: ((Any?) -> Void)?
     public var presentSchedulePicker: (Bool, @escaping (Int32, Bool) -> Void) -> Void = { _, _ in }
+    public var presentSchedulePickerWithResult: ((Bool, Bool?, @escaping (ChatSendMessageActionSheetController.SendParameters.Schedule) -> Void) -> Void)?
     public var presentTimerPicker: (@escaping (Int32) -> Void) -> Void = { _ in }
     public var getCaptionPanelView: () -> TGCaptionPanelView? = { return nil }
     public var openBoost: () -> Void = { }
@@ -312,6 +343,17 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     public var isMinimized: Bool = false
     
     public var getCurrentSendMessageContextMediaPreview: (() -> ChatSendMessageContextScreenMediaPreview?)? = nil
+
+    private func requestSchedulePicker(media: Bool, silentPosting: Bool? = nil, completion: @escaping (ChatSendMessageActionSheetController.SendParameters.Schedule) -> Void) {
+        if let presentSchedulePickerWithResult = self.presentSchedulePickerWithResult {
+            presentSchedulePickerWithResult(media, silentPosting, completion)
+        } else {
+            // Source-compatible entry for hosts which still provide the old picker.
+            self.presentSchedulePicker(media, { time, silentPosting in
+                completion(.init(time: time, repeatPeriod: nil, silentPosting: silentPosting))
+            })
+        }
+    }
     
     private let selectedCollection = Promise<PHAssetCollection?>(nil)
     private var selectedCollectionValue: PHAssetCollection? {
@@ -752,7 +794,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             var useLegacyCamera = false
             var useModernCamera = false
             if case .assets(nil, .default) = controller.subject {
-                useLegacyCamera = true
+                useLegacyCamera = !ClientSettings.shared.bool("chats.hideCameraTile")
             } else if case .assets(nil, let mode) = controller.subject {
                 switch mode {
                 case .createSticker, .createAvatar:
@@ -1423,6 +1465,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             let hasSchedule = true
             
             self.openingMedia = true
+            let scheduleBridge = MediaPickerLegacyScheduleBridge()
             
             self.currentGalleryController = presentLegacyMediaPickerGallery(context: controller.context, peer: controller.peer, threadTitle: controller.threadTitle, chatLocation: controller.chatLocation, isScheduledMessages: controller.isScheduledMessages, isActionButtonDone: controller.isActionButtonDone, presentationData: self.presentationData, source: .fetchResult(fetchResult: fetchResult, index: index, reversed: reversed), immediateThumbnail: immediateThumbnail, selectionContext: interaction.selectionState?.selectionLimit == 1 ? nil : interaction.selectionState, editingContext: interaction.editingState, asFile: controller.subject.asFile, hasSilentPosting: true, hasSchedule: hasSchedule, hasTimer: hasTimer, updateHiddenMedia: { [weak self] id in
                 self?.hiddenMediaId.set(.single(id))
@@ -1432,9 +1475,14 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 return self?.transitionView(for: identifier)
             }, completed: { [weak self] result, silently, scheduleTime, completion in
                 if let strongSelf = self {
-                    strongSelf.controller?.interaction?.sendSelected(result, silently, scheduleTime, false, nil, completion)
+                    let parameters = scheduleBridge.parameters(textIsAboveMedia: interaction.editingState.isCaptionAbove())
+                    strongSelf.controller?.interaction?.sendSelected(result, silently, scheduleTime, false, parameters, completion)
                 }
-            }, presentSchedulePicker: controller.presentSchedulePicker, presentTimerPicker: controller.presentTimerPicker, getCaptionPanelView: controller.getCaptionPanelView, present: { [weak self] c, a in
+            }, presentSchedulePicker: { [weak controller] media, done in
+                controller?.requestSchedulePicker(media: media, completion: { result in
+                    scheduleBridge.complete(result, legacyCompletion: done)
+                })
+            }, presentTimerPicker: controller.presentTimerPicker, getCaptionPanelView: controller.getCaptionPanelView, present: { [weak self] c, a in
                 self?.currentGalleryParentController = c
                 c.navigationPresentation = .flatModal
                 if let parentController = self?.controller?.parentController() {
@@ -1471,6 +1519,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             }
             
             self.openingMedia = true
+            let scheduleBridge = MediaPickerLegacyScheduleBridge()
             self.currentGalleryController = presentLegacyMediaPickerGallery(context: controller.context, peer: controller.peer, threadTitle: controller.threadTitle, chatLocation: controller.chatLocation, isScheduledMessages: controller.isScheduledMessages, presentationData: self.presentationData, source: .selection(item: item), immediateThumbnail: immediateThumbnail, selectionContext: interaction.selectionState, editingContext: interaction.editingState, asFile: controller.subject.asFile, hasSilentPosting: true, hasSchedule: true, hasTimer: hasTimer, updateHiddenMedia: { [weak self] id in
                 self?.hiddenMediaId.set(.single(id))
             }, initialLayout: layout, transitionHostView: { [weak self] in
@@ -1479,9 +1528,14 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 return self?.transitionView(for: identifier)
             }, completed: { [weak self] result, silently, scheduleTime, completion in
                 if let strongSelf = self {
-                    strongSelf.controller?.interaction?.sendSelected(result, silently, scheduleTime, false, nil, completion)
+                    let parameters = scheduleBridge.parameters(textIsAboveMedia: interaction.editingState.isCaptionAbove())
+                    strongSelf.controller?.interaction?.sendSelected(result, silently, scheduleTime, false, parameters, completion)
                 }
-            }, presentSchedulePicker: controller.presentSchedulePicker, presentTimerPicker: controller.presentTimerPicker, getCaptionPanelView: controller.getCaptionPanelView, present: { [weak self] c, a in
+            }, presentSchedulePicker: { [weak controller] media, done in
+                controller?.requestSchedulePicker(media: media, completion: { result in
+                    scheduleBridge.complete(result, legacyCompletion: done)
+                })
+            }, presentTimerPicker: controller.presentTimerPicker, getCaptionPanelView: controller.getCaptionPanelView, present: { [weak self] c, a in
                 self?.currentGalleryParentController = c
                 self?.controller?.present(c, in: .window(.root), with: a, blockInteraction: true)
             }, finishedTransitionIn: { [weak self] in
@@ -1521,17 +1575,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             }
             controller.dismissAllTooltips()
             
-            var parameters = parameters
-            if parameters == nil {
-                var textIsAboveMedia = false
-                if let interaction = controller.interaction {
-                    textIsAboveMedia = interaction.editingState.isCaptionAbove()
-                }
-                parameters = ChatSendMessageActionSheetController.SendParameters(
-                    effect: nil,
-                    textIsAboveMedia: textIsAboveMedia
-                )
-            }
+            let parameters = mediaPickerSendParameters(parameters, textIsAboveMedia: controller.interaction?.editingState.isCaptionAbove() ?? false)
             
             var hasHeic = false
             let allItems = controller.interaction?.selectionState?.selectedItems() ?? []
@@ -2386,9 +2430,10 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
             }
         }, schedule: { [weak self] parameters in
             if let strongSelf = self {
-                strongSelf.presentSchedulePicker(false, { [weak self] time, silentPosting in
+                let completion = mediaPickerScheduleCompletion(parameters: parameters, textIsAboveMedia: strongSelf.interaction?.editingState.isCaptionAbove() ?? false, send: { [weak self] silentPosting, time, parameters in
                     self?.interaction?.sendSelected(nil, silentPosting, time, true, parameters, {})
                 })
+                strongSelf.requestSchedulePicker(media: false, silentPosting: parameters?.schedule?.silentPosting ?? parameters?.notificationOverride, completion: completion)
             }
         }, dismissInput: { [weak self] in
             if let strongSelf = self {
@@ -2405,7 +2450,10 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
         }
         self.interaction?.displayLivePhotoIcon = displayLivePhotoIcon
         
-        let highQualityPhoto = UserDefaults.standard.bool(forKey: "TG_photoHighQuality_v0")
+        var highQualityPhoto = UserDefaults.standard.bool(forKey: "TG_photoHighQuality_v0")
+        if case .assets(_, .default) = subject, ClientSettings.shared.bool("chats.alwaysSendInHD", default: true) {
+            highQualityPhoto = true
+        }
         if highQualityPhoto {
             self.interaction?.editingState.setHighQualityPhoto(highQualityPhoto)
         }
@@ -3096,6 +3144,7 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                 let mediaPicker = MediaPickerScreenImpl(context: strongSelf.context, updatedPresentationData: strongSelf.updatedPresentationData, warpContentsOnEdges: strongSelf.warpContentsOnEdges, peer: strongSelf.peer, threadTitle: strongSelf.threadTitle, chatLocation: strongSelf.chatLocation, isScheduledMessages: strongSelf.isScheduledMessages, bannedSendPhotos: strongSelf.bannedSendPhotos, bannedSendVideos: strongSelf.bannedSendVideos, subject: .assets(collection, mode), editingContext: strongSelf.interaction?.editingState, selectionContext: strongSelf.interaction?.selectionState)
                 
                 mediaPicker.presentSchedulePicker = strongSelf.presentSchedulePicker
+                mediaPicker.presentSchedulePickerWithResult = strongSelf.presentSchedulePickerWithResult
                 mediaPicker.presentTimerPicker = strongSelf.presentTimerPicker
                 mediaPicker.getCaptionPanelView = strongSelf.getCaptionPanelView
                 mediaPicker.legacyCompletion = strongSelf.legacyCompletion

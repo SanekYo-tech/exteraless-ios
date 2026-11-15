@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -17,6 +18,7 @@ final class TabBarControllerNode: ASDisplayNode {
         let currentControllerSearchState: ViewController.TabBarSearchState?
         /// The side placement depends on it, and with it the bottom inset the tab gets.
         let itemCount: Int
+        let appearanceStyle: AppearancePresentationPolicy.NavigationVariant
         
         init(
             layout: ContainerViewLayout,
@@ -30,6 +32,7 @@ final class TabBarControllerNode: ASDisplayNode {
             self.isTabBarHidden = isTabBarHidden
             self.currentControllerSearchState = currentControllerSearchState
             self.itemCount = itemCount
+            self.appearanceStyle = AppearancePresentationPolicy.navigationVariant(material: ClientSettings.shared.bool("appearance.newNavigationBarStyle"), wide: ClientSettings.shared.bool("appearance.iosNavigationBarStyle"))
         }
     }
     
@@ -61,6 +64,7 @@ final class TabBarControllerNode: ASDisplayNode {
     private let contextAction: (Int, ContextExtractedContentContainingView, ContextGesture) -> Void
     
     private let tabBarView = ComponentView<Empty>()
+    private let exteralessMaterialBottomFill = UIView()
     
     private let disabledOverlayNode: ASDisplayNode
     private var toolbar: ComponentView<Empty>?
@@ -94,6 +98,9 @@ final class TabBarControllerNode: ASDisplayNode {
                 self.insertSubnode(currentControllerNode, at: 0)
             }
             if let tabBarView = self.tabBarView.view {
+                if self.exteralessMaterialBottomFill.superview != nil {
+                    self.view.bringSubviewToFront(self.exteralessMaterialBottomFill)
+                }
                 self.view.bringSubviewToFront(tabBarView)
             }
         }
@@ -207,6 +214,7 @@ final class TabBarControllerNode: ASDisplayNode {
     }
     
     private func updateImpl(params: Params, transition: ContainedViewLayoutTransition) -> CGFloat? {
+        let appearanceStyle = AppearancePresentationPolicy.navigationVariant(material: ClientSettings.shared.bool("appearance.newNavigationBarStyle"), wide: ClientSettings.shared.bool("appearance.iosNavigationBarStyle"))
         var panelsBottomInset: CGFloat = params.layout.insets(options: []).bottom
         if params.layout.metrics.widthClass == .regular, let inputHeight = params.layout.inputHeight, inputHeight != 0.0 {
             panelsBottomInset = inputHeight + 8.0
@@ -230,6 +238,10 @@ final class TabBarControllerNode: ASDisplayNode {
         }
         
         let sidePlacement = self.sidePlacement(for: params.layout)
+        if sidePlacement == nil {
+            if appearanceStyle == .material { sideInset = 0 }
+            else if appearanceStyle == .wide { sideInset = 8 }
+        }
         let previousAppliedPlacement = self.tabBarView.view == nil ? nil : self.appliedPlacement
         let appliedPlacement = TabBarAppliedPlacement(placement: sidePlacement, containerSize: params.layout.size, isHidden: self.tabBarHidden)
         self.appliedPlacement = appliedPlacement
@@ -337,6 +349,13 @@ final class TabBarControllerNode: ASDisplayNode {
             if tabBarComponentView.superview == nil {
                 self.view.addSubview(tabBarComponentView)
             }
+            if self.exteralessMaterialBottomFill.superview == nil {
+                self.exteralessMaterialBottomFill.isUserInteractionEnabled = false
+                self.view.insertSubview(self.exteralessMaterialBottomFill, belowSubview: tabBarComponentView)
+            }
+            self.exteralessMaterialBottomFill.backgroundColor = self.theme.list.blocksBackgroundColor
+            self.exteralessMaterialBottomFill.isHidden = appearanceStyle != .material || sidePlacement != nil || self.tabBarHidden || params.toolbar != nil
+            transition.updateFrame(view: self.exteralessMaterialBottomFill, frame: CGRect(x: 0, y: tabBarFrame.minY, width: params.layout.size.width, height: max(0, params.layout.size.height - tabBarFrame.minY)))
             let tabBarAlpha: CGFloat = params.toolbar == nil ? 1.0 : 0.0
             if let crossfadeDuration, let previousAppliedPlacement, let previousPlacement = previousAppliedPlacement.placement {
                 if !previousAppliedPlacement.isHidden && tabBarComponentView.alpha > 0.0, let snapshotView = tabBarComponentView.snapshotView(afterScreenUpdates: false) {

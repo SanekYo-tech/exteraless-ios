@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import SwiftSignalKit
@@ -1720,8 +1721,11 @@ public class BrowserScreen: ViewController, MinimizableController {
         return self.displayNode as! Node
     }
     
+    private var exteralessNavigationGestures: ExteralessBrowserGestures?
+
     override public func loadDisplayNode() {
         self.displayNode = Node(controller: self)
+        self.exteralessNavigationGestures = ExteralessBrowserGestures(navigationView: self.displayNode.view)
 
         super.displayNodeDidLoad()
     }

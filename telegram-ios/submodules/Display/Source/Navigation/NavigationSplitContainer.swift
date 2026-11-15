@@ -25,6 +25,7 @@ final class NavigationSplitContainer: ASDisplayNode {
     private let masterContainer: NavigationContainer
     private let detailContainer: NavigationContainer
     private let separator: ASDisplayNode
+    private var contentMasterWidth: CGFloat?
     
     private(set) var masterControllers: [ViewController] = []
     private(set) var detailControllers: [ViewController] = []
@@ -90,8 +91,14 @@ final class NavigationSplitContainer: ASDisplayNode {
         }
     }
 
+    func retireForContentLayoutChange() {
+        self.clearDetailSelection()
+        self.masterContainer.retireForContentLayoutChange()
+        self.detailContainer.retireForContentLayoutChange()
+    }
+
     func scrollToTopProxyFrames(layout: ContainerViewLayout) -> (master: CGRect, detail: CGRect) {
-        let masterWidth = splitMasterWidth(containerSize: layout.size, division: layout.division)
+        let masterWidth = self.contentMasterWidth ?? splitMasterWidth(containerSize: layout.size, division: layout.division)
         let detailWidth = layout.size.width - masterWidth
         let scrollToTopHeight = max(layout.statusBarHeight ?? layout.safeInsets.top, 1.0)
         
@@ -101,8 +108,9 @@ final class NavigationSplitContainer: ASDisplayNode {
         )
     }
 
-    func update(layout: ContainerViewLayout, masterControllers: [ViewController], detailControllers: [ViewController], detailsPlaceholderNode: NavigationDetailsPlaceholderNode?, transition: ContainedViewLayoutTransition) {
-        let masterWidth = splitMasterWidth(containerSize: layout.size, division: layout.division)
+    func update(layout: ContainerViewLayout, masterControllers: [ViewController], detailControllers: [ViewController], detailsPlaceholderNode: NavigationDetailsPlaceholderNode?, transition: ContainedViewLayoutTransition, contentMasterWidth: CGFloat? = nil) {
+        self.contentMasterWidth = contentMasterWidth
+        let masterWidth = contentMasterWidth ?? splitMasterWidth(containerSize: layout.size, division: layout.division)
         let detailWidth = layout.size.width - masterWidth
         
         transition.updateFrame(node: self.masterContainer, frame: CGRect(origin: CGPoint(), size: CGSize(width: masterWidth, height: layout.size.height)))

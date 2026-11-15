@@ -383,8 +383,12 @@ private final class NativeWindow: UIWindow, WindowHost {
     }
 }
 
-public func nativeWindowHostView() -> (UIWindow & WindowHost, WindowHostView) {
-    let window = NativeWindow(frame: UIScreen.main.bounds)
+/// Establish scene ownership before the root controller loads its input views.
+public func nativeWindowHostView(windowScene: UIWindowScene? = nil) -> (UIWindow & WindowHost, WindowHostView) {
+    let window = NativeWindow(frame: windowScene?.screen.bounds ?? UIScreen.main.bounds)
+    if let windowScene {
+        window.windowScene = windowScene
+    }
     registerMainWindowForScreenBounds(window)
     
     let rootViewController = WindowRootViewController()

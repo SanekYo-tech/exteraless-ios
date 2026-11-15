@@ -728,7 +728,8 @@ public final class AccountViewTracker {
                             guard let peer = transaction.getPeer(peerId), let inputPeer = apiInputPeer(peer) else {
                                 return .complete()
                             }
-                            return account.network.request(Api.functions.messages.getMessagesViews(peer: inputPeer, id: messageIds.map { $0.id }, increment: .boolTrue))
+                            let increment: Api.Bool = exteralessAllowsMessageRead(network: account.network, peerId: peerId) ? .boolTrue : .boolFalse
+                            return account.network.request(Api.functions.messages.getMessagesViews(peer: inputPeer, id: messageIds.map { $0.id }, increment: increment))
                             |> map(Optional.init)
                             |> `catch` { _ -> Signal<Api.messages.MessageViews?, NoError> in
                                 return .single(nil)
@@ -972,11 +973,11 @@ public final class AccountViewTracker {
                                 let request: Signal<Bool, MTRpcError>
                                 switch inputPeer {
                                 case .inputPeerChat, .inputPeerSelf, .inputPeerUser:
-                                    request = account.network.request(Api.functions.messages.readMessageContents(id: messageIds.map { $0.id }))
+                                    request = exteralessReadMessageContents(network: account.network, peerId: peerId, ids: messageIds.map { $0.id })
                                     |> map { _ in true }
                                 case let .inputPeerChannel(inputPeerChannelData):
                                     let (channelId, accessHash) = (inputPeerChannelData.channelId, inputPeerChannelData.accessHash)
-                                    request = account.network.request(Api.functions.channels.readMessageContents(channel: .inputChannel(.init(channelId: channelId, accessHash: accessHash)), id: messageIds.map { $0.id }))
+                                    request = exteralessReadChannelMessageContents(network: account.network, peerId: peerId, channel: .inputChannel(.init(channelId: channelId, accessHash: accessHash)), ids: messageIds.map { $0.id })
                                     |> map { _ in true }
                                 default:
                                     return .complete()
@@ -1936,7 +1937,8 @@ public final class AccountViewTracker {
     }
     
     func wrappedMessageHistorySignal(chatLocation: ChatLocationInput, signal: Signal<(MessageHistoryView, ViewUpdateType, InitialMessageHistoryData?), NoError>, fixedCombinedReadStates: MessageHistoryViewReadState?, addHoleIfNeeded: Bool) -> Signal<(MessageHistoryView, ViewUpdateType, InitialMessageHistoryData?), NoError> {
-        var signal = signal
+        var signal = combineLatest(signal, ExteralessFilteringRuntime.shared.changes)
+        |> map { value, _ in value }
         if let postbox = self.account?.postbox, let peerId = chatLocation.peerId, let threadId = chatLocation.threadId {
             let viewKey: PostboxViewKey = .messageHistoryThreadInfo(peerId: peerId, threadId: threadId)
             let fixedReadStates = Atomic<MessageHistoryViewReadState?>(value: nil)
@@ -1970,15 +1972,23 @@ public final class AccountViewTracker {
             }
         }
         
-        let history = withState(signal, { [weak self] () -> Int32 in
+        let history = withState(signal, { [weak self] () -> (viewId: Int32, observations: ExteralessHistoryObservationLifetime) in
             if let strongSelf = self {
-                return OSAtomicIncrement32(&strongSelf.nextViewId)
+                return (OSAtomicIncrement32(&strongSelf.nextViewId), ExteralessHistoryObservationLifetime())
             } else {
-                return -1
+                return (-1, ExteralessHistoryObservationLifetime())
             }
-        }, next: { [weak self] next, viewId in
+        }, next: { [weak self] next, state in
+            let viewId = state.viewId
             if let strongSelf = self {
+                let observation: ExteralessHistoryObservationLifetime.Batch?
+                if let account = strongSelf.account, let peerId = chatLocation.peerId {
+                    observation = exteralessCaptureLoadedMessagesObservation(lifetime: state.observations, account: account, peerId: peerId, messages: next.0.entries.map(\.message))
+                } else {
+                    observation = nil
+                }
                 strongSelf.queue.async {
+                    observation?.start()
                     let (messageIds, localWebpages) = pendingWebpages(entries: next.0.entries)
                     strongSelf.updatePendingWebpages(viewId: viewId, threadId: chatLocation.threadId, messageIds: messageIds, localWebpages: localWebpages)
                     let (pollMessageIds, pollMessageDict) = pollMessages(entries: next.0.entries)
@@ -1990,7 +2000,9 @@ public final class AccountViewTracker {
                     }
                 }
             }
-        }, disposed: { [weak self] viewId in
+        }, disposed: { [weak self] state in
+            state.observations.dispose()
+            let viewId = state.viewId
             if let strongSelf = self {
                 strongSelf.queue.async {
                     strongSelf.updatePendingWebpages(viewId: viewId, threadId: chatLocation.threadId, messageIds: [], localWebpages: [:])
@@ -2614,6 +2626,8 @@ public final class AccountViewTracker {
     }
     
     private func wrappedChatListView(signal: Signal<(ChatListView, ViewUpdateType), NoError>) -> Signal<(ChatListView, ViewUpdateType), NoError> {
+        let signal = combineLatest(signal, ExteralessFilteringRuntime.shared.changes)
+        |> map { value, _ in value }
         return withState(signal, { [weak self] () -> Int32 in
             if let strongSelf = self {
                 return OSAtomicIncrement32(&strongSelf.nextViewId)

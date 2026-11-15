@@ -216,12 +216,12 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
     public let tapMessage: ((EngineRawMessage) -> Void)?
     public let clickThroughMessage: (UIView?, CGPoint?) -> Void
     public let toggleMessagesSelection: ([EngineMessage.Id], Bool) -> Void
-    public let sendCurrentMessage: (Bool, ChatSendMessageEffect?) -> Void
+    public let sendCurrentMessage: (Bool?, ChatSendMessageEffect?) -> Void
     public let sendMessage: (String, EngineMessage.Id?) -> Void
     public let sendSticker: (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [EngineItemCollectionId]) -> Bool
     public let sendEmoji: (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void
     public let sendGif: (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool
-    public let sendBotContextResultAsGif: (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool, Bool) -> Bool
+    public let sendBotContextResultAsGif: (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool?, Bool) -> Bool
     public let editGif: (FileMediaReference, Bool) -> Void
     public let requestMessageActionCallback: (EngineRawMessage, EngineMemoryBuffer?, Bool, Bool, Promise<Bool>?) -> Void
     public let requestMessageActionUrlAuth: (String, MessageActionUrlSubject) -> Void
@@ -409,12 +409,12 @@ public final class ChatControllerInteraction: ChatControllerInteractionProtocol 
         tapMessage: ((EngineRawMessage) -> Void)?,
         clickThroughMessage: @escaping (UIView?, CGPoint?) -> Void,
         toggleMessagesSelection: @escaping ([EngineMessage.Id], Bool) -> Void,
-        sendCurrentMessage: @escaping (Bool, ChatSendMessageEffect?) -> Void,
+        sendCurrentMessage: @escaping (Bool?, ChatSendMessageEffect?) -> Void,
         sendMessage: @escaping (String, EngineMessage.Id?) -> Void,
         sendSticker: @escaping (FileMediaReference, Bool, Bool, String?, Bool, UIView?, CGRect?, CALayer?, [EngineItemCollectionId]) -> Bool,
         sendEmoji: @escaping (String, ChatTextInputTextCustomEmojiAttribute, Bool) -> Void,
         sendGif: @escaping (FileMediaReference, UIView, CGRect, Bool, Bool) -> Bool,
-        sendBotContextResultAsGif: @escaping (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool, Bool) -> Bool,
+        sendBotContextResultAsGif: @escaping (ChatContextResultCollection, ChatContextResult, UIView, CGRect, Bool?, Bool) -> Bool,
         editGif: @escaping (FileMediaReference, Bool) -> Void,
         requestMessageActionCallback: @escaping (EngineRawMessage, EngineMemoryBuffer?, Bool, Bool, Promise<Bool>?) -> Void,
         requestMessageActionUrlAuth: @escaping (String, MessageActionUrlSubject) -> Void,

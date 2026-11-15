@@ -158,6 +158,7 @@ public final class MediaBox {
     
     private var fileContexts: [MediaResourceId: MediaBoxFileContext] = [:]
     private var keepResourceContexts: [MediaResourceId: MediaBoxKeepResourceContext] = [:]
+    private let resourceKeepGate = MediaBoxResourceKeepGate()
     
     private var wrappedFetchResource = Promise<(MediaResource, Signal<[(Range<Int64>, MediaBoxFetchPriority)], NoError>, MediaResourceFetchParameters?) -> Signal<MediaResourceDataFetchResult, MediaResourceDataFetchError>>()
 
@@ -199,12 +200,15 @@ public final class MediaBox {
             postboxLog(string)
         }), basePath: basePath + "/cache-storage", isMainProcess: isMainProcess)
         
+        let resourceKeepGate = self.resourceKeepGate
         self.timeBasedCleanup = TimeBasedCleanup(storageBox: self.storageBox, cacheStorageBox: self.cacheStorageBox, generalPaths: [
             self.basePath + "/cache",
             self.basePath + "/animation-cache"
         ], totalSizeBasedPath: self.basePath, shortLivedPaths: [
             self.basePath + "/short-cache"
-        ])
+        ], evictResourceFiles: { paths, remove in
+            resourceKeepGate.evictIfUnkept(paths: paths, root: basePath, remove: remove)
+        })
         
         self.dataFileManager = MediaBoxFileManager(queue: self.dataQueue)
         
@@ -909,6 +913,7 @@ public final class MediaBox {
     public func keepResource(id: MediaResourceId) -> Signal<Never, NoError> {
         return Signal { subscriber in
             let disposable = MetaDisposable()
+            let sizeEvictionLease = self.resourceKeepGate.keep(id.stringRepresentation)
             
             let dataQueue = self.dataQueue
             self.dataQueue.async { [self] in
@@ -934,7 +939,10 @@ public final class MediaBox {
                 })
             }
             
-            return disposable
+            return ActionDisposable {
+                disposable.dispose()
+                sizeEvictionLease.dispose()
+            }
         }
     }
     

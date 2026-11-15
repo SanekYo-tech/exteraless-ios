@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import Display
@@ -427,6 +428,9 @@ public final class TabBarComponent: Component {
         private var measureItemViews: [AnyHashable: ComponentView<Empty>] = [:]
         private var itemViews: [AnyHashable: ComponentView<Empty>] = [:]
         private var selectedItemViews: [AnyHashable: ComponentView<Empty>] = [:]
+        private let materialContainer = UIView()
+        private let materialIndicator = UIView()
+        private var appearanceVariant: AppearancePresentationPolicy.NavigationVariant = .floating
 
         private var searchView: NavigationSearchView?
         
@@ -671,12 +675,19 @@ public final class TabBarComponent: Component {
         
         func update(component: TabBarComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             let innerInset: CGFloat = 4.0
-            let availableSize = CGSize(width: min(500.0, availableSize.width), height: availableSize.height)
+            let nativeItems = component.items.contains { if case .tabBarItem = $0.content { return true }; return false }
+            let variant: AppearancePresentationPolicy.NavigationVariant = nativeItems ? AppearancePresentationPolicy.navigationVariant(material: ClientSettings.shared.bool("appearance.newNavigationBarStyle"), wide: ClientSettings.shared.bool("appearance.iosNavigationBarStyle")) : .floating
+            let material = variant == .material
+            let availableSize = CGSize(width: variant == .floating ? min(500.0, availableSize.width) : availableSize.width, height: availableSize.height)
             
             let previousComponent = self.component
             // A new axis or mode is applied without animation, so the capsule does not morph through
             // intermediate shapes.
             var transition = transition
+            if self.appearanceVariant != variant {
+                transition = .immediate
+                self.appearanceVariant = variant
+            }
             if let previousComponent, previousComponent.axis != component.axis || previousComponent.isCompact != component.isCompact {
                 transition = .immediate
             }
@@ -712,10 +723,11 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: false,
-                        showsTitle: true,
+                        showsTitle: !ClientSettings.shared.bool("appearance.mainTabsHideTitles"),
                         isSelected: false,
                         tintSelectedItem: true,
-                        isUnconstrained: true
+                        isUnconstrained: true,
+                        isMaterial: material
                     )),
                     environment: {},
                     containerSize: CGSize(width: 200.0, height: 56.0)
@@ -727,15 +739,36 @@ public final class TabBarComponent: Component {
             if search != nil {
                 availableLength -= barHeight + 8.0
             }
-            let itemsLayout = tabBarItemsLayout(axis: component.axis, isCompact: component.isCompact, unboundItemWidths: unboundItemWidths, availableLength: availableLength)
+            var itemsLayout = tabBarItemsLayout(axis: component.axis, isCompact: component.isCompact, unboundItemWidths: unboundItemWidths, availableLength: availableLength)
+            if variant != .floating && component.axis == .horizontal && !component.items.isEmpty {
+                let width = max(0, availableLength) / CGFloat(component.items.count)
+                let height: CGFloat = material ? 64 : itemsLayout.size.height
+                itemsLayout = TabBarItemsLayout(size: CGSize(width: max(0, availableLength), height: height), itemFrames: component.items.indices.map { index in
+                    CGRect(x: CGFloat(index) * width, y: material ? 0 : 4, width: width, height: material ? 64 : height - 8)
+                })
+            }
             let tabsSize = itemsLayout.size
+            if material {
+                if self.materialContainer.superview == nil {
+                    self.materialContainer.isUserInteractionEnabled = false
+                    self.materialContainer.clipsToBounds = true
+                    self.materialIndicator.isUserInteractionEnabled = false
+                    self.contextGestureContainerView.addSubview(self.materialContainer)
+                    self.materialContainer.addSubview(self.materialIndicator)
+                }
+                self.materialContainer.backgroundColor = component.theme.list.blocksBackgroundColor
+                self.materialContainer.layer.cornerRadius = component.axis == .vertical ? 16 : 0
+                self.materialIndicator.backgroundColor = component.theme.rootController.tabBar.selectedIconColor.withAlphaComponent(0.125)
+            }
+            self.materialContainer.isHidden = !material
 
             var selectedItemFrame: CGRect?
             for index in 0 ..< component.items.count {
                 let item = component.items[index]
                 
                 var itemFrame = itemsLayout.itemFrames[index]
-                let itemSize = itemFrame.size
+                let itemSize = material && search?.isActive == true ? CGSize(width: itemFrame.width, height: 48) : itemFrame.size
+                if material && search?.isActive == true { itemFrame.size.height = itemSize.height }
                 
                 let itemView: ComponentView<Empty>
                 var itemTransition = transition
@@ -769,10 +802,11 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: search?.isActive == true,
-                        showsTitle: !component.isCompact,
-                        isSelected: false,
+                        showsTitle: !component.isCompact && !(material && search?.isActive == true) && !ClientSettings.shared.bool("appearance.mainTabsHideTitles"),
+                        isSelected: material && isItemSelected,
                         tintSelectedItem: component.tintSelectedItem,
-                        isUnconstrained: false
+                        isUnconstrained: false,
+                        isMaterial: material
                     )),
                     environment: {},
                     containerSize: itemSize
@@ -783,10 +817,11 @@ public final class TabBarComponent: Component {
                         item: item,
                         theme: component.theme,
                         isSearchActive: search?.isActive == true,
-                        showsTitle: !component.isCompact,
+                        showsTitle: !component.isCompact && !(material && search?.isActive == true) && !ClientSettings.shared.bool("appearance.mainTabsHideTitles"),
                         isSelected: true,
                         tintSelectedItem: component.tintSelectedItem,
-                        isUnconstrained: false
+                        isUnconstrained: false,
+                        isMaterial: material
                     )),
                     environment: {},
                     containerSize: itemSize
@@ -799,11 +834,14 @@ public final class TabBarComponent: Component {
                 if let itemComponentView = itemView.view as? ItemComponent.View, let selectedItemComponentView = selectedItemView.view as? ItemComponent.View {
                     let itemAlphaTransition: ComponentTransition = transition.animation.isImmediate ? .immediate : .easeInOut(duration: 0.25)
 
-                    if itemComponentView.superview == nil {
+                    let itemParent = material ? self.materialContainer : self.liquidLensView.contentView
+                    if itemComponentView.superview !== itemParent {
                         itemComponentView.isUserInteractionEnabled = false
                         selectedItemComponentView.isUserInteractionEnabled = false
 
-                        self.liquidLensView.contentView.addSubview(itemComponentView)
+                        itemParent.addSubview(itemComponentView)
+                    }
+                    if selectedItemComponentView.superview !== self.liquidLensView.selectedContentView {
                         self.liquidLensView.selectedContentView.addSubview(selectedItemComponentView)
                     }
 
@@ -877,7 +915,20 @@ public final class TabBarComponent: Component {
                 lensSelectionFrame = CGRect(x: 0.0, y: 0.0, width: 48.0, height: 48.0)
             }
             
-            self.liquidLensView.update(size: lensSize, cornerRadius: component.axis == .vertical ? lensSize.width * 0.5 : nil, selectionOrigin: lensSelectionFrame.origin, selectionSize: lensSelectionFrame.size, inset: 4.0, isDark: component.theme.overallDarkAppearance, isLifted: self.selectionGestureState != nil && component.isLiftedStateEnabled, isCollapsed: isLensCollapsed, transition: transition.withUserData(LiquidLensView.TransitionInfo(disableAnimationWorkarounds: !component.isLiftedStateEnabled)))
+            if material {
+                transition.setFrame(view: self.materialContainer, frame: CGRect(origin: .zero, size: lensSize))
+                self.materialContainer.layer.cornerRadius = isLensCollapsed ? 24 : (component.axis == .vertical ? 16 : 0)
+                if !self.liquidLensView.isHidden {
+                    self.liquidLensView.update(size: lensSize, selectionOrigin: lensSelectionFrame.origin, selectionSize: lensSelectionFrame.size, inset: 4, isDark: component.theme.overallDarkAppearance, isLifted: false, transition: .immediate)
+                }
+                let reference = isLensCollapsed ? CGRect(origin: .zero, size: lensSize) : (self.selectionGestureState == nil ? (selectedItemFrame ?? CGRect(origin: .zero, size: lensSelectionFrame.size)) : lensSelectionFrame)
+                let chip = AppearancePresentationPolicy.materialTabIndicator(width: Double(reference.width), height: Double(reference.height), showsTitle: !isLensCollapsed && !component.isCompact && !ClientSettings.shared.bool("appearance.mainTabsHideTitles"))
+                transition.setFrame(view: self.materialIndicator, frame: CGRect(x: reference.minX + CGFloat(chip.x), y: reference.minY + CGFloat(chip.y), width: CGFloat(chip.width), height: CGFloat(chip.height)))
+                self.materialIndicator.layer.cornerRadius = CGFloat(chip.height) * 0.5
+            } else {
+                self.liquidLensView.update(size: lensSize, cornerRadius: component.axis == .vertical ? lensSize.width * 0.5 : nil, selectionOrigin: lensSelectionFrame.origin, selectionSize: lensSelectionFrame.size, inset: 4.0, isDark: component.theme.overallDarkAppearance, isLifted: self.selectionGestureState != nil && component.isLiftedStateEnabled, isCollapsed: isLensCollapsed, transition: transition.withUserData(LiquidLensView.TransitionInfo(disableAnimationWorkarounds: !component.isLiftedStateEnabled)))
+            }
+            self.liquidLensView.isHidden = material
 
             var size = tabsSize
 
@@ -953,11 +1004,13 @@ private final class ItemComponent: Component {
     let theme: PresentationTheme
     let isSearchActive: Bool
     let showsTitle: Bool
+    let isMaterial: Bool
     let isSelected: Bool
     let tintSelectedItem: Bool
     let isUnconstrained: Bool
     
-    init(item: TabBarComponent.Item, theme: PresentationTheme, isSearchActive: Bool, showsTitle: Bool, isSelected: Bool, tintSelectedItem: Bool, isUnconstrained: Bool) {
+    init(item: TabBarComponent.Item, theme: PresentationTheme, isSearchActive: Bool, showsTitle: Bool, isSelected: Bool, tintSelectedItem: Bool, isUnconstrained: Bool, isMaterial: Bool = false) {
+        self.isMaterial = isMaterial
         self.item = item
         self.theme = theme
         self.isSearchActive = isSearchActive
@@ -968,6 +1021,7 @@ private final class ItemComponent: Component {
     }
     
     static func ==(lhs: ItemComponent, rhs: ItemComponent) -> Bool {
+        if lhs.isMaterial != rhs.isMaterial { return false }
         if lhs.item != rhs.item {
             return false
         }
@@ -1106,6 +1160,9 @@ private final class ItemComponent: Component {
             // Compact items have no title, so the icon is centered; the badge moves with it.
             var badgeOffsetY: CGFloat = 0.0
             func iconY(regular: CGFloat, height: CGFloat) -> CGFloat {
+                if component.isMaterial {
+                    return floor((component.showsTitle ? 24 : availableSize.height * 0.5) - height * 0.5)
+                }
                 if component.showsTitle {
                     return regular
                 }
@@ -1119,7 +1176,7 @@ private final class ItemComponent: Component {
                 title = tabBarItem.title ?? " "
                 badgeValue = tabBarItem.badgeValue
 
-                if let animationName = tabBarItem.animationName {
+                if let animationName = tabBarItem.animationName, exteralessTabIconOverride(tabBarItem) == nil {
                     if let imageIcon = self.imageIcon {
                         self.imageIcon = nil
                         imageIcon.view?.removeFromSuperview()
@@ -1180,7 +1237,7 @@ private final class ItemComponent: Component {
                         self.imageIcon = imageIcon
                     }
 
-                    let iconImage = component.isSelected ? tabBarItem.selectedImage : tabBarItem.image
+                    let iconImage = exteralessResolvedTabIcon(tabBarItem, selected: component.isSelected)
                     let iconSize = imageIcon.update(
                         transition: iconTransition,
                         component: AnyComponent(Image(
@@ -1298,7 +1355,7 @@ private final class ItemComponent: Component {
                 environment: {},
                 containerSize: CGSize(width: availableSize.width, height: 100.0)
             )
-            let titleFrame = CGRect(origin: CGPoint(x: floor((availableSize.width - titleSize.width) * 0.5), y: availableSize.height - 8.0 - titleSize.height), size: titleSize)
+            let titleFrame = CGRect(origin: CGPoint(x: floor((availableSize.width - titleSize.width) * 0.5), y: component.isMaterial ? min(42, availableSize.height - titleSize.height - 2) : availableSize.height - 8.0 - titleSize.height), size: titleSize)
             if let titleView = self.title.view {
                 if titleView.superview == nil {
                     self.contextContainerView.contentView.addSubview(titleView)
@@ -1330,7 +1387,8 @@ private final class ItemComponent: Component {
                     containerSize: CGSize(width: 100.0, height: 100.0)
                 )
                 let contentWidth: CGFloat = 25.0
-                let badgeFrame = CGRect(origin: CGPoint(x: floor(availableSize.width / 2.0) + contentWidth - badgeSize.width - 1.0, y: 5.0 + badgeOffsetY), size: badgeSize)
+                let badgeY = component.isMaterial ? (component.showsTitle ? 16.0 : availableSize.height * 0.5 - 6.0) - badgeSize.height * 0.5 : 5.0 + badgeOffsetY
+                let badgeFrame = CGRect(origin: CGPoint(x: floor(availableSize.width / 2.0) + contentWidth - badgeSize.width - 1.0, y: badgeY), size: badgeSize)
                 if let badgeView = badge.view {
                     if badgeView.superview == nil {
                         self.contextContainerView.contentView.addSubview(badgeView)
@@ -1348,7 +1406,7 @@ private final class ItemComponent: Component {
             self.contextContainerView.contentRect = CGRect(origin: CGPoint(), size: availableSize)
 
             if component.isUnconstrained {
-                return CGSize(width: titleSize.width + 10.0 * 2.0, height: availableSize.height)
+                return CGSize(width: component.showsTitle ? titleSize.width + 10.0 * 2.0 : 44.0, height: availableSize.height)
             } else {
                 return availableSize
             }

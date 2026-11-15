@@ -51,7 +51,7 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
             
             let limitCount: Int
             if case .root = groupId {
-                limitCount = Int(userLimitsConfiguration.maxPinnedChatCount)
+                limitCount = exteralessDialogRootPinLimit(userLimitsConfiguration)
             } else {
                 limitCount = Int(userLimitsConfiguration.maxArchivedPinnedChatCount)
             }

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import PasscodeCore
 import Intents
 import TelegramCore
@@ -159,6 +160,22 @@ class DefaultIntentHandler: INExtension, INSendMessageIntentHandling, INSearchFo
         performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
         
         self.rootPath = rootPath
+        do {
+            try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+            try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
+                + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions)
+            try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+            try ExteralessAccountRetentionEnvironment.shared.configure(ExteralessRetentionProcessConfiguration(
+                role: .shareExtension, snapshot: ClientSettings.shared.readSnapshot(), durabilityRootURL: appGroupUrl))
+            let configuration = ClientAPIConfigurationStore(settings: .shared, settingsSecrets: ClientSecrets.systemStore(),
+                vault: ClientAPIVault(storage: ClientAPIKeychain.storage(accessGroup: try PasscodeEnvironment.shared.sharedAccessGroup())))
+            try ExteralessClientAPIEnvironment.shared.configure(builtinApiId: apiId, builtinApiHash: apiHash, configuration: configuration)
+        } catch {
+            ExteralessAccountRetentionEnvironment.shared.setUnavailable()
+            self.accountPromise.set(.single(nil))
+            self.allAccounts.set(.single([]))
+            return
+        }
         
         TempBox.initializeShared(basePath: rootPath, processType: "siri", launchSpecificId: Int64.random(in: Int64.min ... Int64.max))
         
@@ -246,6 +263,8 @@ class DefaultIntentHandler: INExtension, INSendMessageIntentHandling, INSearchFo
                     switch account {
                         case .upgrading:
                             return .complete()
+                        case .retentionRecovery:
+                            return .single(nil)
                         case let .authorized(account):
                             return applicationSettings(accountManager: accountManager)
                             |> deliverOnMainQueue

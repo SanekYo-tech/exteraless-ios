@@ -112,6 +112,71 @@ class CaptionScrollWrapperNode: ASDisplayNode {
 }
 
 final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScrollViewDelegate {
+    private var inheritedExportPermit: ExteralessContentExportPermit?
+    private let exteralessActionLifetime = ExteralessGalleryActionLifetime()
+    private var exteralessActionPeerProtected = false
+
+    override func didExitHierarchy() {
+        super.didExitHierarchy()
+        self.exteralessActionLifetime.invalidate()
+    }
+
+    private var exportPermit: ExteralessContentExportPermit? {
+        if self.inheritedExportPermit == nil {
+            self.inheritedExportPermit = MainActor.assumeIsolated { self.controllerInteraction?.controller()?.exteralessExportPermit }
+        }
+        return self.inheritedExportPermit
+    }
+
+    private func exportAllowed(_ operation: ExteralessContentExportPermit.Operation = .exportEffect) -> Bool {
+        self.exportPermit?.allows(accountId: self.context.account.id.int64, messageIds: self.currentMessage.map { Set([$0.id]) }, operation: operation) ?? true
+    }
+
+    @discardableResult private func performExport(_ body: () -> Void) -> Bool {
+        if let permit = self.exportPermit {
+            return permit.perform(accountId: self.context.account.id.int64, messageIds: self.currentMessage.map { Set([$0.id]) }, operation: .exportEffect, body)
+        }
+        body()
+        return true
+    }
+
+    private func makeShareController(permit: ExteralessContentExportPermit?, params: ShareControllerParams) -> ViewController {
+        MainActor.assumeIsolated {
+            if let permit {
+                let controller = self.context.sharedContext.makeShareController(context: self.context, params: params)
+                _ = permit.own(controller, from: self.controllerInteraction?.controller())
+                return controller
+            }
+            return self.context.sharedContext.makeShareScreen(context: self.context, params: params)
+        }
+    }
+
+    private func presentRootShare(_ controller: ViewController, permit: ExteralessContentExportPermit?, prepareShare: ((ViewController) -> Bool)? = nil) {
+        MainActor.assumeIsolated {
+            if let permit {
+                guard let source = self.controllerInteraction?.controller(),
+                      permit.own(controller, from: source) else { return }
+                let context = self.context
+                let generation = self.exteralessActionLifetime.generation
+                let item = self.controllerInteraction?.currentItemNode()
+                let playerIdentity = (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity
+                let current: () -> Bool = { [weak self, weak item] in
+                    guard let self else { return false }
+                    return self.exteralessActionLifetime.generation == generation && self.controllerInteraction?.currentItemNode() === item && (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity == playerIdentity && permit.allows(accountId: context.account.id.int64, operation: .exportPreparation)
+                }
+                // Bind the CMC validator before loading/ready, and recheck it afterward.
+                // Its handoff may detach the original presentation lease, so this separate
+                // captured native item generation still gates the entire pending wait.
+                guard current(), prepareShare?(controller) ?? true else { return }
+                permit.presentWhenReady(controller, accountId: context.account.id.int64, from: source, requiresExport: true, additionalReady: self.exteralessActionLifetime.validity(of: generation), prepare: { controller in
+                    guard current() else { return false }
+                    return prepareShare?(controller) ?? true
+                }, present: { controller in
+                    context.sharedContext.mainWindow?.present(controller, on: .root, blockInteraction: true)
+                })
+            } else { self.context.sharedContext.mainWindow?.present(controller, on: .root, blockInteraction: true) }
+        }
+    }
     public final class SettingsButtonState: Equatable {
         public let speed: String?
         public let quality: String?
@@ -488,28 +553,38 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             guard let self else {
                 return
             }
+            _ = self.exportPermit
             
             switch action {
             case .copy:
-                storeAttributedTextInPasteboard(text)
+                guard self.performExport({ storeAttributedTextInPasteboard(text) }) else { return }
                 
                 let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
                 let undoController = UndoOverlayController(presentationData: presentationData, content: .copy(text: presentationData.strings.Conversation_TextCopied), elevatedLayout: false, animateInAsReplacement: false, appearance: UndoOverlayController.Appearance(isBlurred: true), action: { _ in true })
                 
                 self.controllerInteraction?.presentController(undoController, nil)
             case .share:
+                guard self.exportAllowed(.exportPreparation) else { return }
                 let theme = defaultDarkPresentationTheme
                 let updatedPresentationData: (initial: PresentationData, signal: Signal<PresentationData, NoError>) = (self.context.sharedContext.currentPresentationData.with({ $0 }).withUpdated(theme: theme), self.context.sharedContext.presentationData |> map { $0.withUpdated(theme: theme) })
                 
-                let shareController = self.context.sharedContext.makeShareScreen(context: self.context, params: ShareControllerParams(subject: .text(text.string), externalShare: true, immediateExternalShare: false, updatedPresentationData: updatedPresentationData))
+                let shareController = self.makeShareController(permit: self.exportPermit, params: ShareControllerParams(subject: .text(text.string), externalShare: true, immediateExternalShare: false, updatedPresentationData: updatedPresentationData))
 
-                self.controllerInteraction?.presentController(shareController, nil)
+                if let permit = self.exportPermit { self.presentRootShare(shareController, permit: permit) }
+                else { self.controllerInteraction?.presentController(shareController, nil) }
             case .lookup:
+                guard self.exportAllowed(.exportPreparation) else { return }
                 let controller = UIReferenceLibraryViewController(term: text.string)
                 if let window = self.controllerInteraction?.controller()?.view.window {
                     controller.popoverPresentationController?.sourceView = window
                     controller.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
-                    window.rootViewController?.present(controller, animated: true)
+                    if let permit = self.exportPermit {
+                        MainActor.assumeIsolated {
+                            permit.perform(accountId: self.context.account.id.int64, operation: .presentation) {
+                                if permit.own(controller, presented: true, from: self.controllerInteraction?.controller()) { window.rootViewController?.present(controller, animated: true) }
+                            }
+                        }
+                    } else { window.rootViewController?.present(controller, animated: true) }
                 }
             case .speak:
                 if let speechHolder = speakText(text: text.string) {
@@ -555,6 +630,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                         }
                         let translateController = await self.context.sharedContext.makeTextProcessingScreen(
                             context: self.context,
+                            capability: self.currentMessage.map { .message(EngineMessage($0), canCopy: !$0.isCopyProtected()) } ?? .nativeOnly,
                             theme: defaultDarkPresentationTheme,
                             mode: .translate(fromLanguage: language, applyResult: nil),
                             inputText: .plain(text: text.string, entities: []),
@@ -562,7 +638,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                                 guard let self else {
                                     return
                                 }
-                                storeComposedRichMessageInPasteboard(text)
+                                guard self.performExport({ storeComposedRichMessageInPasteboard(text) }) else { return }
                                 let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
                                 let undoController = UndoOverlayController(presentationData: presentationData, content: .copy(text: presentationData.strings.Conversation_TextCopied), elevatedLayout: true, animateInAsReplacement: false, appearance: UndoOverlayController.Appearance(isBlurred: true), action: { _ in true })
                                 self.controllerInteraction?.presentController(undoController, nil)
@@ -857,6 +933,12 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
     }
     
     func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
+        let previousMedia = self.currentMessage.flatMap { selectedMediaForMessage(message: $0, mediaSubject: self.mediaSubject) }
+        let selectedMedia = selectedMediaForMessage(message: message, mediaSubject: mediaSubject)
+        if self.currentMessage?.stableId != message.stableId || self.currentMessage?.stableVersion != message.stableVersion || self.currentMessage?.id != message.id || self.mediaSubject != mediaSubject || self.exteralessActionPeerProtected != peerIsCopyProtected || previousMedia.flatMap({ old in selectedMedia.map { old.isEqual(to: $0) } }) != true {
+            self.exteralessActionLifetime.invalidate()
+        }
+        self.exteralessActionPeerProtected = peerIsCopyProtected
         self.currentMessage = message
         self.mediaSubject = mediaSubject
         
@@ -1152,6 +1234,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
     }
     
     func setWebPage(_ webPage: TelegramMediaWebpage, media: EngineRawMedia) {
+        self.exteralessActionLifetime.invalidate()
         self.currentWebPageAndMedia = (webPage, media)
     }
     
@@ -1745,12 +1828,59 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
     }
     
     @objc func actionButtonPressed() {
+        guard self.exportAllowed(.presentation) else { return }
+        if let message = self.currentMessage, let interaction = self.controllerInteraction, self.buttonsState?.displayActionButton == true {
+            let generation = self.exteralessActionLifetime.generation
+            let subject = self.mediaSubject
+            let item = interaction.currentItemNode()
+            let playerIdentity = (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity
+            let selection = ExteralessGalleryMediaSelection(message: EngineMessage(message), subject: subject, itemGeneration: generation)
+            let current: () -> Bool = { [weak self, weak item] in
+                guard let self, let item else { return false }
+                return self.exteralessActionLifetime.generation == generation && self.currentMessage?.id == message.id && self.currentMessage?.stableId == message.stableId && self.currentMessage?.stableVersion == message.stableVersion && self.mediaSubject == subject && interaction.currentItemNode() === item && (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity == playerIdentity && self.view.window != nil && self.exportAllowed(.presentation)
+            }
+            let request = ExteralessGalleryMessageActionRequest(context: self.context, message: EngineMessage(message), selection: selection, itemGeneration: generation, playbackSample: { [weak item] in
+                guard current() else { return nil }
+                return (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlaybackSample
+            }, exportPermit: self.exportPermit, itemValidity: self.exteralessActionLifetime.validity(of: generation), interaction: interaction, isCurrent: current, nativeShare: { [weak self] permit, prepare in
+                guard current() else { return }
+                self?.exteralessNativeSharePressed(selection: selection, providedPermit: permit, prepareShare: prepare)
+            }, setDisposable: { [weak self] in self?.messageContextDisposable.set($0) }, setInteracting: { [weak self] in self?.interacting?($0) })
+            if MainActor.assumeIsolated({ ExteralessGalleryMessageActions.present?(request) ?? false }) { return }
+        }
+        self.exteralessNativeSharePressed()
+    }
+
+    private func exteralessNativeSharePressed(selection: ExteralessGalleryMediaSelection? = nil, providedPermit: ExteralessContentExportPermit? = nil, prepareShare: ((ViewController) -> Bool)? = nil) {
+        // CMC never replaces a nonnil FU-02 permit. Ordinary native calls retain
+        // their existing group/share semantics; the CMC action names one medium.
+        let inheritedPermit = self.exportPermit
+        if let inheritedPermit, let providedPermit, inheritedPermit !== providedPermit { return }
+        let permit = providedPermit ?? inheritedPermit
+        let accountId = self.context.account.id.int64
+        guard self.exportAllowed(.exportPreparation), permit?.allows(accountId: accountId, operation: .exportPreparation) ?? true else { return }
+        if let selection {
+            guard let permit, let id = self.currentMessage?.id, let prepareShare,
+                  permit.allows(accountId: accountId, messageIds: [id], operation: .exportPreparation) else { return }
+            let generation = selection.itemGeneration
+            let _ = (permit.guardSignal(accountId: accountId, messageIds: [id], operation: .exportPreparation, {
+                self.context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: id))
+            }) |> deliverOnMainQueue).startStandalone(next: { [weak self] current in
+                guard let self, let current, self.exteralessActionLifetime.generation == generation,
+                      let reference = selection.reference(in: current), permit.allows(accountId: accountId, messageIds: [id], operation: .exportPreparation) else { return }
+                let controller = self.makeShareController(permit: permit, params: ShareControllerParams(subject: .media(reference, self.shareMediaParameters?()), preferredAction: .saveToCameraRoll, dismissed: { [weak self] _ in self?.interacting?(false) }))
+                self.interacting?(true)
+                self.presentRootShare(controller, permit: permit, prepareShare: prepareShare)
+            })
+            return
+        }
         self.interacting?(true)
         
         if let currentMessage = self.currentMessage {
             let _ = (self.context.engine.data.get(TelegramEngine.EngineData.Item.Messages.MessageGroup(id: currentMessage.id))
             |> deliverOnMainQueue).start(next: { [weak self] messages in
                 if let strongSelf = self, !messages.isEmpty {
+                    guard permit?.allows(accountId: accountId, messageIds: Set(messages.map(\.id)), operation: .exportPreparation) ?? true else { return }
                     var presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
                     var forceTheme: PresentationTheme?
                     if !presentationData.theme.overallDarkAppearance {
@@ -1873,13 +2003,22 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                                         preferredAction = .default
                                     } else {
                                         preferredAction = .custom(action: ShareControllerAction(title: presentationData.strings.Preview_SaveGif, action: { [weak self] in
+                                            guard permit?.allows(accountId: accountId) ?? true else { return }
                                             if let strongSelf = self {
                                                 let message = messages[0]
                                                 
                                                 let context = strongSelf.context
                                                 let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                                                 let controllerInteraction = strongSelf.controllerInteraction
-                                                let _ = (toggleGifSaved(account: context.account, fileReference: .message(message: MessageReference(message._asMessage()), media: file), saved: true)
+                                                let _ = (exteralessSaveGifReporting(engine: context.engine, fileReference: .message(message: MessageReference(message._asMessage()), media: file), localSaved: { [weak self] in
+                                                    guard self != nil else { return }
+                                                    controllerInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: "GIF saved on this device", customUndoText: nil, timeout: nil), elevatedLayout: true, animateInAsReplacement: false, action: { _ in false }), nil)
+                                                }, failed: { [weak self] error in
+                                                    guard self != nil else { return }
+                                                    let alert = UIAlertController(title: nil, message: error.localizedDescription, preferredStyle: .alert)
+                                                    alert.addAction(UIAlertAction(title: presentationData.strings.Common_OK, style: .default))
+                                                    context.sharedContext.applicationBindings.presentNativeController(alert)
+                                                })
                                                 |> deliverOnMainQueue).start(next: { result in
                                                     switch result {
                                                     case .generic:
@@ -1926,7 +2065,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                             }
                         }
                         
-                        let shareController = strongSelf.context.sharedContext.makeShareScreen(context: strongSelf.context, params: ShareControllerParams(subject: subject, preferredAction: preferredAction, externalShare: hasExternalShare, forceTheme: forceTheme, actionCompleted: { [weak self] in
+                        let shareController = strongSelf.makeShareController(permit: permit, params: ShareControllerParams(subject: subject, preferredAction: preferredAction, externalShare: hasExternalShare, forceTheme: forceTheme, actionCompleted: { [weak self] in
                             if let strongSelf = self, let actionCompletionText = actionCompletionText {
                                 let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
                                 strongSelf.controllerInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: actionCompletionText), elevatedLayout: true, animateInAsReplacement: false, action: { _ in return true }), nil)
@@ -1996,7 +2135,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                             }
                             self.controllerInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .linkCopied(title: nil, text: text), elevatedLayout: true, animateInAsReplacement: false, action: { _ in return true }), nil)
                         }))
-                        strongSelf.context.sharedContext.mainWindow?.present(shareController, on: .root, blockInteraction: true)
+                        strongSelf.presentRootShare(shareController, permit: permit, prepareShare: prepareShare)
                     } else {
                         var singleText = presentationData.strings.Media_ShareItem(1)
                         var multipleText = presentationData.strings.Media_ShareItem(Int32(messages.count))
@@ -2015,8 +2154,9 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                         }
                         
                         let shareAction: ([EngineRawMessage]) -> Void = { messages in
+                            guard permit?.allows(accountId: accountId, messageIds: Set(messages.map(\.id)), operation: .exportPreparation) ?? true else { return }
                             if let strongSelf = self {
-                                let shareController = strongSelf.context.sharedContext.makeShareScreen(context: strongSelf.context, params: ShareControllerParams(subject: .messages(messages), preferredAction: preferredAction, forceTheme: forceTheme, actionCompleted: { [weak self] in
+                                let shareController = strongSelf.makeShareController(permit: permit, params: ShareControllerParams(subject: .messages(messages), preferredAction: preferredAction, forceTheme: forceTheme, actionCompleted: { [weak self] in
                                     if let strongSelf = self {
                                         let presentationData = strongSelf.context.sharedContext.currentPresentationData.with { $0 }
                                         strongSelf.controllerInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .mediaSaved(text: presentationData.strings.Gallery_ImageSaved), elevatedLayout: true, animateInAsReplacement: false, action: { _ in return true }), nil)
@@ -2065,7 +2205,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                                         })
                                     }
                                 }))
-                                strongSelf.context.sharedContext.mainWindow?.present(shareController, on: .root, blockInteraction: true)
+                                strongSelf.presentRootShare(shareController, permit: permit, prepareShare: prepareShare)
                             }
                         }
                         
@@ -2106,11 +2246,20 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
             if let file = media as? TelegramMediaFile {
                 if file.isAnimated {
                     preferredAction = .custom(action: ShareControllerAction(title: presentationData.strings.Preview_SaveGif, action: { [weak self] in
+                        guard permit?.allows(accountId: accountId) ?? true else { return }
                         if let strongSelf = self {
                             let context = strongSelf.context
                             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
                             let controllerInteraction = strongSelf.controllerInteraction
-                            let _ = (toggleGifSaved(account: context.account, fileReference: .webPage(webPage: WebpageReference(webPage), media: file), saved: true)
+                            let _ = (exteralessSaveGifReporting(engine: context.engine, fileReference: .webPage(webPage: WebpageReference(webPage), media: file), localSaved: { [weak self] in
+                                guard self != nil else { return }
+                                controllerInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .universal(animation: "anim_gif", scale: 0.075, colors: [:], title: nil, text: "GIF saved on this device", customUndoText: nil, timeout: nil), elevatedLayout: true, animateInAsReplacement: false, action: { _ in false }), nil)
+                            }, failed: { [weak self] error in
+                                guard self != nil else { return }
+                                let alert = UIAlertController(title: nil, message: error.localizedDescription, preferredStyle: .alert)
+                                alert.addAction(UIAlertAction(title: presentationData.strings.Common_OK, style: .default))
+                                context.sharedContext.applicationBindings.presentNativeController(alert)
+                            })
                             |> deliverOnMainQueue).start(next: { result in
                                 switch result {
                                     case .generic:
@@ -2171,7 +2320,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                     }
                 }
             }
-            let shareController = self.context.sharedContext.makeShareScreen(context: self.context, params: ShareControllerParams(subject: subject, preferredAction: preferredAction, forceTheme: forceTheme, dismissed: { [weak self] _ in
+            let shareController = self.makeShareController(permit: permit, params: ShareControllerParams(subject: subject, preferredAction: preferredAction, forceTheme: forceTheme, dismissed: { [weak self] _ in
                 self?.interacting?(false)
             }, completed: { [weak self] peerIds in
                 if let strongSelf = self {
@@ -2215,7 +2364,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                     })
                 }
             }))
-            self.context.sharedContext.mainWindow?.present(shareController, on: .root, blockInteraction: true)
+            self.presentRootShare(shareController, permit: permit, prepareShare: prepareShare)
         }
     }
     

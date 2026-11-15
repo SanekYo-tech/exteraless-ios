@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Display
@@ -28,7 +29,7 @@ private final class SpriteContext {
 
     var isPlaying: Bool {
         for target in self.targets.copyItems() {
-            if let target = target.value, target.shouldBeAnimating {
+            if let target = target.value, target.shouldBeAnimating && target.performanceAllowsAnimation {
                 return true
             }
         }
@@ -209,23 +210,22 @@ private final class SurfaceGroup {
         }
 
         var anyAdvanced = false
+        var loopedSlots = Set<Int>()
         for (slot, context) in self.spriteContexts {
             guard context.isPlaying else {
                 continue
             }
             if advanceTimestamp > 0.0 {
-                context.remainingDuration -= advanceTimestamp
-                if context.remainingDuration <= 0.0 {
+                let step = ToolsPerformancePolicy.advanceFrames(frameCount: context.metadata.frameCount,
+                    frameIndex: context.currentFrameIndex, remainingDuration: context.remainingDuration,
+                    durations: context.metadata.frameDurations, elapsed: advanceTimestamp)
+                for _ in 0..<step.frames {
                     surface.advanceSprite(atSlot: Int32(slot))
-                    context.currentFrameIndex += 1
-                    if context.currentFrameIndex >= context.metadata.frameCount {
-                        context.currentFrameIndex = 0
-                    }
-                    if context.currentFrameIndex < context.metadata.frameDurations.count {
-                        context.remainingDuration = context.metadata.frameDurations[context.currentFrameIndex]
-                    }
-                    anyAdvanced = true
                 }
+                context.currentFrameIndex = step.index
+                context.remainingDuration = step.remainingDuration
+                anyAdvanced = anyAdvanced || step.frames > 0
+                if step.didLoop { loopedSlots.insert(slot) }
             } else {
                 surface.advanceSprite(atSlot: Int32(slot))
                 anyAdvanced = true
@@ -256,7 +256,7 @@ private final class SurfaceGroup {
 
         self.lastDecodedFrame = decodedFrame
 
-        for (_, context) in self.spriteContexts {
+        for (slot, context) in self.spriteContexts {
             let region = context.region
             let colorRect = region.colorRect
             let alphaRect = region.alphaRect
@@ -275,10 +275,11 @@ private final class SurfaceGroup {
                 frameHeight: frameHeight
             )
 
-            let didLoop = context.currentFrameIndex == 0 && context.metadata.frameCount > 1
+            let didLoop = loopedSlots.contains(slot)
 
             for targetRef in context.targets.copyItems() {
                 if let target = targetRef.value {
+                    guard advanceTimestamp <= 0.0 || target.contents == nil || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
                     if let cgImage = cgImage {
                         target.transitionToContents(cgImage, didLoop: didLoop)
                     }
@@ -394,50 +395,19 @@ public final class SubcodecMultiAnimationRendererImpl: MultiAnimationRenderer {
     }
 
     private var surfaceGroups: [SizeKey: SurfaceGroup] = [:]
-    private var frameSkip: Int
-    private var displayTimer: Foundation.Timer?
+    private lazy var performanceClock = ToolsPerformanceRenderClock { [weak self] interval in
+        self?.animationTick(frameInterval: interval)
+    }
 
     private(set) var isPlaying: Bool = false {
         didSet {
             if self.isPlaying != oldValue {
-                if self.isPlaying {
-                    if self.displayTimer == nil {
-                        final class TimerTarget: NSObject {
-                            private let f: () -> Void
-                            init(_ f: @escaping () -> Void) {
-                                self.f = f
-                            }
-                            @objc func timerEvent() {
-                                self.f()
-                            }
-                        }
-                        let frameInterval = Double(self.frameSkip) / 60.0
-                        let displayTimer = Foundation.Timer(timeInterval: frameInterval, target: TimerTarget { [weak self] in
-                            guard let strongSelf = self else {
-                                return
-                            }
-                            strongSelf.animationTick(frameInterval: frameInterval)
-                        }, selector: #selector(TimerTarget.timerEvent), userInfo: nil, repeats: true)
-                        self.displayTimer = displayTimer
-                        RunLoop.main.add(displayTimer, forMode: .common)
-                    }
-                } else {
-                    if let displayTimer = self.displayTimer {
-                        self.displayTimer = nil
-                        displayTimer.invalidate()
-                    }
-                }
+                self.performanceClock.setPlaying(self.isPlaying)
             }
         }
     }
 
-    public init() {
-        if !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.processorCount > 2 {
-            self.frameSkip = 1
-        } else {
-            self.frameSkip = 2
-        }
-    }
+    public init() {}
 
     public func add(target: MultiAnimationRenderTarget, cache: AnimationCache, itemId: String, unique: Bool, size: CGSize, fetch: @escaping (AnimationCacheFetchOptions) -> Disposable) -> Disposable {
         guard let subcodecCache = cache as? SubcodecAnimationCacheImpl else {

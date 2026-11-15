@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -118,6 +119,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
     private var expandedBlockIds: Set<Int> = Set()
     private var appliedExpandedBlockIds: Set<Int>?
     private var displayContentsUnderSpoilers: (value: Bool, location: CGPoint?) = (false, nil)
+    private var effectiveDisplayContentsUnderSpoilers: Bool { self.displayContentsUnderSpoilers.value || ClientSettings.shared.bool("chats.showSpoilersDirectly") }
     
     private var isSummaryApplied = false
 
@@ -222,7 +224,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
         
         let currentCachedChatMessageText = self.cachedChatMessageText
         let expandedBlockIds = self.expandedBlockIds
-        let displayContentsUnderSpoilers = self.displayContentsUnderSpoilers
+        let displayContentsUnderSpoilers = (value: self.effectiveDisplayContentsUnderSpoilers, location: self.displayContentsUnderSpoilers.location)
         let currentMaxGlyphCount: Int? = self.textRevealController?.currentGlyphCount
         let previousGlyphCount = self.textNode.textNode.cachedLayout?.attributedString?.length ?? 0
         
@@ -412,31 +414,13 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                         messageEntities = updatingMedia.entities?.entities ?? []
                     }
                     
-                    let translateToLanguage = item.associatedData.translateToLanguage
-                    var isSummarized = false
-                    if item.controllerInteraction.summarizedMessageIds.contains(item.message.id) {
-                        isSummarized = true
-                    }
-                    
                     if let subject = item.associatedData.subject, case .messageOptions = subject {
-                    } else if !item.message.text.isEmpty && incoming {
-                        if translateToLanguage != nil || isSummarized {
-                            isTranslating = true
-                        }
-                        if isTranslating {
-                            if isSummarized, let attribute = item.message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLanguage) {
-                                rawText = summary.text
-                                messageEntities = summary.entities
-                                isTranslating = false
-                                isSummaryApplied = true
-                            } else if let attribute = item.message.attributes.first(where: { $0 is TranslationMessageAttribute }) as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
-                                rawText = attribute.text
-                                messageEntities = attribute.entities
-                                if !isSummarized {
-                                    isTranslating = false
-                                }
-                            }
-                        }
+                    } else if item.attributes.updatingMedia == nil && !item.message.text.isEmpty {
+                        let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: item.controllerInteraction.summarizedMessageIds.contains(item.message.id))
+                        rawText = display.text
+                        messageEntities = display.entities
+                        isTranslating = display.isTranslating
+                        isSummaryApplied = display.isSummary
                     }
                 }
                 
@@ -658,7 +642,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 
                 let textInsets = UIEdgeInsets(top: 2.0, left: 2.0, bottom: 5.0, right: 2.0)
                 let (textLayout, textApply) = textLayout(InteractiveTextNodeLayoutArguments(
-                    attributedString: attributedText,
+                    attributedString: ExteralessEmojiRendering.shared.attributedText(attributedText, accountId: item.context.account.id.int64),
                     backgroundColor: nil,
                     maximumNumberOfLines: maximumNumberOfLines,
                     truncationType: .end,
@@ -728,7 +712,8 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                         hasAutoremove: item.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                         animationCache: item.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(item.message).exteralessRetention
                     ))
                 }
                 
@@ -939,6 +924,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                             } else {
                                 strongSelf.statusNode?.pressed = nil
                             }
+                            strongSelf.statusNode?.configureTimeHint(message: EngineMessage(item.message)) { text in item.controllerInteraction.displayMessageTooltip(item.message.id, text, false, nil, nil) }
                             
                             if let subject = item.associatedData.subject, case let .messageOptions(_, _, info) = subject {
                                 if case let .reply(info) = info {
@@ -1179,7 +1165,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
             }
             
             
-            if let _ = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)], !self.displayContentsUnderSpoilers.value {
+            if let _ = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)], !self.effectiveDisplayContentsUnderSpoilers {
                 return ChatMessageBubbleContentTapAction(content: .none)
             } else if let tonAddress = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.TonAddress)] as? TelegramTonAddress {
                 guard tonAddress.range.length == 48, tonAddress.address.utf8.count == 48,
@@ -1360,7 +1346,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 }
             }
             
-            if let spoilerRects = spoilerRects, !spoilerRects.isEmpty, !self.displayContentsUnderSpoilers.value {
+            if let spoilerRects = spoilerRects, !spoilerRects.isEmpty, !self.effectiveDisplayContentsUnderSpoilers {
             } else if let rects = rects {
                 let linkHighlightingNode: LinkHighlightingNode
                 if let current = self.linkHighlightingNode {
@@ -1629,7 +1615,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                     guard let strongSelf = self else {
                         return
                     }
-                    if !strongSelf.displayContentsUnderSpoilers.value, let textLayout = strongSelf.textNode.textNode.cachedLayout, textLayout.segments.contains(where: { !$0.spoilers.isEmpty }), let selectionRange {
+                    if !strongSelf.effectiveDisplayContentsUnderSpoilers, let textLayout = strongSelf.textNode.textNode.cachedLayout, textLayout.segments.contains(where: { !$0.spoilers.isEmpty }), let selectionRange {
                         for segment in textLayout.segments {
                             for (spoilerRange, _) in segment.spoilers {
                                 if let intersection = selectionRange.intersection(spoilerRange), intersection.length > 0 {

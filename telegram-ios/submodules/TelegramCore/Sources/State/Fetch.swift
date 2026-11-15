@@ -86,6 +86,9 @@ func fetchResource(
     intervals: Signal<[(Range<Int64>, MediaBoxFetchPriority)], NoError>,
     parameters: MediaResourceFetchParameters?
 ) -> Signal<MediaResourceDataFetchResult, MediaResourceDataFetchError>? {
+    if let retained = exteralessFetchRetainedLocalResource(postbox: postbox, resource: resource) {
+        return retained
+    }
     if let _ = resource as? EmptyMediaResource {
         return .single(.reset)
         |> then(.never())

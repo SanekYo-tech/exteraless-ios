@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import TelegramPresentationData
@@ -61,9 +62,13 @@ public final class MediaPlaybackHeaderPanelComponent: Component {
         private weak var state: EmptyComponentState?
         
         private var playlistPreloadDisposable: Disposable?
+        private var playerPresentationObserver: NSObjectProtocol?
         
         public override init(frame: CGRect) {
             super.init(frame: frame)
+            self.playerPresentationObserver = NotificationCenter.default.addObserver(forName: PlayerMiniPresentation.changed, object: nil, queue: .main) { [weak self] _ in
+                self?.state?.updated(transition: .immediate)
+            }
         }
         
         required public init?(coder: NSCoder) {
@@ -72,6 +77,7 @@ public final class MediaPlaybackHeaderPanelComponent: Component {
         
         deinit {
             self.playlistPreloadDisposable?.dispose()
+            if let observer = self.playerPresentationObserver { NotificationCenter.default.removeObserver(observer) }
         }
 
         private func performAction(_ action: @escaping () -> Void) {
@@ -87,9 +93,25 @@ public final class MediaPlaybackHeaderPanelComponent: Component {
         
         func update(component: MediaPlaybackHeaderPanelComponent, availableSize: CGSize, state: EmptyComponentState, environment: Environment<Empty>, transition: ComponentTransition) -> CGSize {
             let themeUpdated = self.component?.theme !== component.theme
+
+            if let previous = self.component, previous.context !== component.context || previous.data.account.id != component.data.account.id {
+                self.playlistPreloadDisposable?.dispose()
+                self.playlistPreloadDisposable = nil
+                self.panel?.containerNode.headerNode.playbackStatus = nil
+                self.panel?.view.removeFromSuperview()
+                self.panel = nil
+            }
             
             self.component = component
             self.state = state
+
+            if component.data.kind == .music, component.data.account.id == component.context.account.id,
+               component.controller() is ChatListController,
+               PlayerMiniPresentation.isMounted(account: component.context.account.id.int64) {
+                self.panel?.view.isHidden = true
+                return CGSize(width: availableSize.width, height: 0)
+            }
+            self.panel?.view.isHidden = false
             
             let panel: MediaNavigationAccessoryPanel
             if let current = self.panel {
@@ -114,8 +136,8 @@ public final class MediaPlaybackHeaderPanelComponent: Component {
                 
                 let delayedStatus = component.context.sharedContext.mediaManager.globalMediaPlayerState
                 |> mapToSignal { value -> Signal<(Account, SharedMediaPlayerItemPlaybackStateOrLoading, MediaManagerPlayerType)?, NoError> in
-                    guard let value = value else {
-                        return .complete()
+                    guard let value = value, value.0.id == component.data.account.id else {
+                        return .single(nil)
                     }
                     switch value.1 {
                     case .state:

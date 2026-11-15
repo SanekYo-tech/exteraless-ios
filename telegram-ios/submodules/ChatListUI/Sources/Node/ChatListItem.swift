@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -744,7 +745,7 @@ public struct ChatListItemFilterData: Equatable {
     }
 }
 
-private func revealOptions(strings: PresentationStrings, theme: PresentationTheme, isPinned: Bool, isMuted: Bool?, location: ChatListControllerLocation, peerId: EnginePeer.Id, accountPeerId: EnginePeer.Id, canDelete: Bool, isEditing: Bool, filterData: ChatListItemFilterData?) -> [ItemListRevealOption] {
+func revealOptions(strings: PresentationStrings, theme: PresentationTheme, isPinned: Bool, isMuted: Bool?, location: ChatListControllerLocation, peerId: EnginePeer.Id, accountPeerId: EnginePeer.Id, canDelete: Bool, isEditing: Bool, filterData: ChatListItemFilterData?) -> [ItemListRevealOption] {
     var options: [ItemListRevealOption] = []
     if !isEditing {
         if case .savedMessagesChats = location {
@@ -872,7 +873,7 @@ private func forumThreadRevealOptions(strings: PresentationStrings, theme: Prese
     return options
 }
 
-private func leftRevealOptions(strings: PresentationStrings, theme: PresentationTheme, isUnread: Bool, isEditing: Bool, isPinned: Bool, isSavedMessages: Bool, location: ChatListControllerLocation, peer: EnginePeer, filterData: ChatListItemFilterData?) -> [ItemListRevealOption] {
+func leftRevealOptions(strings: PresentationStrings, theme: PresentationTheme, isUnread: Bool, isEditing: Bool, isPinned: Bool, isSavedMessages: Bool, location: ChatListControllerLocation, peer: EnginePeer, filterData: ChatListItemFilterData?) -> [ItemListRevealOption] {
     switch location {
     case let .chatList(groupId):
         if case .root = groupId {
@@ -1069,7 +1070,106 @@ private final class ChatListMediaPreviewNode: ASDisplayNode {
 private let telegramCodeRegex = try? NSRegularExpression(pattern: "(?<=: )\\b\\d{5,8}\\b(?=\\.)", options: [])
 private let loginCodeRegex = try? NSRegularExpression(pattern: "\\b\\d{5,8}\\b", options: [])
 
+/// Project the final eligible native controls, not a second permission table.
+func exteralessChatSwipeRevealOptions(left: [ItemListRevealOption], right: [ItemListRevealOption], rawValue: Int, hasFilters: Bool) -> (left: [ItemListRevealOption], right: [ItemListRevealOption]) {
+    func action(_ option: ItemListRevealOption) -> ChatSwipePolicy.Action? {
+        switch RevealOptionKey(rawValue: option.key) {
+        case .pin?, .unpin?: return .pin
+        case .toggleMarkedUnread?: return .read
+        case .archive?, .unarchive?: return .archive
+        case .mute?, .unmute?: return .mute
+        case .delete?: return .delete
+        default: return nil
+        }
+    }
+    let allowed = Set((left + right).compactMap(action))
+    guard let preferred = ChatSwipePolicy.primaryAction(rawValue: rawValue, hasFilters: hasFilters, allowed: allowed, nativeFallback: (right.last ?? left.first).flatMap(action)),
+          let option = (right + left).first(where: { action($0) == preferred }) else { return (left, right) }
+    // A trailing full swipe commits the last option. Move the original object,
+    // retaining its current pin/read/mute variant, title, icon and destructive bit.
+    return (left.filter { $0.key != option.key }, right.filter { $0.key != option.key } + [option])
+}
+
+private func exteralessChatSwipeViewOwnsHorizontalInput(_ view: UIView, at point: CGPoint) -> Bool {
+    if let scrollView = view as? UIScrollView, scrollView.isScrollEnabled,
+       scrollView.alwaysBounceHorizontal || scrollView.contentSize.width > scrollView.bounds.width + 1 { return true }
+    if view.disablesInteractiveTransitionGestureRecognizer || view.disablesInteractiveTransitionGestureRecognizerNow?() == true { return true }
+    return view.interactiveTransitionGestureRecognizerTest?(point) == true
+}
+
+func exteralessChatSwipeHasHorizontalContent(at point: CGPoint, in rowView: UIView) -> Bool {
+    var candidate = rowView.hitTest(point, with: nil)
+    while let view = candidate, view !== rowView {
+        if exteralessChatSwipeViewOwnsHorizontalInput(view, at: view.convert(point, from: rowView)) { return true }
+        candidate = view.superview
+    }
+    return false
+}
+
+/// The pager asks the same row policy as touch/trackpad reveal admission.
+func exteralessChatSwipeAllowsPager(at point: CGPoint, in container: UIView, hasFilters: Bool) -> Bool {
+    var candidate = container.hitTest(point, with: nil)
+    while let view = candidate {
+        if let row = view.asyncdisplaykit_node as? ChatListItemNode {
+            switch row.exteralessSwipeGestureOwner(at: row.view.convert(point, from: container), hasFilters: hasFilters) {
+            case .rowReveal, .horizontalContent: return false
+            case .native, .folderPager: return true
+            }
+        }
+        if view === container { break }
+        if exteralessChatSwipeViewOwnsHorizontalInput(view, at: view.convert(point, from: container)) { return false }
+        candidate = view.superview
+    }
+    return true
+}
+
 public class ChatListItemNode: ItemListRevealOptionsItemNode {
+    private var exteralessNativeSwipeOptions: (left: [ItemListRevealOption], right: [ItemListRevealOption]) = ([], [])
+    private var exteralessSwipeAnimations = true
+
+    private var exteralessHasSwipeFilters: Bool {
+        var candidate = self.supernode
+        while let node = candidate {
+            if let container = node as? ChatListContainerNode {
+                return container.availableFilters.contains(where: { $0.filter != nil })
+            }
+            candidate = node.supernode
+        }
+        return false
+    }
+
+    private var exteralessIsPeerSwipe: Bool {
+        guard let item = self.item, case .peer = item.content else { return false }
+        return true
+    }
+
+    override public func setRevealOptions(_ options: (left: [ItemListRevealOption], right: [ItemListRevealOption]), enableAnimations: Bool = true) {
+        // The caller has already applied native eligibility, inline navigation,
+        // Dialog/Privacy policy and editing gates. Keep that admitted set intact.
+        self.exteralessNativeSwipeOptions = options
+        self.exteralessSwipeAnimations = enableAnimations
+        let projected = self.exteralessIsPeerSwipe ? exteralessChatSwipeRevealOptions(left: options.left, right: options.right, rawValue: ChatSwipePolicy.current(), hasFilters: self.exteralessHasSwipeFilters) : options
+        super.setRevealOptions(projected, enableAnimations: enableAnimations)
+    }
+
+    func exteralessSwipeGestureOwner(at point: CGPoint, hasFilters: Bool) -> ChatSwipePolicy.GestureOwner {
+        return ChatSwipePolicy.gestureOwner(rawValue: ChatSwipePolicy.current(), hasFilters: hasFilters,
+            rowHasActions: self.exteralessIsPeerSwipe && (!self.exteralessNativeSwipeOptions.left.isEmpty || !self.exteralessNativeSwipeOptions.right.isEmpty),
+            isActionEdge: ChatSwipePolicy.isActionEdge(x: Double(point.x), width: Double(self.bounds.width)),
+            revealIsOpen: self.isRevealOptionsActive,
+            horizontalContent: exteralessChatSwipeHasHorizontalContent(at: point, in: self.view))
+    }
+
+    override public func canBeginReveal(at point: CGPoint, direction: CGFloat) -> Bool {
+        if !self.isRevealOptionsActive, self.exteralessIsPeerSwipe {
+            let options = self.exteralessNativeSwipeOptions
+            super.setRevealOptions(exteralessChatSwipeRevealOptions(left: options.left, right: options.right, rawValue: ChatSwipePolicy.current(), hasFilters: self.exteralessHasSwipeFilters), enableAnimations: self.exteralessSwipeAnimations)
+        }
+        switch self.exteralessSwipeGestureOwner(at: point, hasFilters: self.exteralessHasSwipeFilters) {
+        case .folderPager, .horizontalContent: return false
+        case .native, .rowReveal: return super.canBeginReveal(at: point, direction: direction)
+        }
+    }
     final class TopicItemNode: ASDisplayNode {
         let topicTitleNode: TextNode
         let titleTopicIconView: ComponentHostView<Empty>?
@@ -1405,6 +1505,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     public let titleNode: TextNode
     private var titleBadge: (backgroundView: UIImageView, textNode: TextNode)?
     public let authorNode: AuthorNode
+    private var exteralessSenderAvatarNode: AvatarNode?
     private var compoundHighlightingNode: LinkHighlightingNode?
     private var textArrowNode: ASImageNode?
     private var compoundTextButtonNode: HighlightTrackingButtonNode?
@@ -1472,6 +1573,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
     private var customAnimationInProgress: Bool = false
     
     private var onlineIsVoiceChat: Bool = false
+    private var identityActivityBand: IdentityActivityBand?
     private var currentOnline: Bool?
     
     override public var canBeSelected: Bool {
@@ -1524,7 +1626,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     if item.context.account.peerId == chatMainPeer.id {
                         result += item.presentationData.strings.DialogList_SavedMessages
                     } else {
-                        result += chatMainPeer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                        result += chatMainPeer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                     }
                     if let combinedReadState = peerData.combinedReadState, combinedReadState.count > 0 {
                         result += "\n\(item.presentationData.strings.VoiceOver_Chat_UnreadMessages(combinedReadState.count))"
@@ -1556,7 +1658,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         }
                         let (_, initialHideAuthor, messageText, _, _, _, richTextPreview) = chatListItemStrings(strings: item.presentationData.strings, nameDisplayOrder: item.presentationData.nameDisplayOrder, dateTimeFormat: item.presentationData.dateTimeFormat, contentSettings: item.context.currentContentSettings.with { $0 }, messages: messages, chatPeer: peer, accountPeerId: item.context.account.peerId, isPeerGroup: false)
                         if message.flags.contains(.Incoming), !initialHideAuthor, let author = message.author, case .user = author {
-                            result += "\n\(item.presentationData.strings.VoiceOver_ChatList_MessageFrom(author.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)).string)"
+                            result += "\n\(item.presentationData.strings.VoiceOver_ChatList_MessageFrom(author.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)).string)"
                         }
                         result += "\n\(richTextPreview.map(instantPagePreviewPlainText) ?? messageText)"
                         return result
@@ -1565,7 +1667,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         var isFirst = true
                         for peer in peers {
                             if let chatMainPeer = peer.peer.chatOrMonoforumMainPeer {
-                                let peerTitle = chatMainPeer.compactDisplayTitle
+                                let peerTitle = chatMainPeer.exteralessCompactDisplayTitle(account: item.context.account)
                                 if !peerTitle.isEmpty {
                                     if isFirst {
                                         isFirst = false
@@ -1590,7 +1692,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         }
                         let (_, initialHideAuthor, messageText, _, _, _, _) = chatListItemStrings(strings: item.presentationData.strings, nameDisplayOrder: item.presentationData.nameDisplayOrder, dateTimeFormat: item.presentationData.dateTimeFormat, contentSettings: item.context.currentContentSettings.with { $0 }, messages: peerData.messages, chatPeer: peerData.peer, accountPeerId: item.context.account.peerId, isPeerGroup: false)
                         if message.flags.contains(.Incoming), !initialHideAuthor, let author = message.author, case .user = author {
-                            result += "\n\(item.presentationData.strings.VoiceOver_ChatList_MessageFrom(author.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)).string)"
+                            result += "\n\(item.presentationData.strings.VoiceOver_ChatList_MessageFrom(author.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)).string)"
                         }
                         if !message.flags.contains(.Incoming), let combinedReadState = peerData.combinedReadState, combinedReadState.isOutgoingMessageIndexRead(message.index) {
                             result += "\n\(item.presentationData.strings.VoiceOver_ChatList_MessageRead)"
@@ -2052,9 +2154,11 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             } else {
                 self.avatarNode.setPeer(context: item.context, theme: item.presentationData.theme, peer: avatarPeer, overrideImage: overrideImage, emptyColor: item.presentationData.theme.list.mediaPlaceholderColor, clipStyle: avatarClipStyle, synchronousLoad: synchronousLoads, displayDimensions: CGSize(width: 60.0, height: 60.0))
             }
+            self.updateVideoVisibility()
             
             if peer.isPremium && peer.id != item.context.account.peerId {
                 let context = item.context
+                let videoDisplaySize = CGSize(width: avatarDiameter, height: avatarDiameter)
                 self.cachedDataDisposable.set((context.account.postbox.peerView(id: peer.id)
                 |> deliverOnMainQueue).startStrict(next: { [weak self] peerView in
                     guard let strongSelf = self else {
@@ -2082,7 +2186,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     
                     if isKnown {
                         let photo = personalPhoto ?? profilePhoto
-                        if let photo = photo, item.context.sharedContext.energyUsageSettings.loopEmoji, (!photo.videoRepresentations.isEmpty || photo.emojiMarkup != nil) {
+                        if let photo = photo, item.context.sharedContext.energyUsageSettings.loopEmoji, ((!photo.videoRepresentations.isEmpty && ExteralessIdentityPresentation.shared.policy.premiumItemVideoAvatar) || photo.emojiMarkup != nil) {
                             let videoNode: AvatarVideoNode
                             if let current = strongSelf.avatarVideoNode {
                                 videoNode = current
@@ -2091,7 +2195,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                 strongSelf.avatarNode.contentNode.addSubnode(videoNode)
                                 strongSelf.avatarVideoNode = videoNode
                             }
-                            videoNode.update(peer: peer, photo: photo, size: CGSize(width: 60.0, height: 60.0))
+                            videoNode.update(peer: peer, photo: photo, size: strongSelf.avatarNode.bounds.isEmpty ? videoDisplaySize : strongSelf.avatarNode.bounds.size)
                             
                             if strongSelf.hierarchyTrackingLayer == nil {
                                 let hierarchyTrackingLayer = HierarchyTrackingLayer()
@@ -2196,7 +2300,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             if let item = self.item, case .chatList = item.index {
-                self.onlineNode.setImage(PresentationResourcesChatList.recentStatusOnlineIcon(item.presentationData.theme, state: .highlighted, voiceChat: self.onlineIsVoiceChat), color: nil, transition: transition)
+                self.onlineNode.setImage(exteralessIdentityActivityImage(PresentationResourcesChatList.recentStatusOnlineIcon(item.presentationData.theme, state: .highlighted, voiceChat: self.onlineIsVoiceChat), band: self.identityActivityBand), color: nil, transition: transition)
                 let baseColor = item.isPinned ? item.presentationData.theme.chatList.pinnedItemBackgroundColor : item.presentationData.theme.chatList.itemBackgroundColor
                 let highlightColor = self.highlightedBackgroundNode.backgroundColor ?? item.presentationData.theme.chatList.itemHighlightedBackgroundColor
                 self.starView?.setOutlineColor(highlightColor.mixedWith(baseColor, alpha: 1.0 - self.highlightedBackgroundNode.alpha), transition: transition)
@@ -2216,7 +2320,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     onlineIcon = PresentationResourcesChatList.recentStatusOnlineIcon(item.presentationData.theme, state: .regular, voiceChat: self.onlineIsVoiceChat)
                     effectiveBackgroundColor = item.presentationData.theme.chatList.itemBackgroundColor
                 }
-                self.onlineNode.setImage(onlineIcon, color: nil, transition: transition)
+                self.onlineNode.setImage(exteralessIdentityActivityImage(onlineIcon, band: self.identityActivityBand), color: nil, transition: transition)
                 self.starView?.setOutlineColor(effectiveBackgroundColor, transition: transition)
             }
         }
@@ -2484,6 +2588,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             var authorAttributedString: NSAttributedString?
+            var exteralessPreviewSender: EnginePeer?
             var authorIsCurrentChat: Bool = false
             var textAttributedString: NSAttributedString?
             var textLeftCutout: CGFloat = 0.0
@@ -2663,7 +2768,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     if author.id == item.context.account.peerId {
                         inlineAuthorPrefix = item.presentationData.strings.DialogList_You
                     } else if messages.last?.id.peerId.namespace != Namespaces.Peer.CloudUser && messages.last?.id.peerId.namespace != Namespaces.Peer.SecretChat {
-                        inlineAuthorPrefix = EnginePeer.user(author).compactDisplayTitle
+                        inlineAuthorPrefix = EnginePeer.user(author).exteralessCompactDisplayTitle(account: item.context.account)
                     }
                 }
             }
@@ -2718,20 +2823,23 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     }
 
                     var peerText: String?
+                    var peerTextAuthor: EnginePeer?
                     if case .savedMessagesChats = item.chatListLocation {
                         if let message = messages.last, let forwardInfo = message.forwardInfo, let author = forwardInfo.author {
                             if author.id != itemPeer.chatMainPeer?.id {
-                                peerText = EnginePeer(author).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                peerText = EnginePeer(author).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                peerTextAuthor = EnginePeer(author)
                             }
                         }
                     } else if case .groupReference = item.content {
                         if let messagePeer = itemPeer.chatMainPeer {
-                            peerText = messagePeer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                            peerText = messagePeer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                         }
                     } else if let message = messages.last, let author = message.author?._asPeer(), let peer = itemPeer.chatMainPeer {
                         if peer.id.isVerificationCodes {
                             if let message = messages.last, let forwardInfo = message.forwardInfo, let author = forwardInfo.author {
-                                peerText = EnginePeer(author).compactDisplayTitle
+                                peerText = EnginePeer(author).exteralessCompactDisplayTitle(account: item.context.account)
+                                peerTextAuthor = EnginePeer(author)
                             }
                         } else if !isUser || isGuestChatAuthor {
                             if case let .channel(peer) = peer, case .broadcast = peer.info {
@@ -2739,7 +2847,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                 if let forwardInfo = message.forwardInfo, forwardInfo.flags.contains(.isImported), let authorSignature = forwardInfo.authorSignature {
                                     peerText = authorSignature
                                 } else {
-                                    peerText = author.id == account.peerId ? item.presentationData.strings.DialogList_You : EnginePeer(author).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                    peerText = author.id == account.peerId ? item.presentationData.strings.DialogList_You : EnginePeer(author).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                    peerTextAuthor = EnginePeer(author)
                                     authorIsCurrentChat = !isGuestChatAuthor && author.id == peer.id
                                 }
                             }
@@ -2764,7 +2873,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         
                         if let effectiveAuthor, effectiveAuthor.id != itemPeer.chatMainPeer?.id {
                             authorIsCurrentChat = false
-                            peerText = EnginePeer(effectiveAuthor).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                            peerText = EnginePeer(effectiveAuthor).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                            peerTextAuthor = EnginePeer(effectiveAuthor)
                             ignoreForwardedIcon = true
                         }
                     }
@@ -2834,6 +2944,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         
                         if let peerText = peerText {
                             authorAttributedString = NSAttributedString(string: peerText, font: textFont, textColor: theme.authorNameColor)
+                            exteralessPreviewSender = peerTextAuthor
                         }
                                        
                         var entities = chatListPreviewTextEntities(entities)
@@ -3062,7 +3173,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                             }
                         }
                 
-                        var displayMediaPreviews = true
+                        var displayMediaPreviews = ClientSettings.shared.bool("appearance.mediaPreview", default: true)
                         if message._asMessage().containsSecretMedia {
                             displayMediaPreviews = false
                         } else if let _ = message.peers[message.id.peerId] as? TelegramSecretChat {
@@ -3177,7 +3288,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         var peerText: String?
                         if case .groupReference = item.content {
                             if let messagePeer = itemPeer.chatMainPeer {
-                                peerText = messagePeer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                                peerText = messagePeer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                             }
                         }
                         
@@ -3190,7 +3301,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     var isFirst = true
                     for peer in peers {
                         if let chatMainPeer = peer.peer.chatMainPeer {
-                            let peerTitle = chatMainPeer.compactDisplayTitle
+                            let peerTitle = chatMainPeer.exteralessCompactDisplayTitle(account: item.context.account)
                             if !peerTitle.isEmpty {
                                 if isFirst {
                                     isFirst = false
@@ -3282,7 +3393,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         if customMessageListData.commandPrefix != nil {
                             titleAttributedString = nil
                         } else {
-                            if let displayTitle = itemPeer.chatOrMonoforumMainPeer?.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder) {
+                            if let displayTitle = itemPeer.chatOrMonoforumMainPeer?.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder) {
                                 let textColor: UIColor
                                 if case let .chatList(index) = item.index, index.messageIndex.id.peerId.namespace == Namespaces.Peer.SecretChat {
                                     textColor = theme.secretTitleColor
@@ -3299,7 +3410,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     } else if let threadInfo = threadInfo {
                         titleAttributedString = NSAttributedString(string: threadInfo.info.title, font: titleFont, textColor: theme.titleColor)
                     } else if let message = messages.last, case let .user(author) = message.author, displayAsMessage {
-                        titleAttributedString = NSAttributedString(string: author.id == account.peerId ? item.presentationData.strings.DialogList_You : EnginePeer.user(author).displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder), font: titleFont, textColor: theme.titleColor)
+                        titleAttributedString = NSAttributedString(string: author.id == account.peerId ? item.presentationData.strings.DialogList_You : EnginePeer.user(author).exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder), font: titleFont, textColor: theme.titleColor)
                     } else if isPeerGroup {
                         titleAttributedString = NSAttributedString(string: item.presentationData.strings.ChatList_ArchivedChatsTitle, font: titleFont, textColor: theme.titleColor)
                     } else if itemPeer.chatMainPeer?.id == item.context.account.peerId {
@@ -3312,7 +3423,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                          titleAttributedString = NSAttributedString(string: item.presentationData.strings.DialogList_Replies, font: titleFont, textColor: theme.titleColor)
                     } else if let id = itemPeer.chatMainPeer?.id, id.isAnonymousSavedMessages {
                         titleAttributedString = NSAttributedString(string: item.presentationData.strings.ChatList_AuthorHidden, font: titleFont, textColor: theme.titleColor)
-                    } else if let displayTitle = itemPeer.chatOrMonoforumMainPeer?.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder) {
+                    } else if let displayTitle = itemPeer.chatOrMonoforumMainPeer?.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder) {
                         let textColor: UIColor
                         if case let .chatList(index) = item.index, index.messageIndex.id.peerId.namespace == Namespaces.Peer.SecretChat {
                             textColor = theme.secretTitleColor
@@ -3563,12 +3674,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                             } else if peer.isFake {
                                 currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                            } else if let emojiStatus = peer.emojiStatus {
+                            } else if let emojiStatus = exteralessIdentityPresentation(account: item.context.account, peer: peer).emojiStatus {
                                 currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                                 if let color = emojiStatus.color {
                                     currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                                 }
-                            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                            } else if exteralessIdentityPresentation(account: item.context.account, peer: peer).premiumBadge && !premiumConfiguration.isPremiumDisabled {
                                 currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                             }
                             
@@ -3594,12 +3705,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_ScamAccount.uppercased())
                     } else if peer.isFake {
                         currentCredibilityIconContent = .text(color: item.presentationData.theme.chat.message.incoming.scamColor, string: item.presentationData.strings.Message_FakeAccount.uppercased())
-                    } else if let emojiStatus = peer.emojiStatus {
+                    } else if let emojiStatus = exteralessIdentityPresentation(account: item.context.account, peer: peer).emojiStatus {
                         currentStatusIconContent = .animation(content: .customEmoji(fileId: emojiStatus.fileId), size: CGSize(width: 32.0, height: 32.0), placeholderColor: item.presentationData.theme.list.mediaPlaceholderColor, themeColor: item.presentationData.theme.list.itemAccentColor, loopMode: .count(2))
                         if let color = emojiStatus.color {
                             currentStatusIconParticleColor = UIColor(rgb: UInt32(bitPattern: color))
                         }
-                    } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled {
+                    } else if exteralessIdentityPresentation(account: item.context.account, peer: peer).premiumBadge && !premiumConfiguration.isPremiumDisabled {
                         currentCredibilityIconContent = .premium(color: item.presentationData.theme.list.itemAccentColor)
                     }
                     
@@ -3679,7 +3790,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             let (mentionBadgeLayout, mentionBadgeApply) = mentionBadgeLayout(CGSize(width: rawContentWidth, height: CGFloat.greatestFiniteMagnitude), badgeDiameter, badgeFont, currentMentionBadgeImage, mentionBadgeContent)
             
             var actionButtonTitleNodeLayoutAndApply: (TextNodeLayout, () -> TextNode)?
-            if !item.editing, case .none = badgeContent, case .none = mentionBadgeContent, case let .chat(itemPeer) = contentPeer, case let .user(user) = itemPeer.chatMainPeer, let botInfo = user.botInfo, botInfo.flags.contains(.hasWebApp) {
+            if !ClientSettings.shared.bool("appearance.disableBotOpenButton"), !item.editing, case .none = badgeContent, case .none = mentionBadgeContent, case let .chat(itemPeer) = contentPeer, case let .user(user) = itemPeer.chatMainPeer, let botInfo = user.botInfo, botInfo.flags.contains(.hasWebApp) {
                 actionButtonTitleNodeLayoutAndApply = makeActionButtonTitleNodeLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.presentationData.strings.ChatList_InlineButtonOpenApp, font: Font.semibold(floor(item.presentationData.fontSize.itemListBaseFontSize * 15.0 / 17.0)), textColor: theme.unreadBadgeActiveTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: rawContentWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             }
             
@@ -3718,6 +3829,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             var effectiveAuthorTitle = (hideAuthor && !hasDraft) ? nil : authorAttributedString
+            var exteralessAuthorInPreview = false
             
             let isSearching = item.interaction.searchTextHighightState != nil
             
@@ -3729,11 +3841,11 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 if forumThread != nil || !topForumTopicItems.isEmpty {
                     if let forumThread {
                         isFirstForumThreadSelectable = false
-                        forumThreads.append((id: forumThread.id, threadPeer: forumThread.threadPeer, title: NSAttributedString(string: forumThread.threadPeer?.compactDisplayTitle ?? " ", font: textFont, textColor: forumThread.isUnread || isSearching ? theme.authorNameColor : theme.messageTextColor), iconId: nil, iconColor: nil))
+                        forumThreads.append((id: forumThread.id, threadPeer: forumThread.threadPeer, title: NSAttributedString(string: forumThread.threadPeer?.exteralessCompactDisplayTitle(account: item.context.account) ?? " ", font: textFont, textColor: forumThread.isUnread || isSearching ? theme.authorNameColor : theme.messageTextColor), iconId: nil, iconColor: nil))
                     }
                     for topicItem in topForumTopicItems {
                         if forumThread?.id != topicItem.id {
-                            forumThreads.append((id: topicItem.id, threadPeer: topicItem.threadPeer, title: NSAttributedString(string: topicItem.threadPeer?.compactDisplayTitle ?? " ", font: textFont, textColor: topicItem.isUnread || isSearching ? theme.authorNameColor : theme.messageTextColor), iconId: nil, iconColor: nil))
+                            forumThreads.append((id: topicItem.id, threadPeer: topicItem.threadPeer, title: NSAttributedString(string: topicItem.threadPeer?.exteralessCompactDisplayTitle(account: item.context.account) ?? " ", font: textFont, textColor: topicItem.isUnread || isSearching ? theme.authorNameColor : theme.messageTextColor), iconId: nil, iconColor: nil))
                         }
                     }
                     
@@ -3743,6 +3855,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         mutableTextAttributedString.append(textAttributedStringValue)
                         
                         textAttributedString = mutableTextAttributedString
+                        exteralessAuthorInPreview = true
                     }
                     
                     effectiveAuthorTitle = nil
@@ -3771,6 +3884,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     mutableTextAttributedString.append(textAttributedStringValue)
                     
                     textAttributedString = mutableTextAttributedString
+                    exteralessAuthorInPreview = true
                 }
                 
                 effectiveAuthorTitle = nil
@@ -3781,14 +3895,26 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             if case let .peer(peerData) = item.content, case .community = peerData.peer.peer, let message = messages.last, let sourcePeer = communitySourcePeer(peerData: peerData, message: message) {
-                let sourceTitle = sourcePeer.displayTitle(strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
+                let sourceTitle = sourcePeer.exteralessDisplayTitle(account: item.context.account, strings: item.presentationData.strings, displayOrder: item.presentationData.nameDisplayOrder)
                 if !sourceTitle.isEmpty {
                     forumThreads.append((id: sourcePeer.id.toInt64(), threadPeer: nil, title: NSAttributedString(string: sourceTitle, font: textFont, textColor: theme.titleColor), iconId: nil, iconColor: nil))
                     authorTopicArrowColor = theme.messageTextColor
                 }
             }
 
-            let (authorLayout, authorApply) = authorLayout(item.context, rawContentWidth - badgeSize, item.presentationData.theme, effectiveAuthorTitle, forumThreads, authorTopicArrowColor)
+            let exteralessSenderPeer: EnginePeer?
+            if let sender = exteralessPreviewSender,
+               AppearancePresentationPolicy.showsSenderAvatar(enabled: ClientSettings.shared.bool("appearance.senderMiniAvatars", default: true), hasName: (effectiveAuthorTitle?.length ?? 0) > 0 || exteralessAuthorInPreview, hasMessage: true, isSelf: sender.id == item.context.account.peerId, isDraft: hasDraft),
+               !item.interaction.isInlineMode {
+                exteralessSenderPeer = sender
+            } else {
+                exteralessSenderPeer = nil
+            }
+            let exteralessAvatarInAuthor = exteralessSenderPeer != nil && effectiveAuthorTitle != nil
+            let exteralessAvatarInPreview = exteralessSenderPeer != nil && !exteralessAvatarInAuthor && exteralessAuthorInPreview
+            let exteralessAuthorInset: CGFloat = exteralessAvatarInAuthor ? 22.0 : 0.0
+            let (baseAuthorLayout, authorApply) = authorLayout(item.context, max(1, rawContentWidth - badgeSize - exteralessAuthorInset), item.presentationData.theme, effectiveAuthorTitle, forumThreads, authorTopicArrowColor)
+            let authorLayout = CGSize(width: baseAuthorLayout.width + exteralessAuthorInset, height: baseAuthorLayout.height)
             
             var textBottomRightCutout: CGFloat = 0.0
             
@@ -3804,8 +3930,9 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             }
             
             var textCutout: TextNodeCutout?
-            if !textLeftCutout.isZero || !textBottomRightCutout.isZero {
-                textCutout = TextNodeCutout(topLeft: textLeftCutout.isZero ? nil : CGSize(width: textLeftCutout, height: 10.0), topRight: nil, bottomRight: textBottomRightCutout.isZero ? nil : CGSize(width: textBottomRightCutout, height: 10.0))
+            let exteralessTextCutout = textLeftCutout + (exteralessAvatarInPreview ? 22.0 : 0.0)
+            if !exteralessTextCutout.isZero || !textBottomRightCutout.isZero {
+                textCutout = TextNodeCutout(topLeft: exteralessTextCutout.isZero ? nil : CGSize(width: exteralessTextCutout, height: exteralessAvatarInPreview ? 18.0 : 10.0), topRight: nil, bottomRight: textBottomRightCutout.isZero ? nil : CGSize(width: textBottomRightCutout, height: 10.0))
             }
             
             var textMaxWidth = rawContentWidth - badgeSize
@@ -3882,6 +4009,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             var online = false
             var animateOnline = false
             var onlineIsVoiceChat = false
+            var identityActivityBand: IdentityActivityBand?
             
             var isPinned = false
             if case let .chatList(index) = item.index {
@@ -3908,6 +4036,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                             let updatedPresence = EnginePeer.Presence(status: presence.status, lastActivity: 0)
                             let timestamp = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
                             let relativeStatus = relativeUserPresenceStatus(updatedPresence, relativeTo: timestamp)
+                            identityActivityBand = exteralessIdentityActivityBand(account: item.context.account, peer: .user(peer), presence: updatedPresence, locallyOnline: presence.lastActivity > 0 && Int64(presence.lastActivity) + 30 >= Int64(timestamp), now: Int64(timestamp))
                             if case .online = relativeStatus {
                                 online = true
                             }
@@ -4028,8 +4157,13 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                 peerRevealOptions = []
                 peerLeftRevealOptions = []
             }
+            if case .peer = item.content,
+               !exteralessDialogPolicy().allowsArchiveRowSwipe(isArchive: item.chatListLocation == .chatList(groupId: .archive), isPeer: true) {
+                peerRevealOptions = []
+                peerLeftRevealOptions = []
+            }
             
-            let (onlineLayout, onlineApply) = onlineLayout(online, onlineIsVoiceChat)
+            let (onlineLayout, onlineApply) = onlineLayout(online || identityActivityBand != nil, onlineIsVoiceChat)
             var animateContent = false
             if let currentItem = currentItem, currentItem.content.chatLocation == item.content.chatLocation {
                 animateContent = true
@@ -4078,6 +4212,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     strongSelf.cachedChatListQuoteSearchResult = chatListQuoteSearchResult
                     strongSelf.cachedCustomTextEntities = customTextEntities
                     strongSelf.onlineIsVoiceChat = onlineIsVoiceChat
+                    strongSelf.identityActivityBand = identityActivityBand
                     
                     var animateOnline = animateOnline
                     if let currentOnline = strongSelf.currentOnline, currentOnline == online {
@@ -4425,7 +4560,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     if onlineIsVoiceChat {
                         onlineFrame = CGRect(origin: CGPoint(x: avatarFrame.width - onlineLayout.width + 1.0 - UIScreenPixel, y: avatarFrame.height - onlineLayout.height + 1.0 - UIScreenPixel), size: onlineLayout)
                     } else {
-                        onlineFrame = CGRect(origin: CGPoint(x: avatarFrame.width - onlineLayout.width - 2.0, y: avatarFrame.height - onlineLayout.height - 2.0), size: onlineLayout)
+                        let cornerOffset = exteralessAvatarOnlineMarkerOffset(radius: min(onlineLayout.width, onlineLayout.height) * 0.5)
+                        onlineFrame = CGRect(origin: CGPoint(x: avatarFrame.width - onlineLayout.width - 2.0 + cornerOffset, y: avatarFrame.height - onlineLayout.height - 2.0 + cornerOffset), size: onlineLayout)
                     }
                     transition.updateFrame(node: strongSelf.onlineNode, frame: onlineFrame)
                     
@@ -4463,7 +4599,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         onlineIcon = PresentationResourcesChatList.recentStatusOnlineIcon(item.presentationData.theme, state: .regular, voiceChat: onlineIsVoiceChat)
                         effectiveBackgroundColor = item.presentationData.theme.chatList.itemBackgroundColor
                     }
-                    strongSelf.onlineNode.setImage(onlineIcon, color: item.presentationData.theme.list.itemCheckColors.foregroundColor, transition: .immediate)
+                    strongSelf.onlineNode.setImage(exteralessIdentityActivityImage(onlineIcon, band: identityActivityBand), color: item.presentationData.theme.list.itemCheckColors.foregroundColor, transition: .immediate)
                     
                     if isSubscription, autoremoveTimeout == nil {
                         let starView: StarView
@@ -4485,7 +4621,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     }
                     
                     let autoremoveTimeoutFraction: CGFloat
-                    if online {
+                    if online || identityActivityBand != nil {
                         autoremoveTimeoutFraction = 0.0
                     } else {
                         autoremoveTimeoutFraction = 1.0 - onlineInlineNavigationFraction
@@ -4763,7 +4899,7 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                     let titleFrame = CGRect(origin: CGPoint(x: contentRect.origin.x + titleOffset, y: contentRect.origin.y + UIScreenPixel), size: titleLayout.size)
                     strongSelf.titleNode.frame = titleFrame
                     
-                    let authorNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0, y: contentRect.minY + titleLayout.size.height - 2.0), size: authorLayout)
+                    let authorNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0 + exteralessAuthorInset, y: contentRect.minY + titleLayout.size.height - 2.0), size: baseAuthorLayout)
                     strongSelf.authorNode.frame = authorNodeFrame
                     let textNodeFrame = CGRect(origin: CGPoint(x: contentRect.origin.x - 1.0, y: contentRect.minY + titleLayout.size.height - 2.0 + (authorLayout.height.isZero ? 0.0 : (authorLayout.height - 3.0))), size: textLayout.size)
                     
@@ -4889,6 +5025,28 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                         strongSelf.textNode.textNode.frame = textNodeFrame
                         
                         strongSelf.authorNode.assignParentNode(parentNode: nil)
+                    }
+
+                    if let sender = exteralessSenderPeer, exteralessAvatarInAuthor || exteralessAvatarInPreview {
+                        let avatar: AvatarNode
+                        if let current = strongSelf.exteralessSenderAvatarNode {
+                            avatar = current
+                        } else {
+                            avatar = AvatarNode(font: avatarPlaceholderFont(size: 8.0))
+                            avatar.isUserInteractionEnabled = false
+                            avatar.isAccessibilityElement = false
+                            strongSelf.exteralessSenderAvatarNode = avatar
+                        }
+                        // Parenting to the actual text surface preserves typing fades,
+                        // topic extraction and scroll transitions without extra timers.
+                        let parent: ASDisplayNode = exteralessAvatarInAuthor ? strongSelf.authorNode : strongSelf.textNode.textNode
+                        if avatar.supernode !== parent { parent.addSubnode(avatar) }
+                        let y = exteralessAvatarInAuthor ? max(0, floor((baseAuthorLayout.height - 18.0) * 0.5)) : 1.0
+                        avatar.frame = CGRect(x: exteralessAvatarInAuthor ? -22.0 : textLeftCutout, y: y, width: 18.0, height: 18.0)
+                        avatar.setPeer(context: item.context, theme: item.presentationData.theme, peer: sender, emptyColor: item.presentationData.theme.list.mediaPlaceholderColor, displayDimensions: CGSize(width: 18.0, height: 18.0))
+                    } else if let avatar = strongSelf.exteralessSenderAvatarNode {
+                        strongSelf.exteralessSenderAvatarNode = nil
+                        avatar.removeFromSupernode()
                     }
                     
                     if let currentTextSnapshotView {
@@ -5580,7 +5738,10 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
         self.avatarVideoNode?.updateVisibility(isVisible)
       
         if let videoNode = self.avatarVideoNode {
-            videoNode.updateLayout(size: self.avatarNode.frame.size, cornerRadius: self.avatarNode.frame.size.width / 2.0, transition: .immediate)
+            let size = self.avatarNode.bounds.size
+            let shape = self.avatarNode.resolvedClipStyle
+            videoNode.updateLayout(size: size, cornerRadius: min(size.width, size.height) * (shape.exteralessResolvedCornerFraction ?? 0), transition: .immediate)
+            shape.applyExteralessFinalClip(to: videoNode.layer, size: size)
             videoNode.frame = self.avatarNode.bounds
         }
     }
@@ -5661,6 +5822,12 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
 
     override public func revealOptionSelected(_ option: ItemListRevealOption, animated: Bool) {
         guard let item = self.item else {
+            return
+        }
+        if case .peer = item.content,
+           !exteralessDialogPolicy().allowsArchiveRowSwipe(isArchive: item.chatListLocation == .chatList(groupId: .archive), isPeer: true) {
+            self.setRevealOptionsOpened(false, animated: true)
+            self.revealOptionsInteractivelyClosed()
             return
         }
         

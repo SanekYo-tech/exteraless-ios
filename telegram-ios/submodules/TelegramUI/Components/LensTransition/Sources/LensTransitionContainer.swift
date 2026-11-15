@@ -8,6 +8,10 @@ import GlassBackgroundComponent
 /// The parent owns this view's frame; previews handle conversion between source windows.
 public final class LensTransitionContainer: UIView {
     private let backgroundView = GlassBackgroundView()
+    public var exteralessOpaqueFillColor: UIColor? {
+        get { self.backgroundView.exteralessOpaqueFillColor }
+        set { self.backgroundView.exteralessOpaqueFillColor = newValue }
+    }
     private var morph: AnyObject?
     private var sourcePreview: UITargetedPreview?
     private var sourceSizeAtOpen: CGSize?

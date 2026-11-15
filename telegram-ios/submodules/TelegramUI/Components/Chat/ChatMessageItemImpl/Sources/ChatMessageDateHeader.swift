@@ -20,14 +20,6 @@ import ComponentFlow
 import EmojiStatusComponent
 import AppBundle
 
-private let timezoneOffset: Int32 = {
-    let nowTimestamp = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
-    var now: time_t = time_t(nowTimestamp)
-    var timeinfoNow: tm = tm()
-    localtime_r(&now, &timeinfoNow)
-    return Int32(timeinfoNow.tm_gmtoff)
-}()
-
 private let granularity: Int32 = 60 * 60 * 24
 
 public final class ChatMessageDateHeader: ListViewItemHeader {
@@ -153,7 +145,9 @@ private func dateHeaderTimestampId(timestamp: Int32) -> Int32 {
     } else if timestamp == Int32.max {
         return timestamp / (granularity) * (granularity)
     } else {
-        return ((timestamp + timezoneOffset) / (granularity)) * (granularity)
+        let offset = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: Double(timestamp)))
+        let civil = Int64(timestamp) + Int64(offset)
+        return Int32(clamping: Int64(floor(Double(civil) / Double(granularity))) * Int64(granularity))
     }
 }
 
@@ -234,6 +228,32 @@ private final class ChatMessageDateSectionSeparatorNode: ASDisplayNode {
     }
 }
 
+private func exteralessIdentityDateHeaderText(localTimestamp: Int32, scheduled: Bool, presentationData: ChatPresentationData) -> String {
+    if scheduled && localTimestamp == scheduleWhenOnlineTimestamp { return presentationData.strings.ScheduledMessages_ScheduledOnline }
+    let now = Date()
+    // Header IDs are local civil days encoded as UTC. Do not shift them twice.
+    let nowCivil = now.addingTimeInterval(Double(TimeZone.current.secondsFromGMT(for: now)))
+    let date = Date(timeIntervalSince1970: Double(localTimestamp))
+    let utc = TimeZone(secondsFromGMT: 0)!
+    var gregorian = Calendar(identifier: .gregorian)
+    gregorian.timeZone = utc
+    let components = gregorian.dateComponents([.year, .month, .day], from: date)
+    let today = gregorian.isDate(date, inSameDayAs: nowCivil)
+    var text: String
+    if today {
+        text = presentationData.strings.Weekday_Today
+    } else if let converted = presentationData.dateTimeFormat.identityCalendar.persianText(for: date,
+        style: .monthDay(includeYear: !presentationData.dateTimeFormat.identityCalendar.sameYear(date, nowCivil, timeZone: utc)), timeZone: utc) {
+        text = converted
+    } else if gregorian.isDate(date, equalTo: nowCivil, toGranularity: .year) {
+        text = presentationData.strings.Date_ChatDateHeader(monthAtIndex((components.month ?? 1) - 1, strings: presentationData.strings), String(components.day ?? 1)).string
+    } else {
+        text = presentationData.strings.Date_ChatDateHeaderYear(monthAtIndex((components.month ?? 1) - 1, strings: presentationData.strings), String(components.day ?? 1), String(components.year ?? 1970)).string
+    }
+    if scheduled { text = today ? presentationData.strings.ScheduledMessages_ScheduledToday : presentationData.strings.ScheduledMessages_ScheduledDate(text).string }
+    return text
+}
+
 private final class ChatMessageDateContentNode: ASDisplayNode {
     private var presentationData: ChatPresentationData
     private let controllerInteraction: ChatControllerInteraction?
@@ -244,8 +264,12 @@ private final class ChatMessageDateContentNode: ASDisplayNode {
     
     private var backgroundContent: WallpaperBubbleBackgroundNode?
     private var text: String
+    private let localTimestamp: Int32
+    private let scheduled: Bool
     
     init(presentationData: ChatPresentationData, controllerInteraction: ChatControllerInteraction?, localTimestamp: Int32, scheduled: Bool) {
+        self.localTimestamp = localTimestamp
+        self.scheduled = scheduled
         self.presentationData = presentationData
         self.controllerInteraction = controllerInteraction
         
@@ -266,36 +290,7 @@ private final class ChatMessageDateContentNode: ASDisplayNode {
         self.stickBackgroundNode.displayWithoutProcessing = true
         self.stickBackgroundNode.displaysAsynchronously = false
         
-        let nowTimestamp = Int32(CFAbsoluteTimeGetCurrent() + NSTimeIntervalSince1970)
-        
-        var t: time_t = time_t(localTimestamp)
-        var timeinfo: tm = tm()
-        gmtime_r(&t, &timeinfo)
-        
-        var now: time_t = time_t(nowTimestamp)
-        var timeinfoNow: tm = tm()
-        localtime_r(&now, &timeinfoNow)
-        
-        var text: String
-        if timeinfo.tm_year == timeinfoNow.tm_year {
-            if timeinfo.tm_yday == timeinfoNow.tm_yday {
-                text = presentationData.strings.Weekday_Today
-            } else {
-                text = presentationData.strings.Date_ChatDateHeader(monthAtIndex(Int(timeinfo.tm_mon), strings: presentationData.strings), "\(timeinfo.tm_mday)").string
-            }
-        } else {
-            text = presentationData.strings.Date_ChatDateHeaderYear(monthAtIndex(Int(timeinfo.tm_mon), strings: presentationData.strings), "\(timeinfo.tm_mday)", "\(1900 + timeinfo.tm_year)").string
-        }
-        
-        if scheduled {
-            if localTimestamp == scheduleWhenOnlineTimestamp {
-                text = presentationData.strings.ScheduledMessages_ScheduledOnline
-            } else if timeinfo.tm_year == timeinfoNow.tm_year && timeinfo.tm_yday == timeinfoNow.tm_yday {
-                text = presentationData.strings.ScheduledMessages_ScheduledToday
-            } else {
-                text = presentationData.strings.ScheduledMessages_ScheduledDate(text).string
-            }
-        }
+        let text = exteralessIdentityDateHeaderText(localTimestamp: localTimestamp, scheduled: scheduled, presentationData: presentationData)
         self.text = text
         
         super.init()
@@ -328,6 +323,7 @@ private final class ChatMessageDateContentNode: ASDisplayNode {
     func updatePresentationData(_ presentationData: ChatPresentationData, context: AccountContext) {
         let previousPresentationData = self.presentationData
         self.presentationData = presentationData
+        self.text = exteralessIdentityDateHeaderText(localTimestamp: self.localTimestamp, scheduled: self.scheduled, presentationData: presentationData)
         
         let graphics = PresentationResourcesChat.principalGraphics(theme: presentationData.theme.theme, wallpaper: presentationData.theme.wallpaper, bubbleCorners: presentationData.chatBubbleCorners)
         
@@ -344,7 +340,7 @@ private final class ChatMessageDateContentNode: ASDisplayNode {
         let (size, apply) = labelLayout(TextNodeLayoutArguments(attributedString: attributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: 320.0, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
         let _ = apply()
         
-        if presentationData.fontSize != previousPresentationData.fontSize {
+        if presentationData.fontSize != previousPresentationData.fontSize || presentationData.dateTimeFormat != previousPresentationData.dateTimeFormat {
             self.labelNode.bounds = CGRect(origin: CGPoint(), size: size.size)
         }
     }

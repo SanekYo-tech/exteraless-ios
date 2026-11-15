@@ -4,6 +4,7 @@ import TelegramCore
 import TelegramPresentationData
 import MergeLists
 import AccountContext
+import ExteralessCore
 
 enum ChatListNodeEntryId: Hashable {
     case Header
@@ -123,6 +124,7 @@ enum ChatListNodeEntry: Comparable, Identifiable {
         var storyState: ChatListNodeState.StoryState?
         var requiresPremiumForMessaging: Bool
         var displayAsTopicList: Bool
+        var dialogUnreadPriority: Bool = false
         
         init(
             index: EngineChatList.Item.Index,
@@ -186,6 +188,9 @@ enum ChatListNodeEntry: Comparable, Identifiable {
         
         static func ==(lhs: PeerEntryData, rhs: PeerEntryData) -> Bool {
             if lhs.index != rhs.index {
+                return false
+            }
+            if lhs.dialogUnreadPriority != rhs.dialogUnreadPriority {
                 return false
             }
             if lhs.presentationData !== rhs.presentationData {
@@ -483,6 +488,13 @@ enum ChatListNodeEntry: Comparable, Identifiable {
     }
     
     static func <(lhs: ChatListNodeEntry, rhs: ChatListNodeEntry) -> Bool {
+        if case let .PeerEntry(left) = lhs, case let .PeerEntry(right) = rhs,
+           case let .chatList(leftIndex) = left.index, case let .chatList(rightIndex) = right.index,
+           leftIndex.pinningIndex == nil, rightIndex.pinningIndex == nil,
+           left.dialogUnreadPriority != right.dialogUnreadPriority {
+            // Entries are bottom-first; ListView reverses them for display.
+            return !left.dialogUnreadPriority
+        }
         return lhs.sortIndex < rhs.sortIndex
     }
     
@@ -604,9 +616,9 @@ struct ChatListContactPeer {
     }
 }
 
-func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, savedMessagesPeer: EnginePeer?, foundPeers: [(EnginePeer, EnginePeer?)], hideArchivedFolderByDefault: Bool, displayArchiveIntro: Bool, mode: ChatListNodeMode, chatListLocation: ChatListControllerLocation, contacts: [ChatListContactPeer], accountPeerId: EnginePeer.Id, isMainTab: Bool) -> (entries: [ChatListNodeEntry], loading: Bool) {
-    var groupItems = view.groupItems
-    if isMainTab && state.archiveStoryState != nil && groupItems.isEmpty {
+func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, savedMessagesPeer: EnginePeer?, foundPeers: [(EnginePeer, EnginePeer?)], hideArchivedFolderByDefault: Bool, displayArchiveIntro: Bool, mode: ChatListNodeMode, chatListLocation: ChatListControllerLocation, contacts: [ChatListContactPeer], accountPeerId: EnginePeer.Id, isMainTab: Bool, dialogPolicy: DialogPolicy = DialogPolicy()) -> (entries: [ChatListNodeEntry], loading: Bool) {
+    var groupItems = view.groupItems.filter { !dialogPolicy.hideArchive || $0.id != .archive }
+    if isMainTab && !dialogPolicy.hideArchive && !dialogPolicy.disableStories && state.archiveStoryState != nil && groupItems.isEmpty {
         groupItems.append(EngineChatList.GroupItem(
             id: .archive,
             topMessage: nil,
@@ -730,7 +742,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
             }
         }
 
-        let entry: ChatListNodeEntry = .PeerEntry(ChatListNodeEntry.PeerEntryData(
+        var peerEntry = ChatListNodeEntry.PeerEntryData(
             index: offsetPinnedIndex(entry.index, offset: pinnedIndexOffset),
             presentationData: state.presentationData,
             messages: updatedMessages,
@@ -755,7 +767,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
             forumTopicData: entry.forumTopicData,
             topForumTopicItems: entry.topForumTopicItems,
             revealed: threadId == 1 && (state.hiddenItemShouldBeTemporaryRevealed || state.editing),
-            storyState: entry.renderedPeer.peerId == accountPeerId ? nil : entry.storyStats.flatMap { stats -> ChatListNodeState.StoryState in
+            storyState: dialogPolicy.disableStories || entry.renderedPeer.peerId == accountPeerId ? nil : entry.storyStats.flatMap { stats -> ChatListNodeState.StoryState in
                 return ChatListNodeState.StoryState(
                     stats: stats,
                     hasUnseenCloseFriends: stats.hasUnseenCloseFriends
@@ -763,7 +775,11 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
             },
             requiresPremiumForMessaging: entry.isPremiumRequiredToMessage,
             displayAsTopicList: entry.displayAsTopicList
-        ))
+        )
+        if case .chatList = mode, case .chatList = chatListLocation {
+            peerEntry.dialogUnreadPriority = dialogPolicy.sortByUnread && exteralessDialogIsUnreadPriority(entry)
+        }
+        let entry: ChatListNodeEntry = .PeerEntry(peerEntry)
         
         if let threadInfo, threadInfo.isHidden {
             hiddenGeneralThread = entry
@@ -923,7 +939,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
             for groupReference in groupItems {
                 let messageIndex = EngineMessage.Index(id: EngineMessage.Id(peerId: EnginePeer.Id(0), namespace: 0, id: 0), timestamp: 1)
                 var mappedStoryState: ChatListNodeState.StoryState?
-                if let archiveStoryState = state.archiveStoryState {
+                if !dialogPolicy.disableStories, let archiveStoryState = state.archiveStoryState {
                     mappedStoryState = archiveStoryState
                 }
                 result.append(.GroupReferenceEntry(ChatListNodeEntry.GroupReferenceEntryData(
@@ -993,5 +1009,7 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
     } else if result.count == 1, case .HoleEntry = result[0] {
         return ([.HeaderEntry], true)
     }
+    // The source has already ordered the peer window. Structural/contact rows
+    // keep the native positions in which they were inserted above.
     return (result, view.isLoading)
 }

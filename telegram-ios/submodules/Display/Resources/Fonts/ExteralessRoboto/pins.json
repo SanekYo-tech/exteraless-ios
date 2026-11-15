@@ -1,0 +1,52 @@
+{
+  "family": "Roboto",
+  "version": "3.015",
+  "license": "OFL-1.1",
+  "copyright": "Copyright 2011 The Roboto Project Authors (https://github.com/googlefonts/roboto-classic)",
+  "distributionRepository": "https://github.com/google/fonts",
+  "distributionCommit": "1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c",
+  "sourceRepository": "https://github.com/googlefonts/roboto-3-classic",
+  "sourceCommit": "91d5d3e5b81efa04a77925cc609fdcdd7ee663d1",
+  "modifications": "None. Only local filenames are namespaced; all font and license bytes are unmodified.",
+  "files": [
+    {
+      "file": "ExteralessRoboto-Regular.ttf",
+      "sourcePath": "ofl/roboto/Roboto[wdth,wght].ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+      "bytes": 488584,
+      "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+      "gitBlobSHA1": "5522a368d9072fd88c299916e61fcff369949061",
+      "postScriptName": "Roboto-Regular",
+      "axes": {"wght": [100, 400, 900], "wdth": [75, 100, 100]}
+    },
+    {
+      "file": "ExteralessRoboto-Italic.ttf",
+      "sourcePath": "ofl/roboto/Roboto-Italic[wdth,wght].ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/Roboto-Italic%5Bwdth%2Cwght%5D.ttf",
+      "bytes": 530944,
+      "sha256": "9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182",
+      "gitBlobSHA1": "a122c13964daac37f1186a22603a5180d2dba5d6",
+      "postScriptName": "Roboto-Italic",
+      "axes": {"wght": [100, 400, 900], "wdth": [75, 100, 100]}
+    },
+    {
+      "file": "ExteralessRoboto-OFL.txt",
+      "sourcePath": "ofl/roboto/OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/1c627bfa375fc51cf86fabeca4f6e08a95f0aa5c/ofl/roboto/OFL.txt",
+      "bytes": 4394,
+      "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41",
+      "gitBlobSHA1": "9c48e05a24fa2267e207ecf17560291b5621c197"
+    }
+  ],
+  "inspectedExistingAlternative": {
+    "path": "telegram-ios/third-party/webrtc/webrtc/examples/objc/AppRTCMobile/ios/resources/Roboto-Regular.ttf",
+    "bytes": 126072,
+    "sha256": "bde8a188e37aa936b167aecc5e5a3da40262f6e51fd54c584f2cf2b6b99d96ca",
+    "version": "2.000980; 2014",
+    "embeddedCopyright": "Font data copyright Google 2014",
+    "embeddedLicense": "Licensed under the Apache License, Version 2.0",
+    "embeddedLicenseURL": "http://www.apache.org/licenses/LICENSE-2.0",
+    "used": false,
+    "reason": "One static regular face cannot retain the native weight/italic matrix. Use a matched variable upright/italic release instead of mixing 2014 and 2026 metrics."
+  }
+}

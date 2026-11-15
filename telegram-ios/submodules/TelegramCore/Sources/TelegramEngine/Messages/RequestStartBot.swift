@@ -6,19 +6,36 @@ import MtProtoKit
 
 
 func _internal_requestStartBot(account: Account, botPeerId: PeerId, payload: String?) -> Signal<Void, NoError> {
+    return ExteralessBotSendAuthorization.shared.check(account: account, peerId: botPeerId)
+    |> mapToSignal { allowed -> Signal<Void, NoError> in
+        guard allowed else { return .complete() }
+        return exteralessRequestStartBotAuthorized(account: account, botPeerId: botPeerId, payload: payload)
+    }
+}
+
+private func exteralessRequestStartBotAuthorized(account: Account, botPeerId: PeerId, payload: String?) -> Signal<Void, NoError> {
     if let payload = payload, !payload.isEmpty {
-        return account.postbox.loadedPeerWithId(botPeerId)
+        return account.postbox.transaction { transaction -> Peer? in transaction.getPeer(botPeerId) }
         |> mapToSignal { botPeer -> Signal<Void, NoError> in
-            if let inputUser = apiInputUser(botPeer) {
-                return account.network.request(Api.functions.messages.startBot(bot: inputUser, peer: .inputPeerEmpty, randomId: Int64.random(in: Int64.min ... Int64.max), startParam: payload))
+            if let botPeer, let inputUser = apiInputUser(botPeer) {
+                return deferred {
+                    guard exteralessBotStartDeduplicator.begin(accountId: account.id.int64, identity: account.peerId.toInt64(), botId: botPeerId.toInt64(), payload: payload) else { return Signal<Void, NoError>.complete() }
+                    let succeeded = Atomic(value: false)
+                    return account.network.request(Api.functions.messages.startBot(bot: inputUser, peer: .inputPeerEmpty, randomId: Int64.random(in: Int64.min ... Int64.max), startParam: payload))
                 |> mapToSignal { result -> Signal<Void, MTRpcError> in
+                    let _ = succeeded.swap(true)
                     account.stateManager.addUpdates(result)
                     return .complete()
                 }
-                |> `catch` { _ -> Signal<Void, MTRpcError> in
+                |> `catch` { _ -> Signal<Void, NoError> in
                     return .complete()
                 }
-                |> retryRequest
+                |> afterDisposed {
+                    if !succeeded.with({ $0 }) {
+                        exteralessBotStartDeduplicator.failed(accountId: account.id.int64, identity: account.peerId.toInt64(), botId: botPeerId.toInt64(), payload: payload)
+                    }
+                }
+                }
             } else {
                 return .complete()
             }

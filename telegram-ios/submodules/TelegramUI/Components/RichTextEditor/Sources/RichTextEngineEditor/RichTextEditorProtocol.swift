@@ -59,6 +59,12 @@ public protocol RichTextEditor: UIView {
     func indent()
     func outdent()
     var composerSelectedRange: NSRange { get set }
+    /// Monotonic input revisions for a host action held across a picker. Selection changes are
+    /// observed synchronously, before the coalesced `onChange`; returning to an old range is a new
+    /// revision. Neither counter is an undo position or a layout generation.
+    var documentRevision: UInt64 { get }
+    var selectionRevision: UInt64 { get }
+    var hasMarkedText: Bool { get }
     func composerCaretRect() -> CGRect?
     var isEditorFirstResponder: Bool { get }
     func resignEditorFirstResponder() -> Bool
@@ -115,6 +121,10 @@ public protocol RichTextEditor: UIView {
     var canPasteMedia: (() -> Bool)? { get set }
     var onPasteMedia: (() -> Bool)? { get set }
     var plainTextFragmentTransformer: ((String) -> Document?)? { get set }
+    /// Destination-only transform for imported rich fragments; never applied to a document set.
+    var pastedLinkTargetTransformer: ((String) -> String)? { get set }
+    /// Final plain-text delivery (including IME insertText), not marked candidate updates.
+    var committedTextTransformer: ((String) -> String)? { get set }
     var contextMenuItemsProvider: ((_ defaultElements: [UIMenuElement]) -> [UIMenuElement])? { get set }
     var onRequestTableStructuralMenu: ((TableStructuralMenuRequest) -> Void)? { get set }
     var onRequestMediaControl: ((MediaControlRequest) -> Void)? { get set }
@@ -193,9 +203,8 @@ public protocol RichTextEditor: UIView {
     func insertDetailsBlock()
     func unwrapBlockQuoteLevel()
 
-    /// The selection on the LEGACY global position axis, which the engine does not have. Paired with
-    /// `replaceRange` by the AI-compose flow; both trap on the engine rather than answering nil,
-    /// because nil here reads as "nothing selected" and would silently do nothing.
+    /// The selection on Core's document axis, including cells, captions, titles and author lines.
+    /// Paired with `replaceRange`; nil means a collapsed selection, never an off-composer-axis one.
     func selectedGlobalRange() -> (from: Int, to: Int)?
     func replaceRange(from: Int, to: Int, with document: Document)
     func moveCaretToDocumentEnd()

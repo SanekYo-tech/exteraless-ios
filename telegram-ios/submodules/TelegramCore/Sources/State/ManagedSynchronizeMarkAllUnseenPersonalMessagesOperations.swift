@@ -117,6 +117,11 @@ private enum GetUnseenIdsError {
 }
 
 private func synchronizeMarkAllUnseen(transaction: Transaction, postbox: Postbox, network: Network, stateManager: AccountStateManager, peerId: PeerId, operation: SynchronizeMarkAllUnseenPersonalMessagesOperation) -> Signal<Void, NoError> {
+    guard exteralessAllowsMessageRead(network: network, peerId: peerId) else {
+        // The outer chain still removes the queued operation. Do not page server
+        // mentions forever when the server is intentionally left unread.
+        return .complete()
+    }
     guard let inputPeer = transaction.getPeer(peerId).flatMap(apiInputPeer) else {
         return .complete()
     }
@@ -148,7 +153,7 @@ private func synchronizeMarkAllUnseen(transaction: Transaction, postbox: Postbox
                 guard let inputChannel = inputChannel else {
                     return .single(nil)
                 }
-                return network.request(Api.functions.channels.readMessageContents(channel: inputChannel, id: filteredIds.map { $0.id }))
+                return exteralessReadChannelMessageContents(network: network, peerId: peerId, channel: inputChannel, ids: filteredIds.map { $0.id })
                 |> map { result -> Int32? in
                     if ids.count < limit {
                         return nil
@@ -157,13 +162,13 @@ private func synchronizeMarkAllUnseen(transaction: Transaction, postbox: Postbox
                     }
                 }
             } else {
-                return network.request(Api.functions.messages.readMessageContents(id: filteredIds.map { $0.id }))
+                return exteralessReadMessageContents(network: network, peerId: peerId, ids: filteredIds.map { $0.id })
                 |> map { result -> Int32? in
-                    switch result {
+                    if let result { switch result {
                         case let .affectedMessages(affectedMessagesData):
                             let (pts, ptsCount) = (affectedMessagesData.pts, affectedMessagesData.ptsCount)
                             stateManager.addUpdateGroups([.updatePts(pts: pts, ptsCount: ptsCount)])
-                    }
+                    } }
                     if ids.count < limit {
                         return nil
                     } else {

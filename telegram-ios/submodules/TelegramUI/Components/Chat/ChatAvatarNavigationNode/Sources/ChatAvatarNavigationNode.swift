@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -80,7 +81,7 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
         }
         
         self.containerNode.frame = CGRect(origin: CGPoint(), size: CGSize(width: 44.0, height: 44.0))
-        self.avatarNode.frame = self.containerNode.bounds.insetBy(dx: 3.0, dy: 3.0)
+        self.onLayout()
     }
     
     deinit {
@@ -131,6 +132,7 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
         storeUnrounded: Bool = false
     ) {
         self.context = context
+        self.onLayout()
         
         if let statusComponentView = self.statusView.view {
             self.statusView = ComponentView()
@@ -139,6 +141,8 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
         
         self.avatarNode.isHidden = false
         self.avatarNode.setPeer(context: context, theme: theme, peer: peer, authorOfMessage: authorOfMessage, overrideImage: overrideImage, emptyColor: emptyColor, clipStyle: clipStyle, synchronousLoad: synchronousLoad, displayDimensions: displayDimensions, storeUnrounded: storeUnrounded)
+        self.updateVideoVisibility()
+        self.updateStoryView(transition: .immediate, theme: theme)
         
         if let peer, case let .channel(channel) = peer, channel.linkedCommunityId != nil, !"".isEmpty {
             let communityAvatarBadgeBackgroundView: GlassBackgroundView
@@ -224,7 +228,7 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
             self.containerNode.view.bringSubviewToFront(communityAvatarBadgeBackgroundView)
         }
         
-        if let peer = peer, peer.isPremium {
+        if let peer = peer, exteralessIdentityPresentation(account: context.account, peer: peer).premiumBadge {
             self.cachedDataDisposable.set((context.account.postbox.peerView(id: peer.id)
             |> deliverOnMainQueue).start(next: { [weak self] peerView in
                 guard let strongSelf = self else {
@@ -252,7 +256,7 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
                 
                 if isKnown {
                     let photo = personalPhoto ?? profilePhoto
-                    if let photo = photo, !photo.videoRepresentations.isEmpty || photo.emojiMarkup != nil {
+                    if let photo = photo, (!photo.videoRepresentations.isEmpty && ExteralessIdentityPresentation.shared.policy.premiumItemVideoAvatar) || photo.emojiMarkup != nil {
                         let videoNode: AvatarVideoNode
                         if let current = strongSelf.avatarVideoNode {
                             videoNode = current
@@ -261,7 +265,7 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
                             strongSelf.avatarNode.contentNode.addSubnode(videoNode)
                             strongSelf.avatarVideoNode = videoNode
                         }
-                        videoNode.update(peer: peer, photo: photo, size: CGSize(width: 37.0, height: 37.0))
+                        videoNode.update(peer: peer, photo: photo, size: strongSelf.avatarNode.bounds.size)
                         
                         if strongSelf.hierarchyTrackingLayer == nil {
                             let hierarchyTrackingLayer = HierarchyTrackingLayer()
@@ -326,7 +330,9 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
                     colors: AvatarStoryIndicatorComponent.Colors(theme: theme),
                     activeLineWidth: 1.0,
                     inactiveLineWidth: 1.0,
-                    counters: nil
+                    counters: nil,
+                    isRoundedRect: self.avatarNode.resolvedClipStyle.exteralessResolvedCornerFraction.map { $0 < 0.5 } ?? false,
+                    customCornerFraction: self.avatarNode.resolvedClipStyle.exteralessResolvedCornerFraction
                 )),
                 environment: {},
                 containerSize: self.avatarNode.bounds.insetBy(dx: 2.0, dy: 2.0).size
@@ -350,6 +356,10 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
     }
     
     public func onLayout() {
+        let inset: CGFloat = ClientSettings.shared.bool("appearance.newChatHeaderStyle") ? 1.0 : 3.0
+        self.avatarNode.frame = self.containerNode.bounds.insetBy(dx: inset, dy: inset)
+        self.avatarStoryView?.view?.frame = self.avatarNode.frame
+        self.updateVideoVisibility()
     }
 
     public final class SnapshotState {
@@ -403,8 +413,22 @@ public final class ChatAvatarNavigationNode: ASDisplayNode {
         self.avatarVideoNode?.updateVisibility(isVisible)
       
         if let videoNode = self.avatarVideoNode {
-            videoNode.updateLayout(size: self.avatarNode.frame.size, cornerRadius: self.avatarNode.frame.size.width / 2.0, transition: .immediate)
+            let size = self.avatarNode.frame.size
+            videoNode.updateLayout(size: size, cornerRadius: self.exteralessVideoCornerRadius, transition: .immediate)
+            self.avatarNode.resolvedClipStyle.applyExteralessFinalClip(to: videoNode.layer, size: size)
             videoNode.frame = self.avatarNode.bounds
+        }
+    }
+
+    private var exteralessVideoCornerRadius: CGFloat {
+        // Match the raster/cache's resolved fraction, including its pixel rounding,
+        // rather than rounding a second time at the smaller navigation-view size.
+        let side = min(self.avatarNode.bounds.width, self.avatarNode.bounds.height)
+        switch self.avatarNode.resolvedClipStyle {
+        case .none: return 0
+        case .round, .bubble: return side * 0.5
+        case .roundedRect: return side * 0.25
+        case let .exteralessRoundedRect(fraction): return side * fraction
         }
     }
 }

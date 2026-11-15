@@ -82,6 +82,7 @@ public protocol CameraProtocol: AnyObject {
     func stopCapture(invalidate: Bool)
 
     var position: Signal<Camera.Position, NoError> { get }
+    var zoomState: Signal<Camera.ZoomState?, NoError> { get }
     func togglePosition()
     func setPosition(_ position: Camera.Position)
     func setDualCameraEnabled(_ enabled: Bool)

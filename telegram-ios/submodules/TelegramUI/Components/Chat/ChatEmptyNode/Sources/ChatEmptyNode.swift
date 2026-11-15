@@ -24,6 +24,7 @@ import UndoUI
 import PremiumUI
 import LottieComponent
 import BundleIconComponent
+import ExteralessCore
 
 private protocol ChatEmptyNodeContent {
     func updateLayout(interfaceState: ChatPresentationInterfaceState, subject: ChatEmptyNode.Subject, size: CGSize, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition) -> CGSize
@@ -149,7 +150,7 @@ public final class ChatEmptyNodeGreetingChatContent: ASDisplayNode, ChatEmptyNod
     }
     
     @objc private func stickerTapGesture(_ gestureRecognizer: UITapGestureRecognizer) {
-        guard let stickerItem = self.stickerItem else {
+        guard !StickerPolicy().disableGreetingSend, let stickerItem = self.stickerItem else {
             return
         }
         let _ = self.interaction?.sendSticker(.standalone(media: stickerItem.stickerItem.file._parse()), false, self.view, self.stickerNode.bounds, nil, [])

@@ -23,6 +23,7 @@ private enum OptionsId: Hashable {
 
 extension ChatControllerImpl {
     func openTodoItemContextMenu(todoItemId: Int32, params: ChatControllerInteraction.LongTapParams) -> Void {
+        if let message = params.message, MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: EngineMessage(message)) }) { return }
         guard let message = params.message, let todo = message.media.first(where: { $0 is TelegramMediaTodo }) as? TelegramMediaTodo, let todoItem = todo.items.first(where: { $0.id == todoItemId }), let contentNode = params.contentNode else {
             return
         }

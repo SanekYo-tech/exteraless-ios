@@ -3,11 +3,13 @@ import AVFoundation
 import SwiftSignalKit
 import Camera
 import TelegramCore
+import ExteralessCore
 
 private let defaultFPS: Double = 30.0
 
 final class CameraDevice {
     var position: Camera.Position = .back
+    private var usesMultipleCameras = false
     
     deinit {
         if let videoDevice = self.videoDevice {
@@ -32,6 +34,7 @@ final class CameraDevice {
         
     func configure(for session: CameraSession, position: Camera.Position, dual: Bool, switchAudio: Bool) {
         self.position = position
+        self.usesMultipleCameras = dual
         
         var selectedDevice: AVCaptureDevice?
         if #available(iOS 13.0, *), position != .front && !dual {
@@ -67,6 +70,7 @@ final class CameraDevice {
         guard let device = self.videoDevice else {
             return
         }
+        let maxFramerate = ClientSettings.shared.bool("tools.extendedFramesPerSecond") && !self.usesMultipleCameras ? max(60, maxFramerate) : maxFramerate
         self.transaction(device) { device in
             var maxWidth: Int32 = 0
             var maxHeight: Int32 = 0
@@ -336,7 +340,8 @@ final class CameraDevice {
             return
         }
         self.transaction(device) { device in
-            let target = neutral ? device.neutralZoomFactor : device.minAvailableVideoZoomFactor
+            let startWide = device.position == .back && !self.usesMultipleCameras && ClientSettings.shared.bool("tools.startWithWideAngleCamera")
+            let target = neutral && !startWide ? device.neutralZoomFactor : device.minAvailableVideoZoomFactor
             device.videoZoomFactor = self.clampedZoomFactor(target, for: device)
         }
     }
@@ -344,6 +349,14 @@ final class CameraDevice {
     private func clampedZoomFactor(_ value: CGFloat, for device: AVCaptureDevice) -> CGFloat {
         let minimum = max(1.0, device.minAvailableVideoZoomFactor)
         let maximum = max(minimum, device.maxAvailableVideoZoomFactor)
-        return min(maximum, max(minimum, value))
+        return CGFloat(ToolsCameraPolicy.zoom(Double(value), minimum: Double(minimum), maximum: Double(maximum)))
+    }
+
+    var zoomState: Signal<Camera.ZoomState?, NoError> {
+        return self.videoDevicePromise.get()
+        |> mapToSignal { device in
+            guard let device else { return .single(nil) }
+            return cameraDeviceZoomState(device)
+        }
     }
 }

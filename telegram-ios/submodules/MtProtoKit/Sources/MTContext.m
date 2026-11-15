@@ -1,3 +1,4 @@
+#import <MtProtoKit/MTAppNetworkResolver.h>
 #import <MtProtoKit/MTContext.h>
 
 #import <inttypes.h>
@@ -1057,7 +1058,8 @@ static void copyKeychainDictionaryKey(NSString * _Nonnull group, NSString * _Non
         __block int32_t earliestFailure = INT32_MAX;
         
         int32_t timestamp = (int32_t)CFAbsoluteTimeGetCurrent();
-        __block bool scanIpv6 = false;
+        NSInteger familyPreference = [MTAppNetworkResolver addressFamilyPreference];
+        __block bool scanIpv6 = familyPreference >= 0;
         for (MTTransportScheme *scheme in schemes) {
             if (scheme.address.isIpv6) {
                 [self _withTransportSchemeStatsForDatacenterId:datacenterId transportScheme:scheme process:^MTTransportSchemeStats *(MTTransportSchemeStats *current) {
@@ -1077,7 +1079,10 @@ static void copyKeychainDictionaryKey(NSString * _Nonnull group, NSString * _Non
                 if (schemeWithEarliestFailure == nil) {
                     schemeWithEarliestFailure = scheme;
                     earliestFailure = current.lastFailureTimestamp;
-                } else if (earliestFailure > current.lastFailureTimestamp) {
+                } else if (earliestFailure > current.lastFailureTimestamp ||
+                           (earliestFailure == current.lastFailureTimestamp && familyPreference >= 0 &&
+                            scheme.address.isIpv6 == (familyPreference == 1) &&
+                            schemeWithEarliestFailure.address.isIpv6 != (familyPreference == 1))) {
                     earliestFailure = current.lastFailureTimestamp;
                     schemeWithEarliestFailure = scheme;
                 }

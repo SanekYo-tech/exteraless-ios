@@ -39,6 +39,7 @@ func addSynchronizeRecentlyUsedMediaOperation(transaction: Transaction, category
 
 func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
+        exteralessRememberRecentSticker(transaction: transaction, file: fileReference.media)
         if let entry = CodableEntry(RecentMediaItem(fileReference.media)) {
             transaction.addOrMoveToFirstPositionOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, item: OrderedItemListEntry(id: RecentMediaItemId(fileReference.media.fileId).rawValue, contents: entry), removeTailIfCountExceeds: 20)
         }
@@ -48,12 +49,14 @@ func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaRe
 
 func _internal_removeRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
+        exteralessRemoveRecentSticker(transaction: transaction, id: fileReference.media.fileId)
         transaction.removeOrderedItemListItem(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, itemId: RecentMediaItemId(fileReference.media.fileId).rawValue)
         addSynchronizeRecentlyUsedMediaOperation(transaction: transaction, category: .stickers, operation: .remove(id: resource.fileId, accessHash: resource.accessHash))
     }
 }
 
 func _internal_clearRecentlyUsedStickers(transaction: Transaction) {
+    exteralessRemoveRecentSticker(transaction: transaction, id: nil)
     transaction.replaceOrderedItemListItems(collectionId: Namespaces.OrderedItemList.CloudRecentStickers, items: [])
     addSynchronizeRecentlyUsedMediaOperation(transaction: transaction, category: .stickers, operation: .clear)
 }

@@ -1,3 +1,4 @@
+#import <MtProtoKit/MTAppNetworkResolver.h>
 #import "MTDiscoverConnectionSignals.h"
 
 #import "MTTcpConnection.h"
@@ -331,6 +332,15 @@
     
     MTSignal *optimalTcp4Match = [[[[MTSignal mergeSignals:bestTcp4Signals] then:optimalDelaySignal] restart] take:1];
     MTSignal *optimalTcp6Match = [[[[MTSignal mergeSignals:bestTcp6Signals] then:optimalDelaySignal] restart] take:1];
+    NSInteger familyPreference = [MTAppNetworkResolver addressFamilyPreference];
+    // Delay subscription, not only result delivery; retain the opposite family.
+    if (familyPreference == 1 && bestTcp6Signals.count != 0) {
+        firstTcp4Match = [[[MTSignal complete] delay:0.25 onQueue:retryQueue] then:firstTcp4Match];
+        optimalTcp4Match = [[[MTSignal complete] delay:0.25 onQueue:retryQueue] then:optimalTcp4Match];
+    } else if (familyPreference == 0 && bestTcp4Signals.count != 0) {
+        firstTcp6Match = [[[MTSignal complete] delay:0.25 onQueue:retryQueue] then:firstTcp6Match];
+        optimalTcp6Match = [[[MTSignal complete] delay:0.25 onQueue:retryQueue] then:optimalTcp6Match];
+    }
     
     MTSignal *anySignal = [[MTSignal mergeSignals:@[firstTcp4Match, firstTcp6Match, firstHttpMatch]] take:1];
     MTSignal *optimalSignal = [[MTSignal mergeSignals:@[optimalTcp4Match, optimalTcp6Match]] take:1];

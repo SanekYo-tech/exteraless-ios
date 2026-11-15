@@ -871,6 +871,8 @@ public final class NavigationExpansionRendererImpl: NavigationExpansionRenderer 
     // MARK: End
 
     private func removeKeyframes() {
+        self.originDrop.cancelShapeAnimations()
+        self.companionDrop.cancelShapeAnimations()
         for layer in self.touchedLayers {
             for key in layer.animationKeys() ?? [] where key.hasPrefix(NavigationExpansionRendererImpl.keyPrefix) {
                 layer.removeAnimation(forKey: key)

@@ -1,4 +1,5 @@
 import UIKit
+import TextFormat
 import AsyncDisplayKit
 import Display
 import TelegramCore
@@ -75,7 +76,8 @@ private final class ShareControllerExtensionEnvironment: ShareControllerEnvironm
     }
 
     func setAccountUserInterfaceInUse(id: AccountRecordId) -> Disposable {
-        guard let account = self.accounts.first(where: { $0.account.id == id })?.account else {
+        guard let account = self.accounts.first(where: { $0.account.id == id })?.account,
+              !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity(account)) else {
             return EmptyDisposable
         }
         let shouldKeepConnection = account.network.shouldKeepConnection
@@ -396,16 +398,22 @@ public class ShareRootControllerImpl {
                 isICloudEnabled: false
             )
             
-            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> = initializationData.makeTempContext(
+            let accountData: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), ShareAuthorizationError> = initializationData.makeTempContext(
                 accountManager, appLockContext, applicationBindings, initialPresentationDataAndSettings!, networkArguments
             )
+            |> castError(ShareAuthorizationError.self)
             |> mapToSignal { context in
-                context.sharedContext.activeAccountContexts
-                |> filter { $0.primary != nil }
+                combineLatest(context.sharedContext.activeAccountContexts, ExteralessHiddenAccounts.shared.changes)
+                |> filter { accounts, _ in accounts.primary != nil }
                 |> take(1)
-                |> mapToSignal { accounts -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), NoError> in
-                    guard let primary = accounts.primary else { return .complete() }
-                    let contexts = accounts.accounts.map { $0.1 }
+                |> castError(ShareAuthorizationError.self)
+                |> mapToSignal { accounts, _ -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, [ShareControllerSwitchableAccount]), ShareAuthorizationError> in
+                    let contexts = accounts.accounts.map { $0.1 }.filter {
+                        !ExteralessHiddenAccounts.shared.isHidden(exteralessPrivacyExtrasIdentity($0.account))
+                    }
+                    guard let primary = contexts.first(where: { $0.account.id == accounts.primary?.account.id }) ?? contexts.first else {
+                        return .fail(.unauthorized)
+                    }
                     let environment = ShareControllerExtensionEnvironment(sharedContext: primary.sharedContext, accounts: contexts)
                     return combineLatest(contexts.map { accountContext in
                         accountContext.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: accountContext.account.peerId))
@@ -417,11 +425,11 @@ public class ShareRootControllerImpl {
                     |> map { accounts in
                         return (environment, ShareControllerAppAccountContext(context: primary), accounts.compactMap { $0 })
                     }
+                    |> castError(ShareAuthorizationError.self)
                 }
             }
 
             let applicationInterface: Signal<(ShareControllerEnvironment, ShareControllerAccountContext, PostboxAccessChallengeData, [ShareControllerSwitchableAccount]), ShareAuthorizationError> = accountData
-            |> castError(ShareAuthorizationError.self)
             |> mapToSignal { data -> Signal<(ShareControllerEnvironment, ShareControllerAccountContext, PostboxAccessChallengeData, [ShareControllerSwitchableAccount]), ShareAuthorizationError> in
                 let (environment, context, otherAccounts) = data
                 
@@ -478,6 +486,11 @@ public class ShareRootControllerImpl {
                         }
                         
                         let sentItems: ([EnginePeer.Id], [EnginePeer.Id: Int64], [EnginePeer.Id: StarsAmount], [PreparedShareItemContent], ShareControllerAccountContext, Bool, String) -> Signal<ShareControllerExternalStatus, NoError> = { peerIds, threadIds, requireStars, contents, account, silently, additionalText in
+                            let contents = contents.map { item -> PreparedShareItemContent in
+                                if case let .text(text) = item { return .text(exteralessCleanIncomingLinkText(text)) }
+                                return item
+                            }
+                            let additionalText = exteralessCleanIncomingLinkText(additionalText)
                             let sentItems = sentShareItems(accountPeerId: account.accountPeerId, postbox: account.stateManager.postbox, network: account.stateManager.network, stateManager: account.stateManager, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: nil), to: peerIds, threadIds: threadIds, requireStars: requireStars, items: contents, silently: silently, additionalText: additionalText)
                             |> `catch` { _ -> Signal<
                                 Float, NoError> in

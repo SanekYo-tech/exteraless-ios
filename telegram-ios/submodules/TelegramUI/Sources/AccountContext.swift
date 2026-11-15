@@ -1012,6 +1012,10 @@ public final class AccountContextImpl: AccountContext {
     }
     
     public func requestCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
+        exteralessRequestOutgoingCall(context: self, peerId: peerId, isVideo: isVideo, completion: completion)
+    }
+
+    private func exteralessRequestConfirmedCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
         guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {
             return
         }

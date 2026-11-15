@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 
 public struct Font {
@@ -160,18 +161,24 @@ public struct Font {
     private static let cache = Cache()
     
     public static func with(size: CGFloat, design: Design = .regular, weight: Weight = .regular, width: Width = .standard, traits: Traits = []) -> UIFont {
-        let key = "\(size)_\(design.key)_\(weight.key)_\(width.key)_\(traits.rawValue)"
+        let weight: Weight = design != .camera && (weight == .medium || weight == .semibold) && ClientSettings.shared.bool("appearance.forceFontWeightFallback") ? .bold : weight
+        let family = ExteralessFontFamily.selection(design: design, width: width, traits: traits)
+        if family != .nativeRole {
+            // Early producers also complete the process-once registration.
+            // Bootstrap reports failures before publishing the family setting.
+            try? ExteralessFontFamily.prepare()
+        }
+        let key = "\(family.rawValue)_\(size)_\(design.key)_\(weight.key)_\(width.key)_\(traits.rawValue)"
         
         if let cachedFont = self.cache.get(key) {
             return cachedFont
         }
+        if family == .bundledRoboto, let font = ExteralessFontFamily.font(size: size, weight: weight, width: width, traits: traits) {
+            self.cache.set(font, key: key)
+            return font
+        }
         if #available(iOS 13.0, *), design != .camera {
-            let descriptor: UIFontDescriptor
-            if #available(iOS 14.0, *) {
-                descriptor = UIFont.systemFont(ofSize: size).fontDescriptor
-            } else {
-                descriptor = UIFont.systemFont(ofSize: size, weight: weight.weight).fontDescriptor
-            }
+            let descriptor = UIFont.systemFont(ofSize: size, weight: weight.weight).fontDescriptor
 
             var symbolicTraits = descriptor.symbolicTraits
             if traits.contains(.italic) {
@@ -206,20 +213,20 @@ public struct Font {
                 default:
                     updatedDescriptor = updatedDescriptor?.withDesign(.default)
             }
+            // Merge trait dictionaries: a width/weight update must not discard
+            // the italic symbolic trait (or each other's requested value).
+            var fontTraits = updatedDescriptor?.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any] ?? [:]
             if #available(iOS 14.0, *) {
                 if weight != .regular {
-                    updatedDescriptor = updatedDescriptor?.addingAttributes([
-                        UIFontDescriptor.AttributeName.traits: [UIFontDescriptor.TraitKey.weight: weight.weight]
-                    ])
+                    fontTraits[.weight] = weight.weight
                 }
             }
             if #available(iOS 16.0, *) {
                 if width != .standard {
-                    updatedDescriptor = updatedDescriptor?.addingAttributes([
-                        UIFontDescriptor.AttributeName.traits: [UIFontDescriptor.TraitKey.width: width.width]
-                    ])
+                    fontTraits[.width] = width.width
                 }
             }
+            updatedDescriptor = updatedDescriptor?.addingAttributes([.traits: fontTraits])
             
             let font: UIFont
             if let updatedDescriptor = updatedDescriptor {
@@ -289,23 +296,19 @@ public struct Font {
     }
     
     public static func regular(_ size: CGFloat) -> UIFont {
-        return UIFont.systemFont(ofSize: size)
+        return self.with(size: size)
     }
     
     public static func medium(_ size: CGFloat) -> UIFont {
-        return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.medium)
+        return self.with(size: size, weight: .medium)
     }
     
     public static func semibold(_ size: CGFloat) -> UIFont {
-        return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.semibold)
+        return self.with(size: size, weight: .semibold)
     }
     
     public static func bold(_ size: CGFloat) -> UIFont {
-        if #available(iOS 8.2, *) {
-            return UIFont.boldSystemFont(ofSize: size)
-        } else {
-            return CTFontCreateWithName("HelveticaNeue-Bold" as CFString, size, nil)
-        }
+        return self.with(size: size, weight: .bold)
     }
     
     public static func heavy(_ size: CGFloat) -> UIFont {
@@ -313,23 +316,15 @@ public struct Font {
     }
     
     public static func light(_ size: CGFloat) -> UIFont {
-        return UIFont.systemFont(ofSize: size, weight: UIFont.Weight.light)
+        return self.with(size: size, weight: .light)
     }
     
     public static func semiboldItalic(_ size: CGFloat) -> UIFont {
-        if let descriptor = UIFont.systemFont(ofSize: size).fontDescriptor.withSymbolicTraits([.traitBold, .traitItalic]) {
-            return UIFont(descriptor: descriptor, size: size)
-        } else {
-            return UIFont.italicSystemFont(ofSize: size)
-        }
+        return self.with(size: size, weight: .semibold, traits: .italic)
     }
     
     public static func mediumItalic(_ size: CGFloat) -> UIFont {
-        if let descriptor = UIFont.systemFont(ofSize: size, weight: .medium).fontDescriptor.withSymbolicTraits([.traitItalic]) {
-            return UIFont(descriptor: descriptor, size: size)
-        } else {
-            return UIFont.italicSystemFont(ofSize: size)
-        }
+        return self.with(size: size, weight: .medium, traits: .italic)
     }
     
     public static func monospace(_ size: CGFloat) -> UIFont {
@@ -349,7 +344,7 @@ public struct Font {
     }
     
     public static func italic(_ size: CGFloat) -> UIFont {
-        return UIFont.italicSystemFont(ofSize: size)
+        return self.with(size: size, traits: .italic)
     }
 }
 

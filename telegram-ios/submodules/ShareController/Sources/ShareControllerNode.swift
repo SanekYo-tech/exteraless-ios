@@ -29,6 +29,67 @@ enum ShareExternalState {
     case done
 }
 
+/// A completed download/empty signal is not a completed Photos save. Only the terminal
+/// 1.0 receipt from the permitted native saver authorizes the success continuation.
+func exteralessShareConfirmedProgress(_ signal: Signal<Float?, NoError>, permit: ExteralessContentExportPermit, accountId: Int64) -> Signal<Float, ShareControllerError> {
+    return Signal { subscriber in
+        let lock = NSLock()
+        var receivedSuccess = false
+        var finished = false
+        let disposable = (signal |> deliverOnMainQueue).start(next: { value in
+            guard permit.allows(accountId: accountId), let value, value.isFinite else { return }
+            lock.lock()
+            let current = !finished
+            if current && value >= 1 { receivedSuccess = true }
+            lock.unlock()
+            if current { subscriber.putNext(value) }
+        }, completed: {
+            lock.lock()
+            let current = !finished
+            let succeeded = receivedSuccess
+            finished = true
+            lock.unlock()
+            guard current else { return }
+            if succeeded && permit.allows(accountId: accountId) { subscriber.putCompletion() }
+            else { subscriber.putError(.generic); permit.revoke() }
+        })
+        return ActionDisposable {
+            lock.lock()
+            let cancel = !finished
+            finished = true
+            lock.unlock()
+            disposable.dispose()
+            if cancel { permit.revoke() }
+        }
+    }
+}
+
+@discardableResult
+func exteralessShareCopyTimestampLink(prefix: String, timestamp: Int32?, permit: ExteralessContentExportPermit?, accountId: Int64, current: () -> Bool, write: (String) -> Void, copied: (Int32?) -> Void) -> Bool {
+    var suffix = ""
+    if let timestamp {
+        let hours = timestamp / 3600
+        let minutes = timestamp / 60 % 60
+        let seconds = timestamp % 60
+        var value = ""
+        if hours == 0 && minutes == 0 { value = "\(timestamp)" }
+        else {
+            if hours != 0 { value += "\(hours)h" }
+            if minutes != 0 { value += "\(minutes)m" }
+            if seconds != 0 { value += "\(seconds)s" }
+        }
+        suffix = "?t=\(value)"
+    }
+    if let permit {
+        guard permit.perform(accountId: accountId, operation: .exportEffect, current: current, { write(prefix + suffix) }) else { permit.revoke(); return false }
+        if permit.allows(accountId: accountId) && current() { copied(timestamp) }
+    } else {
+        write(prefix + suffix)
+        copied(timestamp)
+    }
+    return true
+}
+
 private final class ShareContentInfoView: UIView {
     private struct Params: Equatable {
         var environment: ShareControllerEnvironment
@@ -318,6 +379,39 @@ private func textForTimeout(value: Int32) -> String {
 
 final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate {
     private weak var controller: ShareController?
+    private let exportReference: ExteralessContentExportPermitReference
+    private let exportAccountId: Int64
+    private var observedExportPermit: ExteralessContentExportPermit?
+    private let exportRevocation = MetaDisposable()
+    private var exportGeneration: UInt64 = 0
+
+    private var exportPermit: ExteralessContentExportPermit? {
+        let permit = self.exportReference.permit
+        if let permit, self.observedExportPermit !== permit {
+            self.observedExportPermit = permit
+            self.exportRevocation.set(permit.onRevocation { [weak self] in
+                guard let self else { return }
+                self.exportGeneration &+= 1
+                self.shareDisposable.set(nil)
+                self.isUserInteractionEnabled = false
+            })
+        }
+        return permit
+    }
+
+    private func exportAllowed(_ generation: UInt64? = nil, operation: ExteralessContentExportPermit.Operation = .exportEffect) -> Bool {
+        guard let permit = self.exportPermit else { return true }
+        guard generation == nil || generation == self.exportGeneration,
+              self.context == nil || self.context?.accountId.int64 == self.exportAccountId,
+              permit.allows(accountId: self.exportAccountId, operation: operation) else { return false }
+        return true
+    }
+
+    private func beginExport() -> UInt64? {
+        guard self.exportPermit != nil else { return nil }
+        self.exportGeneration &+= 1
+        return self.exportGeneration
+    }
     private let environment: ShareControllerEnvironment
     private var context: ShareControllerAccountContext?
     private var presentationData: PresentationData
@@ -413,6 +507,9 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         messageCount: Int
     ) {
         self.controller = controller
+        let export = MainActor.assumeIsolated { (controller.exteralessExportPermitReference, controller.contentExportAccountId) }
+        self.exportReference = export.0
+        self.exportAccountId = export.1
         self.environment = environment
         self.presentationData = presentationData
         self.forceTheme = forceTheme
@@ -684,6 +781,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             }
         }, shareStory: shareStory.flatMap { shareStory in
             return { [weak self] in
+                if let permit = self?.exportPermit { permit.revoke(); return }
                 self?.animateOut(shared: false, completion: { [weak self] in
                     self?.dismiss?(false)
                 })
@@ -740,35 +838,12 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             guard let self else {
                 return
             }
+            guard self.exportAllowed() else { return }
             if let publicLinkPrefix = self.mediaParameters?.publicLinkPrefix {
-                var timestampSuffix = ""
-                var effectiveStartTimestamp: Int32?
-                if let startAtTimestamp = self.mediaParameters?.startAtTimestamp, let startAtTimestampNode = self.startAtTimestampNode, startAtTimestampNode.value {
-                    var startAtTimestampString = ""
-                    let hours = startAtTimestamp / 3600
-                    let minutes = startAtTimestamp / 60 % 60
-                    let seconds = startAtTimestamp % 60
-                    if hours == 0 && minutes == 0 {
-                        startAtTimestampString = "\(startAtTimestamp)"
-                    } else {
-                        if hours != 0 {
-                            startAtTimestampString += "\(hours)h"
-                        }
-                        if minutes != 0 {
-                            startAtTimestampString += "\(minutes)m"
-                        }
-                        if seconds != 0 {
-                            startAtTimestampString += "\(seconds)s"
-                        }
-                    }
-                    timestampSuffix = "?t=\(startAtTimestampString)"
-                    effectiveStartTimestamp = startAtTimestamp
-                }
-                let inputCopyText = "\(publicLinkPrefix.actualString)\(timestampSuffix)"
-                UIPasteboard.general.string = inputCopyText
-                self.onMediaTimestampLinkCopied?(effectiveStartTimestamp)
+                let timestamp = self.startAtTimestampNode?.value == true ? self.mediaParameters?.startAtTimestamp : nil
+                guard exteralessShareCopyTimestampLink(prefix: publicLinkPrefix.actualString, timestamp: timestamp, permit: self.exportPermit, accountId: self.exportAccountId, current: { self.exportAllowed() }, write: { UIPasteboard.general.string = $0 }, copied: { self.onMediaTimestampLinkCopied?($0) }) else { return }
             }
-            self.cancel?()
+            if self.exportAllowed() { self.cancel?() }
         }
         
         self.updateButton()
@@ -780,6 +855,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     
     deinit {
         self.shareDisposable.dispose()
+        self.exportRevocation.dispose()
     }
         
     override func didLoad() {
@@ -1291,23 +1367,29 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     }
     
     @objc func cancelButtonPressed() {
+        if let permit = self.exportPermit { permit.revoke(); return }
         self.cancel?()
     }
     
     @objc func actionButtonPressed() {
+        guard self.exportAllowed() else { return }
         if self.controllerInteraction!.selectedPeers.isEmpty && self.presetText == nil {
             if let defaultAction = self.defaultAction {
                 defaultAction.action()
             }
         } else {
+            let generation = self.beginExport()
             let _ = (self.showNames.get()
             |> take(1)).start(next: { [weak self] showNames in
-                self?.send(showNames: showNames)
+                guard let self, self.exportAllowed(generation) else { return }
+                self.send(showNames: showNames)
             })
         }
     }
         
     func send(peerId: PeerId? = nil, showNames: Bool = true, silently: Bool = false) {
+        guard self.exportAllowed() else { return }
+        let generation = self.beginExport()
         let peerIds: [PeerId]
         if let peerId = peerId {
             peerIds = [peerId]
@@ -1349,6 +1431,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 guard let self else {
                     return
                 }
+                guard self.exportAllowed(generation) else { return }
                 
                 var mappedPeers: [EngineRenderedPeer] = []
                 for peerId in peerIds {
@@ -1361,17 +1444,18 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                     return
                 }
 
-                self.presentPaidMessageAlertIfNeeded(peers: mappedPeers, requiresStars: requiresStars, completion: { [weak self] in
-                    self?.commitSend(peerId: peerId, showNames: showNames, silently: silently)
+                self.presentPaidMessageAlertIfNeeded(peers: mappedPeers, requiresStars: requiresStars, generation: generation, completion: { [weak self] in
+                    self?.commitSend(peerId: peerId, showNames: showNames, silently: silently, generation: generation)
                 })
                 
             })
         } else {
-            self.commitSend(peerId: peerId, showNames: showNames, silently: silently)
+            self.commitSend(peerId: peerId, showNames: showNames, silently: silently, generation: generation)
         }
     }
     
-    private func presentPaidMessageAlertIfNeeded(peers: [EngineRenderedPeer], requiresStars: [EnginePeer.Id: Int64], completion: @escaping () -> Void) {
+    private func presentPaidMessageAlertIfNeeded(peers: [EngineRenderedPeer], requiresStars: [EnginePeer.Id: Int64], generation: UInt64?, completion: @escaping () -> Void) {
+        guard self.exportAllowed(generation) else { return }
         var count: Int32 = Int32(self.messageCount)
         if !self.inputFieldNode.text.isEmpty {
             count += 1
@@ -1395,7 +1479,8 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 totalAmount: totalAmount,
                 hasCheck: false,
                 navigationController: nil,
-                completion: { _ in
+                completion: { [weak self] _ in
+                    guard let self, self.exportAllowed(generation) else { return }
                     completion()
                 }
             )
@@ -1405,7 +1490,8 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
         }
     }
     
-    private func commitSend(peerId: PeerId?, showNames: Bool, silently: Bool) {
+    private func commitSend(peerId: PeerId?, showNames: Bool, silently: Bool, generation: UInt64?) {
+        guard self.exportAllowed(generation) else { return }
         if !self.inputFieldNode.text.isEmpty {
             for peer in self.controllerInteraction!.selectedPeers {
                 if case let .channel(channel) = peer.peer, channel.isRestrictedBySlowmode {
@@ -1439,11 +1525,14 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             topicIds = self.controllerInteraction!.selectedTopics.mapValues { $0.0 }
         }
         
-        if let context = self.context {
+        if self.exportPermit == nil, let context = self.context {
             self.environment.donateSendMessageIntent(account: context, peerIds: peerIds)
         }
         
         if let signal = self.share?(self.inputFieldNode.text, peerIds, topicIds, showNames, silently) {
+            if self.exportPermit != nil {
+                self.transitionToContentNode(ShareLoadingContainerNode(theme: self.presentationData.theme, forceNativeAppearance: true), fastOut: true)
+            }
             var wasDone = false
             let timestamp = CACurrentMediaTime()
             let doneImpl: (Bool) -> Void = { [weak self] shouldDelay in
@@ -1460,6 +1549,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 }
                          
                 Queue.mainQueue().after(hapticDelay, {
+                    guard self?.exportAllowed(generation) == true else { return }
                     if self?.hapticFeedback == nil {
                         self?.hapticFeedback = HapticFeedback()
                     }
@@ -1467,14 +1557,16 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 })
                 
                 Queue.mainQueue().after(delay, {
+                    guard self?.exportAllowed(generation) == true else { return }
                     self?.animateOut(shared: true, completion: {
+                        guard self?.exportAllowed(generation) == true else { return }
                         self?.dismiss?(true)
                         self?.completed?(peerIds)
                     })
                 })
             }
             
-            if !self.fromForeignApp {
+            if !self.fromForeignApp && self.exportPermit == nil {
                 self.animateOut(shared: true, completion: {
                 })
                 self.completed?(peerIds)
@@ -1500,6 +1592,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 guard let strongSelf = self else {
                     return
                 }
+                guard strongSelf.exportAllowed(generation) else { return }
                 
                 if fromForeignApp, case let .preparing(long) = status, !transitioned {
                     transitioned = true
@@ -1511,6 +1604,23 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 }
                 
                 if case let .done(correlationIds) = status, !fromForeignApp {
+                    if strongSelf.exportPermit != nil {
+                        guard !wasDone else { return }
+                        wasDone = true
+                        strongSelf.animateOut(shared: true, completion: { [weak self] in
+                            guard let self, let permit = self.exportPermit, self.exportAllowed(generation) else { return }
+                            permit.perform(accountId: self.exportAccountId, operation: .exportEffect, current: { self.exportAllowed(generation) }) {
+                                if let context = self.context { self.environment.donateSendMessageIntent(account: context, peerIds: peerIds) }
+                                guard self.exportAllowed(generation) else { return }
+                                self.completed?(peerIds)
+                                guard self.exportAllowed(generation) else { return }
+                                self.enqueued?(peerIds, correlationIds)
+                                guard self.exportAllowed(generation) else { return }
+                                self.dismiss?(true)
+                            }
+                        })
+                        return
+                    }
                     strongSelf.enqueued?(peerIds, correlationIds)
                     strongSelf.dismiss?(true)
                     return
@@ -1536,9 +1646,10 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                             strongSelf.dismiss?(true)
                         }
                 }
-            }, error: { _ in
-                
-            }, completed: {
+            }, error: { [weak self] _ in
+                self?.exportPermit?.revoke()
+            }, completed: { [weak self] in
+                if let permit = self?.exportPermit, !wasDone { permit.revoke(); return }
                 if !wasDone && fromForeignApp {
                     doneImpl(false)
                 }
@@ -1710,6 +1821,8 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
             guard let strongSelf = self, let shareExternal = strongSelf.shareExternal else {
                 return
             }
+            guard strongSelf.exportAllowed() else { return }
+            let generation = strongSelf.beginExport()
             
             let proceed: (Bool) -> Void = { asImage in
                 var loadingTimestamp: Double?
@@ -1717,6 +1830,7 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                     guard let strongSelf = self else {
                         return
                     }
+                    guard strongSelf.exportAllowed(generation) else { return }
                     switch state {
                         case .preparing:
                             if loadingTimestamp == nil {
@@ -1740,9 +1854,10 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                                 let minDelay = 0.6
                                 let delay = max(0.0, (loadingTimestamp + minDelay) - CACurrentMediaTime())
                                 Queue.mainQueue().after(delay, {
-                                    if let strongSelf = self {
+                                    if let strongSelf = self, strongSelf.exportAllowed(generation) {
                                         strongSelf.animateOut(shared: true, completion: {
-                                            self?.dismiss?(true)
+                                            guard let self, self.exportAllowed(generation) else { return }
+                                            self.dismiss?(self.exportPermit == nil)
                                         })
                                     }
                                 })
@@ -1751,7 +1866,8 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                                     strongSelf.ready.set(.single(true))
                                 }
                                 strongSelf.animateOut(shared: true, completion: {
-                                    self?.dismiss?(true)
+                                    guard let self, self.exportAllowed(generation) else { return }
+                                    self.dismiss?(self.exportPermit == nil)
                                 })
                             }
                     }
@@ -1877,6 +1993,10 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     }
     
     func transitionToProgress(signal: Signal<Void, NoError>) {
+        if self.exportPermit != nil {
+            self.transitionToAdmittedProgress(signal: signal |> map { _ in Optional<Float>(1) }, completion: {})
+            return
+        }
         self.inputFieldNode.deactivateInput()
         let transition = ContainedViewLayoutTransition.animated(duration: 0.12, curve: .easeInOut)
         transition.updateAlpha(node: self.actionButtonNode, alpha: 0.0)
@@ -1903,6 +2023,10 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
     }
     
     func transitionToProgressWithValue(signal: Signal<Float?, NoError>, dismissImmediately: Bool = false, completion: @escaping () -> Void) {
+        if self.exportPermit != nil {
+            self.transitionToAdmittedProgress(signal: signal, completion: completion)
+            return
+        }
         self.inputFieldNode.deactivateInput()
         
         if dismissImmediately {
@@ -1964,6 +2088,26 @@ final class ShareControllerNode: ViewControllerTracingNode, ASScrollViewDelegate
                 }
             }))
         }
+    }
+
+    private func transitionToAdmittedProgress(signal: Signal<Float?, NoError>, completion: @escaping () -> Void) {
+        guard let permit = self.exportPermit, self.exportAllowed() else { return }
+        let generation = self.beginExport()
+        self.inputFieldNode.deactivateInput()
+        self.setActionNodesHidden(true, inputField: true, actions: true, animated: false)
+        self.transitionToContentNode(ShareLoadingContainerNode(theme: self.presentationData.theme, forceNativeAppearance: true), fastOut: true)
+        self.shareDisposable.set((exteralessShareConfirmedProgress(signal, permit: permit, accountId: self.exportAccountId)
+        |> deliverOnMainQueue).start(next: { [weak self] value in
+            guard let self, self.exportAllowed(generation) else { return }
+            (self.contentNode as? ShareLoadingContainer)?.state = .progress(value)
+        }, error: { _ in permit.revoke() }, completed: { [weak self] in
+            guard let self, self.exportAllowed(generation) else { return }
+            self.animateOut(shared: true, completion: { [weak self] in
+                guard let self, self.exportAllowed(generation) else { return }
+                completion()
+                if self.exportAllowed(generation) { self.dismiss?(true) }
+            })
+        }))
     }
 }
 

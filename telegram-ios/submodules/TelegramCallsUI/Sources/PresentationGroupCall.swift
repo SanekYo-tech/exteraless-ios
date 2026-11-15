@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Postbox
@@ -1840,6 +1841,8 @@ public final class PresentationGroupCallImpl: PresentationGroupCall {
                     if let data = appConfiguration.data, let value = data["voice_chat_send_bitrate"] as? Double {
                         outgoingAudioBitrateKbit = Int32(value)
                     }
+                    outgoingAudioBitrateKbit = ToolsNativeModePolicy.groupAudioBitrate(
+                        preferred: ClientSettings.shared.integer("tools.groupAudioBitrate"), native: outgoingAudioBitrateKbit)
                     
                     let contextAudioSessionActive: Signal<Bool, NoError>
                     if self.sharedAudioContext != nil {

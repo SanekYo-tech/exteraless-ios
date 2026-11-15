@@ -918,7 +918,7 @@ static NSMutableDictionary<NSString *, TrustedWebRecord *> *trustedWebRecords() 
 }
 
 - (bool)disablesInteractiveModalDismiss {
-    return [self associatedObjectForKey:disablesInteractiveModalDismissKey];
+    return [[self associatedObjectForKey:disablesInteractiveModalDismissKey] boolValue];
 }
 
 - (void)setDisablesInteractiveModalDismiss:(bool)disablesInteractiveModalDismiss {

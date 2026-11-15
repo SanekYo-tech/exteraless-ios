@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import Camera
 import UIKit
 import AVFoundation
@@ -13,7 +14,7 @@ import LottieSettings
 import GZip
 import AppBundle
 
-let videoMessageDimensions = PixelDimensions(width: 400, height: 400)
+let videoMessageDimensions = PixelDimensions(width: 512, height: 512)
 
 func allocateOutputBufferPool(with inputFormatDescription: CMFormatDescription, outputRetainedBufferCountHint: Int) -> (
     outputBufferPool: CVPixelBufferPool?,
@@ -234,6 +235,9 @@ final class CameraRoundVideoFilter {
             sourceOrientation = additional ? .leftMirrored : .right
         }
         sourceImage = sourceImage.oriented(sourceOrientation)
+        if additional && !ClientSettings.shared.bool("tools.cameraMirrorMode", default: true) {
+            sourceImage = sourceImage.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: sourceImage.extent.minX + sourceImage.extent.maxX, ty: 0))
+        }
         let scale = CGFloat(videoMessageDimensions.width) / min(sourceImage.extent.width, sourceImage.extent.height)
         
         if !self.simple {

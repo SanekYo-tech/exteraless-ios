@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import TelegramCore
 import Display
@@ -142,6 +143,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
         case .tap:
             switch itemLink {
                 case .url(let url, var concealed):
+                    let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
                     let (parsedString, parsedConcealed) = parseUrl(url: url, wasConcealed: false)
                     // A login part hides the host the link opens (see `externalUrlWithLoginPart`).
                     let loginPartUrl = externalUrlWithLoginPart(url)
@@ -149,7 +151,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
                         concealed = true
                     }
                     
-                    if concealed {
+                    if ChatLinkConfirmationPolicy.shouldConfirm(concealed: concealed, mandatory: loginPartUrl != nil, callerSkipped: false, confirmAll: ClientSettings.shared.bool("chats.confirmAllLinks"), skipBasic: ClientSettings.shared.bool("chats.skipOpenLinkConfirm")) {
                         // For a login part the prompt shows the host the link really opens. The external-URL opener
                         // asks about such a link as well, so accepting it here tells the opener it has been confirmed.
                         var rawDisplayUrl: String = loginPartUrl.map { urlRemovingLoginPart($0).absoluteString } ?? parsedString
@@ -160,6 +162,7 @@ func handleTextLinkActionImpl(context: AccountContext, peerId: EnginePeer.Id?, n
                         var displayUrl = rawDisplayUrl
                         displayUrl = displayUrl.replacingOccurrences(of: "\u{202e}", with: "")
                         controller.present(textAlertController(context: context, title: nil, text: presentationData.strings.Generic_OpenHiddenLinkAlert(displayUrl).string, actions: [TextAlertAction(type: .genericAction, title: presentationData.strings.Common_No, action: {}), TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_Yes, action: {
+                            ChatLinkConfirmationLedger.shared.note(url)
                             if let loginPartUrl {
                                 noteLoginPartConfirmed(loginPartUrl)
                             }

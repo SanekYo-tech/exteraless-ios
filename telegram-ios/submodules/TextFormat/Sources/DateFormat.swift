@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
@@ -118,15 +119,15 @@ public func stringForShortTimestamp(hours: Int32, minutes: Int32, seconds: Int32
         let minuteString = String(format: "%02d", arguments: [Int(minutes)])
         if let seconds {
             let secondString = String(format: "%02d", arguments: [Int(seconds)])
-            return "\(hourString):\(minuteString):\(secondString)\(spaceCharacter)\(periodString)"
+            return dateTimeFormat.identityCalendar.digits(in: "\(hourString):\(minuteString):\(secondString)\(spaceCharacter)\(periodString)")
         } else {
-            return "\(hourString):\(minuteString)\(spaceCharacter)\(periodString)"
+            return dateTimeFormat.identityCalendar.digits(in: "\(hourString):\(minuteString)\(spaceCharacter)\(periodString)")
         }
     case .military:
         if let seconds {
-            return String(format: "%02d:%02d:%02d", arguments: [Int(hours), Int(minutes), Int(seconds)])
+            return dateTimeFormat.identityCalendar.digits(in: String(format: "%02d:%02d:%02d", arguments: [Int(hours), Int(minutes), Int(seconds)]))
         } else {
-            return String(format: "%02d:%02d", arguments: [Int(hours), Int(minutes)])
+            return dateTimeFormat.identityCalendar.digits(in: String(format: "%02d:%02d", arguments: [Int(hours), Int(minutes)]))
         }
     }
 }
@@ -140,10 +141,11 @@ public func stringForMessageTimestamp(timestamp: Int32, dateTimeFormat: Presenta
         gmtime_r(&t, &timeinfo)
     }
     
-    return stringForShortTimestamp(hours: timeinfo.tm_hour, minutes: timeinfo.tm_min, seconds: withSeconds ? timeinfo.tm_sec : nil, dateTimeFormat: dateTimeFormat)
+    return stringForShortTimestamp(hours: timeinfo.tm_hour, minutes: timeinfo.tm_min, seconds: AppearanceTimePolicy.seconds(timeinfo.tm_sec, explicitlyRequested: withSeconds, showSeconds: dateTimeFormat.showSeconds), dateTimeFormat: dateTimeFormat)
 }
 
 public func stringForShortDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat, withTime: Bool = true) -> String {
+    if let text = dateTimeFormat.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .numeric(dayFirst: dateTimeFormat.dateFormat == .dayFirst, separator: dateTimeFormat.dateSeparator, suffix: dateTimeFormat.dateSuffix, fullYear: dateTimeFormat.requiresFullYear)) { return text }
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);
@@ -167,6 +169,7 @@ public func stringForShortDate(timestamp: Int32, strings: PresentationStrings, d
 }
 
 private func stringForFullDate(timestamp: Int32, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat) -> String {
+    if let text = dateTimeFormat.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(timestamp)), style: .monthDay(includeYear: true)) { return text }
     var t: time_t = Int(timestamp)
     var timeinfo = tm()
     localtime_r(&t, &timeinfo);

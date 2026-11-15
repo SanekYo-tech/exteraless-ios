@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -36,6 +37,7 @@ private enum SubscriberAction: Equatable, Hashable {
     case openChannel
     case openGroup
     case openChat
+    case discussion
     case addToNews
     case addedToNews
     case addedToChats(muted: Bool)
@@ -65,6 +67,8 @@ private func titleAndColorForAction(_ action: SubscriberAction, theme: Presentat
             return (strings.SavedMessages_OpenGroup, theme.chat.inputPanel.panelControlAccentColor)
         case .openChat:
             return (strings.SavedMessages_OpenChat, theme.chat.inputPanel.panelControlAccentColor)
+        case .discussion:
+            return ("Discussion", theme.chat.inputPanel.panelControlAccentColor)
         case .addToNews:
             return (strings.Channel_AddToNews, theme.chat.inputPanel.panelControlAccentColor)
         case .addedToNews:
@@ -162,6 +166,10 @@ private func actionForPeer(context: AccountContext, peer: EnginePeer, interfaceS
                         return .join
                     }
                 case .member:
+                    if case .broadcast = channel.info, interfaceState.peerDiscussionId != nil,
+                       ClientSettings.shared.integer("chats.bottomButton", default: 1) == 2 {
+                        return .discussion
+                    }
                     if isMuted {
                         return .unmuteNotifications
                     } else {
@@ -401,6 +409,10 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
         case .openChannel, .openGroup, .openChat:
             if let presentationInterfaceState = self.presentationInterfaceState, let savedMessagesTopicPeer = presentationInterfaceState.savedMessagesTopicPeer {
                 self.interfaceInteraction?.navigateToChat(savedMessagesTopicPeer.id)
+            }
+        case .discussion:
+            if let peerId = presentationInterfaceState.peerDiscussionId {
+                self.interfaceInteraction?.navigateToChat(peerId)
             }
         }
     }
@@ -916,7 +928,7 @@ public final class ChatChannelSubscriberInputPanelNode: ChatInputPanelNode {
         var displayHelp = false
         
         if let peer = interfaceState.renderedPeer?.peer as? TelegramChannel {
-            if case .broadcast = peer.info, interfaceState.starGiftsAvailable {
+            if case .broadcast = peer.info, interfaceState.starGiftsAvailable, !ClientSettings.shared.bool("chats.hideGiftButtonInChannel") {
                 displayGift = true
             }
             if case let .broadcast(broadcastInfo) = peer.info, broadcastInfo.flags.contains(.hasMonoforum) {

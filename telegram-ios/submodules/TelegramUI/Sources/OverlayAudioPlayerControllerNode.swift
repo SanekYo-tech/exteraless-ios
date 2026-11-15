@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -67,6 +68,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
     private let albumArtNode = TransformImageNode()
     
     private var saveMediaDisposable: MetaDisposable?
+    private let profileMutationDisposable = MetaDisposable()
+    private var profileMutationPending = false
     
     private var validLayout: ContainerViewLayout?
     private var containerUsesCornerRadii = false
@@ -82,6 +85,11 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
     private var peer: EnginePeer?
     
     private var copyProtectionEnabled = false
+    private let forceClassic: Bool
+    private var exteralessSurface: ExteralessPlayerSurface?
+    private var exteralessSettingsObservation: ClientSettingsObservation?
+    private var exteralessPlayerVisible = false
+    private var exteralessAccountIsValid = true
         
     init(
         context: AccountContext,
@@ -94,7 +102,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         requestShare: @escaping (ShareControllerSubject) -> Void,
         requestSearchByArtist: @escaping (String) -> Void,
         requestAdd: @escaping () -> Void,
-        getParentController: @escaping () -> ViewController?
+        getParentController: @escaping () -> ViewController?,
+        forceClassic: Bool = false
     ) {
         self.context = context
         self.chatLocation = chatLocation
@@ -106,6 +115,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         self.requestAdd = requestAdd
         self.playlistLocation = playlistLocation
         self.getParentController = getParentController
+        self.forceClassic = forceClassic
         
         if let playlistLocation = playlistLocation as? PeerMessagesPlaylistLocation, case let .custom(messages, canReorder, at, loadMore, _) = playlistLocation.effectiveLocation(context: context) {
             // Preserved as-is: every existing `.custom` location reaching here is saved music
@@ -463,7 +473,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
         
         self.controlsNode.control = { [weak self] action in
-            if let strongSelf = self {
+            if let strongSelf = self, strongSelf.exteralessAccountIsValid {
                 strongSelf.context.sharedContext.mediaManager.playlistControl(action, type: strongSelf.type)
             }
         }
@@ -500,6 +510,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
         
         openMessageImpl = { [weak self] id in
+            guard self?.exteralessAccountIsValid == true else { return false }
             if let strongSelf = self, let instantPageLocation = strongSelf.playlistLocation as? InstantPagePlaylistLocation, instantPageLocation.messageId != nil, id.namespace == Namespaces.Message.Local {
                 // Re-seed the SAME playlist at the tapped track. Letting openChatMessage build a
                 // PeerMessagesMediaPlaylist over these rows would be wrong twice: they are
@@ -524,7 +535,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         }
         
         openMessageContextMenuImpl = { [weak self] message, node, rect, gesture in
-            guard let self else {
+            guard let self, self.exteralessAccountIsValid else {
                 return
             }
             self.openMessageContextMenu(message: message, node: node, frame: rect, gesture: gesture as? ContextGesture)
@@ -603,13 +614,20 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         self.setupReordering()
         
         self.albumArtBackground.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(self.albumArtTapped(_:))))
+        self.updateExteralessPlayer()
+        self.exteralessSettingsObservation = ClientSettings.shared.observe { [weak self] keys in
+            guard keys.contains("appearance.md3Player") else { return }
+            Task { @MainActor [weak self] in self?.updateExteralessPlayer() }
+        }
     }
     
     deinit {
+        self.exteralessSettingsObservation?.cancel()
         self.presentationDataDisposable?.dispose()
         self.replacementHistoryNodeReadyDisposable.dispose()
         self.dataDisposable?.dispose()
         self.saveMediaDisposable?.dispose()
+        self.profileMutationDisposable.dispose()
     }
     
     override func didLoad() {
@@ -624,6 +642,9 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         panRecognizer.shouldBegin = { [weak self] point in
             guard let self else {
                 return false
+            }
+            if self.exteralessSurface != nil {
+                return point.y < max(self.validLayout?.safeInsets.top ?? 0, self.validLayout?.statusBarHeight ?? 0) + 54
             }
             if self.historyFrameTopOverlayNode.bounds.contains(self.view.convert(point, to: self.historyFrameTopOverlayNode.view)) {
                 return true
@@ -685,7 +706,8 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
                 return
             }
 
-            self.historyNode.reorderItem = { fromIndex, toIndex, transactionOpaqueState -> Signal<Bool, NoError> in
+            self.historyNode.reorderItem = { [weak self] fromIndex, toIndex, transactionOpaqueState -> Signal<Bool, NoError> in
+                guard self?.exteralessAccountIsValid == true else { return .single(false) }
                 guard let filteredEntries = (transactionOpaqueState as? ChatHistoryTransactionOpaqueState)?.historyView.filteredEntries, !filteredEntries.isEmpty else {
                     return .single(false)
                 }
@@ -759,6 +781,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
     }
     
     func forwardToSavedMessages(file: FileMediaReference) {
+        guard self.exteralessAccountIsValid else { return }
         self.dismissAllTooltips()
         
         let _ = self.context.engine.messages.enqueueOutgoingMessage(to: self.context.account.peerId, replyTo: nil, content: .file(file)).start()
@@ -773,24 +796,36 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         self.getParentController()?.present(controller, in: .current)
     }
     
-    private func updateMusicSaved(file: FileMediaReference, isSaved: Bool) {
+    private func updateMusicSaved(file: FileMediaReference, isSaved: Bool, completed: @escaping () -> Void) {
+        guard self.exteralessAccountIsValid, !self.profileMutationPending else { return }
+        self.profileMutationPending = true
+        let signal: Signal<Never, AddSavedMusicError>
         if let playlistLocation = self.playlistLocation as? PeerMessagesPlaylistLocation, case let .savedMusic(savedMusicContext, _, _) = playlistLocation, savedMusicContext.peerId == self.context.account.peerId {
-            if isSaved {
-                let _ = savedMusicContext.addMusic(file: file).start()
-            } else {
-                let _ = savedMusicContext.removeMusic(file: file).start()
-            }
+            signal = savedMusicContext.updateMusic(file: file, isSaved: isSaved)
         } else {
-            if isSaved {
-                let _ = self.context.engine.peers.addSavedMusic(file: file).start()
-            } else {
-                let _ = self.context.engine.peers.removeSavedMusic(file: file).start()
-            }
+            signal = updateSavedMusic(engine: self.context.engine, file: file, isSaved: isSaved)
         }
+        self.profileMutationDisposable.set((signal |> deliverOnMainQueue).start(error: { [weak self] _ in
+            guard let self, self.exteralessAccountIsValid else { return }
+            self.profileMutationPending = false
+            let alert = UIAlertController(title: nil, message: "Couldn't update profile music. Try again.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: self.presentationData.strings.Common_OK, style: .default))
+            self.getParentController()?.present(alert, animated: true)
+        }, completed: { [weak self] in
+            guard let self, self.exteralessAccountIsValid else { return }
+            self.profileMutationPending = false
+            completed()
+        }))
     }
     
     func addToSavedMusic(file: FileMediaReference) {
+        guard self.exteralessAccountIsValid else { return }
         self.dismissAllTooltips()
+        self.updateMusicSaved(file: file, isSaved: true, completed: { [weak self] in self?.presentMusicAdded() })
+    }
+
+    private func presentMusicAdded() {
+        guard self.exteralessAccountIsValid else { return }
         
         var actionText: String? = self.presentationData.strings.MediaPlayer_SavedMusic_AddedToProfile_View
         if let itemId = self.controlsNode.currentItemId as? PeerMessagesMediaPlaylistItemId, itemId.messageId.namespace == Namespaces.Message.Local && itemId.messageId.peerId == self.context.account.peerId {
@@ -835,11 +870,25 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         )
         self.getParentController()?.present(controller, in: .current)
         
-        self.updateMusicSaved(file: file, isSaved: true)
     }
     
     func removeFromSavedMusic(file: FileMediaReference) {
+        guard self.exteralessAccountIsValid else { return }
         self.dismissAllTooltips()
+        let itemId = self.controlsNode.currentItemId
+        let wasLastPlayingItem: Bool
+        if let id = itemId as? PeerMessagesMediaPlaylistItemId, id.messageId.namespace == Namespaces.Message.Local, id.messageId.peerId == self.context.account.peerId, self.controlsNode.currentFileReference?.media.fileId == file.media.fileId, self.historyNode.originalHistoryView?.entries.count == 1 {
+            wasLastPlayingItem = true
+        } else { wasLastPlayingItem = false }
+        self.updateMusicSaved(file: file, isSaved: false, completed: { [weak self] in
+            guard let self, self.exteralessAccountIsValid else { return }
+            let sameItem = areSharedMediaPlaylistItemIdsEqual(itemId, self.controlsNode.currentItemId)
+            self.presentMusicRemoved(dismissPlayer: wasLastPlayingItem && (sameItem || self.controlsNode.currentItemId == nil), stopPlayback: wasLastPlayingItem && sameItem)
+        })
+    }
+
+    private func presentMusicRemoved(dismissPlayer: Bool, stopPlayback: Bool) {
+        guard self.exteralessAccountIsValid else { return }
                         
         let controller = UndoOverlayController(
             presentationData: self.presentationData,
@@ -856,18 +905,17 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
             }
         )
         
-        if let itemId = self.controlsNode.currentItemId as? PeerMessagesMediaPlaylistItemId, itemId.messageId.namespace == Namespaces.Message.Local && itemId.messageId.peerId == self.context.account.peerId, self.historyNode.originalHistoryView?.entries.count == 1 {
+        if dismissPlayer {
             if let navigationController = (self.getParentController() as? OverlayAudioPlayerControllerImpl)?.parentNavigationController {
                 self.requestDismiss()
                 navigationController.presentOverlay(controller: controller)
                 
-                self.context.sharedContext.mediaManager.setPlaylist(nil, type: self.type, control: .playback(.pause))
+                if stopPlayback { self.context.sharedContext.mediaManager.setPlaylist(nil, type: self.type, control: .playback(.pause)) }
             }
         } else {
             self.getParentController()?.present(controller, in: .current)
         }
         
-        self.updateMusicSaved(file: file, isSaved: false)
     }
     
     private var isSaved: Bool? {
@@ -898,6 +946,11 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
     
     private func updateContainerContainingNodeTransform(transition: ContainedViewLayoutTransition) {
         guard let layout = self.validLayout else {
+            return
+        }
+
+        if self.exteralessSurface != nil {
+            transition.updateTransform(layer: self.containerContainingNode.layer, transform: CATransform3DIdentity)
             return
         }
         
@@ -1139,6 +1192,53 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         var layout = layout
         layout.intrinsicInsets.bottom = controlsHeight + (self.historyNode.hasAnyMessages ? 0.0 : 8.0)
         self.getParentController()?.presentationContext.containerLayoutUpdated(layout, transition: transition)
+        if let surface = self.exteralessSurface, let fullLayout = self.validLayout {
+            let sides = fullLayout.sideInsets(forBandFrom: 0, to: fullLayout.size.height)
+            surface.layoutInsets = UIEdgeInsets(top: max(fullLayout.safeInsets.top, fullLayout.statusBarHeight ?? 0), left: sides.left, bottom: fullLayout.intrinsicInsets.bottom, right: sides.right)
+            transition.updateFrame(view: surface, frame: CGRect(origin: .zero, size: fullLayout.size))
+            self.contentNode.view.bringSubviewToFront(surface)
+            self.getParentController()?.presentationContext.containerLayoutUpdated(fullLayout, transition: transition)
+        }
+    }
+
+    func setExteralessPlayerVisible(_ visible: Bool) {
+        self.exteralessPlayerVisible = visible
+        self.exteralessSurface?.setActive(visible)
+    }
+
+    func invalidateExteralessPlayerAccount() {
+        self.exteralessAccountIsValid = false
+        self.profileMutationDisposable.set(nil)
+        self.profileMutationPending = false
+        self.exteralessSurface?.session?.invalidate()
+        self.controlsNode.isUserInteractionEnabled = false
+        self.historyNode.isUserInteractionEnabled = false
+        self.replacementHistoryNode?.isUserInteractionEnabled = false
+        self.saveMediaDisposable?.set(nil)
+    }
+
+    private func updateExteralessPlayer() {
+        let enabled = !self.forceClassic && self.type == .music && PlayerStylePolicy.current.modernPlayer
+        if enabled, self.exteralessSurface == nil {
+            let surface = ExteralessPlayerSurface(context: self.context, controller: self.getParentController, dismiss: self.requestDismiss)
+            self.exteralessSurface = surface
+            self.contentNode.view.addSubview(surface)
+            surface.setActive(self.exteralessPlayerVisible)
+            self.ready.set(.single(true))
+        } else if !enabled, let surface = self.exteralessSurface {
+            surface.setActive(false)
+            surface.removeFromSuperview()
+            self.exteralessSurface = nil
+        }
+        self.historyNode.isHidden = enabled
+        self.replacementHistoryNode?.isHidden = enabled
+        self.historyBackgroundNode.isHidden = enabled
+        self.historyFrameNode.isHidden = enabled
+        self.controlsNode.isHidden = enabled
+        if let layout = self.validLayout {
+            self.containerLayoutUpdated(layout, transition: .immediate)
+            self.updateContainerContainingNodeTransform(transition: .immediate)
+        }
     }
     
     func animateIn() {
@@ -1162,7 +1262,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         if !self.bounds.contains(point) {
             return nil
         }
-        if self.albumArtBackground.superview == nil &&  point.y < self.historyFrameNode.frame.minY {
+        if self.exteralessSurface == nil && self.albumArtBackground.superview == nil && point.y < self.historyFrameNode.frame.minY {
             return self.dimNode.view
         }
         return result
@@ -1182,6 +1282,10 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
     }
             
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if self.exteralessSurface != nil, let recognizer = gestureRecognizer as? UIPanGestureRecognizer {
+            let velocity = recognizer.velocity(in: self.view)
+            return velocity.y > 0 && abs(velocity.y) > abs(velocity.x)
+        }
         if let recognizer = gestureRecognizer as? UIPanGestureRecognizer {
             let location = recognizer.location(in: self.view)
             if let view = super.hitTest(location, with: nil) {
@@ -1381,6 +1485,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
             previousHistoryNode.disconnect()
             self.contentNode.insertSubnode(replacementHistoryNode, belowSubnode: self.historyNode)
             self.historyNode = replacementHistoryNode
+            self.historyNode.isHidden = self.exteralessSurface != nil
             self.setupReordering()
             self.updateHistoryContentOffset(replacementHistoryNode.visibleContentOffset(), transition: .immediate)
             

@@ -227,6 +227,7 @@ public final class AvatarVideoNode: ASDisplayNode {
     private var visibility = false
     public func updateVisibility(_ isVisible: Bool) {
         self.visibility = isVisible
+        let showsVideo = isVisible && ExteralessIdentityPresentation.shared.policy.premiumItemVideoAvatar
         if isVisible, let animationNode = self.animationNode, let file = self.animationFile {
             if !self.didSetupAnimation {
                 self.didSetupAnimation = true
@@ -238,7 +239,7 @@ public final class AvatarVideoNode: ASDisplayNode {
             }
         }
         self.animationNode?.visibility = isVisible
-        if isVisible, let videoContent = self.videoContent, self.videoLoopCount < maxVideoLoopCount {
+        if showsVideo, let videoContent = self.videoContent, self.videoLoopCount < maxVideoLoopCount {
             var useDirectCache = false
             if self.internalSize.width <= 200.0 {
                 useDirectCache = true
@@ -352,7 +353,8 @@ public final class AvatarVideoNode: ASDisplayNode {
         if self.videoLoopCount < maxVideoLoopCount {
             self.itemLayer?.isVisibleForAnimations = isVisible
         }
-        self.videoItemLayer?.isVisibleForAnimations = isVisible
+        self.videoItemLayer?.isVisibleForAnimations = showsVideo
+        self.videoItemLayer?.isHidden = !showsVideo
     }
     
     public func updateLayout(size: CGSize, cornerRadius: CGFloat, transition: ContainedViewLayoutTransition) {

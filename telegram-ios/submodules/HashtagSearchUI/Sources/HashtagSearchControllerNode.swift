@@ -22,6 +22,7 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
     
     private let searchQueryPromise = ValuePromise<String>()
     private var searchQueryDisposable: Disposable?
+    private var dialogPolicyDisposable: Disposable?
     
     private let navigationBar: NavigationBar?
 
@@ -65,7 +66,7 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
         self.navigationBar = navigationBar
         self.isCashtag = query.hasPrefix("$")
         self.presentationData = controller.presentationData
-        self.isDisplayingStories = controller.stories
+        self.isDisplayingStories = controller.stories && exteralessDialogStoriesEnabled()
         
         var presentationData = context.sharedContext.currentPresentationData.with { $0 }
         var controllerParams: ChatControllerParams?
@@ -119,12 +120,13 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
         self.globalController?.showListEmptyResults = true
         self.globalController?.customNavigationController = navigationController
                 
-        if controller.publicPosts {
-            self.searchContentNode.selectedIndex = 2
-        } else if peer == nil {
-            self.searchContentNode.selectedIndex = 1
-        } else {
+        if controller.mode == .chatOnly {
             self.searchContentNode.selectedIndex = 0
+        } else {
+            let isPublicBroadcast: Bool
+            if case let .channel(channel) = peer, case .broadcast = channel.info, peer?.addressName != nil { isPublicBroadcast = true }
+            else { isPublicBroadcast = false }
+            self.searchContentNode.selectedIndex = exteralessDialogPolicy().initialHashtagPage(isPublicBroadcast: isPublicBroadcast, hasCurrentChat: self.currentController != nil, explicit: controller.publicPosts ? .publicPosts : nil).rawValue
         }
         
         super.init()
@@ -254,7 +256,15 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
             })
         }
         
-        self.updateStorySearch()
+        self.dialogPolicyDisposable = (exteralessDialogPolicyUpdates()
+        |> map { $0.disableStories }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] disabled in
+            guard let self else { return }
+            if disabled { self.isDisplayingStories = false }
+            self.updateStorySearch()
+            self.requestUpdate(transition: .immediate)
+        })
     }
     
     deinit {
@@ -262,6 +272,7 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
         self.isSearchingDisposable?.dispose()
         self.searchResultsCountDisposable?.dispose()
         self.storySearchDisposable.dispose()
+        self.dialogPolicyDisposable?.dispose()
     }
     
     private var panAllowedDirections: InteractiveTransitionGestureRecognizerDirections {
@@ -404,8 +415,9 @@ final class HashtagSearchControllerNode: ASDisplayNode, ASGestureRecognizerDeleg
         self.storySearchState = nil
         self.storySearchDisposable.set(nil)
         self.storySearchContext = nil
+        self.currentController?.externalSearchResultsCount = nil
         
-        if !self.query.isEmpty {
+        if exteralessDialogStoriesEnabled(), !self.query.isEmpty {
             var peerId: EnginePeer.Id?
             if self.controller?.mode == .chatOnly {
                 peerId = self.peer?.id

@@ -146,7 +146,7 @@ public class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                     }
                 }
                 if updated {
-                    updateImageSignal = chatMapSnapshotImage(engine: item.context.engine, resource: MapSnapshotMediaResource(latitude: selectedMedia.latitude, longitude: selectedMedia.longitude, width: Int32(imageSize.width), height: Int32(imageSize.height)))
+                    updateImageSignal = chatMapSnapshotImage(engine: item.context.engine, resource: MapSnapshotMediaResource(latitude: selectedMedia.latitude, longitude: selectedMedia.longitude, width: Int32(imageSize.width), height: Int32(imageSize.height), scope: item.message.id.peerId.namespace == Namespaces.Peer.SecretChat ? .secretChat : .cloudMessage))
                 }
             }
             
@@ -295,7 +295,8 @@ public class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
                         hasAutoremove: item.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                         animationCache: item.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(item.message).exteralessRetention
                     ))
                     
                     let (dateAndStatusSize, dateAndStatusApply) = statusSuggestedWidthAndContinue.1(statusSuggestedWidthAndContinue.0)

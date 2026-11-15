@@ -4,6 +4,7 @@ import AsyncDisplayKit
 import Display
 import TelegramCore
 import TelegramPresentationData
+import TelegramStringFormatting
 import LocalizedPeerData
 import AccountContext
 import AvatarNode
@@ -281,12 +282,12 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
         }
     }
     
-    public static func asyncLayout(_ maybeNode: ChatMessageForwardInfoNode?) -> (_ context: AccountContext, _ presentationData: ChatPresentationData, _ strings: PresentationStrings, _ type: ChatMessageForwardInfoType, _ peer: EnginePeer?, _ authorName: String?, _ inlineBotName: String?, _ psaType: String?, _ storyData: StoryData?, _ constrainedSize: CGSize) -> (CGSize, (CGFloat) -> ChatMessageForwardInfoNode) {
+    public static func asyncLayout(_ maybeNode: ChatMessageForwardInfoNode?) -> (_ context: AccountContext, _ presentationData: ChatPresentationData, _ strings: PresentationStrings, _ type: ChatMessageForwardInfoType, _ peer: EnginePeer?, _ authorName: String?, _ inlineBotName: String?, _ psaType: String?, _ storyData: StoryData?, _ originalTimestamp: Int32?, _ constrainedSize: CGSize) -> (CGSize, (CGFloat) -> ChatMessageForwardInfoNode) {
         let titleNodeLayout = TextNode.asyncLayout(maybeNode?.titleNode)
         let nameNodeLayout = TextNode.asyncLayout(maybeNode?.nameNode)
         let viaBotNodeLayout = TextNode.asyncLayout(maybeNode?.viaBotNode)
         
-        return { context, presentationData, strings, type, peer, authorName, inlineBotName, psaType, storyData, constrainedSize in
+        return { context, presentationData, strings, type, peer, authorName, inlineBotName, psaType, storyData, originalTimestamp, constrainedSize in
             let fontSize = floor(presentationData.fontSize.baseDisplaySize * 14.0 / 17.0)
             let prefixFont = Font.regular(fontSize)
             let peerFont = Font.medium(fontSize)
@@ -294,9 +295,9 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
             let peerString: String
             if let peer = peer {
                 if let authorName = authorName {
-                    peerString = "\(peer.displayTitle(strings: strings, displayOrder: presentationData.nameDisplayOrder)) (\(authorName))"
+                    peerString = "\(peer.exteralessDisplayTitle(account: context.account, strings: strings, displayOrder: presentationData.nameDisplayOrder)) (\(authorName))"
                 } else {
-                    peerString = peer.displayTitle(strings: strings, displayOrder: presentationData.nameDisplayOrder)
+                    peerString = peer.exteralessDisplayTitle(account: context.account, strings: strings, displayOrder: presentationData.nameDisplayOrder)
                 }
             } else if let authorName = authorName {
                 peerString = authorName
@@ -310,7 +311,7 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
             }
             
             let titleColor: UIColor
-            let titleString: PresentationStrings.FormattedString
+            var titleString: PresentationStrings.FormattedString
             var authorString: String?
             
             switch type {
@@ -332,7 +333,7 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
                             let rightPart = String(customFormat[range.upperBound...])
                             
                             let formattedText = leftPart + peerString + rightPart
-                            titleString = PresentationStrings.FormattedString(string: formattedText, ranges: [PresentationStrings.FormattedString.Range(index: 0, range: NSRange(location: leftPart.count, length: peerString.count))])
+                            titleString = PresentationStrings.FormattedString(string: formattedText, ranges: [PresentationStrings.FormattedString.Range(index: 0, range: NSRange(location: leftPart.utf16.count, length: peerString.utf16.count))])
                         } else {
                             titleString = PresentationStrings.FormattedString(string: customFormat, ranges: [])
                         }
@@ -341,7 +342,7 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
                     }
                 } else {
                     if incoming {
-                        if let nameColor = peer?.nameColor {
+                        if let nameColor = peer.flatMap({ exteralessIdentityPresentation(account: context.account, peer: $0).nameColor }) {
                             switch nameColor {
                             case let .preset(nameColor):
                                 titleColor = context.peerNameColors.get(nameColor, dark: presentationData.theme.theme.overallDarkAppearance).main
@@ -391,7 +392,7 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
                             let rightPart = String(customFormat[range.upperBound...])
                             
                             let formattedText = leftPart + peerString + rightPart
-                            titleString = PresentationStrings.FormattedString(string: formattedText, ranges: [PresentationStrings.FormattedString.Range(index: 0, range: NSRange(location: leftPart.count, length: peerString.count))])
+                            titleString = PresentationStrings.FormattedString(string: formattedText, ranges: [PresentationStrings.FormattedString.Range(index: 0, range: NSRange(location: leftPart.utf16.count, length: peerString.utf16.count))])
                         } else {
                             titleString = PresentationStrings.FormattedString(string: customFormat, ranges: [])
                         }
@@ -404,6 +405,14 @@ public class ChatMessageForwardInfoNode: ASDisplayNode {
                 }
             }
             
+            if storyData == nil, let originalTimestamp,
+               let suffix = exteralessIdentityForwardDate(timestamp: originalTimestamp, strings: strings, dateTimeFormat: presentationData.dateTimeFormat) {
+                if let value = authorString {
+                    authorString = value + " · " + suffix
+                } else {
+                    titleString = PresentationStrings.FormattedString(string: titleString.string + " · " + suffix, ranges: titleString.ranges)
+                }
+            }
             var currentCredibilityIconImage: UIImage?
             var highlight = true
             if let peer = peer {

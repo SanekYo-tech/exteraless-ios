@@ -408,6 +408,7 @@ public final class EmojiPagerContentComponent: Component {
         public let animationData: EntityKeyboardAnimationData?
         public let content: ItemContent
         public let itemFile: TelegramMediaFile.Accessor?
+        public let fileReference: FileMediaReference?
         public let itemGift: StarGift.UniqueGift?
         public let subgroupId: Int32?
         public let icon: Icon
@@ -420,11 +421,13 @@ public final class EmojiPagerContentComponent: Component {
             itemGift: StarGift.UniqueGift? = nil,
             subgroupId: Int32?,
             icon: Icon,
-            tintMode: TintMode
+            tintMode: TintMode,
+            fileReference: FileMediaReference? = nil
         ) {
             self.animationData = animationData
             self.content = content
             self.itemFile = itemFile
+            self.fileReference = fileReference
             self.itemGift = itemGift
             self.subgroupId = subgroupId
             self.icon = icon
@@ -442,6 +445,9 @@ public final class EmojiPagerContentComponent: Component {
                 return false
             }
             if lhs.itemFile?.fileId != rhs.itemFile?.fileId {
+                return false
+            }
+            if lhs.fileReference?.abstract != rhs.fileReference?.abstract {
                 return false
             }
             if lhs.itemGift?.id != rhs.itemGift?.id {
@@ -3296,7 +3302,6 @@ public final class EmojiPagerContentComponent: Component {
                 var headerCentralContentWidth: CGFloat?
                 var headerSizeUpdated = false
                 if let title = itemGroup.title {
-                    let hasEdit = itemGroup.hasEdit
                     validGroupHeaderIds.insert(itemGroup.groupId)
                     let groupHeaderView: GroupHeaderLayer
                     var groupHeaderTransition = transition
@@ -3310,7 +3315,7 @@ public final class EmojiPagerContentComponent: Component {
                                 guard let strongSelf = self, let component = strongSelf.component else {
                                     return
                                 }
-                                if hasEdit {
+                                if component.contentItemGroups.first(where: { $0.groupId == groupId })?.hasEdit == true {
                                     component.inputInteractionHolder.inputInteraction?.editAction(groupId)
                                 } else {
                                     component.inputInteractionHolder.inputInteraction?.addGroupAction(groupId, false, true)
@@ -3333,7 +3338,7 @@ public final class EmojiPagerContentComponent: Component {
                     if case .detailed = itemLayout.layoutType, itemGroup.isFeatured {
                         actionButtonTitle = itemGroup.actionButtonTitle
                     } else if itemGroup.hasEdit {
-                        actionButtonTitle = keyboardChildEnvironment.strings.Stickers_Edit
+                        actionButtonTitle = itemGroup.groupId == AnyHashable("recent") ? "+" : keyboardChildEnvironment.strings.Stickers_Edit
                         actionButtonIsCompact = true
                     }
                     
@@ -3346,6 +3351,7 @@ public final class EmojiPagerContentComponent: Component {
                         layoutType: itemLayout.layoutType,
                         hasTopSeparator: hasTopSeparator,
                         actionButtonTitle: actionButtonTitle,
+                        actionButtonAccessibilityLabel: itemGroup.groupId == AnyHashable("recent") && itemGroup.hasEdit ? keyboardChildEnvironment.strings.Stickers_CreateSticker.replacingOccurrences(of: "\n", with: " ") : nil,
                         actionButtonIsCompact: actionButtonIsCompact,
                         title: title,
                         subtitle: itemGroup.subtitle,
@@ -3620,6 +3626,14 @@ public final class EmojiPagerContentComponent: Component {
                         var updateItemLayerPlaceholder = false
                         var itemTransition = transition
                         let itemLayer: EmojiKeyboardItemLayer
+                        if let previous = self.visibleItemLayers[itemId], previous.item.fileReference?.abstract != item.fileReference?.abstract {
+                            // A cloud favorite can become local-only after cloud
+                            // refresh. Rebind its fetch to the retained pack source.
+                            previous.removeFromSuperlayer()
+                            previous.underlyingContentLayer?.removeFromSuperlayer()
+                            previous.tintContentLayer?.removeFromSuperlayer()
+                            self.visibleItemLayers.removeValue(forKey: itemId)
+                        }
                         if let current = self.visibleItemLayers[itemId] {
                             itemLayer = current
                         } else {
@@ -3708,6 +3722,8 @@ public final class EmojiPagerContentComponent: Component {
                                 self.mirrorContentScrollView.layer.addSublayer(tintContentLayer)
                             }
                         }
+
+                        itemLayer.updateItem(item)
                         
                         var itemFrame = itemLayout.frame(groupIndex: groupItems.groupIndex, itemIndex: index)
                         let baseItemFrame = itemFrame

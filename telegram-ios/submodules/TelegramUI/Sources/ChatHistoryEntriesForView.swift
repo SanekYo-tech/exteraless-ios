@@ -141,7 +141,7 @@ func chatHistoryEntriesForView(
     }
     
     var count = 0
-    loop: for entry in view.entries {
+    loop: for entry in exteralessFilterHistoryEntries(account: context.account, entries: view.entries, translated: associatedData.translateToLanguage != nil) {
         var message = entry.message.withAppliedEphemeralReplacementMessage()
         var isRead = entry.isRead
         

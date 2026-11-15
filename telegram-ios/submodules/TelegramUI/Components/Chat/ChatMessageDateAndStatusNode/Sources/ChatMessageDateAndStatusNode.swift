@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import TelegramCore
@@ -269,6 +270,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
         var canViewReactionList: Bool
         var animationCache: AnimationCache
         var animationRenderer: MultiAnimationRenderer
+        var retention: ExteralessRetentionMessageAttribute?
         
         public init(
             context: AccountContext,
@@ -294,7 +296,8 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             hasAutoremove: Bool,
             canViewReactionList: Bool,
             animationCache: AnimationCache,
-            animationRenderer: MultiAnimationRenderer
+            animationRenderer: MultiAnimationRenderer,
+            retention: ExteralessRetentionMessageAttribute? = nil
         ) {
             self.context = context
             self.presentationData = presentationData
@@ -306,11 +309,11 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             self.availableReactions = availableReactions
             self.savedMessageTags = savedMessageTags
             self.constrainedSize = constrainedSize
-            self.reactions = reactions
+            self.reactions = exteralessIdentityVisibleReactions(reactions)
             self.reactionPeers = reactionPeers
             self.displayAllReactionPeers = displayAllReactionPeers
             self.areReactionsTags = areReactionsTags
-            self.areStarReactionsEnabled = areStarReactionsEnabled
+            self.areStarReactionsEnabled = areStarReactionsEnabled && ExteralessIdentityPresentation.shared.policy.premiumItemStarInReactions
             self.messageEffect = messageEffect
             self.replyCount = replyCount
             self.starsCount = starsCount
@@ -320,9 +323,12 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
             self.canViewReactionList = canViewReactionList
             self.animationCache = animationCache
             self.animationRenderer = animationRenderer
+            self.retention = retention
         }
     }
     
+    private let timestampContentNode = ASDisplayNode()
+    private var timeHintPressed: (() -> Void)? { didSet { self.updateTapGesture() } }
     private var backgroundNode: ASImageNode?
     private var blurredBackgroundNode: NavigationBackgroundNode?
     private var checkSentNode: ASImageNode?
@@ -348,17 +354,19 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
 
     public var openReplies: (() -> Void)?
     public var pressed: (() -> Void)? {
-        didSet {
-            if self.pressed != nil {
-                if self.tapGestureRecognizer == nil {
-                    let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:)))
-                    self.tapGestureRecognizer = tapGestureRecognizer
-                    self.view.addGestureRecognizer(tapGestureRecognizer)
-                }
-            } else if let tapGestureRecognizer = self.tapGestureRecognizer{
-                self.tapGestureRecognizer = nil
-                self.view.removeGestureRecognizer(tapGestureRecognizer)
+        didSet { self.updateTapGesture() }
+    }
+
+    private func updateTapGesture() {
+        if self.pressed != nil || self.timeHintPressed != nil {
+            if self.tapGestureRecognizer == nil {
+                let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.tapGesture(_:)))
+                self.tapGestureRecognizer = tapGestureRecognizer
+                self.view.addGestureRecognizer(tapGestureRecognizer)
             }
+        } else if let tapGestureRecognizer = self.tapGestureRecognizer {
+            self.tapGestureRecognizer = nil
+            self.view.removeGestureRecognizer(tapGestureRecognizer)
         }
     }
     public var reactionSelected: ((ReactionButtonAsyncNode, MessageReaction.Reaction, ContextExtractedContentContainingView?) -> Void)?
@@ -373,12 +381,37 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
         
         super.init()
         
-        self.addSubnode(self.dateNode)
+        self.timestampContentNode.isUserInteractionEnabled = false
+        self.addSubnode(self.timestampContentNode)
+        self.timestampContentNode.addSubnode(self.dateNode)
+    }
+
+    public func setTimestampHidden(_ hidden: Bool) {
+        self.timestampContentNode.isHidden = hidden
+    }
+
+    public func configureTimeHint(message: EngineMessage, display: @escaping (String) -> Void) {
+        guard ClientSettings.shared.bool("chats.showTimeHint") else { self.timeHintPressed = nil; return }
+        self.timeHintPressed = {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .long
+            formatter.timeStyle = .medium
+            func date(_ value: Int32) -> String { formatter.string(from: Date(timeIntervalSince1970: TimeInterval(value))) }
+            var lines = [date(message.timestamp)]
+            for attribute in message.attributes {
+                if let edited = attribute as? EditedMessageAttribute, !edited.isHidden { lines.append("Edited: " + date(edited.date)) }
+            }
+            if let forward = message._asMessage().forwardInfo { lines.append("Original: " + date(forward.date)) }
+            display(lines.joined(separator: "\n"))
+        }
     }
     
     @objc private func tapGesture(_ recognizer: UITapGestureRecognizer) {
         if case .ended = recognizer.state {
-            self.pressed?()
+            if !self.timestampContentNode.isHidden {
+                if let pressed = self.pressed { pressed() }
+                else if self.dateNode.frame.insetBy(dx: -6, dy: -6).contains(recognizer.location(in: self.view)) { self.timeHintPressed?() }
+            }
         }
     }
     
@@ -603,19 +636,35 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                 }
             }
             
-            var updatedDateText = arguments.dateText
-            if arguments.edited {
-                if let useEditedTimestamp = arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool, useEditedTimestamp {
-                } else {
-                    updatedDateText = "\(arguments.presentationData.strings.Conversation_MessageEditedLabel) \(updatedDateText)"
-                }
+            let dateFont = Font.regular(floor(arguments.presentationData.fontSize.baseDisplaySize * 11.0 / 17.0))
+            let policy = RetentionPolicy.current
+            let dateString = NSMutableAttributedString(string: "")
+            func appendText(_ text: String, color: UIColor) {
+                dateString.append(NSAttributedString(string: text, font: dateFont, textColor: color))
+            }
+            func appendMark(text: String, symbol: String?, color: UIColor) {
+                if let symbol, let image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: dateFont.pointSize)) {
+                    let mark = NSMutableAttributedString(string: "\u{2003}", font: dateFont, textColor: color)
+                    mark.addAttribute(.attachment, value: image.withTintColor(color, renderingMode: .alwaysOriginal), range: NSRange(location: 0, length: mark.length))
+                    dateString.append(mark)
+                } else { appendText(text, color: color) }
+                appendText(" ", color: dateColor)
             }
             if let impressionCount = arguments.impressionCount {
-                updatedDateText = compactNumericCountString(impressionCount, decimalSeparator: arguments.presentationData.dateTimeFormat.decimalSeparator) + " " + updatedDateText
+                appendText(compactNumericCountString(impressionCount, decimalSeparator: arguments.presentationData.dateTimeFormat.decimalSeparator) + " ", color: dateColor)
             }
-            
-            let dateFont = Font.regular(floor(arguments.presentationData.fontSize.baseDisplaySize * 11.0 / 17.0))
-            let (date, dateApply) = dateLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: updatedDateText, font: dateFont, textColor: dateColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .middle, constrainedSize: arguments.constrainedSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            if arguments.retention?.isDeleted == true {
+                let markColor: UIColor
+                if let argb = policy.deletedColorARGB {
+                    markColor = UIColor(red: CGFloat((argb >> 16) & 255) / 255.0, green: CGFloat((argb >> 8) & 255) / 255.0, blue: CGFloat(argb & 255) / 255.0, alpha: CGFloat((argb >> 24) & 255) / 255.0)
+                } else { markColor = dateColor }
+                appendMark(text: policy.deletedMark.isEmpty ? "deleted" : policy.deletedMark, symbol: policy.useDeletedIcon ? "trash" : nil, color: markColor)
+            }
+            if arguments.edited && (arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool) != true {
+                appendMark(text: policy.editedMark.isEmpty ? arguments.presentationData.strings.Conversation_MessageEditedLabel : policy.editedMark, symbol: policy.useEditedIcon ? "pencil" : nil, color: dateColor)
+            }
+            appendText(arguments.dateText, color: dateColor)
+            let (date, dateApply) = dateLayout(TextNodeLayoutArguments(attributedString: dateString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .middle, constrainedSize: arguments.constrainedSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let checkOffset = floor(arguments.presentationData.fontSize.baseDisplaySize * 6.0 / 17.0)
             
@@ -1061,6 +1110,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                         strongSelf.theme = arguments.presentationData.theme
                         strongSelf.type = arguments.type
                         strongSelf.layoutSize = layoutSize
+                        strongSelf.timestampContentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                         
                         let reactionButtons = reactionButtonsResult.apply(
                             animation,
@@ -1131,7 +1181,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                                 if currentBackgroundNode.supernode == nil {
                                     strongSelf.backgroundNode = currentBackgroundNode
                                     currentBackgroundNode.image = backgroundImage
-                                    strongSelf.insertSubnode(currentBackgroundNode, at: 0)
+                                    strongSelf.timestampContentNode.insertSubnode(currentBackgroundNode, at: 0)
                                 } else if themeUpdated {
                                     currentBackgroundNode.image = backgroundImage
                                 }
@@ -1154,7 +1204,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             } else {
                                 let blurredBackgroundNode = NavigationBackgroundNode(color: blurredBackgroundColor.0, enableBlur: blurredBackgroundColor.1)
                                 strongSelf.blurredBackgroundNode = blurredBackgroundNode
-                                strongSelf.insertSubnode(blurredBackgroundNode, at: 0)
+                                strongSelf.timestampContentNode.insertSubnode(blurredBackgroundNode, at: 0)
                                 blurredBackgroundNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
                                 blurredBackgroundNode.update(size: blurredBackgroundNode.bounds.size, cornerRadius: blurredBackgroundNode.bounds.height / 2.0, transition: .immediate)
                             }
@@ -1164,6 +1214,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                         }
                         
                         let _ = dateApply()
+                        strongSelf.timestampContentNode.accessibilityLabel = arguments.retention?.isDeleted == true ? "Deleted message. " + arguments.dateText : nil
                         
                         if let currentImpressionIcon = currentImpressionIcon {
                             let impressionIconFrame = CGRect(origin: CGPoint(x: leftOffset + leftInset + backgroundInsets.left, y: backgroundInsets.top + 1.0 + offset + verticalInset + floor((date.size.height - impressionSize.height) / 2.0)), size: impressionSize)
@@ -1173,7 +1224,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             }
                             if currentImpressionIcon.supernode == nil {
                                 strongSelf.impressionIcon = currentImpressionIcon
-                                strongSelf.addSubnode(currentImpressionIcon)
+                                strongSelf.timestampContentNode.addSubnode(currentImpressionIcon)
                                 currentImpressionIcon.frame = impressionIconFrame
                             } else {
                                 animation.animator.updateFrame(layer: currentImpressionIcon.layer, frame: impressionIconFrame, completion: nil)
@@ -1190,7 +1241,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             if strongSelf.clockFrameNode == nil {
                                 strongSelf.clockFrameNode = clockFrameNode
                                 clockFrameNode.image = clockFrameImage
-                                strongSelf.addSubnode(clockFrameNode)
+                                strongSelf.timestampContentNode.addSubnode(clockFrameNode)
                                 
                                 clockFrameNode.position = clockPosition
                             } else {
@@ -1212,7 +1263,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             if strongSelf.clockMinNode == nil {
                                 strongSelf.clockMinNode = clockMinNode
                                 clockMinNode.image = clockMinImage
-                                strongSelf.addSubnode(clockMinNode)
+                                strongSelf.timestampContentNode.addSubnode(clockMinNode)
                                 
                                 clockMinNode.position = clockMinPosition
                             } else {
@@ -1234,7 +1285,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             if strongSelf.checkSentNode == nil {
                                 checkSentNode.image = loadedCheckFullImage
                                 strongSelf.checkSentNode = checkSentNode
-                                strongSelf.addSubnode(checkSentNode)
+                                strongSelf.timestampContentNode.addSubnode(checkSentNode)
                                 animateSentNode = animation.isAnimated
                             } else if themeUpdated {
                                 checkSentNode.image = loadedCheckFullImage
@@ -1259,7 +1310,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                                 animateReadNode = animation.isAnimated
                                 checkReadNode.image = loadedCheckPartialImage
                                 strongSelf.checkReadNode = checkReadNode
-                                strongSelf.addSubnode(checkReadNode)
+                                strongSelf.timestampContentNode.addSubnode(checkReadNode)
                             } else if themeUpdated {
                                 checkReadNode.image = loadedCheckPartialImage
                             }
@@ -1325,7 +1376,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                                     animated: false
                                 )
                                 if node.supernode == nil {
-                                    strongSelf.addSubnode(node)
+                                    strongSelf.timestampContentNode.addSubnode(node)
                                     if animation.isAnimated {
                                         node.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2)
                                     }
@@ -1386,7 +1437,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             }
                             if currentRepliesIcon.supernode == nil {
                                 strongSelf.repliesIcon = currentRepliesIcon
-                                strongSelf.addSubnode(currentRepliesIcon)
+                                strongSelf.timestampContentNode.addSubnode(currentRepliesIcon)
                                 if animation.isAnimated {
                                     currentRepliesIcon.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
                                 }
@@ -1409,7 +1460,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             let node = apply()
                             if strongSelf.replyCountNode !== node {
                                 strongSelf.replyCountNode?.removeFromSupernode()
-                                strongSelf.addSubnode(node)
+                                strongSelf.timestampContentNode.addSubnode(node)
                                 strongSelf.replyCountNode = node
                                 if animation.isAnimated {
                                     node.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
@@ -1439,7 +1490,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             }
                             if currentStarsIcon.supernode == nil {
                                 strongSelf.starsIcon = currentStarsIcon
-                                strongSelf.addSubnode(currentStarsIcon)
+                                strongSelf.timestampContentNode.addSubnode(currentStarsIcon)
                                 if animation.isAnimated {
                                     currentStarsIcon.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
                                 }
@@ -1462,7 +1513,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                             let node = apply()
                             if strongSelf.starsCountNode !== node {
                                 strongSelf.starsCountNode?.removeFromSupernode()
-                                strongSelf.addSubnode(node)
+                                strongSelf.timestampContentNode.addSubnode(node)
                                 strongSelf.starsCountNode = node
                                 if animation.isAnimated {
                                     node.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.15)
@@ -1535,7 +1586,7 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
                 }
             }
         }
-        if self.pressed != nil {
+        if !self.timestampContentNode.isHidden && (self.pressed != nil || self.timeHintPressed != nil) {
             if self.bounds.contains(point) {
                 return self.view
             }
@@ -1544,6 +1595,93 @@ public class ChatMessageDateAndStatusNode: ASDisplayNode {
     }
 }
 
+public func exteralessRetentionOpacity(messages: [EngineMessage]) -> CGFloat {
+    let allDeleted = messages.allSatisfy { $0.exteralessRetention?.isDeleted == true }
+    return !messages.isEmpty && RetentionPolicy.current.translucent && allDeleted ? 0.75 : 1.0
+}
+
 public func shouldDisplayInlineDateReactions(message: EngineMessage, isPremium: Bool, forceInline: Bool) -> Bool {
     return false
+}
+
+/// Presentation-only: the stored reactions, polling, read state and server permissions are untouched.
+public func exteralessHideMessageReactions(message: EngineMessage) -> Bool {
+    let raw = message._asMessage()
+    let field: String
+    if let channel = raw.peers[message.id.peerId] as? TelegramChannel {
+        if case .broadcast = channel.info {
+            field = "hideReactionsInChannels"
+        } else {
+            field = "hideReactionsInGroups"
+        }
+    } else if raw.peers[message.id.peerId] is TelegramGroup {
+        field = "hideReactionsInGroups"
+    } else {
+        field = "hideReactionsInPrivate"
+    }
+    return ClientSettings.shared.bool("chats.\(field)")
+}
+
+public func exteralessStickerCornerRadius(isSticker: Bool, messageRadius: CGFloat) -> CGFloat {
+    return CGFloat(ChatStickerLayoutPolicy.radius(shape: ClientSettings.shared.integer("chats.stickerShape", default: 1), messageRadius: Double(messageRadius), isSticker: isSticker))
+}
+
+public func exteralessHideChannelShare(message: EngineMessage) -> Bool {
+    guard message.adAttribute == nil,
+          let channel = message._asMessage().peers[message.id.peerId] as? TelegramChannel,
+          case .broadcast = channel.info else { return false }
+    return ClientSettings.shared.bool("chats.hideShareButtonInChannel")
+}
+
+public func exteralessStickerTimeHidden(isSticker: Bool) -> Bool {
+    return isSticker && ClientSettings.shared.bool("chats.hideTimeForSticker")
+}
+
+public func exteralessStickerTimeFrames(sticker: CGRect, time: CGRect, share: CGRect?, obstacles: [CGRect], incoming: Bool, leftInset: CGFloat, rightEdge: CGFloat, isSticker: Bool) -> (time: CGRect, share: CGRect?) {
+    func rect(_ value: CGRect) -> ChatLayoutRect { ChatLayoutRect(x: Double(value.minX), y: Double(value.minY), width: Double(value.width), height: Double(value.height)) }
+    func frame(_ value: ChatLayoutRect) -> CGRect { CGRect(x: CGFloat(value.x), y: CGFloat(value.y), width: CGFloat(value.width), height: CGFloat(value.height)) }
+    let value = ChatStickerLayoutPolicy.timeFrames(sticker: rect(sticker), time: rect(time), share: share.map(rect), obstacles: obstacles.map(rect), incoming: incoming, left: Double(leftInset), right: Double(rightEdge), enabled: isSticker && ClientSettings.shared.bool("chats.stickerTimeSide") && !ClientSettings.shared.bool("chats.hideTimeForSticker"))
+    return (frame(value.time), value.share.map(frame))
+}
+
+/// Implemented by the real chat node. The existing interaction's chatControllerNode reference
+/// supplies the host, so no global controller registry or shared interaction field is required.
+public protocol ExteralessChatMessageActionHost: AnyObject {
+    func exteralessPerformMessageAction(message: EngineMessage, action: Int)
+}
+
+/// False delegates to the exact native gesture, including its reaction eligibility checks.
+public func exteralessPerformDoubleTap(message: EngineMessage, accountPeerId: EnginePeer.Id, host: ExteralessChatMessageActionHost?, openMenu: () -> Void, reply: () -> Void) -> Bool {
+    if message.exteralessRetention != nil { openMenu(); return true }
+    let incoming = message._asMessage().effectivelyIncoming(accountPeerId)
+    let action = ChatDoubleTapAction.selected(incoming: incoming)
+    switch action {
+    case .disabled: return true
+    case .quickReaction: return false
+    case .reactions: openMenu(); return true
+    case .reply: reply(); return true
+    case .translate, .save, .repeatMessage, .repeatAsCopy, .edit, .translateLLM, .delete, .forward, .download:
+        if let host { host.exteralessPerformMessageAction(message: message, action: action.rawValue) }
+        else { openMenu() }
+        return true
+    }
+}
+
+/// Sticker raster closures do not consume ImageCorners. Clip their actual drawing rect,
+/// including the inset thumbnail, while leaving another native mask's ownership intact.
+public func exteralessApplyStickerMask(layer: CALayer, drawingRect: CGRect, radius: CGFloat) {
+    let name = "ExteralessStickerShape"
+    if radius <= 0 || drawingRect.width <= 0 || drawingRect.height <= 0 {
+        if layer.mask?.name == name { layer.mask = nil }
+        return
+    }
+    guard layer.mask == nil || layer.mask?.name == name else { return }
+    let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    mask.name = name
+    mask.frame = layer.bounds
+    mask.path = UIBezierPath(roundedRect: drawingRect, cornerRadius: min(radius, min(drawingRect.width, drawingRect.height) * 0.5)).cgPath
+    layer.mask = mask
+    CATransaction.commit()
 }

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -200,7 +201,8 @@ final class PeerInfoHeaderNode: ASDisplayNode {
     /// The track the music strip shows for `peer` and `screenData` (`peerInfoProfileMusic`): none on Settings and on the
     /// account's own peer opened as a profile.
     func profileMusic(peer: EnginePeer?, screenData: PeerInfoScreenData?) -> TelegramMediaFile? {
-        guard let peer, peer.id != self.context.account.peerId || self.isMyProfile, let screenData else {
+        guard PlayerStylePolicy.current.profileMusicCard,
+              let peer, peer.id != self.context.account.peerId || self.isMyProfile, let screenData else {
             return nil
         }
         let list = screenData.savedMusicState.map { state -> (files: [TelegramMediaFile], isLoading: Bool) in
@@ -582,6 +584,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             peer = .user(user.withUpdatedEmojiStatus(nil))
         }
         
+        let identityPresentation = peer.map { exteralessIdentityPresentation(account: self.context.account, peer: $0) }
         self.state = state
         self.peer = peer
         self.threadData = threadData
@@ -609,6 +612,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 contentOffset = 212.0
             }
         }
+        let elasticAvatar = ClientSettings.shared.bool("appearance.gooeyAvatarAnimation", default: true)
+        if self.isAvatarExpanded {
+            contentOffset = CGFloat(AppearanceProfileAvatarGeometry.contentOffset(Double(contentOffset), elastic: elasticAvatar))
+        }
         
         let actionButtonKeys: [PeerInfoHeaderButtonKey] = (self.isSettings || self.isMyProfile) ? [] : peerInfoHeaderActionButtons(peer: peer, isSecretChat: isSecretChat, isContact: isContact)
         let buttonKeys: [PeerInfoHeaderButtonKey] = (self.isSettings || self.isMyProfile) ? [] : peerInfoHeaderButtons(peer: peer, cachedData: cachedData, isOpenedFromChat: self.isOpenedFromChat, isExpanded: true, videoCallsEnabled: width > 320.0 && self.videoCallsEnabled, isSecretChat: isSecretChat, isContact: isContact, threadInfo: threadData?.info)
@@ -617,7 +624,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var backgroundCoverAnimateIn = false
         var backgroundDefaultHeight: CGFloat = 254.0
         var hasBackground = false
-        if let status = peer?.emojiStatus, case .starGift = status.content {
+        if let status = identityPresentation?.emojiStatus, case .starGift = status.content {
             backgroundCoverSubject = .status(status)
             if !self.didSetupBackgroundCover {
                 if !self.isSettings {
@@ -633,9 +640,12 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             hasBackground = true
         } else if let peer {
-            backgroundCoverSubject = .peer(peer)
-            if peer.effectiveProfileColor != nil {
+            if let color = identityPresentation?.profileColor {
+                let colors = self.context.peerNameColors.getProfile(color, dark: presentationData.theme.overallDarkAppearance)
+                backgroundCoverSubject = .custom(colors.main, colors.secondary, nil, identityPresentation?.profileBackgroundEmojiId)
                 hasBackground = true
+            } else {
+                backgroundCoverSubject = .peer(peer)
             }
         } else {
             backgroundCoverSubject = nil
@@ -668,9 +678,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 credibilityIcon = .fake
             } else if peer.isScam {
                 credibilityIcon = .scam
-            } else if let emojiStatus = peer.emojiStatus {
+            } else if !ClientSettings.shared.bool("appearance.hideActionBarStatus"), let emojiStatus = identityPresentation?.emojiStatus {
                 statusIcon = .emojiStatus(emojiStatus)
-            } else if peer.isPremium && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
+            } else if !ClientSettings.shared.bool("appearance.hideActionBarStatus") && identityPresentation?.premiumBadge == true && !premiumConfiguration.isPremiumDisabled && (peer.id != self.context.account.peerId || self.isSettings || self.isMyProfile) {
                 credibilityIcon = .premium
             } else {
                 credibilityIcon = .none
@@ -701,11 +711,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         let avatarFrame = CGRect(origin: CGPoint(x: hasStrip ? bandCenteredOrigin(width: avatarSize, margin: 16.0) : floor((width - avatarSize) / 2.0), y: statusBarHeight + 22.0), size: CGSize(width: avatarSize, height: avatarSize))
         
-        let regularNavigationContentsAccentColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemAccentColor
+        let regularNavigationContentsAccentColor: UIColor = identityPresentation?.profileColor != nil ? .white : presentationData.theme.list.itemAccentColor
         let collapsedHeaderNavigationContentsAccentColor = presentationData.theme.list.itemAccentColor
         let expandedAvatarNavigationContentsAccentColor: UIColor = .white
         
-        let regularNavigationContentsPrimaryColor: UIColor = peer?.effectiveProfileColor != nil ? .white : presentationData.theme.list.itemPrimaryTextColor
+        let regularNavigationContentsPrimaryColor: UIColor = identityPresentation?.profileColor != nil ? .white : presentationData.theme.list.itemPrimaryTextColor
         let collapsedHeaderNavigationContentsPrimaryColor = presentationData.theme.list.itemPrimaryTextColor
         let expandedAvatarNavigationContentsPrimaryColor: UIColor = .white
         
@@ -717,13 +727,13 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let collapsedHeaderButtonBackgroundColor: UIColor = .clear
         let expandedAvatarHeaderButtonBackgroundColor: UIColor = UIColor(white: 0.0, alpha: 0.5)
         
-        let regularContentButtonForegroundColor: UIColor = peer?.effectiveProfileColor != nil ? UIColor.white : presentationData.theme.list.itemAccentColor
+        let regularContentButtonForegroundColor: UIColor = identityPresentation?.profileColor != nil ? UIColor.white : presentationData.theme.list.itemAccentColor
         let collapsedHeaderContentButtonForegroundColor = presentationData.theme.list.itemAccentColor
         let expandedAvatarContentButtonForegroundColor: UIColor = .white
         
         var hasCoverColor = false
         let regularNavigationContentsSecondaryColor: UIColor
-        if let emojiStatus = peer?.emojiStatus, case let .starGift(_, _, _, _, _, innerColor, outerColor, _, _) = emojiStatus.content {
+        if let emojiStatus = identityPresentation?.emojiStatus, case let .starGift(_, _, _, _, _, innerColor, outerColor, _, _) = emojiStatus.content {
             let mainColor = UIColor(rgb: UInt32(bitPattern: innerColor))
             let secondaryColor = UIColor(rgb: UInt32(bitPattern: outerColor))
             regularNavigationContentsSecondaryColor = UIColor(white: 1.0, alpha: 0.6).blitOver(mainColor.withMultiplied(hue: 1.0, saturation: 2.2, brightness: 1.5), alpha: 1.0)
@@ -739,7 +749,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             regularHeaderButtonBackgroundColor = baseButtonBackgroundColor.blendOver(background: secondaryColor.mixedWith(mainColor, alpha: 0.1))
             
             hasCoverColor = true
-        } else if let profileColor = peer?.effectiveProfileColor {
+        } else if let profileColor = identityPresentation?.profileColor {
             let backgroundColors = self.context.peerNameColors.getProfile(profileColor, dark: presentationData.theme.overallDarkAppearance)
             regularNavigationContentsSecondaryColor = UIColor(white: 1.0, alpha: 0.6).blitOver(backgroundColors.main.withMultiplied(hue: 1.0, saturation: 2.2, brightness: 1.5), alpha: 1.0)
             
@@ -791,7 +801,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let editingEdgeEffectHeight: CGFloat = 40.0
         let editingEdgeEffectFrame = CGRect(origin: CGPoint(x: 0.0, y: 0.0), size: CGSize(width: width, height: navigationHeight + 10.0))
         transition.updateFrame(view: self.editingEdgeEffectView, frame: editingEdgeEffectFrame)
-        self.editingEdgeEffectView.update(content: presentationData.theme.list.blocksBackgroundColor, blur: true, rect: editingEdgeEffectFrame, edge: .top, edgeSize: editingEdgeEffectHeight, transition: ComponentTransition(transition))
+        self.editingEdgeEffectView.update(content: presentationData.theme.list.blocksBackgroundColor, blur: !ClientSettings.shared.bool("appearance.disableAvatarBlur"), rect: editingEdgeEffectFrame, edge: .top, edgeSize: editingEdgeEffectHeight, transition: ComponentTransition(transition))
         let editingBackgroundAlpha: CGFloat
         if state.isEditing {
             editingBackgroundAlpha = max(0.0, min(1.0, contentOffset / 20.0))
@@ -826,7 +836,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
             
             transition.updateFrame(view: searchEdgeEffectView, frame: searchEdgeEffectFrame)
-            searchEdgeEffectView.update(content: presentationData.theme.list.plainBackgroundColor, blur: true, rect: searchEdgeEffectFrame, edge: .top, edgeSize: searchEdgeEffectHeight, transition: searchEdgeEffectTransition)
+            searchEdgeEffectView.update(content: presentationData.theme.list.plainBackgroundColor, blur: !ClientSettings.shared.bool("appearance.disableAvatarBlur"), rect: searchEdgeEffectFrame, edge: .top, edgeSize: searchEdgeEffectHeight, transition: searchEdgeEffectTransition)
         } else if let searchEdgeEffectView = self.searchEdgeEffectView {
             self.searchEdgeEffectView = nil
             transition.updateAlpha(layer: searchEdgeEffectView.layer, alpha: 0.0, completion: { [weak searchEdgeEffectView] _ in
@@ -920,7 +930,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             
             headerButtonBackgroundColor = regularHeaderButtonBackgroundColor.mixedWith(collapsedHeaderButtonBackgroundColor, alpha: effectiveTransitionFraction)
             
-            if let status = peer?.emojiStatus, case let .starGift(_, _, _, _, _, innerColor, outerColor, patternColorValue, _) = status.content {
+            if let status = identityPresentation?.emojiStatus, case let .starGift(_, _, _, _, _, innerColor, outerColor, patternColorValue, _) = status.content {
                 let _ = innerColor
                 ratingBackgroundColor = UIColor(white: 1.0, alpha: 1.0).mixedWith(accentRatingBackgroundColor, alpha: effectiveTransitionFraction)
                 
@@ -931,7 +941,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 let patternColor = UIColor(rgb: UInt32(bitPattern: patternColorValue))
                 ratingBorderColor = patternColor.withAlphaComponent(0.1).blendOver(background: backgroundColor).mixedWith(.clear, alpha: effectiveTransitionFraction)
                 ratingForegroundColor = ratingBorderColor.mixedWith(presentationData.theme.list.itemCheckColors.foregroundColor, alpha: effectiveTransitionFraction)
-            } else if let profileColor = peer?.effectiveProfileColor {
+            } else if let profileColor = identityPresentation?.profileColor {
                 ratingBackgroundColor = UIColor(white: 1.0, alpha: 1.0).mixedWith(presentationData.theme.list.itemCheckColors.fillColor, alpha: effectiveTransitionFraction)
                 
                 let backgroundColors = self.context.peerNameColors.getProfile(profileColor, dark: presentationData.theme.overallDarkAppearance)
@@ -1211,6 +1221,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         }
         
         let expandedAvatarListSize = CGSize(width: width, height: expandedAvatarListHeight)
+        let expandedAvatarGeometry = AppearanceProfileAvatarGeometry(width: Double(expandedAvatarListSize.width), height: Double(expandedAvatarListSize.height), contentOffset: Double(contentOffset), navigationHeight: Double(navigationHeight), elastic: elasticAvatar)
                 
         var isPremium = false
         var isVerified = false
@@ -1226,7 +1237,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var panelSubtitleString: (text: String, attributes: MultiScaleTextState.Attributes)?
         let usernameString: (text: String, attributes: MultiScaleTextState.Attributes)
         if let peer = peer {
-            isPremium = peer.isPremium
+            isPremium = identityPresentation?.premiumBadge ?? peer.isPremium
             isVerified = peer.isVerified
             isFake = peer.isFake || peer.isScam
         }
@@ -1249,14 +1260,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             } else if let threadData = threadData {
                 title = threadData.info.title
             } else {
-                title = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+                title = peer.exteralessDisplayTitle(account: self.context.account, strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
             }
             title = title.replacingOccurrences(of: "\u{1160}", with: "").replacingOccurrences(of: "\u{3164}", with: "")
             if title.replacingOccurrences(of: "\u{fe0e}", with: "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 title = "" //"\u{00A0}"
             }
             if title.isEmpty {
-                if case let .user(user) = peer, let phone = user.phone {
+                if case let .user(user) = peer, let phone = user.phone, !exteralessShouldHidePhone(accountPeerId: self.context.account.peerId, peerId: user.id) {
                     title = formatPhoneNumber(context: self.context, number: phone)
                 } else if let addressName = peer.addressName {
                     title = "@\(addressName)"
@@ -1270,10 +1281,10 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             smallTitleAttributes = MultiScaleTextState.Attributes(font: Font.medium(28.0), color: .white, shadowColor: titleShadowColor)
             
             if self.isSettings, case let .user(user) = peer {
-                var subtitle = formatPhoneNumber(context: self.context, number: user.phone ?? "")
+                var subtitle = exteralessShouldHidePhone(accountPeerId: self.context.account.peerId, peerId: user.id) ? "" : formatPhoneNumber(context: self.context, number: user.phone ?? "")
                 
                 if let mainUsername = user.addressName, !mainUsername.isEmpty {
-                    subtitle = "\(subtitle) • @\(mainUsername)"
+                    subtitle = subtitle.isEmpty ? "@\(mainUsername)" : "\(subtitle) • @\(mainUsername)"
                 }
                 subtitleStringText = subtitle
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: .white)
@@ -1284,7 +1295,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
                 let subtitleColor: UIColor
                 subtitleColor = .white
                 
-                subtitleStringText = presentationData.strings.Presence_online
+                subtitleStringText = statusData?.text ?? presentationData.strings.Presence_online
                 subtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(17.0), color: subtitleColor)
                 smallSubtitleAttributes = MultiScaleTextState.Attributes(font: Font.regular(16.0), color: .white, shadowColor: titleShadowColor)
                 
@@ -1863,7 +1874,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let avatarScale: CGFloat
         let avatarOffset: CGFloat
         //
-        avatarScale = 1.0 * (1.0 - titleCollapseFraction) + avatarMinScale * titleCollapseFraction
+        avatarScale = CGFloat(AppearancePresentationPolicy.elasticAvatarScale(stock: Double(1.0 * (1.0 - titleCollapseFraction) + avatarMinScale * titleCollapseFraction), enabled: ClientSettings.shared.bool("appearance.gooeyAvatarAnimation", default: true)))
         avatarOffset = apparentTitleLockOffset + 0.0 * (1.0 - titleCollapseFraction) + 10.0 * titleCollapseFraction
         
         if subtitleIsButton {
@@ -1879,13 +1890,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             }
         }
                 
-        let avatarCornerRadius: CGFloat = isForum ? floor(avatarSize * 0.25) : avatarSize / 2.0
+        self.avatarListNode.update(size: CGSize(), avatarSize: avatarSize, isExpanded: self.isAvatarExpanded, peer: peer, isForum: isForum, threadId: self.forumTopicThreadId, threadInfo: threadData?.info, theme: presentationData.theme, transition: transition)
+        let avatarCornerRadius = avatarSize * self.avatarListNode.avatarContainerNode.cornerFraction
  
         if self.isAvatarExpanded {
             self.avatarListNode.listContainerNode.isHidden = false
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode, cornerRadius: 0.0)
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode.controlsClippingNode, cornerRadius: 0.0)
-        } else if self.avatarListNode.listContainerNode.cornerRadius != avatarCornerRadius {
+        } else if self.avatarListNode.listContainerNode.cornerRadius != avatarCornerRadius || !self.avatarListNode.listContainerNode.isHidden {
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode.controlsClippingNode, cornerRadius: avatarCornerRadius)
             transition.updateCornerRadius(node: self.avatarListNode.listContainerNode, cornerRadius: avatarCornerRadius, completion: { [weak self] _ in
                 guard let strongSelf = self else {
@@ -1901,7 +1913,6 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             })
         }
         
-        self.avatarListNode.update(size: CGSize(), avatarSize: avatarSize, isExpanded: self.isAvatarExpanded, peer: peer, isForum: isForum, threadId: self.forumTopicThreadId, threadInfo: threadData?.info, theme: presentationData.theme, transition: transition)
         self.editingContentNode.avatarNode.update(peer: peer, threadData: threadData, chatLocation: self.chatLocation, item: self.avatarListNode.item, updatingAvatar: state.updatingAvatar, uploadProgress: state.avatarUploadProgress, theme: presentationData.theme, avatarSize: avatarSize, isEditing: state.isEditing)
         self.avatarOverlayNode.update(peer: peer, threadData: threadData, chatLocation: self.chatLocation, item: self.avatarListNode.item, updatingAvatar: state.updatingAvatar, uploadProgress: state.avatarUploadProgress, theme: presentationData.theme, avatarSize: avatarSize, isEditing: state.isEditing)
         if additive {
@@ -1930,7 +1941,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         var apparentAvatarListFrame: CGRect
         let controlsClippingFrame: CGRect
         if self.isAvatarExpanded {
-            let expandedAvatarCenter = CGPoint(x: expandedAvatarListSize.width / 2.0, y: expandedAvatarListSize.width / 2.0 - contentOffset / 2.0)
+            let expandedAvatarCenter = CGPoint(x: expandedAvatarListSize.width / 2.0, y: CGFloat(expandedAvatarGeometry.centerY))
             apparentAvatarFrame = CGRect(origin: expandedAvatarCenter, size: CGSize())
             
             let expandedAvatarListCenter = CGPoint(x: expandedAvatarListSize.width / 2.0, y: expandedAvatarListSize.height / 2.0 - contentOffset / 2.0)
@@ -1949,12 +1960,9 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         var avatarListContainerFrame: CGRect
         let avatarListContainerScale: CGFloat
-        var avatarListVerticalOffset: CGFloat = 0.0
         if self.isAvatarExpanded {
             avatarListContainerFrame = CGRect(origin: CGPoint(x: -expandedAvatarListSize.width / 2.0, y: -expandedAvatarListSize.width / 2.0), size: expandedAvatarListSize)
-            avatarListContainerScale = 1.0 + max(0.0, -contentOffset / avatarListContainerFrame.width)
-            // Keep the scaled avatar's bottom edge aligned with the stretched header.
-            avatarListVerticalOffset = (avatarListContainerFrame.width - avatarListContainerFrame.height) * (avatarListContainerScale - 1.0)
+            avatarListContainerScale = CGFloat(expandedAvatarGeometry.scale)
         } else {
             let expandHeightFraction = expandedAvatarListSize.height / expandedAvatarListSize.width
             avatarListContainerFrame = CGRect(origin: CGPoint(x: -apparentAvatarFrame.width / 2.0, y: -apparentAvatarFrame.width / 2.0 + expandHeightFraction * 0.0 * apparentAvatarFrame.width), size: apparentAvatarFrame.size)
@@ -1964,8 +1972,11 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         let avatarClipOffset: CGFloat = !self.isAvatarExpanded && deviceMetrics.hasDynamicIsland && statusBarHeight > 0.0 && self.avatarClippingNode.clipsToBounds && !isLandscape ? 47.0 : 0.0
         let clippingNodeTransition = ContainedViewLayoutTransition.immediate
-        clippingNodeTransition.updateFrame(layer: self.avatarClippingNode.layer, frame: CGRect(origin: CGPoint(x: 0.0, y: avatarClipOffset + avatarListVerticalOffset), size: CGSize(width: width, height: 1000.0)))
-        clippingNodeTransition.updateSublayerTransformOffset(layer: self.avatarClippingNode.layer, offset: CGPoint(x: 0.0, y: -avatarClipOffset))
+        let clippingFrameY = self.isAvatarExpanded ? CGFloat(expandedAvatarGeometry.clippingFrameY) : 0
+        let clippingContentOffsetY = self.isAvatarExpanded ? CGFloat(expandedAvatarGeometry.clippingContentOffsetY) : 0
+        let avatarClippingHeight = self.isAvatarExpanded ? CGFloat(expandedAvatarGeometry.clippingHeight) : 1000.0
+        clippingNodeTransition.updateFrame(layer: self.avatarClippingNode.layer, frame: CGRect(origin: CGPoint(x: 0.0, y: avatarClipOffset + clippingFrameY), size: CGSize(width: width, height: avatarClippingHeight)))
+        clippingNodeTransition.updateSublayerTransformOffset(layer: self.avatarClippingNode.layer, offset: CGPoint(x: 0.0, y: -avatarClipOffset + clippingContentOffsetY))
         let clippingNodeRadiusTransition = ContainedViewLayoutTransition.animated(duration: 0.15, curve: .easeInOut)
         clippingNodeRadiusTransition.updateCornerRadius(node: self.avatarClippingNode, cornerRadius: avatarClipOffset > 0.0 ? width / 2.5 : 0.0)
         
@@ -1999,7 +2010,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self.avatarListNode.containerNode.view.mask = self.avatarListNode.maskNode.view
             if maskValue > 0.03 {
                 self.avatarListNode.bottomCoverNode.isHidden = false
-                self.avatarListNode.topCoverNode.isHidden = false
+                self.avatarListNode.topCoverNode.isHidden = ClientSettings.shared.bool("appearance.disableAvatarBlur")
                 self.avatarListNode.maskNode.backgroundColor = .clear
             } else {
                 self.avatarListNode.bottomCoverNode.isHidden = true
@@ -2049,7 +2060,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         let backgroundHeight: CGFloat
         if self.isAvatarExpanded {
             rawHeight = expandedAvatarHeight
-            height = max(navigationHeight, rawHeight - contentOffset)
+            height = CGFloat(expandedAvatarGeometry.headerHeight)
             maxY = height - 98.0
             backgroundHeight = height
         } else {
@@ -2258,7 +2269,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
         
         transition.updateFrameAdditive(node: self.buttonsBackgroundNode, frame: CGRect(origin: CGPoint(x: 0.0, y: buttonRightOrigin.y), size: CGSize(width: width, height: buttonSize.height + 40.0)))
         self.buttonsBackgroundNode.update(size: self.buttonsBackgroundNode.bounds.size, transition: transition)
-        self.buttonsBackgroundNode.updateColor(color: contentButtonBackgroundColor, enableBlur: true, transition: transition)
+        self.buttonsBackgroundNode.updateColor(color: contentButtonBackgroundColor, enableBlur: !ClientSettings.shared.bool("appearance.disableAvatarBlur"), transition: transition)
         if isReduceTransparencyEnabled() {
             self.buttonsBackgroundNode.alpha = 0.1
         }
@@ -2516,7 +2527,7 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             self.updateUnderHeaderContentsAlpha?(1.0 - realAreaExpansionFraction, transition)
         }
         
-        self.headerEdgeEffectView.update(content: presentationData.theme.list.plainBackgroundColor, blur: true, rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectHeight, transition: ComponentTransition(transition))
+        self.headerEdgeEffectView.update(content: presentationData.theme.list.plainBackgroundColor, blur: !ClientSettings.shared.bool("appearance.disableAvatarBlur"), rect: edgeEffectFrame, edge: .top, edgeSize: edgeEffectHeight, transition: ComponentTransition(transition))
         
         navigationTransition.updateAlpha(layer: self.headerEdgeEffectView.layer, alpha: state.isEditing ? 0.0 : 1.0)
         

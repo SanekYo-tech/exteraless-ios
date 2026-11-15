@@ -19,6 +19,7 @@ import InteractiveTextComponent
 
 final class TextProcessingTextAreaComponent: Component {
     let context: AccountContext
+    let capability: ExteralessAIProcessingCapability
     let theme: PresentationTheme
     let strings: PresentationStrings
     let titleFormat: String
@@ -35,6 +36,7 @@ final class TextProcessingTextAreaComponent: Component {
 
     init(
         context: AccountContext,
+        capability: ExteralessAIProcessingCapability,
         theme: PresentationTheme,
         strings: PresentationStrings,
         titleFormat: String,
@@ -50,6 +52,7 @@ final class TextProcessingTextAreaComponent: Component {
         rootViewForTextSelection: @escaping () -> UIView?
     ) {
         self.context = context
+        self.capability = capability
         self.theme = theme
         self.strings = strings
         self.titleFormat = titleFormat
@@ -66,6 +69,7 @@ final class TextProcessingTextAreaComponent: Component {
     }
 
     static func ==(lhs: TextProcessingTextAreaComponent, rhs: TextProcessingTextAreaComponent) -> Bool {
+        if lhs.capability != rhs.capability { return false }
         if lhs.context !== rhs.context {
             return false
         }
@@ -492,10 +496,12 @@ final class TextProcessingTextAreaComponent: Component {
                         
                         switch action {
                         case .copy:
-                            storeAttributedTextInPasteboard(text)
+                            ExteralessAIHooks.withCopyCapability(context: component.context, capability: component.capability) { storeAttributedTextInPasteboard(text) }
                         case .share:
-                            let shareController = component.context.sharedContext.makeShareScreen(context: component.context, params: ShareControllerParams(subject: .text(text.string)))
-                            component.present(shareController, nil)
+                            ExteralessAIHooks.withCopyCapability(context: component.context, capability: component.capability) {
+                                let shareController = component.context.sharedContext.makeShareScreen(context: component.context, params: ShareControllerParams(subject: .text(text.string)))
+                                component.present(shareController, nil)
+                            }
                         case .lookup:
                             let controller = UIReferenceLibraryViewController(term: text.string)
                             if let window = self.window {
@@ -522,7 +528,7 @@ final class TextProcessingTextAreaComponent: Component {
                         }
                     })
                     
-                    textSelectionNode.enableLookup = true
+                    textSelectionNode.enableLookup = component.capability.allowsCopy
                     textSelectionNode.enableTranslate = false
                     textSelectionNode.menuSkipCoordnateConversion = false
                     textSelectionNode.canBeginSelection = { _ in
@@ -536,6 +542,8 @@ final class TextProcessingTextAreaComponent: Component {
                 }
 
                 textSelectionNode.frame = textComponentView.frame
+                textSelectionNode.enableCopy = component.capability.allowsCopy
+                textSelectionNode.enableShare = component.capability.allowsCopy
                 textSelectionNode.highlightAreaNode.frame = textComponentView.frame
                 self.textSelectionKnobSurface.frame = textComponentView.frame
             } else {

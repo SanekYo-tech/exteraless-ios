@@ -537,7 +537,7 @@ private final class ItemAnimationContext {
         var shouldBeAnimating = false
         for target in self.targets.copyItems() {
             if let target = target.value {
-                if target.shouldBeAnimating {
+                if target.shouldBeAnimating && target.performanceAllowsAnimation {
                     shouldBeAnimating = true
                     break
                 }
@@ -579,6 +579,7 @@ private final class ItemAnimationContext {
         }
 
         if let frameAdvance = frameAdvance, self.loadingFrameTaskId == nil {
+            let isInitialFrame = self.currentFrame == nil
             let taskId = self.nextLoadingFrameTaskId
             self.nextLoadingFrameTaskId += 1
 
@@ -626,13 +627,16 @@ private final class ItemAnimationContext {
                         strongSelf.currentFrame = currentFrame.frame
                         for target in strongSelf.targets.copyItems() {
                             if let target = target.value {
+                                // Recheck at delivery: another allowed target can
+                                // keep this shared cache item/decode task playing.
+                                guard isInitialFrame || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
                                 if let image = currentFrame.frame.contentsAsImage {
                                     target.transitionToContents(image.cgImage!, didLoop: currentFrame.didLoop)
                                 } else if let pixelBuffer = currentFrame.frame.contentsAsCVPixelBuffer {
                                     target.transitionToContents(pixelBuffer, didLoop: currentFrame.didLoop)
                                 }
 
-                                if let blurredRepresentationTarget = target.blurredRepresentationTarget {
+                                if target.performanceAllowsEffects, let blurredRepresentationTarget = target.blurredRepresentationTarget {
                                     blurredRepresentationTarget.contents = currentFrame.frame.blurredRepresentation(color: target.blurredRepresentationBackgroundColor)?.cgImage
                                 }
                             }
@@ -887,52 +891,19 @@ public final class DCTMultiAnimationRendererImpl: MultiAnimationRenderer {
 
     public var useYuvA: Bool = false
     private var groupContext: GroupContext?
-    private var frameSkip: Int
-    private var displayTimer: Foundation.Timer?
+    private lazy var performanceClock = ToolsPerformanceRenderClock { [weak self] interval in
+        self?.animationTick(frameInterval: interval)
+    }
 
     private(set) var isPlaying: Bool = false {
         didSet {
             if self.isPlaying != oldValue {
-                if self.isPlaying {
-                    if self.displayTimer == nil {
-                        final class TimerTarget: NSObject {
-                            private let f: () -> Void
-
-                            init(_ f: @escaping () -> Void) {
-                                self.f = f
-                            }
-
-                            @objc func timerEvent() {
-                                self.f()
-                            }
-                        }
-                        let frameInterval = Double(self.frameSkip) / 60.0
-                        let displayTimer = Foundation.Timer(timeInterval: frameInterval, target: TimerTarget { [weak self] in
-                            guard let strongSelf = self else {
-                                return
-                            }
-                            strongSelf.animationTick(frameInterval: frameInterval)
-                        }, selector: #selector(TimerTarget.timerEvent), userInfo: nil, repeats: true)
-                        self.displayTimer = displayTimer
-                        RunLoop.main.add(displayTimer, forMode: .common)
-                    }
-                } else {
-                    if let displayTimer = self.displayTimer {
-                        self.displayTimer = nil
-                        displayTimer.invalidate()
-                    }
-                }
+                self.performanceClock.setPlaying(self.isPlaying)
             }
         }
     }
 
-    public init() {
-        if !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.processorCount > 2 {
-            self.frameSkip = 1
-        } else {
-            self.frameSkip = 2
-        }
-    }
+    public init() {}
 
     public func add(target: MultiAnimationRenderTarget, cache: AnimationCache, itemId: String, unique: Bool, size: CGSize, fetch: @escaping (AnimationCacheFetchOptions) -> Disposable) -> Disposable {
         let groupContext: GroupContext

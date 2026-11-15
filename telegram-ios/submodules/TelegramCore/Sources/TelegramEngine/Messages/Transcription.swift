@@ -15,11 +15,13 @@ private enum InternalAudioTranscriptionResult {
     case limitExceeded(Int32)
 }
 
-func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: MessageId) -> Signal<EngineAudioTranscriptionResult, NoError> {
+func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: MessageId, commitScope: ExteralessAIScope? = nil, expectedResourceId: EngineMediaResource.Id? = nil) -> Signal<EngineAudioTranscriptionResult, NoError> {
     return postbox.transaction { transaction -> Api.InputPeer? in
+        if let commitScope, !exteralessAIValidateAudioScope(transaction: transaction, scope: commitScope, messageId: messageId, expectedResourceId: expectedResourceId) { return nil }
         return transaction.getPeer(messageId.peerId).flatMap(apiInputPeer)
     }
     |> mapToSignal { inputPeer -> Signal<EngineAudioTranscriptionResult, NoError> in
+        if commitScope?.lease.isCancelled == true { return .single(.error) }
         guard let inputPeer = inputPeer else {
             return .single(.error)
         }
@@ -45,6 +47,7 @@ func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: Me
         }
         |> mapToSignal { result -> Signal<EngineAudioTranscriptionResult, NoError> in
             return postbox.transaction { transaction -> EngineAudioTranscriptionResult in
+                func commit() -> EngineAudioTranscriptionResult {
                 let updatedAttribute: AudioTranscriptionMessageAttribute
                 switch result {
                 case let .success(transcribedAudio):
@@ -81,6 +84,7 @@ func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: Me
                 transaction.updateMessage(messageId, update: { currentMessage in
                     let storeForwardInfo = currentMessage.forwardInfo.flatMap(StoreMessageForwardInfo.init)
                     var attributes = currentMessage.attributes.filter { !($0 is AudioTranscriptionMessageAttribute) }
+                    if commitScope != nil { attributes.removeAll { $0 is TranslationMessageAttribute } }
                     
                     attributes.append(updatedAttribute)
                     
@@ -92,6 +96,11 @@ func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: Me
                 } else {
                     return .error
                 }
+                }
+                if let commitScope {
+                    return exteralessAICommitNativeAudio(transaction: transaction, scope: commitScope, messageId: messageId, expectedResourceId: expectedResourceId, commit: commit)
+                }
+                return commit()
             }
         }
     }

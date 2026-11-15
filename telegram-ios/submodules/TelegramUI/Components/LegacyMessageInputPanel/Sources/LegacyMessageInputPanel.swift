@@ -458,7 +458,7 @@ public class LegacyMessageInputPanelNode: ASDisplayNode, TGCaptionPanelView {
                     isChannel: false,
                     storyItem: nil,
                     chatLocation: self.chatLocation,
-                    aiCompose: self.isAIEnabled ? { [weak self] in
+                    aiCompose: self.isAIEnabled && ExteralessAIHooks.aiEditorVisible ? { [weak self] in
                         self?.openAICompose()
                     } : nil
                 )
@@ -674,6 +674,7 @@ public class LegacyMessageInputPanelNode: ASDisplayNode, TGCaptionPanelView {
     }
 
     private func openAICompose() {
+        guard ExteralessAIHooks.aiEditorVisible else { return }
         Task { @MainActor [weak self] in
             guard let self else {
                 return
@@ -692,6 +693,7 @@ public class LegacyMessageInputPanelNode: ASDisplayNode, TGCaptionPanelView {
 
             self.pushViewController(await self.context.sharedContext.makeTextProcessingScreen(
                 context: self.context,
+                capability: .init(peerId: self.chatLocation.peerId, allowsExternalProcessing: true, allowsCopy: true),
                 theme: defaultDarkColorPresentationTheme,
                 mode: .edit(
                     saveRestoreStateId: self.chatLocation.peerId,

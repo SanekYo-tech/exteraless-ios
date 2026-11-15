@@ -1228,6 +1228,7 @@ public final class ChatListNode: ListViewImpl {
     private let context: AccountContext
     private let location: ChatListControllerLocation
     private let mode: ChatListNodeMode
+    private var exteralessOpenArchiveAfterPull = false
     private let animationCache: AnimationCache
     private let animationRenderer: MultiAnimationRenderer
     
@@ -1952,6 +1953,7 @@ public final class ChatListNode: ListViewImpl {
         
         let previousState = Atomic<ChatListNodeState>(value: self.currentState)
         let previousView = Atomic<ChatListNodeView?>(value: nil)
+        let previousDialogPolicy = Atomic(value: exteralessDialogPolicy())
         let previousHideArchivedFolderByDefault = Atomic<Bool?>(value: nil)
         let currentRemovingItemId = self.currentRemovingItemId
         
@@ -2212,7 +2214,9 @@ public final class ChatListNode: ListViewImpl {
             
             let innerIsMainTab = location == .chatList(groupId: .root) && chatListFilter == nil
             
-            let (rawEntries, isLoading) = chatListNodeEntriesForView(view: update.list, state: state, savedMessagesPeer: savedMessagesPeer, foundPeers: state.foundPeers, hideArchivedFolderByDefault: hideArchivedFolderByDefault, displayArchiveIntro: displayArchiveIntro, mode: mode, chatListLocation: location, contacts: contacts, accountPeerId: accountPeerId, isMainTab: innerIsMainTab)
+            let (rawEntries, isLoading) = ExteralessHiddenAccounts.shared.canSelect(exteralessPrivacyExtrasIdentity(context.account))
+                ? chatListNodeEntriesForView(view: update.list, state: state, savedMessagesPeer: savedMessagesPeer, foundPeers: state.foundPeers, hideArchivedFolderByDefault: hideArchivedFolderByDefault, displayArchiveIntro: displayArchiveIntro, mode: mode, chatListLocation: location, contacts: contacts, accountPeerId: accountPeerId, isMainTab: innerIsMainTab, dialogPolicy: update.dialogPolicy)
+                : ([], false)
             var isEmpty = true
             var entries = rawEntries.filter { entry in
                 switch entry {
@@ -2668,7 +2672,7 @@ public final class ChatListNode: ListViewImpl {
                 }
             }
             
-            var forceAllUpdated = false
+            var forceAllUpdated = previousDialogPolicy.swap(update.dialogPolicy) != update.dialogPolicy
             let previousChatListFiltersValue = previousChatListFilters.swap(chatListFilters)
             if chatListFilters != previousChatListFiltersValue {
                 forceAllUpdated = true
@@ -2744,7 +2748,7 @@ public final class ChatListNode: ListViewImpl {
                         return state
                     }
                 }
-                if !refreshStoryPeerIds.isEmpty {
+                if exteralessDialogStoriesEnabled(), !refreshStoryPeerIds.isEmpty {
                     strongSelf.context.account.viewTracker.refreshStoryStatsForPeerIds(peerIds: refreshStoryPeerIds)
                 }
             }
@@ -3089,6 +3093,7 @@ public final class ChatListNode: ListViewImpl {
             guard let strongSelf = self else {
                 return
             }
+            strongSelf.exteralessOpenArchiveAfterPull = false
             switch strongSelf.visibleContentOffset() {
             case .none, .unknown:
                 strongSelf.startedScrollingAtUpperBound = false
@@ -3112,6 +3117,13 @@ public final class ChatListNode: ListViewImpl {
                 return
             }
             let _ = strongSelf.contentScrollingEnded?(strongSelf)
+            if strongSelf.exteralessOpenArchiveAfterPull {
+                strongSelf.exteralessOpenArchiveAfterPull = false
+                if case .chatList = strongSelf.mode,
+                   exteralessDialogPolicy().opensArchiveAfterPull(isRootList: strongSelf.location == .chatList(groupId: .root) && strongSelf.chatListFilter == nil, nativeHiddenRow: strongSelf.currentState.hiddenItemShouldBeTemporaryRevealed, editing: strongSelf.currentState.editing, searching: strongSelf.interaction?.isSearchMode ?? false) {
+                    strongSelf.groupSelected?(.archive)
+                }
+            }
             let revealHiddenItems: Bool
             switch strongSelf.visibleContentOffset() {
                 case .none, .unknown:
@@ -3244,6 +3256,7 @@ public final class ChatListNode: ListViewImpl {
     
     func revealScrollHiddenItem() {
         var isHiddenItemVisible = false
+        var isArchiveVisible = false
         self.forEachItemNode({ itemNode in
             if let itemNode = itemNode as? ChatListItemNode, let item = itemNode.item {
                 if case let .peer(peerData) = item.content, let threadInfo = peerData.threadInfo {
@@ -3254,6 +3267,7 @@ public final class ChatListNode: ListViewImpl {
                 if case let .groupReference(groupReference) = item.content {
                     if groupReference.hiddenByDefault {
                         isHiddenItemVisible = true
+                        isArchiveVisible = groupReference.groupId == .archive
                     }
                 }
             }
@@ -3267,6 +3281,10 @@ public final class ChatListNode: ListViewImpl {
                 var state = state
                 state.hiddenItemShouldBeTemporaryRevealed = true
                 return state
+            }
+            if case .chatList = self.mode,
+               exteralessDialogPolicy().opensArchiveAfterPull(isRootList: self.location == .chatList(groupId: .root) && self.chatListFilter == nil, nativeHiddenRow: isArchiveVisible, editing: self.currentState.editing, searching: self.interaction?.isSearchMode ?? false) {
+                self.exteralessOpenArchiveAfterPull = true
             }
         }
     }

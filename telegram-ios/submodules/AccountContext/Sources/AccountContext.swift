@@ -1703,6 +1703,7 @@ public protocol SharedAccountContext: AnyObject {
     func makeChatRankPreviewItem(context: AccountContext, peer: EnginePeer, rank: String, rankRole: ChatRankInfoScreenRole, theme: PresentationTheme, strings: PresentationStrings, wallpaper: TelegramWallpaper, fontSize: PresentationFontSize, chatBubbleCorners: PresentationChatBubbleCorners, dateTimeFormat: PresentationDateTimeFormat, nameOrder: PresentationPersonNameOrder, sectionId: Int32) -> ListViewItem
     func makeTextProcessingScreen(
         context: AccountContext,
+        capability: ExteralessAIProcessingCapability,
         theme: PresentationTheme?,
         mode: TextProcessingScreenMode,
         inputText: ComposedRichMessage,
@@ -1755,16 +1756,42 @@ public struct ChatSendMessageActionSheetControllerSendParameters {
             self.id = id
         }
     }
+
+    public struct Schedule {
+        public let time: Int32
+        public let repeatPeriod: Int32?
+        public let silentPosting: Bool
+
+        public init(time: Int32, repeatPeriod: Int32?, silentPosting: Bool) {
+            self.time = time
+            self.repeatPeriod = repeatPeriod
+            self.silentPosting = silentPosting
+        }
+    }
     
     public var effect: Effect?
     public var textIsAboveMedia: Bool
+    public var notificationOverride: Bool?
+    public var schedule: Schedule?
     
     public init(
         effect: Effect?,
-        textIsAboveMedia: Bool
+        textIsAboveMedia: Bool,
+        notificationOverride: Bool? = nil,
+        schedule: Schedule? = nil
     ) {
         self.effect = effect
         self.textIsAboveMedia = textIsAboveMedia
+        self.notificationOverride = schedule?.silentPosting ?? notificationOverride
+        self.schedule = schedule
+    }
+
+    public func withUpdatedSchedule(_ schedule: Schedule) -> Self {
+        var result = self
+        result.schedule = schedule
+        // A picker result is an explicit choice, including audible false.
+        result.notificationOverride = schedule.silentPosting
+        return result
     }
 }
 

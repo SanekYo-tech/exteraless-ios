@@ -1125,6 +1125,7 @@ open class ChatMessageItemView: ListViewItemNode, ChatMessageItemNodeProtocol {
     }
     
     public func playMessageEffect(force: Bool) {
+        guard ExteralessIdentityPresentation.shared.policy.premiumItemStickerEffects else { return }
         if let messageEffect = self.currentMessageEffect() {
             self.playEffectAnimation(effect: messageEffect, force: force)
         }

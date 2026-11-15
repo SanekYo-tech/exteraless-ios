@@ -1174,72 +1174,19 @@ public extension TelegramEngine {
             }
         }
 
-        public func setOpaqueChatInterfaceState(peerId: PeerId, threadId: Int64?, state: OpaqueChatInterfaceState) -> Signal<Never, NoError> {
-            return self.account.postbox.transaction { transaction -> Void in
-                guard let data = try? AdaptedPostboxEncoder().encode(InternalChatInterfaceState(
-                    synchronizeableInputState: state.synchronizeableInputState,
-                    historyScrollMessageIndex: state.historyScrollMessageIndex,
-                    mediaDraftState: state.mediaDraftState,
-                    opaqueData: state.opaqueData
-                )) else {
-                    return
-                }
-
-                #if DEBUG
-                let _ = try! AdaptedPostboxDecoder().decode(InternalChatInterfaceState.self, from: data)
-                #endif
-                
-                var overrideChatTimestamp: Int32?
-                if let inputState = state.synchronizeableInputState {
-                    overrideChatTimestamp = inputState.timestamp
-                }
-                
-                if let mediaDraftState = state.mediaDraftState {
-                    if let current = overrideChatTimestamp, mediaDraftState.timestamp < current {
-                    } else {
-                        overrideChatTimestamp = mediaDraftState.timestamp
-                    }
-                }
-
-                let storedState = StoredPeerChatInterfaceState(
-                    overrideChatTimestamp: overrideChatTimestamp,
-                    historyScrollMessageIndex: state.historyScrollMessageIndex,
-                    associatedMessageIds: (state.synchronizeableInputState?.replySubject?.messageId).flatMap({ [$0] }) ?? [],
-                    data: data
-                )
-
-                if let threadId = threadId {
-                    var currentInputState: SynchronizeableChatInputState?
-                    if let peerChatInterfaceState = transaction.getPeerChatThreadInterfaceState(peerId, threadId: threadId), let data = peerChatInterfaceState.data {
-                        currentInputState = (try? AdaptedPostboxDecoder().decode(InternalChatInterfaceState.self, from: data))?.synchronizeableInputState
-                    }
-                    let updatedInputState = state.synchronizeableInputState
-
-                    if currentInputState != updatedInputState {
-                        if peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudChannel || peerId.namespace == Namespaces.Peer.CloudGroup {
-                            addSynchronizeChatInputStateOperation(transaction: transaction, peerId: peerId, threadId: threadId)
-                        }
-                    }
-                    transaction.setPeerChatThreadInterfaceState(peerId, threadId: threadId, state: storedState)
-                } else {
-                    var currentInputState: SynchronizeableChatInputState?
-                    if let peerChatInterfaceState = transaction.getPeerChatInterfaceState(peerId), let data = peerChatInterfaceState.data {
-                        currentInputState = (try? AdaptedPostboxDecoder().decode(InternalChatInterfaceState.self, from: data))?.synchronizeableInputState
-                    }
-                    let updatedInputState = state.synchronizeableInputState
-
-                    if currentInputState != updatedInputState {
-                        if peerId.namespace == Namespaces.Peer.CloudUser || peerId.namespace == Namespaces.Peer.CloudChannel || peerId.namespace == Namespaces.Peer.CloudGroup {
-                            addSynchronizeChatInputStateOperation(transaction: transaction, peerId: peerId, threadId: nil)
-                        }
-                    }
-                    transaction.setPeerChatInterfaceState(
-                        peerId,
-                        state: storedState
-                    )
-                }
+        public func getOpaqueChatInterfaceStateSnapshot(peerId: PeerId, threadId: Int64?) -> Signal<OpaqueChatInterfaceStateSnapshot, NoError> {
+            let accountId = self.account.id.int64
+            return self.account.postbox.transaction { transaction in
+                _internal_chatInterfaceStateSnapshot(transaction: transaction, accountId: accountId, peerId: peerId, threadId: threadId)
             }
-            |> ignoreValues
+        }
+
+        public func setOpaqueChatInterfaceState(peerId: PeerId, threadId: Int64?, state: OpaqueChatInterfaceState) -> Signal<Never, NoError> {
+            return self.setOpaqueChatInterfaceStateWithResult(peerId: peerId, threadId: threadId, state: state) |> ignoreValues
+        }
+
+        public func setOpaqueChatInterfaceStateWithResult(peerId: PeerId, threadId: Int64?, state: OpaqueChatInterfaceState, expectedState: OpaqueChatInterfaceStateSnapshot? = nil, admission: ChatInterfaceStateWriteAdmission? = nil) -> Signal<ChatInterfaceStateWriteResult, NoError> {
+            return _internal_setOpaqueChatInterfaceState(postbox: self.account.postbox, accountId: self.account.id.int64, peerId: peerId, threadId: threadId, state: state, expectedState: expectedState, admission: admission)
         }
         
         public func getPerstistentChatInterfaceState(peerId: EnginePeer.Id) -> Signal<CodableEntry?, NoError> {

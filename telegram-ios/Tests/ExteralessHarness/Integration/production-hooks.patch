@@ -1,0 +1,73 @@
+diff --git a/telegram-ios/submodules/Display/Source/NativeWindowHostView.swift b/telegram-ios/submodules/Display/Source/NativeWindowHostView.swift
+--- a/telegram-ios/submodules/Display/Source/NativeWindowHostView.swift
++++ b/telegram-ios/submodules/Display/Source/NativeWindowHostView.swift
+@@ -383,8 +383,13 @@
+     }
+ }
+ 
+-public func nativeWindowHostView() -> (UIWindow & WindowHost, WindowHostView) {
+-    let window = NativeWindow(frame: UIScreen.main.bounds)
++/// Attaches a supplied scene before installing the root controller, so native
++/// keyboard ownership is established when the controller first loads.
++public func nativeWindowHostView(windowScene: UIWindowScene? = nil) -> (UIWindow & WindowHost, WindowHostView) {
++    let window = NativeWindow(frame: windowScene?.screen.bounds ?? UIScreen.main.bounds)
++    if let windowScene {
++        window.windowScene = windowScene
++    }
+     registerMainWindowForScreenBounds(window)
+     
+     let rootViewController = WindowRootViewController()
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
+@@ -23,8 +23,11 @@
+     public let permissions: ((String) -> [PluginPermission])?
+     public let setPermissions: ((String, [PluginPermission]) async throws -> Void)?
+     public let controls: PluginManagerControls?
+-
+-    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil, controls: PluginManagerControls? = nil) {
++    /// Capture the current interpreter/account scope when a settings page opens.
++    /// nil preserves the application runtime-owned scope provider.
++    public let settingsScope: ((String) -> (@MainActor () -> Bool))?
++
++    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil, controls: PluginManagerControls? = nil, settingsScope: ((String) -> (@MainActor () -> Bool))? = nil) {
+         self.status = status
+         self.snapshot = snapshot
+         self.importPlugin = importPlugin
+@@ -37,6 +40,7 @@
+         self.permissions = permissions
+         self.setPermissions = setPermissions
+         self.controls = controls
++        self.settingsScope = settingsScope
+     }
+ }
+ 
+@@ -332,7 +336,7 @@
+             }
+             row.action = { [weak self] in
+                 guard let self else { return }
+-                self.push(PluginSettingsController(context: self.context, actions: self.actions, pluginId: id, title: plugin.displayName))
++                self.push(PluginSettingsController(context: self.context, actions: self.actions, pluginId: id, title: plugin.displayName, scopeIsCurrent: self.actions.settingsScope?(id)))
+             }
+             sections.append(PluginListSection(rows: [row]))
+         } else if plugin.loaded {
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift
+@@ -3,6 +3,16 @@
+ import Foundation
+ import PluginHost
+ import UIKit
++
++/// Renders the same SDK settings screen with an explicitly owned host lifetime.
++/// This composition seam creates no account, runtime or substitute renderer.
++@MainActor
++public func exteralessPluginSettingsController(context: AccountContext, actions: PluginManagerActions,
++    pluginId: String, title: String, pagePath: [String] = [],
++    scopeIsCurrent: @escaping @MainActor () -> Bool) -> ViewController {
++    return PluginSettingsController(context: context, actions: actions, pluginId: pluginId,
++        title: title, pagePath: pagePath, scopeIsCurrent: scopeIsCurrent)
++}
+ 
+ private func pluginSettingsAvailabilityError(actions: PluginManagerActions, id: String) -> String? {
+     guard let plugin = actions.snapshot().first(where: { $0.id == id }) else {

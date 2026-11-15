@@ -128,6 +128,7 @@ private var declaredEncodables: Void = {
     declareEncodable(CachedCommunityData.self, f: { CachedCommunityData(decoder: $0) })
     declareEncodable(TelegramUserPresence.self, f: { TelegramUserPresence(decoder: $0) })
     declareEncodable(LocalFileMediaResource.self, f: { LocalFileMediaResource(decoder: $0) })
+    registerExteralessRetentionResourceCoding()
     declareEncodable(StickerPackCollectionInfo.self, f: { StickerPackCollectionInfo(decoder: $0) })
     declareEncodable(StickerPackItem.self, f: { StickerPackItem(decoder: $0) })
     declareEncodable(LocalFileReferenceMediaResource.self, f: { LocalFileReferenceMediaResource(decoder: $0) })
@@ -325,6 +326,8 @@ public func currentAccount(allocateIfNotExists: Bool, networkArguments: NetworkI
                     switch accountResult {
                         case .upgrading:
                             return .complete()
+                        case .retentionRecovery:
+                            return .single(accountResult)
                         case let .unauthorized(account):
                             postbox = account.postbox
                             initialKind = .unauthorized
@@ -499,6 +502,8 @@ private func cleanupAccount(networkArguments: NetworkInitializationArguments, ac
     |> mapToSignal { account -> Signal<Void, NoError> in
         switch account {
             case .upgrading:
+                return .complete()
+            case .retentionRecovery:
                 return .complete()
             case .unauthorized:
                 return .complete()

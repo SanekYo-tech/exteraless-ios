@@ -27,15 +27,15 @@ public enum RequestEditMessageError {
     case invalidGrouping
 }
 
-func _internal_requestEditMessage(account: Account, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
-    return requestEditMessage(accountPeerId: account.peerId, postbox: account.postbox, network: account.network, stateManager: account.stateManager, transformOutgoingMessageMedia: account.transformOutgoingMessageMedia, messageMediaPreuploadManager: account.messageMediaPreuploadManager, mediaReferenceRevalidationContext: account.mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, invertMediaAttribute: invertMediaAttribute)
+func _internal_requestEditMessage(account: Account, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?, mediaAttributes: [MessageAttribute] = [], requireMediaUpload: Bool = false, tlOrigin: ExteralessTLRequestOrigin? = nil, tlIsCancelled: @escaping @Sendable () -> Bool = { false }) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
+    return requestEditMessage(accountPeerId: account.peerId, postbox: account.postbox, network: account.network, stateManager: account.stateManager, transformOutgoingMessageMedia: account.transformOutgoingMessageMedia, messageMediaPreuploadManager: account.messageMediaPreuploadManager, mediaReferenceRevalidationContext: account.mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, invertMediaAttribute: invertMediaAttribute, mediaAttributes: mediaAttributes, requireMediaUpload: requireMediaUpload, tlOrigin: tlOrigin, tlIsCancelled: tlIsCancelled)
 }
 
-func requestEditMessage(accountPeerId: PeerId, postbox: Postbox, network: Network, stateManager: AccountStateManager, transformOutgoingMessageMedia: TransformOutgoingMessageMedia?, messageMediaPreuploadManager: MessageMediaPreuploadManager, mediaReferenceRevalidationContext: MediaReferenceRevalidationContext, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
-    return requestEditMessageInternal(accountPeerId: accountPeerId, postbox: postbox, network: network, stateManager: stateManager, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, mediaReferenceRevalidationContext: mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, forceReupload: false)
+func requestEditMessage(accountPeerId: PeerId, postbox: Postbox, network: Network, stateManager: AccountStateManager, transformOutgoingMessageMedia: TransformOutgoingMessageMedia?, messageMediaPreuploadManager: MessageMediaPreuploadManager, mediaReferenceRevalidationContext: MediaReferenceRevalidationContext, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?, mediaAttributes: [MessageAttribute] = [], requireMediaUpload: Bool = false, tlOrigin: ExteralessTLRequestOrigin? = nil, tlIsCancelled: @escaping @Sendable () -> Bool = { false }) -> Signal<RequestEditMessageResult, RequestEditMessageError> {
+    return requestEditMessageInternal(accountPeerId: accountPeerId, postbox: postbox, network: network, stateManager: stateManager, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, mediaReferenceRevalidationContext: mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, forceReupload: false, mediaAttributes: mediaAttributes, requireMediaUpload: requireMediaUpload, tlOrigin: tlOrigin, tlIsCancelled: tlIsCancelled)
     |> `catch` { error -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
         if case .invalidReference = error {
-            return requestEditMessageInternal(accountPeerId: accountPeerId, postbox: postbox, network: network, stateManager: stateManager, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, mediaReferenceRevalidationContext: mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, forceReupload: true)
+            return requestEditMessageInternal(accountPeerId: accountPeerId, postbox: postbox, network: network, stateManager: stateManager, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, mediaReferenceRevalidationContext: mediaReferenceRevalidationContext, messageId: messageId, text: text, media: media, entities: entities, richText: richText, inlineStickers: inlineStickers, webpagePreviewAttribute: webpagePreviewAttribute, invertMediaAttribute: invertMediaAttribute, disableUrlPreview: disableUrlPreview, scheduleInfoAttribute: scheduleInfoAttribute, forceReupload: true, mediaAttributes: mediaAttributes, requireMediaUpload: requireMediaUpload, tlOrigin: tlOrigin, tlIsCancelled: tlIsCancelled)
         } else {
             return .fail(error)
         }
@@ -50,7 +50,8 @@ func requestEditMessage(accountPeerId: PeerId, postbox: Postbox, network: Networ
     }
 }
 
-private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox, network: Network, stateManager: AccountStateManager, transformOutgoingMessageMedia: TransformOutgoingMessageMedia?, messageMediaPreuploadManager: MessageMediaPreuploadManager, mediaReferenceRevalidationContext: MediaReferenceRevalidationContext, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, forceReupload: Bool) -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> {
+private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox, network: Network, stateManager: AccountStateManager, transformOutgoingMessageMedia: TransformOutgoingMessageMedia?, messageMediaPreuploadManager: MessageMediaPreuploadManager, mediaReferenceRevalidationContext: MediaReferenceRevalidationContext, messageId: MessageId, text: String, media: RequestEditMessageMedia, entities: TextEntitiesMessageAttribute?, richText: RichTextMessageAttribute?, inlineStickers: [MediaId: Media], webpagePreviewAttribute: WebpagePreviewMessageAttribute?, invertMediaAttribute: InvertMediaMessageAttribute?, disableUrlPreview: Bool, scheduleInfoAttribute: OutgoingScheduleInfoMessageAttribute?, forceReupload: Bool, mediaAttributes: [MessageAttribute], requireMediaUpload: Bool, tlOrigin: ExteralessTLRequestOrigin?, tlIsCancelled: @escaping @Sendable () -> Bool) -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> {
+    guard !tlIsCancelled() else { return .fail(.error(.generic)) }
     let uploadedMedia: Signal<PendingMessageUploadedContentResult?, NoError>
     switch media {
     case .keep:
@@ -59,14 +60,14 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
     case let .update(media):
         let generateUploadSignal: (Bool) -> Signal<PendingMessageUploadedContentResult, PendingMessageUploadError>? = { forceReupload in
             let augmentedMedia = augmentMediaWithReference(media)
-            var attributes: [MessageAttribute] = []
+            var attributes: [MessageAttribute] = mediaAttributes
             if let webpagePreviewAttribute = webpagePreviewAttribute {
                 attributes.append(webpagePreviewAttribute)
             }
             if let invertMediaAttribute {
                 attributes.append(invertMediaAttribute)
             }
-            return mediaContentToUpload(accountPeerId: accountPeerId, network: network, postbox: postbox, auxiliaryMethods: stateManager.auxiliaryMethods, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, revalidationContext: mediaReferenceRevalidationContext, forceReupload: forceReupload, isGrouped: false, passFetchProgress: false, forceNoBigParts: false, peerId: messageId.peerId, media: augmentedMedia, text: "", autoremoveMessageAttribute: nil, autoclearMessageAttribute: nil, messageId: nil, attributes: attributes, mediaReference: nil, explicitPartialReference: nil)
+            return mediaContentToUpload(accountPeerId: accountPeerId, network: network, postbox: postbox, auxiliaryMethods: stateManager.auxiliaryMethods, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messageMediaPreuploadManager: messageMediaPreuploadManager, revalidationContext: mediaReferenceRevalidationContext, forceReupload: forceReupload, isGrouped: false, passFetchProgress: false, forceNoBigParts: false, peerId: messageId.peerId, media: augmentedMedia, text: "", autoremoveMessageAttribute: nil, autoclearMessageAttribute: mediaAttributes.compactMap { $0 as? AutoclearTimeoutMessageAttribute }.first, messageId: nil, attributes: attributes, mediaReference: media, explicitPartialReference: nil, tlOrigin: tlOrigin, tlIsCancelled: tlIsCancelled)
         }
         if let todo = media.media as? TelegramMediaTodo {
             var flags: Int32 = 0
@@ -103,6 +104,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
         return uploadedMedia
         |> mapError { _ -> RequestEditMessageInternalError in }
         |> mapToSignal { uploadedMediaResult -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+        guard !tlIsCancelled() else { return .fail(.error(.generic)) }
         var pendingMediaContent: PendingMessageUploadedContent?
         if let uploadedMediaResult = uploadedMediaResult {
             switch uploadedMediaResult {
@@ -112,7 +114,11 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                 pendingMediaContent = content.content
             }
         }
+        if requireMediaUpload, case .update = media, pendingMediaContent == nil {
+            return .fail(.error(.generic))
+        }
         return postbox.transaction { transaction -> (Peer?, Message?, SimpleDictionary<PeerId, Peer>) in
+            guard !tlIsCancelled() else { return (nil, nil, SimpleDictionary()) }
             guard let message = transaction.getMessage(messageId) else {
                 return (nil, nil, SimpleDictionary())
             }
@@ -149,6 +155,7 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
         }
         |> mapError { _ -> RequestEditMessageInternalError in }
         |> mapToSignal { peer, message, associatedPeers -> Signal<RequestEditMessageResult, RequestEditMessageInternalError> in
+            guard !tlIsCancelled() else { return .fail(.error(.generic)) }
             if let peer, let message, let inputPeer = apiInputPeer(peer) {
                 var flags: Int32 = 1 << 11
                 
@@ -174,6 +181,15 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                             inputMedia = media
                         default:
                             break
+                    }
+                }
+                if requireMediaUpload, case .update = media, inputMedia == nil {
+                    return .fail(.error(.generic))
+                }
+                if requireMediaUpload, case .update = media, let inputMedia {
+                    let requestedSpoiler = mediaAttributes.contains { $0 is MediaSpoilerMessageAttribute }
+                    guard exteralessTLInputMediaSpoiler(inputMedia) == requestedSpoiler else {
+                        return .fail(.error(.generic))
                     }
                 }
                 if let _ = inputMedia {
@@ -224,9 +240,15 @@ private func requestEditMessageInternal(accountPeerId: PeerId, postbox: Postbox,
                     if invertMediaAttribute != nil || webpagePreviewAttribute?.leadingPreview == true {
                         welcomeFlags |= (1 << 5)
                     }
-                    request = network.request(Api.functions.ephemeral.editMessage(flags: welcomeFlags, peer: inputPeer, receiverId: .inputUserEmpty, id: messageId.id, message: text, media: inputMedia, entities: apiEntities, replyMarkup: nil, richMessage: apiRichMessage))
+                    let data = Api.functions.ephemeral.editMessage(flags: welcomeFlags, peer: inputPeer, receiverId: .inputUserEmpty, id: messageId.id, message: text, media: inputMedia, entities: apiEntities, replyMarkup: nil, richMessage: apiRichMessage)
+                    exteralessTLBindRequestOrigin(tlOrigin, network: network, description: data.0)
+                    exteralessTLBindRequestExecution(network: network, description: data.0, permits: { !tlIsCancelled() })
+                    request = network.request(data)
                 } else {
-                    request = network.request(Api.functions.messages.editMessage(flags: flags, peer: inputPeer, id: messageId.id, message: text, media: inputMedia, replyMarkup: nil, entities: apiEntities, scheduleDate: effectiveScheduleTime, scheduleRepeatPeriod: effectiveScheduleRepeatPeriod, quickReplyShortcutId: quickReplyShortcutId, richMessage: apiRichMessage))
+                    let data = Api.functions.messages.editMessage(flags: flags, peer: inputPeer, id: messageId.id, message: text, media: inputMedia, replyMarkup: nil, entities: apiEntities, scheduleDate: effectiveScheduleTime, scheduleRepeatPeriod: effectiveScheduleRepeatPeriod, quickReplyShortcutId: quickReplyShortcutId, richMessage: apiRichMessage)
+                    exteralessTLBindRequestOrigin(tlOrigin, network: network, description: data.0)
+                    exteralessTLBindRequestExecution(network: network, description: data.0, permits: { !tlIsCancelled() })
+                    request = network.request(data)
                 }
 
                 return request

@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import Postbox
 import SwiftSignalKit
@@ -100,6 +101,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     private var validLayout: ContainerViewLayout?
+    private var exteralessComposeButton: ExteralessComposeButton?
     
     public let context: AccountContext
     private let controlsHistoryPreload: Bool
@@ -467,11 +469,12 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if let strongSelf = self {
                 let previousTheme = strongSelf.presentationData.theme
                 let previousStrings = strongSelf.presentationData.strings
+                let previousDateTimeFormat = strongSelf.presentationData.dateTimeFormat
                 
                 strongSelf.presentationData = presentationData
                 strongSelf.presentationDataValue.set(.single(presentationData))
                 
-                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings {
+                if previousTheme !== presentationData.theme || previousStrings !== presentationData.strings || previousDateTimeFormat != presentationData.dateTimeFormat {
                     strongSelf.updateThemeAndStrings()
                 }
             }
@@ -1413,9 +1416,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 
                 let _ = (combineLatest(queue: .mainQueue(),
                     self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id)),
-                    forumSourcePeer
+                    forumSourcePeer,
+                    exteralessDialogForumLayout(account: self.context.account, peerId: peer.id) |> take(1)
                 )
-                |> deliverOnMainQueue).start(next: { [weak self] cachedPeerData, forumSourcePeer in
+                |> deliverOnMainQueue).start(next: { [weak self] cachedPeerData, forumSourcePeer, dialogForumLayout in
                     guard let self else {
                         return
                     }
@@ -1445,12 +1449,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     
                     if case let .channel(channel) = peer, channel.flags.contains(.isMonoforum) {
                         openAsInlineForum = false
-                    } else if case let .channel(channel) = peer, channel.flags.contains(.displayForumAsTabs) {
-                        openAsInlineForum = false
                     } else {
-                        if let cachedData = cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
-                            openAsInlineForum = false
-                        }
+                        openAsInlineForum = !exteralessDialogViewForumAsMessages(peer: peer, layout: dialogForumLayout, nativeViewAsMessages: (cachedPeerData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: self.context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
                     }
                     
                     if openAsInlineForum, case let .channel(channel) = peer, channel.isForum, threadId == nil {
@@ -2141,7 +2141,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             |> distinctUntilChanged
             
             self.preloadStorySubscriptionsDisposable = (combineLatest(queue: .mainQueue(),
-                self.context.engine.messages.preloadStorySubscriptions(isHidden: self.location == .chatList(groupId: .archive), preferHighQuality: preferHighQualityStories),
+                exteralessDialogStorySource({ [:] }, source: { [context, location = self.location] in
+                    context.engine.messages.preloadStorySubscriptions(isHidden: location == .chatList(groupId: .archive), preferHighQuality: preferHighQualityStories)
+                }),
                 self.context.sharedContext.automaticMediaDownloadSettings,
                 automaticDownloadNetworkType
             )
@@ -2185,7 +2187,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if self.previewing {
                 self.storiesReady.set(.single(true))
             } else {
-                self.storySubscriptionsDisposable = (self.context.engine.messages.storySubscriptions(isHidden: self.location == .chatList(groupId: .archive))
+                self.storySubscriptionsDisposable = (exteralessDialogStorySource({ EngineStorySubscriptions(accountItem: nil, items: [], hasMoreToken: nil) }, source: { [context, location = self.location] in
+                    context.engine.messages.storySubscriptions(isHidden: location == .chatList(groupId: .archive))
+                })
                 |> deliverOnMainQueue).startStrict(next: { [weak self] rawStorySubscriptions in
                     guard let self else {
                         return
@@ -2245,7 +2249,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                 })
                 
                 if case .chatList(.root) = self.location {
-                    self.storyArchiveSubscriptionsDisposable = (self.context.engine.messages.storySubscriptions(isHidden: true)
+                    self.storyArchiveSubscriptionsDisposable = (exteralessDialogStorySource({ EngineStorySubscriptions(accountItem: nil, items: [], hasMoreToken: nil) }, source: { [context] in
+                        context.engine.messages.storySubscriptions(isHidden: true)
+                    })
                     |> deliverOnMainQueue).startStrict(next: { [weak self] rawStoryArchiveSubscriptions in
                         guard let self else {
                             return
@@ -2377,6 +2383,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     override public func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        self.chatListDisplayNode.setExteralessPillVisible(true)
                 
         if self.powerSavingMonitoringDisposable == nil {
             self.powerSavingMonitoringDisposable = (self.context.sharedContext.automaticMediaDownloadSettings
@@ -2859,6 +2866,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     override public func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        self.chatListDisplayNode.setExteralessPillVisible(false)
         
         self.chatListDisplayNode.mainContainerNode.updateEnableAdjacentFilterLoading(false)
         
@@ -2970,6 +2978,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private weak var storyCameraTooltip: TooltipScreen?
     fileprivate func openStoryCamera(fromList: Bool, gesturePullOffset: CGFloat? = nil, sourceView: UIView? = nil) {
+        guard exteralessDialogStoriesEnabled() else { return }
         guard !self.context.isFrozen else {
             let controller = self.context.sharedContext.makeAccountFreezeInfoScreen(context: self.context)
             self.push(controller)
@@ -3563,6 +3572,29 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         let navigationBarHeight: CGFloat = 0.0
         
         self.chatListDisplayNode.containerLayoutUpdated(layout, navigationBarHeight: navigationBarHeight, visualNavigationHeight: navigationBarHeight, cleanNavigationBarHeight: navigationBarHeight, storiesInset: 0.0, transition: transition)
+        let showsCompose = self.primaryContext.exteralessAllowsFloatingCompose && !self.previewing && !self.isSearchActive
+        if showsCompose {
+            let button: ExteralessComposeButton
+            if let current = self.exteralessComposeButton { button = current }
+            else {
+                button = ExteralessComposeButton(frame: .zero)
+                button.action = { [weak self] in self?.composePressed() }
+                self.exteralessComposeButton = button
+                self.chatListDisplayNode.view.addSubview(button)
+            }
+            let side: CGFloat = 56
+            let bottom = layout.insets(options: [.input]).bottom
+            let y = layout.size.height - bottom - side - 16
+            let insets = layout.sideInsets(forBandFrom: y, to: y + side)
+            let x = layout.size.width - insets.right - side - 16
+            button.isHidden = y < (layout.navigationBarStatusBarHeight ?? 0) + 44 || x < insets.left
+            transition.updateFrame(view: button, frame: CGRect(x: max(0, x), y: max(0, y), width: side, height: side))
+            button.update(theme: self.presentationData.theme, title: self.presentationData.strings.Compose_NewMessage)
+            self.chatListDisplayNode.view.bringSubviewToFront(button)
+        } else if let button = self.exteralessComposeButton {
+            self.exteralessComposeButton = nil
+            button.removeFromSuperview()
+        }
     }
     
     override public func navigationStackConfigurationUpdated(next: [ViewController]) {
@@ -3946,7 +3978,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
 
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-            let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
+            let pluginItems = ExteralessPluginMenuEntry.updating(
+                items: .single(ContextController.Items(content: .list(items))), context: context,
+                placement: "CHAT_ACTION_MENU", peer: peer, source: sourceController)
+            let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: pluginItems, gesture: gesture)
             sourceController.presentInGlobalOverlay(contextController)
         })
     }
@@ -4313,6 +4348,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     public func openStoriesFromNotification(peerId: EnginePeer.Id, storyId: Int32) {
+        guard exteralessDialogStoriesEnabled() else { return }
         let presentationData = self.presentationData
         let progressSignal = Signal<Never, NoError> { [weak self] subscriber in
             let controller = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: nil))
@@ -4376,6 +4412,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     public func openStories(peerId: EnginePeer.Id, completion: @escaping (StoryContainerScreen) -> Void = { _ in }) {
+        guard exteralessDialogStoriesEnabled() else { return }
         if let navigationBarView = self.chatListDisplayNode.navigationBarView.view as? ChatListNavigationBar.View {
             if navigationBarView.storiesUnlocked {
                 self.shouldFixStorySubscriptionOrder = true
@@ -4752,6 +4789,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                     (self.parent as? TabBarController)?.updateIsTabBarHidden(true, transition: transition)
 
                     self.isSearchActive = true
+                    self.exteralessComposeButton?.isHidden = true
                     if let navigationController = self.navigationController as? NavigationController {
                         for controller in navigationController.globalOverlayControllers {
                             if let controller = controller as? VoiceChatOverlayController {
@@ -4809,6 +4847,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         (self.parent as? TabBarController)?.updateIsTabBarHidden(false, transition: transition)
         
         self.isSearchActive = false
+        self.requestLayout(transition: transition)
         if let navigationController = self.navigationController as? NavigationController {
             for controller in navigationController.globalOverlayControllers {
                 if let controller = controller as? VoiceChatOverlayController {
@@ -6339,6 +6378,15 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             })
             
             var items: [ContextMenuItem] = []
+            if ExteralessFeedEntry.isAvailable {
+                items.append(.action(ContextMenuActionItem(text: "Channel feed", icon: { theme in
+                    UIImage(systemName: "rectangle.stack")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
+                }, action: { [weak self] _, finish in
+                    finish(.dismissWithoutContent)
+                    guard let self, let feed = ExteralessFeedEntry.makeController(context: self.context) else { return }
+                    self.push(feed)
+                })))
+            }
             items.append(.action(ContextMenuActionItem(text: hasFolders ? strongSelf.presentationData.strings.ChatList_EditFolders : strongSelf.presentationData.strings.ChatList_AddFolder, icon: { theme in
                 return generateTintedImage(image: UIImage(bundleImageName: hasFolders ? "Chat/Context Menu/EditFolder" : "Chat/Context Menu/Add"), color: theme.contextMenu.primaryColor)
             }, action: { c, f in
@@ -6813,6 +6861,8 @@ private func chatListHeaderOverflowInfo(strings: PresentationStrings) -> [AnyHas
         "compose": NavigationBarComponent.OverflowInfo(title: strings.Compose_NewMessage, iconName: "Chat List/ComposeIcon", priority: 3),
         "proxy": NavigationBarComponent.OverflowInfo(title: strings.SocksProxySetup_Title, iconName: "Chat List/ProxyShieldIcon", priority: 2),
         "story": NavigationBarComponent.OverflowInfo(title: strings.StoryFeed_AddStory, iconName: "Chat List/AddStoryIcon", priority: 1),
+        "exteraless-menu": NavigationBarComponent.OverflowInfo(title: "Main Menu", iconName: nil, priority: nil),
+        "exteraless-downloads": NavigationBarComponent.OverflowInfo(title: "Downloads", iconName: "Chat/Context Menu/Save", priority: 2),
         "more": NavigationBarComponent.OverflowInfo(title: strings.Common_More, iconName: nil, priority: nil)
     ]
 }
@@ -6835,6 +6885,9 @@ private final class ChatListLocationContext {
     var rightButton: NavigationBarComponent.Button?
     var proxyButton: NavigationBarComponent.Button?
     var storyButton: NavigationBarComponent.Button?
+    var exteralessMenuButton: NavigationBarComponent.Button?
+    var exteralessDownloadsButton: NavigationBarComponent.Button?
+    var exteralessAllowsFloatingCompose = false
     
     var rightButtons: [NavigationBarComponent.Button] {
         var result: [NavigationBarComponent.Button] = []
@@ -6847,6 +6900,8 @@ private final class ChatListLocationContext {
         if let proxyButton = self.proxyButton {
             result.append(proxyButton)
         }
+        if let button = self.exteralessDownloadsButton { result.append(button) }
+        if let button = self.exteralessMenuButton { result.append(button) }
         return result
     }
     
@@ -7210,11 +7265,29 @@ private final class ChatListLocationContext {
         presentationData: PresentationData,
         storyPostingAvailable: Bool
     ) {
+        let peerStatus = exteralessHideHeaderStatus() ? nil : peerStatus
+        self.exteralessMenuButton = nil
+        self.exteralessDownloadsButton = nil
+        self.exteralessAllowsFloatingCompose = false
+        if case .chatList(.root) = self.location, !stateAndFilterId.state.editing, !isReorderingTabs {
+            self.exteralessAllowsFloatingCompose = ExteralessAppearanceEntry.isMainMenuAvailable(context: self.context) && !ClientSettings.shared.bool("appearance.disableDialogsFloatingButton") && self.parentController?.previewing == false
+            if ExteralessAppearanceEntry.isMainMenuAvailable(context: self.context) {
+                self.exteralessMenuButton = NavigationBarComponent.Button(id: "exteraless-menu", content: .more, action: { [weak self] _ in
+                    guard let self, let parent = self.parentController else { return }
+                    ExteralessAppearanceEntry.openMainMenu(context: self.context, from: parent)
+                })
+            }
+            if ClientSettings.shared.bool("appearance.alwaysShowDownloadIcon") {
+                self.exteralessDownloadsButton = NavigationBarComponent.Button(id: "exteraless-downloads", content: .icon(imageName: "Chat/Context Menu/Save"), action: { [weak self] _ in
+                    self?.parentController?.activateSearch(filter: .downloads, query: nil)
+                })
+            }
+        }
         let defaultTitle: String
         switch location {
         case let .chatList(groupId):
             if groupId == .root {
-                defaultTitle = presentationData.strings.DialogList_Title
+                defaultTitle = exteralessChatListTitle(accountId: self.context.account.id.int64, chatsTitle: presentationData.strings.DialogList_Title)
             } else {
                 defaultTitle = presentationData.strings.ChatList_ArchivedChatsTitle
             }
@@ -7286,13 +7359,15 @@ private final class ChatListLocationContext {
                         }
                     )
                 } else {
-                    self.rightButton = NavigationBarComponent.Button(id: "compose",
-                        content: .icon(imageName: "Chat List/ComposeIcon"),
-                        tint: .accent,
-                        action: { [weak self] _ in
-                            self?.parentController?.composePressed()
-                        }
-                    )
+                    if self.exteralessAllowsFloatingCompose {
+                        self.rightButton = nil
+                    } else {
+                        self.rightButton = NavigationBarComponent.Button(id: "compose",
+                            content: .icon(imageName: "Chat List/ComposeIcon"),
+                            tint: .accent,
+                            action: { [weak self] _ in self?.parentController?.composePressed() }
+                        )
+                    }
                 }
                 
                 if isReorderingTabs {

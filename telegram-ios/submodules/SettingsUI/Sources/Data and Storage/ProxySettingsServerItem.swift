@@ -250,8 +250,8 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             // render as `host/my%5Fapp`. The address is already restricted to ASCII
             // alphanumerics, `-`, `_`, `.` and `/` by canonicalHost/canonicalPath.
             let webProxyAddress = item.server.webProxyAddress
-            titleAttributedString.append(NSAttributedString(string: webProxyAddress ?? urlEncodedStringFromString(item.server.host), font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
-            if webProxyAddress == nil {
+            titleAttributedString.append(NSAttributedString(string: item.server.displayName ?? webProxyAddress ?? urlEncodedStringFromString(item.server.host), font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
+            if webProxyAddress == nil && item.server.displayName == nil {
                 titleAttributedString.append(NSAttributedString(string: ":\(item.server.port)", font: titleFont, textColor: item.theme.list.itemSecondaryTextColor))
             }
             let statusAttributedString = NSAttributedString(string: item.label, font: statusFont, textColor: item.labelAccent ? item.theme.list.itemAccentColor : item.theme.list.itemSecondaryTextColor)

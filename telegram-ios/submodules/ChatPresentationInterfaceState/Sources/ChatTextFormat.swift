@@ -1,4 +1,6 @@
 import Foundation
+import ExteralessCore
+import LocalizedPeerData
 import TextFormat
 import TelegramCore
 import AccountContext
@@ -183,7 +185,14 @@ public func chatTextInputRemoveDateAttribute(_ state: ChatTextInputState, select
 /// the rich editor's insert through the node (`chatComposerInsertMention`).
 public func chatTextInputMentionText(peer: EnginePeer) -> NSAttributedString? {
     if let addressName = peer.addressName, !addressName.isEmpty {
-        return NSAttributedString(string: "@\(addressName) ")
+        let isBot: Bool
+        if case let .user(user) = peer {
+            isBot = user.botInfo != nil
+        } else {
+            isBot = false
+        }
+        let suffix = ClientSettings.shared.bool("chats.addCommaAfterMention", default: true) && !isBot ? ", " : " "
+        return NSAttributedString(string: "@\(addressName)" + suffix)
     } else if !peer.compactDisplayTitle.isEmpty {
         let replacementText = NSMutableAttributedString()
         replacementText.append(NSAttributedString(string: peer.compactDisplayTitle, attributes: [ChatTextInputAttributes.textMention: ChatTextInputTextMentionAttribute(peerId: peer.id)]))

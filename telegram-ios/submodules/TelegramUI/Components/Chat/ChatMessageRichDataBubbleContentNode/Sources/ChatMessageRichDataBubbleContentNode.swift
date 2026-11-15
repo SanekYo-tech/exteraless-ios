@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -154,6 +155,13 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
     // materialization), so this is a straight structural compare. It runs only on the
     // about-to-crossfade path, never on the hot same-content path.
     private var appliedInstantPage: InstantPage?
+
+    /// Copy/AI actions read the page actually applied to this message node, with
+    /// identity/version checks so recycling cannot supply another message's page.
+    public func exteralessAIDisplayedPage(messageId: EngineMessage.Id, stableVersion: UInt32) -> InstantPage? {
+        guard let key = pageViewMessageKey, key.messageId == messageId, key.stableVersion == stableVersion else { return nil }
+        return appliedInstantPage
+    }
     private var suspiciousSenderPage: SuspiciousSenderPage?
     // messageStableVersion is in the cache key because the synthesized instantPage content
     // mutates between streamed AI message chunks (each chunk bumps stableVersion); without
@@ -214,6 +222,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
     // to request a full bubble re-layout (so the bubble grows with the reveal).
     private var lastAppliedRevealedCount: Int = 0
     private var displayContentsUnderSpoilers: Bool = false
+    private var effectiveDisplayContentsUnderSpoilers: Bool { self.displayContentsUnderSpoilers || ClientSettings.shared.bool("chats.showSpoilersDirectly") }
     private var relativeDateTimer: (timer: SwiftSignalKit.Timer, period: Int32)?
 
     // "Show more" affordance for partial rich messages (instantPage.isComplete == false).
@@ -350,14 +359,19 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
             return nil
         }
 
-        let isIncoming = item.message.effectivelyIncoming(item.context.account.peerId)
-        var canDisplayTranslation = isIncoming
+        var canDisplayTranslation = true
         if let subject = item.associatedData.subject, case .messageOptions = subject {
             canDisplayTranslation = false
         }
 
-        if canDisplayTranslation, let translateToLanguage = item.associatedData.translateToLanguage {
-            if let translation = item.message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLanguage }) as? TranslationMessageAttribute, let instantPage = translation.instantPage {
+        let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: item.controllerInteraction.summarizedMessageIds.contains(item.message.id), richExpanded: showMoreExpanded, enabled: canDisplayTranslation)
+        if let summaryPage = display.richSummaryPage(make: { text, entities in
+            TelegramCore.instantPage(from: chatInputContent(from: chatInputStateStringWithAppliedEntities(text, entities: entities)))
+        }), let summary = item.message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute {
+            return ResolvedRichDataContent(instantPage: summaryPage, originalAttribute: attribute, key: .translated(language: "summary:" + (display.selection.language ?? "original"), attribute: ObjectIdentifier(summary), page: ObjectIdentifier(summaryPage)), isTranslated: display.selection.language != nil, isTranslating: false)
+        }
+        if let translateToLanguage = display.selection.language {
+            if let translation = display.translation, translation.instantPage != nil, let instantPage = display.page {
                 return ResolvedRichDataContent(
                     instantPage: instantPage,
                     originalAttribute: attribute,
@@ -366,23 +380,24 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                     isTranslating: false
                 )
             } else {
+                let original = display.page ?? ExteralessAIRichSource.displayedOriginal(attribute, expanded: showMoreExpanded)
                 return ResolvedRichDataContent(
-                    instantPage: attribute.instantPage,
+                    instantPage: original,
                     originalAttribute: attribute,
-                    key: .original(attribute: ObjectIdentifier(attribute), page: ObjectIdentifier(attribute.instantPage)),
+                    key: .original(attribute: ObjectIdentifier(attribute), page: ObjectIdentifier(original)),
                     isTranslated: false,
                     isTranslating: true
                 )
             }
         }
 
-        let instantPage = (showMoreExpanded ? attribute.fullInstantPage : nil) ?? attribute.instantPage
+        let instantPage = ExteralessAIRichSource.displayedOriginal(attribute, expanded: showMoreExpanded)
         return ResolvedRichDataContent(
             instantPage: instantPage,
             originalAttribute: attribute,
             key: .original(attribute: ObjectIdentifier(attribute), page: ObjectIdentifier(instantPage)),
             isTranslated: false,
-            isTranslating: false
+            isTranslating: display.isTranslating
         )
     }
 
@@ -1112,17 +1127,14 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                 var lastTextLineTrailingPadding: CGFloat = lastTextLine?.trailingBottomPadding ?? 0.0
 
                 // "Show more" affordance for partial rich messages: laid out as a bubble-owned text
-                // node below the page content. Shown only when the page is incomplete AND the user
-                // has not expanded it yet (showMoreExpanded == false), the message is not streaming,
+                // node below the page content. An incomplete translated preview also
+                // keeps this route to the complete source. The message must not be streaming,
                 // it is a Cloud message (requestFullRichText is a no-op otherwise), and we are not in
                 // a preview / messageOptions context. When present, the date trails the link's line
                 // by substituting its frame for the last-text-line frame the status machinery consumes.
                 var showMore = false
-                if let attribute = resolvedContent?.originalAttribute,
-                   resolvedContent?.isTranslated != true,
-                   resolvedContent?.isTranslating != true,
-                   !showMoreExpanded,
-                   !attribute.instantPage.isComplete,
+                if let resolvedContent, let attribute = resolvedContent.originalAttribute,
+                   ExteralessAIRichSource.needsShowMore(source: attribute, displayedPage: resolvedContent.instantPage),
                    !hasDraft,
                    item.message.id.namespace == Namespaces.Message.Cloud,
                    !item.presentationData.isPreview {
@@ -1214,7 +1226,8 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                         hasAutoremove: item.message.isSelfExpiring,
                         canViewReactionList: canViewMessageReactionList(message: EngineMessage(item.topMessage)),
                         animationCache: item.controllerInteraction.presentationContext.animationCache,
-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
+                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
+                        retention: EngineMessage(item.message).exteralessRetention
                     ))
                 }
 
@@ -1385,6 +1398,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                         } else {
                             self.statusNode?.pressed = nil
                         }
+                        self.statusNode?.configureTimeHint(message: EngineMessage(item.message)) { text in item.controllerInteraction.displayMessageTooltip(item.message.id, text, false, nil, nil) }
 
                         // Kick the highlight job for any spec set we do not already have an answer for.
                         // Persisting mutates the message, which re-lays-out this bubble into a cache hit.
@@ -1480,9 +1494,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
                                 size: pageLayout.contentSize
                             )
                             self.updatePageViewVisibilityRect()
-                            if self.displayContentsUnderSpoilers {
-                                pageView.setDisplayContentsUnderSpoilers(true, atLocation: nil, animated: false)
-                            }
+                            pageView.setDisplayContentsUnderSpoilers(self.effectiveDisplayContentsUnderSpoilers, atLocation: nil, animated: false)
                             let showTextAsPlaceholder = item.associatedData.showTextAsPlaceholder
                             var isTranslating = resolvedContent.isTranslating
                             if showTextAsPlaceholder {
@@ -1935,7 +1947,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
         }
 
         let entityHit = self.entityForTapLocation(point)
-        if case .tap = gesture, !self.displayContentsUnderSpoilers, let entityHit, entityHit.attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)] != nil {
+        if case .tap = gesture, !self.effectiveDisplayContentsUnderSpoilers, let entityHit, entityHit.attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)] != nil {
             return ChatMessageBubbleContentTapAction(content: .custom({ [weak self] in
                 self?.revealSpoilers(atContentPoint: point)
             }))
@@ -2099,7 +2111,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
     }
 
     private func revealSpoilers(atContentPoint point: CGPoint) {
-        guard !self.displayContentsUnderSpoilers, let pageView = self.pageView else {
+        guard !self.effectiveDisplayContentsUnderSpoilers, let pageView = self.pageView else {
             return
         }
         self.displayContentsUnderSpoilers = true
@@ -2123,7 +2135,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
 
     private func entityTapContent(_ attributes: [NSAttributedString.Key: Any]) -> ChatMessageBubbleContentTapAction.Content? {
         if let tonAddress = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.TonAddress)] as? InstantPageTonAddressItem {
-            if attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)] != nil, !self.displayContentsUnderSpoilers {
+            if attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)] != nil, !self.effectiveDisplayContentsUnderSpoilers {
                 return nil
             }
             if let item = self.item, item.associatedData.isSuspiciousPeer, item.message.effectivelyIncoming(item.context.account.peerId) {
@@ -2561,11 +2573,11 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
             return
         }
         let messageId = item.message.id
-        if let state = self.showMoreExpanded, state.messageId == messageId, state.value {
+        if let state = self.showMoreExpanded, state.messageId == messageId, state.value, attribute.fullInstantPage?.isComplete == true {
             return
         }
         // Full page already cached on the attribute — expand immediately, no network, no shimmer.
-        if attribute.fullInstantPage != nil {
+        if attribute.fullInstantPage?.isComplete == true {
             self.showMoreExpanded = (messageId, true)
             item.controllerInteraction.requestMessageUpdate(messageId, false, nil)
             return
@@ -2581,7 +2593,7 @@ public class ChatMessageRichDataBubbleContentNode: ChatMessageBubbleContentNode 
             guard let self else {
                 return
             }
-            if result?.fullInstantPage != nil {
+            if result?.fullInstantPage?.isComplete == true {
                 self.showMoreExpanded = (messageId, true)
             }
             self.finishShowMore()

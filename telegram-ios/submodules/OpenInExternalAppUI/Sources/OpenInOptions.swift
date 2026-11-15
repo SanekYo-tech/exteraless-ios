@@ -78,6 +78,7 @@ public final class OpenInOption {
 
 public func availableOpenInOptions(context: AccountContext, item: OpenInItem) -> [OpenInOption] {
     return allOpenInOptions(context: context, item: item).filter { option in
+        if option.identifier == "openStreetMap" { return true }
         if case let .other(_, _, scheme, _) = option.application {
             return context.sharedContext.applicationBindings.canOpenUrl("\(scheme)://")
         } else {
@@ -211,6 +212,7 @@ private func allOpenInOptions(context: AccountContext, item: OpenInItem) -> [Ope
         case let .location(location, directions):
             let lat = location.latitude
             let lon = location.longitude
+            if let openStreetMap = exteralessOpenStreetMapOption(latitude: lat, longitude: lon) { options.append(openStreetMap) }
         
             if directions == nil {
                 if let venue = location.venue, let venueId = venue.id, let provider = venue.provider, provider == "foursquare" {
@@ -225,7 +227,8 @@ private func allOpenInOptions(context: AccountContext, item: OpenInItem) -> [Ope
             }))
         
             options.append(OpenInOption(identifier: "googleMaps", application: .other(title: "Google Maps", identifier: 585027354, scheme: "comgooglemaps-x-callback", store: nil), action: {
-                let coordinates = "\(lat),\(lon)"
+                guard let (latitude, longitude) = exteralessGoogleMapCoordinate(latitude: lat, longitude: lon) else { return .none }
+                let coordinates = "\(latitude),\(longitude)"
                 if let directions = directions {
                     let directionsMode: String
                     switch directions {

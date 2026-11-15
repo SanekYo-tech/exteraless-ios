@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -206,6 +207,9 @@ private final class ItemNode: ASDisplayNode {
     }
     
     func updateText(strings: PresentationStrings, title: ChatFolderTitle, shortTitle: ChatFolderTitle, unreadCount: Int, unreadHasUnmuted: Bool, isNoFilter: Bool, selectionFraction: CGFloat, isEditing: Bool, isReordering: Bool, canReorderAllChats: Bool, isDisabled: Bool, presentationData: PresentationData, transition: ContainedViewLayoutTransition) {
+        let accessibilityTitle = title.text
+        let title = exteralessFolderTitle(title, allChats: isNoFilter)
+        let shortTitle = exteralessFolderTitle(shortTitle, allChats: isNoFilter)
         self.isEditing = isEditing
         self.isDisabled = isDisabled
         
@@ -232,7 +236,7 @@ private final class ItemNode: ASDisplayNode {
             self.unreadCount = unreadCount
         }
         
-        self.buttonNode.accessibilityLabel = title.text
+        self.buttonNode.accessibilityLabel = accessibilityTitle
         if unreadCount > 0 {
             if self.buttonNode.accessibilityValue == nil || unreadCountUpdated {
                 self.buttonNode.accessibilityValue = strings.VoiceOver_Chat_UnreadMessages(Int32(unreadCount))
@@ -695,6 +699,8 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
     }
     
     public func update(size containerSize: CGSize, sideInset containerSideInset: CGFloat, filters: [ChatListFilterTabEntry], selectedFilter: ChatListFilterTabEntryId?, isReordering: Bool, isEditing: Bool, canReorderAllChats: Bool, filtersLimit: Int32?, transitionFraction: CGFloat, presentationData: PresentationData, transition proposedTransition: ContainedViewLayoutTransition) {
+        let hideAll = AppearanceControlPolicy.hidesAllChatsChip(enabled: ClientSettings.shared.bool("appearance.hideAllTab"), selectedIsAll: selectedFilter == nil || selectedFilter == .all, isReordering: isReordering || isEditing, isTransitioning: abs(transitionFraction) > 0.001, hasCustomFolders: filters.contains { if case .filter = $0 { return true }; return false })
+        let filters = filters.filter { !hideAll || $0.id != .all }
         let isFirstTime = self.currentParams == nil
         let transition: ContainedViewLayoutTransition = isFirstTime ? .immediate : proposedTransition
         

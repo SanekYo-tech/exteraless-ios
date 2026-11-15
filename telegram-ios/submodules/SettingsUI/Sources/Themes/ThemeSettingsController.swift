@@ -634,8 +634,15 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
                 }
                 pushControllerImpl?(controller)
             } else {
-                currentAppIconName.set(icon.name)
-                context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name, { _ in
+                context.sharedContext.applicationBindings.requestSetAlternateIconName(icon.isDefault ? nil : icon.name, { succeeded in
+                    Queue.mainQueue().async {
+                        let actual = context.sharedContext.applicationBindings.getAlternateIconName()
+                        currentAppIconName.set(actual ?? appIcons.first(where: { $0.isDefault })?.name)
+                        if !succeeded {
+                            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                            presentControllerImpl?(textAlertController(context: context, title: nil, text: "iOS could not change the app icon.", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), nil)
+                        }
+                    }
                 })
             }
         })

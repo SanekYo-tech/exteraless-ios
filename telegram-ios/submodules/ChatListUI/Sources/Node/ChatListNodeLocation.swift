@@ -5,6 +5,7 @@ import SwiftSignalKit
 import Display
 import TelegramUIPreferences
 import AccountContext
+import ExteralessCore
 
 public enum ChatListNodeLocation: Equatable {
     case initial(count: Int, filter: ChatListFilter?)
@@ -27,11 +28,13 @@ public struct ChatListNodeViewUpdate {
     public let list: EngineChatList
     public let type: ViewUpdateType
     public let scrollPosition: ChatListNodeViewScrollPosition?
+    public let dialogPolicy: DialogPolicy
     
-    public init(list: EngineChatList, type: ViewUpdateType, scrollPosition: ChatListNodeViewScrollPosition?) {
+    public init(list: EngineChatList, type: ViewUpdateType, scrollPosition: ChatListNodeViewScrollPosition?, dialogPolicy: DialogPolicy = DialogPolicy()) {
         self.list = list
         self.type = type
         self.scrollPosition = scrollPosition
+        self.dialogPolicy = dialogPolicy
     }
 }
 
@@ -196,6 +199,53 @@ public func chatListFilterPredicate(filter: ChatListFilterData, accountPeerId: E
 }
 
 public func chatListViewForLocation(chatListLocation: ChatListControllerLocation, location: ChatListNodeLocation, account: Account, shouldLoadCanMessagePeer: Bool) -> Signal<ChatListNodeViewUpdate, NoError> {
+    return exteralessDialogPolicyUpdates()
+    |> mapToSignal { policy -> Signal<ChatListNodeViewUpdate, NoError> in
+        // Keep the normal loader and its native cursor. Only the presentation
+        // window uses unread order; Postbox's persisted indices are never changed.
+        let native = nativeChatListViewForLocation(chatListLocation: chatListLocation, location: location, account: account, shouldLoadCanMessagePeer: shouldLoadCanMessagePeer)
+        let source: Signal<ChatListNodeViewUpdate, NoError>
+        let ordered: Bool
+        if policy.sortByUnread, !shouldLoadCanMessagePeer, case let .chatList(group) = chatListLocation {
+            ordered = true
+            let predicate: ChatListFilterPredicate?
+            if case let .filter(_, _, _, data) = location.filter { predicate = chatListFilterPredicate(filter: data, accountPeerId: account.peerId) }
+            else { predicate = nil }
+            source = combineLatest(native, exteralessDialogLocalList(account: account, group: group, filterPredicate: predicate))
+            |> mapToSignal { update, list in
+                chatListNodeViewUpdateWithCommunitySummaries(account: account, update: ChatListNodeViewUpdate(list: list, type: update.type, scrollPosition: update.scrollPosition))
+            }
+        } else {
+            ordered = false
+            source = native
+        }
+        var first = true
+        return combineLatest(source, ExteralessFilteringRuntime.shared.changes, ExteralessHiddenAccounts.shared.changes)
+        |> mapToSignal { update, _, _ in
+            exteralessDialogProjectList(account: account, list: update.list)
+            |> map { projected in
+                let list: EngineChatList
+                if ordered {
+                    let anchor: EngineChatList.Item.Index?
+                    let count: Int
+                    switch location {
+                    case let .initial(value, _): anchor = nil; count = value
+                    case let .navigation(index, _): anchor = index; count = 80
+                    case let .scroll(index, _, _, _, _): anchor = index; count = 80
+                    }
+                    list = exteralessDialogOrderedWindow(list: projected, anchor: anchor, count: count)
+                } else {
+                    list = projected
+                }
+                let scrollPosition = first ? update.scrollPosition : nil
+                first = false
+                return ChatListNodeViewUpdate(list: list, type: update.type, scrollPosition: scrollPosition, dialogPolicy: policy)
+            }
+        }
+    }
+}
+
+private func nativeChatListViewForLocation(chatListLocation: ChatListControllerLocation, location: ChatListNodeLocation, account: Account, shouldLoadCanMessagePeer: Bool) -> Signal<ChatListNodeViewUpdate, NoError> {
     let accountPeerId = account.peerId
     
     switch chatListLocation {

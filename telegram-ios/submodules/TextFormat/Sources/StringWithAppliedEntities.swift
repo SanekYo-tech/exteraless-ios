@@ -543,7 +543,7 @@ public func stringWithAppliedEntities(_ text: String, entities: [MessageTextEnti
         string.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSMakeRange(0, string.length))
     }
     
-    return string
+    return message == nil ? string : exteralessZalgoDisplayText(string)
 }
 
 public final class MessageSyntaxHighlight: Codable, Equatable {

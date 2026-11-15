@@ -73,6 +73,7 @@ private class DetailsChatPlaceholderNode: ASDisplayNode, NavigationDetailsPlaceh
 
 public final class TelegramRootController: NavigationController, TelegramRootControllerInterface {
     private let context: AccountContext
+    private var exteralessLayoutModeBinding: ExteralessAppearanceLayoutModeBinding?
     
     public var rootTabController: TabBarController?
     
@@ -81,6 +82,11 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     public var chatListController: ChatListController?
     public var accountSettingsController: PeerInfoScreen?
     public var newsController: NewsScreen?
+    private var exteralessFeedTab: ViewController?
+    private let exteralessFeedBadgeDisposable = MetaDisposable()
+    private var exteralessFeedPresentationObserver: NSObjectProtocol?
+    private var exteralessLastShowCallsTab = false
+    private var exteralessLastShowNewsTab = false
     
     private var permissionsDisposable: Disposable?
     private var presentationDataDisposable: Disposable?
@@ -105,7 +111,12 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         
         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
         
-        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))
+        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme), contentLayoutRole: .applicationRoot)
+        self.exteralessLayoutModeBinding = ExteralessAppearanceLayoutModeBinding(root: self)
+        self.exteralessFeedPresentationObserver = NotificationCenter.default.addObserver(forName: ExteralessFeedEntry.presentationChanged, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.updateRootControllers(showCallsTab: self.exteralessLastShowCallsTab, showNewsTab: self.exteralessLastShowNewsTab)
+        }
         
         self.presentationDataDisposable = (context.sharedContext.presentationData
         |> deliverOnMainQueue).startStrict(next: { [weak self] presentationData in
@@ -148,6 +159,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         self.presentationDataDisposable?.dispose()
         self.applicationInFocusDisposable?.dispose()
         self.storyUploadEventsDisposable?.dispose()
+        self.exteralessFeedBadgeDisposable.dispose()
+        if let observer = self.exteralessFeedPresentationObserver { NotificationCenter.default.removeObserver(observer) }
     }
     
     public func getContactsController() -> ViewController? {
@@ -197,6 +210,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
     
     public func addRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
+        self.exteralessLastShowCallsTab = showCallsTab
+        self.exteralessLastShowNewsTab = showNewsTab
         let tabBarController = TabBarControllerImpl(theme: self.presentationData.theme, strings: self.presentationData.strings)
         tabBarController.navigationPresentation = .master
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
@@ -241,6 +256,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         }
         accountSettingsController.parentController = self
         controllers.append(accountSettingsController)
+        controllers = exteralessReplaceContactsWithFeed(controllers, contacts: contactsController, feed: self.exteralessFeedTabController(), enabled: ExteralessFeedEntry.isTabVisible)
+        controllers = exteralessFilterRootTabs(controllers, contactsController: contactsController)
                 
         let chatsIndex = controllers.firstIndex(where: { $0 === chatListController }) ?? 0
         tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : chatsIndex)
@@ -255,6 +272,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
         
     public func updateRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
+        self.exteralessLastShowCallsTab = showCallsTab
+        self.exteralessLastShowNewsTab = showNewsTab
         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
             return
         }
@@ -268,6 +287,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             controllers.append(newsController)
         }
         controllers.append(self.accountSettingsController!)
+        controllers = exteralessReplaceContactsWithFeed(controllers, contacts: self.contactsController!, feed: self.exteralessFeedTabController(), enabled: ExteralessFeedEntry.isTabVisible)
+        controllers = exteralessFilterRootTabs(controllers, contactsController: self.contactsController)
 
         // A removed selected tab would otherwise fall back to index 0 (Contacts): select Chats instead.
         var selectedIndex: Int?
@@ -277,6 +298,16 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         rootTabController.setControllers(controllers, selectedIndex: selectedIndex)
     }
     
+    func exteralessFeedTabController() -> ViewController? {
+        if let feed = self.exteralessFeedTab { return feed }
+        guard ExteralessFeedEntry.isTabVisible, let feed = ExteralessFeedEntry.makeController(context: self.context) else { return nil }
+        self.exteralessFeedTab = feed
+        self.exteralessFeedBadgeDisposable.set((ExteralessFeedEntry.unreadBadge(context: self.context) |> deliverOnMainQueue).start(next: { [weak feed] badge in
+            feed?.tabBarItem.badgeValue = badge.count > 0 ? String(badge.count) + (badge.isPartial ? "+" : "") : (badge.isPartial ? "…" : nil)
+        }))
+        return feed
+    }
+
     public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
         guard let rootTabController = self.rootTabController else {
             return
@@ -823,8 +854,10 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         
         self.popToRoot(animated: false)
     
-        if let index = rootTabController.controllers.firstIndex(where: { $0 is ContactsController }) {
+        if !exteralessRootTabsAreHidden(), let index = rootTabController.controllers.firstIndex(where: { $0 is ContactsController }) {
             rootTabController.selectedIndex = index
+        } else {
+            self.pushViewController(ContactsController(context: self.context))
         }
     }
         
@@ -835,8 +868,11 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         
         self.popToRoot(animated: false)
     
-        if let index = rootTabController.controllers.firstIndex(where: { $0 is PeerInfoScreenImpl }) {
+        if !exteralessRootTabsAreHidden(), let index = rootTabController.controllers.firstIndex(where: { $0 is PeerInfoScreenImpl }) {
             rootTabController.selectedIndex = index
+        } else {
+            exteralessOpenSettingsFallback(context: self.context, navigationController: self, edit: edit)
+            return
         }
         
         if edit {

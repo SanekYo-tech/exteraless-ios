@@ -12,6 +12,7 @@ import PeerInfoScreen
 import TelegramNotices
 import ChatListUI
 import EmojiStatusComponent
+import ExteralessCore
 import TelegramUIPreferences
 import TranslateUI
 import TelegramNotices
@@ -164,6 +165,7 @@ extension ChatControllerImpl {
         private let preloadHistoryPeerIdDisposable = MetaDisposable()
         
         private var nextChannelToReadDisposable: Disposable?
+        private var dialogNavigationPolicyDisposable: Disposable?
         private let chatAdditionalDataDisposable = MetaDisposable()
         private var premiumOrStarsRequiredDisposable: Disposable?
         private var buttonKeyboardMessageDisposable: Disposable?
@@ -206,6 +208,7 @@ extension ChatControllerImpl {
         }
         
         var historyNavigationStack = ChatHistoryNavigationStack()
+        private var dialogForumLayout: DialogForumLayout = .inherit
         
         let chatThemePromise = Promise<ChatTheme?>()
         let chatWallpaperPromise = Promise<TelegramWallpaper?>()
@@ -236,6 +239,12 @@ extension ChatControllerImpl {
             
             let chatLocationPeerId: PeerId? = chatLocation.peerId
             let peerId = chatLocationPeerId
+            let dialogForumLayout: Signal<DialogForumLayout, NoError>
+            if let peerId = chatLocationPeerId {
+                dialogForumLayout = exteralessDialogForumLayout(account: context.account, peerId: peerId)
+            } else {
+                dialogForumLayout = .single(.inherit)
+            }
             
             switch chatLocation {
             case .peer:
@@ -539,9 +548,10 @@ extension ChatControllerImpl {
                     configuration,
                     hasPeerInfo,
                     messageOptionsTitleInfo,
-                    savedMessagesChatsTip
+                    savedMessagesChatsTip,
+                    exteralessDialogPolicyUpdates() |> map { !$0.disableStories } |> distinctUntilChanged
                 )
-                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, onlineMemberCount, displayedCount, subtitleText, configuration, hasPeerInfo, messageOptionsTitleInfo, savedMessagesChatsTip in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, onlineMemberCount, displayedCount, subtitleText, configuration, hasPeerInfo, messageOptionsTitleInfo, savedMessagesChatsTip, storiesEnabled in
                     guard let strongSelf = self else {
                         return
                     }
@@ -646,7 +656,7 @@ extension ChatControllerImpl {
                                 accessibilityLabel: strings.Conversation_ContextMenuOpenProfile
                             )
                             
-                            strongSelf.state.storyStats = peerView.storyStats
+                            strongSelf.state.storyStats = storiesEnabled ? peerView.storyStats : nil
                         }
                     }
                     
@@ -748,8 +758,9 @@ extension ChatControllerImpl {
                     adMessage,
                     displayedPeerVerification,
                     globalPrivacySettings,
-                    canStopIncomingStreamingMessage
-                ).startStrict(next: { [weak self] peerView, globalNotificationSettings, onlineMemberCount, hasScheduledMessages, hasTopics, pinnedCount, threadInfo, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, adMessage, displayedPeerVerification, globalPrivacySettings, canStopIncomingStreamingMessage in
+                    canStopIncomingStreamingMessage,
+                    dialogForumLayout
+                ).startStrict(next: { [weak self] peerView, globalNotificationSettings, onlineMemberCount, hasScheduledMessages, hasTopics, pinnedCount, threadInfo, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, adMessage, displayedPeerVerification, globalPrivacySettings, canStopIncomingStreamingMessage, dialogForumLayout in
                     guard let strongSelf = self else {
                         return
                     }
@@ -757,6 +768,7 @@ extension ChatControllerImpl {
                     let previousState = strongSelf.state
                     
                     if strongSelf.state.peerView === peerView
+                        && strongSelf.dialogForumLayout == dialogForumLayout
                         && strongSelf.state.hasScheduledMessages == hasScheduledMessages
                         && strongSelf.state.hasTopics == hasTopics
                         && strongSelf.state.canStopIncomingStreamingMessage == canStopIncomingStreamingMessage
@@ -772,6 +784,7 @@ extension ChatControllerImpl {
                     strongSelf.state.hasScheduledMessages = hasScheduledMessages
                     strongSelf.state.hasTopics = hasTopics
                     strongSelf.state.canStopIncomingStreamingMessage = canStopIncomingStreamingMessage
+                    strongSelf.dialogForumLayout = dialogForumLayout
                     
                     var upgradedToPeerId: PeerId?
                     var movedToForumTopics = false
@@ -779,7 +792,7 @@ extension ChatControllerImpl {
                         upgradedToPeerId = migrationReference.peerId
                     }
                     if let previous = strongSelf.state.peerView, let channel = previous.peers[previous.peerId] as? TelegramChannel, !channel.isForumOrMonoForum, let updatedChannel = peerView.peers[peerView.peerId] as? TelegramChannel, updatedChannel.isForumOrMonoForum {
-                        if updatedChannel.isForum && updatedChannel.flags.contains(.displayForumAsTabs) {
+                        if exteralessDialogUsesForumTabs(peer: EnginePeer(updatedChannel), layout: dialogForumLayout, allForumsHaveTabs: context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs) {
                         } else {
                             movedToForumTopics = true
                         }
@@ -1027,10 +1040,8 @@ extension ChatControllerImpl {
                         }
                     }
                     
-                    if let channel = peerView.peers[peerView.peerId] as? TelegramChannel, channel.flags.contains(.displayForumAsTabs) {
-                        strongSelf.state.viewForumAsMessages = true
-                    } else if let cachedData = peerView.cachedData as? CachedChannelData {
-                        strongSelf.state.viewForumAsMessages = cachedData.viewForumAsMessages.knownValue ?? false
+                    if let peer = peerView.peers[peerView.peerId] {
+                        strongSelf.state.viewForumAsMessages = exteralessDialogViewForumAsMessages(peer: EnginePeer(peer), layout: dialogForumLayout, nativeViewAsMessages: (peerView.cachedData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
                     }
                     
                     let isArchived: Bool = peerView.groupId == Namespaces.PeerGroup.archive
@@ -1450,9 +1461,10 @@ extension ChatControllerImpl {
                     isPremiumRequiredForMessaging,
                     managingBot,
                     globalPrivacySettings,
-                    canStopIncomingStreamingMessage
+                    canStopIncomingStreamingMessage,
+                    dialogForumLayout
                 )
-                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, messageAndTopic, savedMessagesPeer, onlineMemberCount, hasScheduledMessages, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, globalPrivacySettings, canStopIncomingStreamingMessage in
+                |> deliverOnMainQueue).startStrict(next: { [weak self] peerView, messageAndTopic, savedMessagesPeer, onlineMemberCount, hasScheduledMessages, hasSearchTags, hasSavedChats, isPremiumRequiredForMessaging, managingBot, globalPrivacySettings, canStopIncomingStreamingMessage, dialogForumLayout in
                     guard let strongSelf = self else {
                         return
                     }
@@ -1461,10 +1473,8 @@ extension ChatControllerImpl {
                         
                     strongSelf.state.hasScheduledMessages = hasScheduledMessages
                     
-                    if let channel = peerView.peers[peerView.peerId] as? TelegramChannel, channel.flags.contains(.displayForumAsTabs) {
-                        strongSelf.state.viewForumAsMessages = true
-                    } else if let cachedData = peerView.cachedData as? CachedChannelData {
-                        strongSelf.state.viewForumAsMessages = cachedData.viewForumAsMessages.knownValue ?? false
+                    if let peer = peerView.peers[peerView.peerId] {
+                        strongSelf.state.viewForumAsMessages = exteralessDialogViewForumAsMessages(peer: EnginePeer(peer), layout: dialogForumLayout, nativeViewAsMessages: (peerView.cachedData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
                     }
                         
                     var renderedPeer: RenderedPeer?
@@ -2537,6 +2547,15 @@ extension ChatControllerImpl {
             } else {
                 self.isCachedDataReady.set(true)
             }
+            self.dialogNavigationPolicyDisposable = (exteralessDialogPolicyUpdates()
+            |> map { [$0.disableSwipeToNext, $0.disableSwipeToNextTopic, $0.rememberAllBackMessages] }
+            |> distinctUntilChanged
+            |> deliverOnMainQueue).start(next: { [weak self] _ in
+                guard let self else { return }
+                // Re-evaluate controls on the current content owner. No history
+                // reload, draft replacement, next-chat lookup, or read mutation.
+                self.onUpdated?(self.state)
+            })
         }
         
         deinit {
@@ -2545,6 +2564,7 @@ extension ChatControllerImpl {
             self.preloadSavedMessagesChatsDisposable?.dispose()
             self.preloadHistoryPeerIdDisposable.dispose()
             self.nextChannelToReadDisposable?.dispose()
+            self.dialogNavigationPolicyDisposable?.dispose()
             self.chatAdditionalDataDisposable.dispose()
             self.premiumOrStarsRequiredDisposable?.dispose()
             self.buttonKeyboardMessageDisposable?.dispose()

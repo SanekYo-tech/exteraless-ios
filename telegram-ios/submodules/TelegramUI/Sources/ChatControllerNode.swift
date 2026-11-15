@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import UIKit
 import AsyncDisplayKit
 import Postbox
@@ -183,6 +184,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     private var chatLocationContextHolder: Atomic<ChatLocationContextHolder?>
     let controllerInteraction: ChatControllerInteraction
     private weak var controller: ChatControllerImpl?
+    private var exteralessSettingsObservation: ClientSettingsObservation?
     
     let navigationBar: NavigationBar?
     let statusBar: StatusBar?
@@ -216,6 +218,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     let contentContainerNode: ChatNodeContainer
     let contentDimNode: ASDisplayNode
     let backgroundNode: WallpaperBackgroundNode
+    private let exteralessSnowView = ExteralessSnowView(settingKey: "appearance.chatDecoration")
     var historyNode: ChatHistoryListNodeImpl
     var blurredHistoryNode: ASImageNode?
     let historyNodeContainer: HistoryNodeContainer
@@ -344,12 +347,16 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     
     var requestUpdateChatInterfaceState: (ContainedViewLayoutTransition, Bool, (ChatInterfaceState) -> ChatInterfaceState) -> Void = { _, _, _ in }
     var requestUpdateInterfaceState: (ContainedViewLayoutTransition, Bool, (ChatPresentationInterfaceState) -> ChatPresentationInterfaceState) -> Void = { _, _, _ in }
-    var sendMessages: ([EnqueueMessage], Bool?, Int32?, Int32?, Bool, Bool) -> Void = { _, _, _, _, _, _ in }
+    var sendMessages: ([EnqueueMessage], Bool?, Int32?, Int32?, Bool, Bool, ExteralessChatSendOperation?) -> Void = { _, _, _, _, _, _, _ in }
     var displayAttachmentMenu: () -> Void = { }
     var paste: (ChatTextInputPanelPasteData) -> Void = { _ in }
     var updateTypingActivity: (Bool) -> Void = { _ in }
     var dismissUrlPreview: () -> Void = { }
-    var setupSendActionOnViewUpdate: (@escaping () -> Void, Int64?) -> Void = { _, _ in }
+    var setupSendActionOnViewUpdateImpl: (@escaping () -> Void, Int64?, ExteralessChatSendOperation?) -> ExteralessChatSendOperation? = { _, _, _ in nil }
+    @discardableResult
+    func setupSendActionOnViewUpdate(_ cleanup: @escaping () -> Void, _ correlationId: Int64?, operation: ExteralessChatSendOperation? = nil) -> ExteralessChatSendOperation? {
+        return self.setupSendActionOnViewUpdateImpl(cleanup, correlationId, operation)
+    }
     var requestLayout: (ContainedViewLayoutTransition) -> Void = { _ in }
     var dismissAsOverlay: () -> Void = { }
     
@@ -845,6 +852,18 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         
         super.init()
 
+        let exteralessRenderKeys = Set(["stickerShape", "stickerTimeSide", "hideTimeForSticker", "replyColors", "replyEmoji", "replyBackground", "removeMessageTail", "unreadCapsule", "hideShareButtonInChannel", "showTimeHint", "showSpoilersDirectly", "hideCallButton", "hideChannelSearchButton", "keepAttachButton", "hideBotButtonInInputField", "hideSendAsChannel", "typeMessageHintUseGroupName", "showSendAsUnderMessageHint", "disableLinkPreviewByDefault"].map { "chats." + $0 })
+        self.exteralessSettingsObservation = ClientSettings.shared.observe { [weak self] keys in
+            guard !keys.isDisjoint(with: exteralessRenderKeys) else { return }
+            Queue.mainQueue().async { [weak self] in
+                guard let self, let controller = self.controller else { return }
+                controller.updateChatPresentationInterfaceState(transition: .immediate, interactive: false, force: true, { $0 })
+                self.historyNode.forEachVisibleMessageItemNode { node in
+                    if let message = node.item?.message { self.controllerInteraction.requestMessageUpdate(message.id, false, nil) }
+                }
+            }
+        }
+
         getContentAreaInScreenSpaceImpl = { [weak self] in
             guard let strongSelf = self else {
                 return CGRect()
@@ -912,6 +931,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         self.addSubnode(self.wrappingNode)
         self.wrappingNode.contentNode.addSubnode(self.contentContainerNode)
         self.contentContainerNode.contentNode.addSubnode(self.backgroundNode)
+        self.backgroundNode.view.addSubview(self.exteralessSnowView)
         self.contentContainerNode.contentNode.addSubnode(self.historyNodeContainer)
         
         self.contentContainerNode.contentNode.addSubnode(self.messageTransitionNode)
@@ -1074,6 +1094,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     }
     
     deinit {
+        self.exteralessSettingsObservation?.cancel()
         self.interactiveEmojisDisposable?.dispose()
         self.openStickersDisposable?.dispose()
         self.displayVideoUnmuteTipDisposable?.dispose()
@@ -2122,6 +2143,9 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             displayMode = .aspectFit
         }
         self.backgroundNode.updateLayout(size: wallpaperBounds.size, displayMode: displayMode, transition: transition)
+        self.exteralessSnowView.frame = CGRect(origin: .zero, size: wallpaperBounds.size)
+        self.backgroundNode.view.bringSubviewToFront(self.exteralessSnowView)
+        self.exteralessSnowView.update(color: self.chatPresentationInterfaceState.theme.overallDarkAppearance ? UIColor.white.withAlphaComponent(0.6) : self.chatPresentationInterfaceState.theme.list.itemAccentColor.withAlphaComponent(0.35))
 
         transition.updateBounds(node: self.historyNodeContainer, bounds: contentBounds)
         transition.updatePosition(node: self.historyNodeContainer, position: contentBounds.center)
@@ -2691,13 +2715,14 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             }
         }
         if let topBackgroundEdgeEffectNode {
-            let topExtent: CGFloat = 34.0
-            var blurFrame = CGRect(origin: CGPoint(), size: CGSize(width: layout.size.width, height: max(100.0, listInsets.bottom + topExtent)))
+            let materialHeader = ClientSettings.shared.bool("appearance.newChatHeaderStyle")
+            let topExtent: CGFloat = materialHeader ? 64.0 : 34.0
+            var blurFrame = CGRect(origin: CGPoint(), size: CGSize(width: layout.size.width, height: max(materialHeader ? 130.0 : 100.0, listInsets.bottom + topExtent)))
             blurFrame.origin.y = listInsets.bottom + topExtent - blurFrame.height
             transition.updateFrame(node: topBackgroundEdgeEffectNode, frame: blurFrame)
             topBackgroundEdgeEffectNode.update(
                 rect: blurFrame,
-                edge: WallpaperEdgeEffectEdge(edge: .top, size: 80.0),
+                edge: WallpaperEdgeEffectEdge(edge: .top, size: materialHeader ? 110.0 : 80.0),
                 alpha: edgeEffectAlpha,
                 blur: true,
                 containerSize: wallpaperBounds.size,
@@ -3979,13 +4004,19 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         }
     }
     
-    func updateAutomaticMediaDownloadSettings(_ settings: MediaAutoDownloadSettings) {
+    func updateAutomaticMediaDownloadSettings(_ settings: MediaAutoDownloadSettings, energyChanged: Bool = false) {
+        var refreshIds = Set<EngineMessage.Id>()
         self.historyNode.forEachItemNode { itemNode in
             if let itemNode = itemNode as? ChatMessageItemView {
                 itemNode.updateAutomaticMediaDownloadSettings()
+                if energyChanged, let item = itemNode.item { refreshIds.insert(item.message.id) }
             }
         }
         self.historyNode.prefetchManager.updateAutoDownloadSettings(settings)
+        // Rebuild instantiated media items through their existing layout path:
+        // autoplay decisions otherwise remain cached until the next message edit.
+        // Collect first so a synchronous list update cannot mutate the enumeration.
+        for id in refreshIds { self.historyNode.requestMessageUpdate(id) }
     }
     
     func updateStickerSettings(_ settings: ChatInterfaceStickerSettings, forceStopAnimations: Bool) {
@@ -4798,7 +4829,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                                 let messageEffect = parameters?.effect.flatMap(ChatSendMessageEffect.init)
                                 switch mode {
                                 case .generic:
-                                    self.sendCurrentMessage(messageEffect: messageEffect, sendWithoutFormatting: sendWithoutFormatting)
+                                    self.sendCurrentMessage(silentPosting: parameters?.notificationOverride, messageEffect: messageEffect, sendWithoutFormatting: sendWithoutFormatting)
                                 case .silently:
                                     self.sendCurrentMessage(silentPosting: true, messageEffect: messageEffect, sendWithoutFormatting: sendWithoutFormatting)
                                 case .whenOnline:
@@ -4875,6 +4906,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     }
 
     func openAICompose() {
+        guard ExteralessAIHooks.aiEditorVisible else { return }
         Task { @MainActor [weak self] in
             guard let self else {
                 return
@@ -4923,6 +4955,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             
             self.controller?.push(await TextProcessingScreen(
                 context: self.context,
+                capability: .init(peerId: self.chatLocation.peerId, allowsExternalProcessing: true, allowsCopy: true),
                 mode: .edit(
                     saveRestoreStateId: self.chatLocation.peerId,
                     completion: { [weak self] text in
@@ -4959,7 +4992,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                                 })
                                 switch mode {
                                 case .generic:
-                                    controller.controllerInteraction?.sendCurrentMessage(false, parameters?.effect.flatMap(ChatSendMessageEffect.init))
+                                    controller.controllerInteraction?.sendCurrentMessage(parameters?.notificationOverride, parameters?.effect.flatMap(ChatSendMessageEffect.init))
                                 case .silently:
                                     controller.controllerInteraction?.sendCurrentMessage(true, parameters?.effect.flatMap(ChatSendMessageEffect.init))
                                 case .whenOnline:
@@ -5014,16 +5047,18 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         let interfaceState = self.chatPresentationInterfaceState.interfaceState
         let inputText = interfaceState.effectiveInputState.inputText.string
         if !isScheduledMessages, interfaceState.editMessage == nil, interfaceState.postSuggestionState == nil, interfaceState.forwardMessageIds == nil, let peerId = self.chatLocation.peerId, mayContainTypedEphemeralBotCommand(inputText) {
+            let capturedOperation = self.controller?.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
             let _ = (self.context.engine.peers.peerCommands(id: peerId)
             |> take(1)
             |> deliverOnMainQueue).startStandalone(next: { [weak self] peerCommands in
                 guard let self else {
                     return
                 }
+                guard capturedOperation?.isCurrent == true else { capturedOperation?.cancel(); return }
 
                 if let resolved = resolveEphemeralBotCommand(text: inputText, peerCommands: peerCommands) {
-                    let replyMessageSubject = self.chatPresentationInterfaceState.interfaceState.replyMessageSubject
-                    self.setupSendActionOnViewUpdate({ [weak self] in
+                    let replyMessageSubject = interfaceState.replyMessageSubject
+                    let operation = self.setupSendActionOnViewUpdate({ [weak self] in
                         guard let strongSelf = self else {
                             return
                         }
@@ -5032,7 +5067,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                         strongSelf.controller?.updateChatPresentationInterfaceState(animated: true, interactive: false, {
                             $0.updatedInterfaceState { $0.withUpdatedReplyMessageSubject(nil).withUpdatedSendMessageEffect(nil).withUpdatedPostSuggestionState(nil).withUpdatedComposeInputState(ChatTextInputState(inputText: NSAttributedString(string: ""))).withUpdatedComposeDisableUrlPreviews([]) }
                         })
-                    }, nil)
+                    }, nil, operation: capturedOperation)
 
                     var attributes: [MessageAttribute] = [
                         EphemeralOutgoingMessageAttribute(botPeerId: resolved.botPeerId, randomId: 0, state: .sending)
@@ -5040,7 +5075,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     if !resolved.entities.isEmpty {
                         attributes.append(TextEntitiesMessageAttribute(entities: resolved.entities))
                     }
-                    self.sendMessages([.message(text: resolved.text, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: self.chatLocation.threadId, replyToMessageId: replyMessageSubject?.subjectModel, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])], nil, nil, nil, false, false)
+                    self.sendMessages([.message(text: resolved.text, attributes: attributes, inlineStickers: [:], mediaReference: nil, threadId: self.chatLocation.threadId, replyToMessageId: replyMessageSubject?.subjectModel, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])], nil, nil, nil, false, false, operation)
                 } else {
                     sendNormally()
                 }
@@ -5272,7 +5307,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                 var mediaReference: AnyMediaReference?
                 var webpage: TelegramMediaWebpage?
                 if let urlPreview = self.chatPresentationInterfaceState.urlPreview {
-                    if self.chatPresentationInterfaceState.interfaceState.composeDisableUrlPreviews.contains(urlPreview.url) {
+                    if exteralessComposeLinkPreviewsDisabled(self.chatPresentationInterfaceState, url: urlPreview.url) {
                     } else {
                         webpage = urlPreview.webPage
                     }
@@ -5298,7 +5333,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
 
                     // url-preview attribute parity (duplicated, not shared, to keep the text loop byte-identical)
                     if let urlPreview = self.chatPresentationInterfaceState.urlPreview {
-                        if self.chatPresentationInterfaceState.interfaceState.composeDisableUrlPreviews.contains(urlPreview.url) {
+                        if exteralessComposeLinkPreviewsDisabled(self.chatPresentationInterfaceState, url: urlPreview.url) {
                             attributes.append(OutgoingContentInfoMessageAttribute(flags: [.disableLinkPreviews]))
                         } else {
                             attributes.append(WebpagePreviewMessageAttribute(leadingPreview: !urlPreview.positionBelowText, forceLargeMedia: urlPreview.largeMedia, isManuallyAdded: true, isSafe: false))
@@ -5326,7 +5361,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     }
                     // Markdown conversion, trim, the 4096 split and each piece's entities:
                     // `chatComposerTextMessages` (TextFormat), shared with the composer harness's send-path oracle.
-                    let textMessages = chatComposerTextMessages(effectiveInputText: effectiveInputText, businessLinkSetup: isBusinessLinkSetup)
+                    let textMessages = chatComposerTextMessages(effectiveInputText: effectiveInputText, businessLinkSetup: isBusinessLinkSetup, parseMarkdown: !sendWithoutFormatting)
                     for (text, entities) in textMessages.pieces {
                         do {
                             var attributes: [MessageAttribute] = []
@@ -5335,7 +5370,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                             }
                             
                             if let urlPreview = self.chatPresentationInterfaceState.urlPreview {
-                                if self.chatPresentationInterfaceState.interfaceState.composeDisableUrlPreviews.contains(urlPreview.url) {
+                                if exteralessComposeLinkPreviewsDisabled(self.chatPresentationInterfaceState, url: urlPreview.url) {
                                     attributes.append(OutgoingContentInfoMessageAttribute(flags: [.disableLinkPreviews]))
                                 } else {
                                     attributes.append(WebpagePreviewMessageAttribute(leadingPreview: !urlPreview.positionBelowText, forceLargeMedia: urlPreview.largeMedia, isManuallyAdded: true, isSafe: false))
@@ -5419,6 +5454,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     }
                 }
                 
+                let capturedOperation = self.controller?.exteralessPrepareSendOperation(cleanup: {}, correlationId: nil)
                 let doSend: (Int64?) -> Void = { [weak self] overrideThreadId in
                     guard let self else {
                         return
@@ -5452,7 +5488,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                         }
                     }
                     
-                    self.setupSendActionOnViewUpdate({ [weak self] in
+                    let operation = self.setupSendActionOnViewUpdate({ [weak self] in
                         guard let self, let textInputPanelNode = self.inputPanelNode as? ChatTextInputPanelNode else {
                             return
                         }
@@ -5476,10 +5512,15 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                             return state
                         })
                         self.ignoreUpdateHeight = false
-                    }, usedCorrelationId)
-                    completion()
+                        completion()
+                    }, usedCorrelationId, operation: capturedOperation)
                     
-                    self.sendMessages(messages, silentPosting, scheduleTime, repeatPeriod, messages.count > 1, postpone)
+                    let messages = ChatComposerPolicy.ordering(messages, commentAfterForward: ClientSettings.shared.bool("chats.sendCommentAfterForward", default: true), isForward: { if case .forward = $0 { return true }; return false }).map { message -> EnqueueMessage in
+                        let message = message.withNotificationOverride(silent: silentPosting)
+                        guard case .message = message else { return message }
+                        return message.withLinkPreviewOverride(disabled: exteralessComposeLinkPreviewsDisabled(effectivePresentationInterfaceState, url: effectivePresentationInterfaceState.urlPreview?.url ?? ""))
+                    }
+                    self.sendMessages(messages, silentPosting, scheduleTime, repeatPeriod, messages.count > 1, postpone, operation)
                 }
                 
                 var targetThreadId: Int64?

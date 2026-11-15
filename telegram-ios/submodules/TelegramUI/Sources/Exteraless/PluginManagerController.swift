@@ -22,8 +22,12 @@ public struct PluginManagerActions {
     public let logs: () -> [String]
     public let permissions: ((String) -> [PluginPermission])?
     public let setPermissions: ((String, [PluginPermission]) async throws -> Void)?
+    public let controls: PluginManagerControls?
+    /// Capture the current interpreter/account scope when a settings page opens.
+    /// nil preserves the application runtime-owned scope provider.
+    public let settingsScope: ((String) -> (@MainActor () -> Bool))?
 
-    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil) {
+    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil, controls: PluginManagerControls? = nil, settingsScope: ((String) -> (@MainActor () -> Bool))? = nil) {
         self.status = status
         self.snapshot = snapshot
         self.importPlugin = importPlugin
@@ -35,6 +39,8 @@ public struct PluginManagerActions {
         self.logs = logs
         self.permissions = permissions
         self.setPermissions = setPermissions
+        self.controls = controls
+        self.settingsScope = settingsScope
     }
 }
 
@@ -54,7 +60,9 @@ public struct PluginManagerActions {
         click: { id, callbackId in try await runtime.click(id: id, callbackId: callbackId) },
         logs: { runtime.logs() },
         permissions: { runtime.grantedPermissions(id: $0) },
-        setPermissions: { id, permissions in try await runtime.setPermissions(id: id, permissions: permissions) }
+        setPermissions: { id, permissions in try await runtime.setPermissions(id: id, permissions: permissions) },
+        controls: runtime.managerControls(),
+        settingsScope: { id in runtime.settingsScope(context: context, pluginId: id) }
     ))
 }
 
@@ -68,6 +76,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         case list
         case plugin(String)
         case logs
+        case runtime
     }
 
     private let actions: PluginManagerActions
@@ -77,6 +86,11 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     private var logLines: [String] = []
     private var pollingTimer: SwiftSignalKit.Timer?
     private var isPickingDocument = false
+    private var presentationState: PluginManagerPresentationState?
+    private var developerConnection: PluginDeveloperConnectionState?
+    private var recovery: PluginRuntimeRecoverySnapshot?
+
+    private var permitsPluginExecution: Bool { self.presentationState?.permitsPluginExecution ?? true }
 
     init(context: AccountContext, actions: PluginManagerActions, mode: Mode) {
         self.actions = actions
@@ -118,7 +132,11 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     }
 
     private func readSnapshot(force: Bool) {
+        let presentation = self.actions.controls?.snapshot()
+        let connection = self.actions.controls?.developerConnection()
+        let recovery = self.actions.controls?.recovery()
         let plugins = self.actions.snapshot().sorted { lhs, rhs in
+            if let presentation { return presentation.precedes(id: lhs.id, title: lhs.displayName, id: rhs.id, title: rhs.displayName) }
             let comparison = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
             return comparison == .orderedSame ? lhs.id < rhs.id : comparison == .orderedAscending
         }
@@ -130,10 +148,13 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
                 return String(prefix) + (prefix.endIndex == line.endIndex ? "" : "\n…")
             }
         }
-        if force || plugins != self.plugins || status != self.runtimeStatus || logs != self.logLines {
+        if force || plugins != self.plugins || status != self.runtimeStatus || logs != self.logLines || presentation != self.presentationState || connection != self.developerConnection || recovery != self.recovery {
             self.plugins = plugins
             self.runtimeStatus = status
             self.logLines = logs
+            self.presentationState = presentation
+            self.developerConnection = connection
+            self.recovery = recovery
             self.render()
         }
     }
@@ -146,35 +167,71 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             self.renderPlugin(id: id)
         case .logs:
             self.renderLogs()
+        case .runtime:
+            self.renderRuntime()
         }
     }
 
     private func runtimeSection() -> PluginListSection {
-        return PluginListSection(rows: [PluginListRow(id: "runtime", title: pluginText("Runtime.Title", "Runtime"), detail: self.runtimeStatus)])
+        var rows = [PluginListRow(id: "runtime", title: pluginText("Runtime.Title", "Runtime"), detail: self.runtimeStatus)]
+        if let notice = self.recovery?.notice, let controls = self.actions.controls {
+            var row = PluginListRow(id: "runtime-recovery", title: "Startup recovery", detail: notice + "\nTap to acknowledge")
+            row.style = .error
+            row.action = { [weak self] in self?.changeManagerPreference { try await controls.acknowledgeRecovery() } }
+            rows.append(row)
+        }
+        return PluginListSection(rows: rows)
     }
 
     private func renderList() {
         self.title = pluginText("Plugins.Title", "Plugins")
         self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: pluginText("Import.Action", "Import"), style: .plain, target: self, action: #selector(self.importPressed))
-        self.navigationItem.rightBarButtonItem?.isEnabled = !self.isBusy && !self.isPickingDocument
+        self.navigationItem.rightBarButtonItem?.isEnabled = !self.isBusy && !self.isPickingDocument && self.permitsPluginExecution
         var sections = self.operationSections()
         sections.append(self.runtimeSection())
+        if let controls = self.actions.controls, let state = self.presentationState {
+            var engine = PluginListRow(id: "engine-enabled", title: pluginText("Runtime.Enabled", "Plugin engine"), detail: self.runtimeStatus)
+            engine.enabled = !self.isBusy
+            engine.toggle = (state.engineEnabled, { [weak self] value in self?.changeManagerPreference { try await controls.engine(value) } })
+            sections.append(PluginListSection(rows: [engine]))
+            if !state.engineEnabled {
+                var settings = PluginListRow(id: "runtime-settings", title: pluginText("Runtime.Settings", "Plugin manager settings"))
+                settings.accessory = .disclosure
+                settings.action = { [weak self] in
+                    guard let self else { return }
+                    self.push(PluginManagerController(context: self.context, actions: self.actions, mode: .runtime))
+                }
+                sections.append(PluginListSection(rows: [settings]))
+                self.navigationItem.rightBarButtonItem?.isEnabled = false
+                self.setSections(sections)
+                return
+            }
+        }
         var importRow = PluginListRow(id: "import", title: pluginText("Import.File", "Import plugin"), detail: pluginText("Import.Formats", "Choose a .plugin or .py file in Files."))
         importRow.style = .accent
-        importRow.enabled = !self.isBusy && !self.isPickingDocument
+        importRow.enabled = !self.isBusy && !self.isPickingDocument && self.presentationState?.safeMode != true
         importRow.action = { [weak self] in self?.importPressed() }
         sections.append(PluginListSection(rows: [importRow]))
         var rows: [PluginListRow] = []
         for plugin in self.plugins {
-            var row = PluginListRow(id: "plugin:\(plugin.id)", title: plugin.displayName.isEmpty ? plugin.id : plugin.displayName, detail: self.subtitle(plugin))
+            let pinned = self.presentationState?.pinned.contains(plugin.id) == true
+            let detail = self.presentationState?.compactView == true ? self.stateDescription(plugin) : self.subtitle(plugin)
+            var row = PluginListRow(id: "plugin:\(plugin.id)", title: (pinned ? "📌 " : "") + (plugin.displayName.isEmpty ? plugin.id : plugin.displayName), detail: detail)
             row.accessory = .disclosure
             row.enabled = !self.isBusy
-            row.toggle = (plugin.enabled, { [weak self] enabled in self?.setEnabled(id: plugin.id, enabled: enabled) })
+            if self.permitsPluginExecution {
+                row.toggle = (plugin.enabled, { [weak self] enabled in self?.setEnabled(id: plugin.id, enabled: enabled) })
+                row.remove = { [weak self] in self?.confirmRemove(plugin) }
+            }
             row.action = { [weak self] in
                 guard let self else { return }
                 self.push(PluginManagerController(context: self.context, actions: self.actions, mode: .plugin(plugin.id)))
             }
-            row.remove = { [weak self] in self?.confirmRemove(plugin) }
+            if let controls = self.actions.controls {
+                row.longAction = { [weak self] in
+                    self?.changeManagerPreference { try await controls.pin(plugin.id, !pinned) }
+                }
+            }
             if plugin.loadError != nil || plugin.notResponding { row.style = .error }
             rows.append(row)
         }
@@ -189,6 +246,15 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             self.push(PluginManagerController(context: self.context, actions: self.actions, mode: .logs))
         }
         sections.append(PluginListSection(rows: [logRow]))
+        if self.actions.controls != nil {
+            var row = PluginListRow(id: "runtime-settings", title: pluginText("Runtime.Settings", "Plugin manager settings"))
+            row.accessory = .disclosure
+            row.action = { [weak self] in
+                guard let self else { return }
+                self.push(PluginManagerController(context: self.context, actions: self.actions, mode: .runtime))
+            }
+            sections.append(PluginListSection(rows: [row]))
+        }
         self.setSections(sections)
     }
 
@@ -203,10 +269,38 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             return
         }
         self.title = plugin.displayName
+        if ExteralessAIEntry.reviewPlugin != nil {
+            var review = PluginListRow(id: "ai-review", title: "Review with AI", detail: "Review this plugin's source and declared metadata")
+            review.action = { [weak self] in
+                guard let self else { return }
+                ExteralessAIEntry.reviewPlugin?(self.context, self, id)
+            }
+            sections.append(PluginListSection(rows: [review]))
+        }
         var enabledRow = PluginListRow(id: "enabled", title: pluginText("Plugin.Enabled", "Enabled"), detail: self.stateDescription(plugin))
-        enabledRow.enabled = !self.isBusy
+        enabledRow.enabled = !self.isBusy && self.presentationState?.engineEnabled != false && self.presentationState?.safeMode != true
         enabledRow.toggle = (plugin.enabled, { [weak self] enabled in self?.setEnabled(id: id, enabled: enabled) })
         sections.append(PluginListSection(rows: [enabledRow]))
+        if let controls = self.actions.controls, let state = self.presentationState {
+            var pinned = PluginListRow(id: "pinned", title: pluginText("Plugin.Pinned", "Pinned to top"))
+            pinned.enabled = !self.isBusy
+            pinned.toggle = (state.pinned.contains(id), { [weak self] value in
+                self?.changeManagerPreference { try await controls.pin(id, value) }
+            })
+            var warning = PluginListRow(id: "warning-muted", title: pluginText("Plugin.WarningMuted", "Mute watchdog warnings"), detail: pluginText("Plugin.WatchdogStillActive", "Execution limits and isolation remain active."))
+            warning.enabled = !self.isBusy
+            warning.toggle = (state.warningMuted.contains(id), { [weak self] value in
+                self?.changeManagerPreference { try await controls.muteWarning(id, value) }
+            })
+            var rows = [pinned, warning]
+            if state.developerMode {
+                var reload = PluginListRow(id: "reload-plugin", title: pluginText("Plugin.Reload", "Reload plugin"), detail: "Unloads this interpreter and reloads its source")
+                reload.enabled = !self.isBusy && state.engineEnabled && !state.safeMode
+                reload.action = { [weak self] in self?.changeManagerPreference { try await controls.reload(id) } }
+                rows.append(reload)
+            }
+            sections.append(PluginListSection(rows: rows))
+        }
 
         var information = [PluginListRow(id: "identity", title: plugin.displayName, detail: "\(plugin.id)\n\(plugin.subtitle)")]
         if let description = plugin.description, !description.isEmpty {
@@ -239,7 +333,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             for permission in PluginPermission.requestable {
                 var row = PluginListRow(id: "permission:\(permission.rawValue)", title: permission.describe,
                                         detail: permission.rawValue)
-                row.enabled = !self.isBusy
+                row.enabled = !self.isBusy && self.permitsPluginExecution
                 row.toggle = (granted.contains(permission), { [weak self] enabled in
                     guard let self else { return }
                     var next = Set(readPermissions(id))
@@ -261,7 +355,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             row.action = { UIPasteboard.general.string = plugin.loadDebug ?? loadError }
             sections.append(PluginListSection(footer: pluginText("Error.CopyHint", "Tap to copy the error."), rows: [row]))
         }
-        if let debug = plugin.loadDebug, debug != plugin.loadError, !debug.isEmpty {
+        if self.presentationState?.developerMode == true, let debug = plugin.loadDebug, debug != plugin.loadError, !debug.isEmpty {
             var row = PluginListRow(id: "debug", title: pluginText("Plugin.Diagnostics", "Diagnostics"), detail: String(debug.prefix(16000)))
             row.action = { UIPasteboard.general.string = debug }
             sections.append(PluginListSection(rows: [row]))
@@ -275,7 +369,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             }
             row.action = { [weak self] in
                 guard let self else { return }
-                self.push(PluginSettingsController(context: self.context, actions: self.actions, pluginId: id, title: plugin.displayName))
+                self.push(PluginSettingsController(context: self.context, actions: self.actions, pluginId: id, title: plugin.displayName, scopeIsCurrent: self.actions.settingsScope?(id)))
             }
             sections.append(PluginListSection(rows: [row]))
         } else if plugin.loaded {
@@ -283,7 +377,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         }
         var removeRow = PluginListRow(id: "remove", title: pluginText("Plugin.Remove", "Delete plugin"))
         removeRow.style = .destructive
-        removeRow.enabled = !self.isBusy
+        removeRow.enabled = !self.isBusy && self.permitsPluginExecution
         removeRow.action = { [weak self] in self?.confirmRemove(plugin) }
         sections.append(PluginListSection(rows: [removeRow]))
         self.setSections(sections)
@@ -300,6 +394,50 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             rows.append(PluginListRow(id: "empty-log", title: pluginText("Logs.Empty", "No log entries")))
         }
         self.setSections([self.runtimeSection(), PluginListSection(footer: pluginText("Logs.Limit", "Shows the last 100 entries, up to 2,000 characters per entry. Pull to refresh."), rows: rows)])
+    }
+
+    private func renderRuntime() {
+        self.title = pluginText("Runtime.Settings", "Plugin manager settings")
+        var sections = self.operationSections()
+        sections.append(self.runtimeSection())
+        if let controls = self.actions.controls, let state = self.presentationState {
+            var compact = PluginListRow(id: "compact", title: pluginText("Runtime.Compact", "Compact plugin list"), detail: "Show status only; detailed metadata remains on the plugin page")
+            compact.enabled = !self.isBusy && state.engineEnabled
+            compact.toggle = (state.compactView, { [weak self] value in self?.changeManagerPreference { try await controls.compact(value) } })
+            var developer = PluginListRow(id: "developer", title: pluginText("Runtime.Developer", "Developer mode"), detail: "Reload actions, full diagnostics and the authenticated loopback development server")
+            developer.enabled = !self.isBusy && state.engineEnabled && !state.safeMode
+            developer.toggle = (state.developerMode, { [weak self] value in self?.changeManagerPreference { try await controls.developer(value) } })
+            var safe = PluginListRow(id: "safe-mode", title: pluginText("Runtime.SafeMode", "Safe mode"), detail: "Keeps native Python available while plugin execution is suspended. Enabled plugin choices are preserved.")
+            safe.enabled = !self.isBusy
+            safe.toggle = (state.safeMode, { [weak self] value in self?.changeManagerPreference { try await controls.safeMode(value) } })
+            sections.append(PluginListSection(rows: [compact, developer, safe]))
+            if state.developerMode, let connection = self.developerConnection {
+                var row = PluginListRow(id: "developer-server", title: "Development server", detail: connection.status)
+                if let token = connection.token {
+                    row.detail = connection.status + "\nTap to copy this session's authentication token"
+                    row.action = { UIPasteboard.general.string = token }
+                }
+                sections.append(PluginListSection(rows: [row]))
+            }
+        } else {
+            sections.append(PluginListSection(rows: [PluginListRow(id: "unavailable", title: "Manager preferences unavailable")]))
+        }
+        sections.append(PluginListSection(title: "Runtime mechanism", rows: [
+            PluginListRow(id: "engine-kind", title: "CPython", detail: "Native per-plugin interpreters and owner queues"),
+            PluginListRow(id: "art-compatibility", title: "Android ART compatibility mode", detail: "ART Profile Saver is not present on iOS; no JIT/Xposed switch is applied."),
+            PluginListRow(id: "xposed-markers", title: "Xposed initialization markers", detail: "Android hook-library crash stamps and retries do not describe the native CPython runtime.")
+        ]))
+        if let recovery = self.recovery {
+            sections.append(PluginListSection(rows: [PluginListRow(id: "early-starts", title: "Early startup recovery",
+                detail: "\(recovery.earlyUncleanStarts) consecutive unclean starts. Native journal clears after 15 healthy seconds or backgrounding; it does not claim Java exception attribution.")]))
+        }
+        self.setSections(sections)
+    }
+
+    private func changeManagerPreference(_ operation: @escaping () async throws -> Void) {
+        guard !self.isBusy else { return }
+        self.perform(title: pluginText("Runtime.Applying", "Applying manager setting…"), operation: operation,
+            completion: { [weak self] _ in self?.readSnapshot(force: true) }, failed: { [weak self] in self?.readSnapshot(force: true) })
     }
 
     private func stateDescription(_ plugin: Plugin) -> String {
@@ -320,6 +458,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     }
 
     private func setEnabled(id: String, enabled: Bool) {
+        guard self.permitsPluginExecution else { return }
         let actions = self.actions
         self.perform(title: pluginText("Plugin.Updating", "Updating plugin…"), operation: {
             try await actions.setEnabled(id, enabled)
@@ -331,7 +470,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     }
 
     private func confirmRemove(_ plugin: Plugin) {
-        guard !self.isBusy else { return }
+        guard !self.isBusy, self.permitsPluginExecution else { return }
         let alert = UIAlertController(title: pluginText("Plugin.Remove", "Delete plugin"), message: plugin.displayName, preferredStyle: .alert)
         alert.overrideUserInterfaceStyle = self.presentationData.theme.overallDarkAppearance ? .dark : .light
         alert.view.tintColor = self.presentationData.theme.list.itemAccentColor
@@ -357,7 +496,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     }
 
     @objc private func importPressed() {
-        guard !self.isBusy, !self.isPickingDocument else { return }
+        guard !self.isBusy, !self.isPickingDocument, self.permitsPluginExecution else { return }
         let picker: UIDocumentPickerViewController
         if #available(iOS 14.0, *) {
             // Unregistered .plugin files are reported as generic data by some

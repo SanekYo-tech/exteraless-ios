@@ -31,7 +31,7 @@ func presentsModalInLargeLayout(_ layout: ContainerViewLayout) -> Bool {
     return min(layout.size.width, layout.size.height) >= 700.0
 }
 
-func makeNavigationLayout(mode: NavigationControllerMode, layout: ContainerViewLayout, controllers: [ViewController]) -> NavigationLayout {
+func makeNavigationLayout(mode: NavigationControllerMode, layout: ContainerViewLayout, controllers: [ViewController], contentLayout: NavigationContentLayout? = nil) -> NavigationLayout {
     var rootControllers: [ViewController] = []
     var modalStack: [ModalContainerLayout] = []
     for controller in controllers {
@@ -63,12 +63,13 @@ func makeNavigationLayout(mode: NavigationControllerMode, layout: ContainerViewL
             isStandalone = true
             isFlat = true
         case .modalInLargeLayout:
-            requiresModal = presentsModalInLargeLayout(layout)
+            requiresModal = contentLayout?.decision.largeModals ?? presentsModalInLargeLayout(layout)
         case .modalInCompactLayout:
-            switch layout.metrics.widthClass {
-            case .compact:
+            let compactPresentation = contentLayout.map { $0.mode == .phone || !$0.decision.largeModals } ?? (layout.metrics.widthClass == .compact)
+            switch compactPresentation {
+            case true:
                 requiresModal = true
-            case .regular:
+            case false:
                 requiresModal = true
                 beginsModal = true
                 isFlat = true
@@ -98,14 +99,17 @@ func makeNavigationLayout(mode: NavigationControllerMode, layout: ContainerViewL
     }
     
     let rootLayout: RootNavigationLayout
-    switch mode {
+    let effectiveMode: NavigationControllerMode = contentLayout.map { $0.masterWidth == nil ? .single : .automaticMasterDetail } ?? mode
+    switch effectiveMode {
     case .single:
         rootLayout = .flat(rootControllers)
     case .automaticMasterDetail:
-        switch layout.metrics.widthClass {
-        case .compact:
+        let split = contentLayout.map { value in
+            value.masterWidth != nil && rootControllers.contains { if case .master = $0.navigationPresentation { return true }; return false }
+        } ?? (layout.metrics.widthClass == .regular)
+        if !split {
             rootLayout = .flat(rootControllers)
-        case .regular:
+        } else {
             let masterControllers = rootControllers.filter {
                 if case .master = $0.navigationPresentation {
                     return true

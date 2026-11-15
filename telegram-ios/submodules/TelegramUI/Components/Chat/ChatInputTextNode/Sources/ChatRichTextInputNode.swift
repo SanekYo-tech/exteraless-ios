@@ -351,6 +351,8 @@ public protocol ChatRichTextInputNode: AnyObject {
     /// `plainTextFragmentTransformer`. Returning a `Document` splices rich content at the caret;
     /// returning nil keeps the built-in plain paste. Native backend only — legacy backend ignores it.
     var pastedMarkdownFragmentParser: ((String) -> Document?)? { get set }
+    var pastedLinkTargetTransformer: ((String) -> String)? { get set }
+    var committedTextTransformer: ((String) -> String)? { get set }
 
     /// Fired on a genuine user TEXT edit (typing/delete/paste/IME) so the host can report the "typing…" chat
     /// activity. Set by the PANEL, wired to its `updateActivity`. It must NOT fire on a caret/selection move or
@@ -1081,6 +1083,12 @@ final class ChatRichTextInputNodeImpl: ASDisplayNode, ChatRichTextInputNode {
     public var onPasteMedia: (() -> Bool)?
     // The legacy backend has no native editor; the parser is stored but never consulted.
     public var pastedMarkdownFragmentParser: ((String) -> Document?)?
+    // This backend's delegate handles plain/attributed paste and committed input instead.
+    public var pastedLinkTargetTransformer: ((String) -> String)?
+    public var committedTextTransformer: ((String) -> String)? {
+        get { self.textInputNodeImpl.textView.committedTextTransformer }
+        set { self.textInputNodeImpl.textView.committedTextTransformer = newValue }
+    }
 
     func performFormatAction(_ action: ChatRichTextFormatAction) {}
     // The legacy backend performs no format action, so it has no inert one to report either.

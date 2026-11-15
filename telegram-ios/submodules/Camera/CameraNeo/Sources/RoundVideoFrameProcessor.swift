@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import AVFoundation
 import CoreMedia
 import CoreVideo
@@ -222,8 +223,8 @@ private final class RoundVideoLanczosScaler {
 }
 
 final class RoundVideoFrameProcessor {
-    static let outputWidth = 480
-    static let outputHeight = 480
+    static let outputWidth = 512
+    static let outputHeight = 512
 
     private let device: MTLDevice
     private let mediaQueue: DispatchQueue
@@ -662,7 +663,7 @@ final class RoundVideoFrameProcessor {
         @unknown default:
             rotation = 1.0
         }
-        return SIMD4<Float>(width, height, rotation, source.position == .front ? 1.0 : 0.0)
+        return SIMD4<Float>(width, height, rotation, source.position == .front && ClientSettings.shared.bool("tools.cameraMirrorMode", default: true) ? 1.0 : 0.0)
     }
 
     private static func colorConversion(for source: VideoFrameSource) -> ColorConversion {

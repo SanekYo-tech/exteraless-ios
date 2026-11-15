@@ -1,4 +1,5 @@
 import Foundation
+import ExteralessCore
 import LottieSettings
 import UIKit
 import Display
@@ -348,7 +349,7 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
             self.webView.load(request)
         }
         
-        self.webView.allowsBackForwardNavigationGestures = true
+        self.exteralessGestures = ExteralessBrowserGestures(webView: self.webView)
         self.webView.scrollView.delegate = self
         self.webView.scrollView.clipsToBounds = false
 
@@ -366,6 +367,7 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
         self.addSubview(self.webView)
         
         self.webView.disablesInteractiveTransitionGestureRecognizerNow = { [weak self] in
+            if ClientSettings.shared.bool("chats.disableInAppBrowserGestures") { return true }
             if let self, self.webView.canGoBack {
                 return true
             } else {
@@ -399,6 +401,8 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
         fatalError("init(coder:) has not been implemented")
     }
     
+    private var exteralessGestures: ExteralessBrowserGestures?
+
     deinit {
         self.webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.title))
         self.webView.removeObserver(self, forKeyPath: #keyPath(WKWebView.url))
