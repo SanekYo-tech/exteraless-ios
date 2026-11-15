@@ -94,7 +94,7 @@ final class NativeServiceRemediationTests: XCTestCase {
     func testRetiringWorkerCanRunProductionCleanupRouteWithoutActiveOwner() async throws {
         let atUnload = NativeServiceReviewBox<(@Sendable () throws -> Void)?>(nil)
         let fixture = try await fixture(onScript: { _, source in
-            if source.hasPrefix("_exteraless_runtime.unload_json(") { try atUnload.value?() }
+            if source == "_exteraless_runtime.unload()" { try atUnload.value?() }
             return nil
         })
         let provider = fixture.provider
