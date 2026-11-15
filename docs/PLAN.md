@@ -57,7 +57,7 @@ Telegram-iOS 13.1.1 (Swift/ObjC, Bazel)
 **и Kotlin**; прежние 159 shim-полей не являются полным списком native функций.
 Проверенные snapshots, открытые review findings и текущие передачи общих файлов:
 [wave-2/progress.md](wave-2/progress.md). Последний полный Linux gate —
-`43759513734 / 1880b663`: **704 Core + 180 Host + 30 Hooks**.
+`43764252538 / aca0eb38`: **712 Core + 180 Host + 30 Hooks**.
 Полный runtime/SDK gate **43743252038 / e16f3808 GREEN**: три bounded native SDK
 процесса, iOS simulator и unsigned device probe. Новая Telegram IPA и UIKit
 XCTest/recordings проходят отдельную приёмку.

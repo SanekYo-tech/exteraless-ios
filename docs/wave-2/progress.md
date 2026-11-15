@@ -1,4 +1,4 @@
-# Полная волна — точка стыковки 15.11.2026
+# Полная волна — точка стыковки 16.11.2026
 
 ## Текущая точка
 
@@ -6,20 +6,27 @@
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **1880b663**: reset fixture registers real DialogFeatures; reset implementation d1df6ad6, bubble fix590ce05b |
+| HEAD | **aca0eb38**: reset post-commit retry guard +2Corefixtures; search6deltaGREEN на4bd2f7e3 |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
-| Последний разобранный Linux | **43759513734 / 1880b663 GREEN:704 Core /180 Host /30 Hooks** (12.321/6.236/0.654s); Python baseline1af:363/23skip |
+| Последний разобранный Linux | **43764252538 / aca0eb38 GREEN:712 Core /180 Host /30 Hooks** (14.319/5.507/0.749s); Python baseline1af:363/23skip |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
 | Native XCTest / UIKit | **1f97255c** публикует frozen delta: 36 labels / 85 sources / 88 classes / 410 методов, записи **3+3+2**; execution/frames ожидаются |
-| Полная IPA | **43758245026 / 590ce05b выполняется**; пять bubble diagnostics исправлены в source |
+| Полная IPA | **43761767575 / f05473ea выполняется**; Bubble прошёл, PeerInfo unused-result correction проверяется |
 | Последняя проверенная Telegram IPA | **build23 / 43635233046 / 68bb1adf** |
 
-**Активен только IPA watcher:** `sh_1e0f1375a0010JR11YiBIZovmA`
-(`ipa-590ce05b-watch-2.log`). Core/Compat43759513734 GREEN; егоwatcherзавершён. Не poll.
+**Активен только IPA watcher:** 43761767575 — `sh_1e10e81bc001WehODDwluZmbGo`
+(`ipa-f05473ea-watch-resumed-1.log`, до3ограниченных retries только transport errors).
+Первый watcher f05473ea завершился поTLS handshake timeout; GitHub подтвердил
+`in_progress`, сам build не перезапускался. 43758245026 завершилась на unused rawHeight вPeerInfo;
+исправленоf05473ea. Core/Compat43759513734 GREEN; егоwatcherзавершён. Не poll.
 ПервыйIPAwatcher590ce05bоборвалсяпоTLS timeout; GitHubподтвердилin_progress,
 jobнеперезапускался. ResetCI43758843590compiled/ran,единственныйfailedmethodне
 регистрировалDialogFeatures(145вместо148keys);1880b663добавляетреальнуюгруппу,
 сохраняя148иexactunavailableassertions. Productionresolverнеизменён.
+
+SearchCI43763528246 compiled/ran; одинfixture ошибочно читалJSONпослеодной
+регистрациисхемы. 4bd2f7e3создаётреальныйoverrideчерезsetPublicдоfilebaseline,
+сохраняявсеschemaABA/неизменностьбайтовassertions; productiondeltaотсутствует.
 Bubble590ce05b сохраняет native comment-condition и timestamp того жеforwardInfo;
 Core/Compat43757030337 GREEN остаётся687/180/30 baselineдоreset17.
 43756548501 compiledCore иупаланатолькоодномtest:fixtureлокализовалаоднимзаголовком
@@ -77,20 +84,34 @@ join опубликован в `8b726b75`: обычная регенерация
 
 ### Активные исправления конкретных SDK/route findings
 
-**Последние реальные blockers из независимого follow-up:**
+**Состояние последних review findings:**
+- Независимо source-closed: Search R1–R5, Reset RSR01–02, Custom MCA-F01/F02
+  и восемь ранее проверенных SDK контрпримеров. Native/render acceptance pending.
+- Reset RSR01–02:2P2 (`reviews/settings-reset-source-closure.md`) — cancelled-pop
+  preview recovery и post-commit same-payload restoration перед retry. Fixesготовы;
+  Coreaca0eb38вCI(19resetmethods), UIViewDidAppear recoveryвworkingtree.
+  **Независимоеsource-closureполучено:** `reviews/settings-reset-rsr-closure.md`.
+  Все19Coreметодов исполнены в43764252538/aca0eb38 GREEN.
+  Nativegateowner подключает10fresh Display cases какотдельныйrecording supplement,
+  сохраняяbaseline8/3+3+2 и30sнакаждыйпроцесс.
 - Trust secondary permissions:3P2 S1–S3 (`reviews/plugin-trust-level-source-closure.md`)
   — TL external media.files, deferred UI link.intents и late-grant Share.files.
-  Исправляет `ses_e1f70f8b3ffeUtL1662l0wpYzD`: полный набор зависимостей при admission,
-  irreversible permission predicates через подготовку/открытие/доставку callbacks.
+  Consumer fixesготовы; RuntimeclassifyShareFile+BUILD3hunksAPPLIED. Полный набор
+  зависимостей capturedприadmission, carriedчерезprep/open/callback. Повторноеreview
+  `ses_e1f1c511cffeeQHqwH0UJjDrme` → `plugin-trust-secondary-closure.md`.
 - SettingsSearch MS-ROUTE-01:5P2sourcewitnessesR1–R5(`settings-search-source-closure.md`)
   — launchconsumer-before-intents,pendingURLsessionABA,schemaeventABA,defaultRoot
-  nilauthorityfallback,explicitclassqualification. Searchownerисправляетвappliedsource;
-  разрешёнузкийprocess-localCoredefinitionversionmetadataбезсменыfile/CASformat.
+  nilauthorityfallback,explicitclassqualification. Production fixesAPPLIED19paths;
+  Core16+6fixturesGREEN4bd2f7e3. **Независимоеsource-closureR1–R5получено**:
+  `reviews/settings-search-r1-r5-closure.md`; в этихпятиcounterexamplesнетP1/P2.
 - Archive GAP01:3P1 (`reviews/elyx-archive-source-closure.md`) — cached.pyc filenames,
   immutable/code-protected execution, fd/nofollow extraction/cleanup. Archiveowner
   исправляетдоsourcefreeze; новыйarchiveкодНЕвключёнвпроверяемыйcommit.
 - ManagerCustom/alias:2P2 (`reviews/manager-custom-alias-source-closure.md`) —
-  callbacksnapshot refreshдоnativecommit иrootclickобгоняетinlineFIFO; ownerисправляет.
+  callbacksnapshot refreshдоnativecommit иrootclickобгоняетinlineFIFO. Fixesполучены:
+  commitACK +единыйinline/rootFIFO;17sharedpostimagesAPPLIED,10ownedpinsсовпали.
+  15PythoncasesPASS,7newnativecasespending. **Независимоеsource-closureполучено:**
+  `reviews/manager-custom-ordering-closure.md`,5focusedPythoncasesPASS.
 - NativeElyxdevelopercommand ingress: P2;8остальныхSDKcounterexamplesclosedsource.
   Developerownerделаетnativeworker-routing, файловыеchangesдолжныопиратьсяна
   исправленнуюarchiveFD/manifestauthority;онуведомлёнобэтихP1.
@@ -117,7 +138,7 @@ Coordinator затемAPPLIEDпоследнийSearch Tests/Exteraless/BUILDexpo
 Reset scopes readyиCorecommittedd1df6ad6:3original scopes,17fixtures,publiconeCAS,
 explicitcredentialsteps/retryprogress. КоординаторAPPLIEDRootupdate/clear/registration,
 BUILDfingerprints иOriginalother.resetSettings→general.settingsResetpreview route.
-Независимоеreview — `ses_e21807247ffeFnULrI55blC3CT`, settings-reset-source-closure.md.
+Независимоеreview `ses_e21807247ffeFnULrI55blC3CT` завершено: дваRSR findings выше.
 UI/RuntimeWIP sourcepins ждутфинальногокоординаторскогоregeneration.
 
 | Scope | Owner / границы файлов |
@@ -137,6 +158,13 @@ newPluginDeveloperBridgeExtension иRuntimecomposition; общиеfilesещёwor
 Listenerfixturecompile/run budgets120/10с, process-group cleanup. СтарыйWindowsC
 fixture подтверждаетhandleidentity, не актуальныйC-ownerABI; новыйMacgateобязателен.
 Native socket Elyx live-sync остаётся explicit отдельным маршрутом.
+
+16.11 native Elyx routing/candidate hdo получен,14sharedhunks APPLIEDкоординатором:
+Hosttarget/consentcapture,staticdescriptorinspection,newownerloadretention,
+Runtimeingress иtruthfulok=falseprotocol. РеальныйFDprovider+3archivehooksвработе;
+`native-elyx-developer-remediation.md:142–206` задаётточныйcontract. Покаprovider
+неподключён, compare/changesвозвращаютServiceUnavailableдоstaging. Владельцы
+архива/developerсогласовываютissueddescriptor/source-byteauthorityбезpathfallback.
 
 Direct hook owner hdo получен: Python6/6на3.12и3.14 среальнымCdispatcher.
 Coordinator APPLIEDврабочемдереве `hook_priority_json` sendmetadata, Host

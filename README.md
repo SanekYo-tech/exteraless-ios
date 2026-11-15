@@ -86,8 +86,8 @@ commit `68bb1adf`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exter
 commit `e16f3808` — **GREEN**, включая три bounded native SDK-процесса и iOS probes.
 Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
 
-Проверенный Linux Core-срез: [43759513734](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43759513734),
-`1880b663`: **704 Core + 180 Host + 30 Hooks**. SDK Config: **276 реализовано,
+Проверенный Linux Core-срез: [43764252538](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43764252538),
+`aca0eb38`: **712 Core + 180 Host + 30 Hooks**. SDK Config: **276 реализовано,
 0 заблокировано, 32 явно неподдерживаемых API**. Полная сборка новой IPA и UIKit
 приёмка продолжаются; актуальные результаты и владение файлами —
 [docs/wave-2/progress.md](docs/wave-2/progress.md).

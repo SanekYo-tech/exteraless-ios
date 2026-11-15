@@ -11,8 +11,8 @@
   [Независимая сверка](wave-2/runtime-native-acceptance-20.md) — **PASS**:680/180/30 tests,
   включая9/9 atomic Ghost tests, три SDK child,219/169/41 C calls,2/2 terminal payload cleanup,
   source fingerprints и56 unsigned arm64 Mach-O диагностической IPA совпали.
-- **[Linux43759513734](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43759513734)
-  на `1880b663`: 704 Core + 180 Host + 30 Hooks PASS.** Search и reset Core fixtures
+- **[Linux43764252538](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43764252538)
+  на `aca0eb38`: 712 Core + 180 Host + 30 Hooks PASS.** Search и reset Core fixtures
   включены. Darwin storage aliases,
   UTF-16 scalar boundaries и async-fixture исправления прошли последующий Mac gate.
 - SDK Config: **276 implemented / 0 blocked / 32 unsupported**,308 API;
