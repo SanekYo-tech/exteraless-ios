@@ -43,11 +43,18 @@ final class ExteralessPillHeaderView: UIView, ExteralessPillHeader {
         self.context = context; self.open = open
         self.runtime = ExteralessPillRuntimes.get(context: context)
         super.init(frame: .zero)
-        self.button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
+        var configuration = UIButton.Configuration.plain()
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 38, bottom: 0, trailing: 16)
+        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.preferredFont(forTextStyle: .subheadline)
+            return attributes
+        }
+        self.button.configuration = configuration
         self.button.titleLabel?.adjustsFontForContentSizeCategory = true
         self.button.titleLabel?.lineBreakMode = .byTruncatingTail
         self.button.layer.cornerRadius = 18
-        self.button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 38, bottom: 0, right: 16)
         self.button.addTarget(self, action: #selector(self.pressed), for: .touchUpInside)
         self.button.accessibilityIdentifier = "exteraless.pill.current"
         self.addSubview(self.button)
@@ -137,7 +144,6 @@ final class ExteralessPillHeaderView: UIView, ExteralessPillHeader {
         let frame = CGRect(x: leading, y: floor((self.button.bounds.height - 20) / 2), width: 20, height: 20)
         self.icon.frame = frame; self.spinner.frame = frame; self.ring.frame = frame
         self.ring.path = UIBezierPath(ovalIn: CGRect(x: 2, y: 2, width: 16, height: 16)).cgPath
-        self.button.contentEdgeInsets = self.effectiveUserInterfaceLayoutDirection == .rightToLeft ? UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 38) : UIEdgeInsets(top: 0, left: 38, bottom: 0, right: 16)
     }
     private func reloadSettings() {
         guard self.runtime.lease.isValid else { self.invalidate(); return }
@@ -195,9 +201,14 @@ final class ExteralessPillHeaderView: UIView, ExteralessPillHeader {
         self.ring.isHidden = model.progress == nil || model.phase == .loading
         CATransaction.begin(); CATransaction.setDisableActions(true); self.ring.strokeEnd = CGFloat(model.progress ?? 0); CATransaction.commit()
         if model.phase == .loading { self.spinner.startAnimating() } else { self.spinner.stopAnimating() }
+        let updateTitle = {
+            var configuration = self.button.configuration ?? .plain()
+            configuration.title = model.displayText
+            self.button.configuration = configuration
+        }
         if changed && animated && !UIAccessibility.isReduceMotionEnabled {
-            UIView.transition(with: self.button, duration: 0.16, options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction], animations: { self.button.setTitle(model.displayText, for: .normal) })
-        } else { self.button.setTitle(model.displayText, for: .normal) }
+            UIView.transition(with: self.button, duration: 0.16, options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction], animations: updateTitle)
+        } else { updateTitle() }
     }
     private func cycle(forward: Bool) {
         guard self.running, !self.savingSelection, let configuration = try? self.runtime.configuration(),
@@ -222,6 +233,9 @@ final class ExteralessPillHeaderView: UIView, ExteralessPillHeader {
     private func updateColors() {
         let color = self.model?.isHighlighted == true ? self.successColor : self.accentColor
         self.button.tintColor = color; self.icon.tintColor = color; self.spinner.color = color; self.ring.strokeColor = color.cgColor
+        var configuration = self.button.configuration ?? .plain()
+        configuration.baseForegroundColor = color
+        self.button.configuration = configuration
         self.button.backgroundColor = color.withAlphaComponent(0.12)
     }
     @objc private func pressed() {

@@ -579,7 +579,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
                     controller.popoverPresentationController?.sourceView = window
                     controller.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
                     if let permit = self.exportPermit {
-                        MainActor.assumeIsolated {
+                        _ = MainActor.assumeIsolated {
                             permit.perform(accountId: self.context.account.id.int64, operation: .presentation) {
                                 if permit.own(controller, presented: true, from: self.controllerInteraction?.controller()) { window.rootViewController?.present(controller, animated: true) }
                             }

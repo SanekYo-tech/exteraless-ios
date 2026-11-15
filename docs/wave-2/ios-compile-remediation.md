@@ -78,3 +78,16 @@ the prior `presentationInterfaceState` before it is assigned, rather than a loca
 of deprecated `contentEdgeInsets`; its14-point horizontal insets and Dynamic Type
 subheadline remain explicit. The normal native frame-size/tap logic remains in place.
 The UIKit frame gate must inspect the actual suggestion control.
+
+## Gallery pass from 43751350772 / 00bf3344
+
+Composer compiled. The dictionary-lookup presentation's `MainActor.assumeIsolated`
+result is now explicitly discarded. Its body still calls the captured export
+permit and presents only inside the admitted/owned-controller block; discarding
+the return does not move presentation outside that guard.
+
+The same deprecated button-inset pattern remained in the new Pill header. It now
+uses directional configuration insets (38 leading /16 trailing), the same Dynamic
+Type subheadline/truncation, native title/color updates and the existing0.16s
+crossfade. Existing `pill-render` expectations cover the affected control; this
+source correction does not itself certify its recorded frames.
