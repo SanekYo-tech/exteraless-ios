@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-posix-host-final-20261116-63eac409",
+  "branch": "ci/elyx-posix-report-20261116-2df0648b",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -27,11 +27,11 @@
     {
       "path": ".github/workflows/compat-tests.yml",
       "origin": "workflow",
-      "raw_sha256": "1070311494e3920aed61972e3fa07984a94b249f9aa79260b8ecf1d31251e40a",
-      "raw_bytes": 5728,
-      "canonical_sha256": "1070311494e3920aed61972e3fa07984a94b249f9aa79260b8ecf1d31251e40a",
-      "canonical_bytes": 5728,
-      "git_blob": "e30a207e2e20566361ab6edb526e8f69c57be85f"
+      "raw_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
+      "raw_bytes": 9687,
+      "canonical_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
+      "canonical_bytes": 9687,
+      "git_blob": "67c2d7ca3cc1b28625a56405388eacd886b98f09"
     },
     {
       "path": "python/bridge/__init__.py",
@@ -1471,5 +1471,14 @@
       "swift_build": 180,
       "swift_test": 30
     }
+  },
+  "reporter_followup": {
+    "parent_verification_commit": "b3212761874998442ff99d8fd027430fb6521900",
+    "captured_utc": "2026-11-15T22:46:14.577021+00:00",
+    "focus": "swift-only",
+    "production_or_test_files_changed": [],
+    "reason": "Native XCTest ran all 53 cases successfully in run 43770534123; serial Swift 6.4 emitted only empty Swift Testing XML, so derive explicitly labeled JUnit from complete native XCTest case events",
+    "expected_cases": 53,
+    "native_commands_unchanged": true
   }
 }

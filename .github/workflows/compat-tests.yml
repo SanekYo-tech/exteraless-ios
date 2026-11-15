@@ -90,22 +90,70 @@ jobs:
         if: always()
         run: |
           python3 -B - <<'PY'
-          import json, os, pathlib, xml.etree.ElementTree as ET
+          import collections, hashlib, json, os, pathlib, re, xml.etree.ElementTree as ET
           root = pathlib.Path(os.environ["EVIDENCE"])
           root.mkdir(parents=True, exist_ok=True)
-          report = root / "host.xml"
-          if not report.exists():
-              (root / "counts.json").write_text('{"error":"Host tests did not produce JUnit"}\n')
-              raise SystemExit("Missing Host JUnit; inspect bounded compiler/test logs")
-          cases = list(ET.parse(report).iter("testcase"))
-          counts = {"tests": len(cases), "failures": sum(c.find("failure") is not None for c in cases),
-                    "errors": sum(c.find("error") is not None for c in cases),
-                    "skipped": sum(c.find("skipped") is not None for c in cases)}
-          counts["passed"] = counts["tests"] - counts["failures"] - counts["errors"] - counts["skipped"]
-          counts["cases"] = [{"class": c.get("classname"), "name": c.get("name"), "seconds": c.get("time")} for c in cases]
+          log = root / "swift-test.log"
+          if not log.exists():
+              (root / "counts.json").write_text('{"error":"Host test command did not produce an XCTest log"}\n')
+              raise SystemExit("Missing Host XCTest log; inspect bounded compiler/test logs")
+          raw = log.read_bytes()
+          text = re.sub(r"\x1b\[[0-9;]*m", "", raw.decode("utf-8", "replace"))
+          suites = ("PluginArchiveDescriptorTests", "PluginArchiveHostTests", "PluginElyxDeveloperTests",
+                    "PluginResourcePathTests", "PluginSendHookPriorityTests", "PluginSettingsPageLeaseTests",
+                    "PluginTrustHostTests", "PluginTrustLevelTests")
+          expected = set()
+          for suite in suites:
+              source = pathlib.Path("swift/PluginHost/Tests/PluginHostTests", suite + ".swift").read_text()
+              expected.update(suite + "." + name for name in re.findall(r"func (test\w+)\(", source)
+                              if name != "testUnsupportedPlatformDoesNotFallBackToPathRecursivePurge")
+          starts = re.findall(r"^Test Case '([A-Za-z0-9_]+\.test[A-Za-z0-9_]+)' started at .+$", text, re.M)
+          finished = re.findall(r"^Test Case '([A-Za-z0-9_]+\.test[A-Za-z0-9_]+)' (passed|failed|skipped) \(([0-9.]+) seconds\)$", text, re.M)
+          summary = re.search(r"^Test Suite 'Selected tests' (passed|failed) at [^\n]+\n\s*Executed (\d+) tests, with (\d+) failures \((\d+) unexpected\) in ([0-9.]+) \([0-9.]+\) seconds", text, re.M)
+          cases = [{"class": name.split(".", 1)[0], "name": name.split(".", 1)[1], "status": status, "seconds": seconds}
+                   for name, status, seconds in finished]
+          counts = {"tests": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
+                    "failures": sum(c["status"] == "failed" for c in cases), "errors": 0,
+                    "skipped": sum(c["status"] == "skipped" for c in cases), "cases": cases,
+                    "provenance": "Native serial XCTest stdout; empty Swift Testing XML is not an XCTest result",
+                    "log_sha256": hashlib.sha256(raw).hexdigest(), "cohort_sha": os.environ["GITHUB_SHA"]}
+          issues = []
+          if len(expected) != 53:
+              issues.append("Frozen ready test inventory is not 53 cases")
+          if collections.Counter(starts) != collections.Counter({name: 1 for name in expected}):
+              issues.append("XCTest start events differ from the exact frozen 53-case inventory")
+          if collections.Counter(name for name, _, _ in finished) != collections.Counter({name: 1 for name in expected}):
+              issues.append("XCTest finish events differ from the exact frozen 53-case inventory")
+          if summary is None:
+              issues.append("Missing complete Selected tests XCTest summary")
+          elif int(summary[2]) != counts["tests"] or int(summary[3]) != counts["failures"] or summary[1] != "passed":
+              issues.append("XCTest suite summary does not confirm a complete passing cohort")
+          counts["report_errors"] = issues
+          counts["seconds"] = summary[5] if summary else None
+          # Swift 6.4 serial XCTest reports case events to stdout. Its separate
+          # Swift Testing XML has zero cases for this XCTest-only target. Preserve
+          # the native log and explicitly identify this lossless JUnit projection.
+          document = ET.Element("testsuites")
+          suite = ET.SubElement(document, "testsuite", name="Selected PluginHost XCTest cases",
+                                tests=str(counts["tests"]), failures=str(counts["failures"]), errors="0",
+                                skipped=str(counts["skipped"]), time=counts["seconds"] or "0")
+          properties = ET.SubElement(suite, "properties")
+          ET.SubElement(properties, "property", name="source", value="swift-test.log native XCTest case events")
+          ET.SubElement(properties, "property", name="source_sha256", value=counts["log_sha256"])
+          ET.SubElement(properties, "property", name="cohort_sha", value=counts["cohort_sha"])
+          for case in cases:
+              item = ET.SubElement(suite, "testcase", classname=case["class"], name=case["name"], time=case["seconds"])
+              if case["status"] == "failed":
+                  ET.SubElement(item, "failure", message="Native XCTest failure; see retained swift-test.log")
+              elif case["status"] == "skipped":
+                  ET.SubElement(item, "skipped")
+          if issues:
+              ET.SubElement(suite, "system-err").text = "\n".join(issues)
+          ET.ElementTree(document).write(root / "host-xctest.xml", encoding="utf-8", xml_declaration=True)
           (root / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
           print(json.dumps({k:v for k,v in counts.items() if k != "cases"}))
-          assert any("testRawOSPathUsesDescriptorAnchorIncludingDarwinRootAlias" in c.get("name", "") for c in cases)
+          assert not issues, issues
+          assert "PluginArchiveDescriptorTests.testRawOSPathUsesDescriptorAnchorIncludingDarwinRootAlias" in expected
           assert counts["passed"] == counts["tests"] == 53 and counts["skipped"] == 0, counts
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
