@@ -7,7 +7,8 @@ import MultiAnimationRenderer
 import Accelerate
 import IOSurface
 
-private final class LoadFrameGroupTask {
+// Internal so native fixtures can control the real decode/completion boundary.
+final class LoadFrameGroupTask {
     let task: () -> () -> Void
     let queueAffinity: Int
 
@@ -24,7 +25,7 @@ private var yuvToRgbConversion: vImage_YpCbCrToARGB = {
     return info
 }()
 
-private final class ItemAnimationContext {
+final class ItemAnimationContext {
     fileprivate final class Frame {
         let frame: AnimationCacheItemFrame
         let duration: Double
@@ -420,12 +421,27 @@ private final class ItemAnimationContext {
 
     private var disposable: Disposable?
     private var displayLink: ConstantDisplayLinkAnimator?
-    private var item: Atomic<AnimationCacheItem>?
+    private final class DecoderState {
+        let item: AnimationCacheItem
+        var generation: Int = 0
+
+        init(item: AnimationCacheItem) { self.item = item }
+    }
+    private var item: Atomic<DecoderState>?
     private var itemPlaceholderAndFrameIndex: (UIImage, Int)?
 
     private var currentFrame: Frame?
     private var loadingFrameTaskId: Int?
     private var nextLoadingFrameTaskId: Int = 0
+    // Main-queue debt includes time reserved by a pending decode. Its completion
+    // subtracts only that reservation; later ticks are never lost or counted twice.
+    private var elapsedDebt: Double = 0.0
+    private var elapsedGeneration: Int = 0
+    private var decoderFailed = false
+    private static let maximumCatchUp = 0.25
+    private static let maximumFrameSteps = 64
+    // Cache durations are serialized as Float32; tolerate their boundary rounding.
+    private static let durationEpsilon = 0.0000001
 
     private(set) var isPlaying: Bool = false {
         didSet {
@@ -449,7 +465,12 @@ private final class ItemAnimationContext {
                     return
                 }
                 if let item = result.item {
-                    strongSelf.item = Atomic(value: item)
+                    strongSelf.item = Atomic(value: DecoderState(item: item))
+                    strongSelf.currentFrame = nil
+                    strongSelf.loadingFrameTaskId = nil
+                    strongSelf.elapsedDebt = 0.0
+                    strongSelf.elapsedGeneration += 1
+                    strongSelf.decoderFailed = false
                 }
                 if let (placeholder, index) = strongSelf.itemPlaceholderAndFrameIndex {
                     strongSelf.itemPlaceholderAndFrameIndex = nil
@@ -467,10 +488,11 @@ private final class ItemAnimationContext {
 
     func setFrameIndex(index: Int, placeholder: UIImage) {
         if let item = self.item {
-            let nextFrame = item.with { item -> AnimationCacheItemFrame? in
-                item.reset()
+            let nextFrame = item.with { state -> AnimationCacheItemFrame? in
+                state.generation += 1
+                state.item.reset()
                 for i in 0 ... index {
-                    let result = item.advance(advance: .frames(1), requestedFormat: .rgba)
+                    let result = state.item.advance(advance: .frames(1), requestedFormat: .rgba)
                     if i == index {
                         return result?.frame
                     }
@@ -479,6 +501,9 @@ private final class ItemAnimationContext {
             }
 
             self.loadingFrameTaskId = nil
+            self.elapsedDebt = 0.0
+            self.elapsedGeneration += 1
+            self.decoderFailed = nextFrame == nil
 
             if let nextFrame = nextFrame, let currentFrame = Frame(frame: nextFrame) {
                 self.currentFrame = currentFrame
@@ -530,7 +555,7 @@ private final class ItemAnimationContext {
 
     func updateIsPlaying() {
         var isPlaying = true
-        if self.item == nil {
+        if self.item == nil || self.decoderFailed {
             isPlaying = false
         }
 
@@ -547,6 +572,10 @@ private final class ItemAnimationContext {
             isPlaying = false
         }
 
+        if !isPlaying {
+            self.elapsedDebt = 0.0
+            self.elapsedGeneration += 1
+        }
         self.isPlaying = isPlaying
     }
 
@@ -555,31 +584,24 @@ private final class ItemAnimationContext {
     }
 
     private func update(advanceTimestamp: Double) -> LoadFrameGroupTask? {
-        guard let item = self.item else {
+        guard let item = self.item, !self.decoderFailed else {
             return nil
         }
 
-        var frameAdvance: AnimationCacheItem.Advance?
-        if self.loadingFrameTaskId == nil {
-            if let currentFrame = self.currentFrame, advanceTimestamp > 0.0 {
-                let divisionFactor = advanceTimestamp / currentFrame.remainingDuration
-                let wholeFactor = round(divisionFactor)
-                if abs(wholeFactor - divisionFactor) < 0.005 {
-                    currentFrame.remainingDuration = 0.0
-                    frameAdvance = .frames(Int(wholeFactor))
-                } else {
-                    currentFrame.remainingDuration -= advanceTimestamp
-                    if currentFrame.remainingDuration <= 0.0 {
-                        frameAdvance = .duration(currentFrame.duration + max(0.0, -currentFrame.remainingDuration))
-                    }
-                }
-            } else if self.currentFrame == nil {
-                frameAdvance = .frames(1)
-            }
+        if advanceTimestamp.isFinite && advanceTimestamp > 0.0 {
+            self.elapsedDebt = min(Self.maximumCatchUp, self.elapsedDebt + min(Self.maximumCatchUp, advanceTimestamp))
         }
+        guard self.loadingFrameTaskId == nil else { return nil }
 
-        if let frameAdvance = frameAdvance, self.loadingFrameTaskId == nil {
+        if let currentFrame = self.currentFrame, self.elapsedDebt + Self.durationEpsilon < currentFrame.remainingDuration {
+            currentFrame.remainingDuration -= self.elapsedDebt
+            self.elapsedDebt = 0.0
+        } else {
             let isInitialFrame = self.currentFrame == nil
+            let reservedElapsed = self.elapsedDebt
+            let elapsedGeneration = self.elapsedGeneration
+            let initialRemaining = self.currentFrame?.remainingDuration
+            let generation = item.with { $0.generation }
             let taskId = self.nextLoadingFrameTaskId
             self.nextLoadingFrameTaskId += 1
 
@@ -589,7 +611,8 @@ private final class ItemAnimationContext {
             return LoadFrameGroupTask(task: { [weak self] in
                 let currentFrame: (frame: Frame, didLoop: Bool)?
                 do {
-                    if let (frame, didLoop) = try item.tryWith({ item -> (AnimationCacheItemFrame, Bool)? in
+                    if let decoded = try item.tryWith({ state -> (AnimationCacheItemFrame, Double, Bool)? in
+                        guard state.generation == generation else { return nil }
                         let defaultFormat: AnimationCacheItemFrame.RequestedFormat
                         if useYuvA {
                             defaultFormat = .yuva(rowAlignment: 1)
@@ -597,18 +620,46 @@ private final class ItemAnimationContext {
                             defaultFormat = .rgba
                         }
 
-                        if let result = item.advance(advance: frameAdvance, requestedFormat: defaultFormat) {
-                            return (result.frame, result.didLoop)
-                        } else {
-                            return nil
+                        func duration(_ frame: AnimationCacheItemFrame) -> Double {
+                            return frame.duration.isFinite && frame.duration > 0.0 ? frame.duration : 1.0 / 60.0
                         }
-                    }), let mappedFrame = Frame(frame: frame) {
-                        currentFrame = (mappedFrame, didLoop)
+                        var elapsed = reservedElapsed
+                        var remaining = initialRemaining ?? 0.0
+                        var frame: AnimationCacheItemFrame?
+                        var didLoop = false
+                        var steps = 0
+                        if initialRemaining == nil {
+                            guard let first = state.item.advance(advance: .frames(1), requestedFormat: defaultFormat) else { return nil }
+                            frame = first.frame
+                            remaining = duration(first.frame)
+                            didLoop = first.didLoop
+                            steps = 1
+                        }
+                        // The cache's .frames(1) advances exactly one real source
+                        // frame. Use each returned duration; its .duration API has
+                        // a separate hidden remainder and no per-call step bound.
+                        while elapsed + Self.durationEpsilon >= remaining && steps < Self.maximumFrameSteps {
+                            elapsed = max(0.0, elapsed - remaining)
+                            guard let next = state.item.advance(advance: .frames(1), requestedFormat: defaultFormat) else { return nil }
+                            frame = next.frame
+                            remaining = duration(next.frame)
+                            didLoop = didLoop || next.didLoop
+                            steps += 1
+                        }
+                        guard let frame else { return nil }
+                        if elapsed + Self.durationEpsilon < remaining {
+                            remaining -= elapsed
+                        }
+                        // Any overflow after 64 real steps is dropped, never
+                        // replayed as an unbounded catch-up on the next callback.
+                        return (frame, remaining, didLoop)
+                    }), let mappedFrame = Frame(frame: decoded.0) {
+                        mappedFrame.remainingDuration = decoded.1
+                        currentFrame = (mappedFrame, decoded.2)
                     } else {
                         currentFrame = nil
                     }
                 } catch {
-                    assertionFailure()
                     currentFrame = nil
                 }
 
@@ -622,6 +673,9 @@ private final class ItemAnimationContext {
                     }
 
                     strongSelf.loadingFrameTaskId = nil
+                    if strongSelf.elapsedGeneration == elapsedGeneration {
+                        strongSelf.elapsedDebt = max(0.0, strongSelf.elapsedDebt - reservedElapsed)
+                    }
 
                     if let currentFrame = currentFrame {
                         strongSelf.currentFrame = currentFrame.frame
@@ -641,6 +695,11 @@ private final class ItemAnimationContext {
                                 }
                             }
                         }
+                    } else {
+                        // A failed decode has no trustworthy new time/index.
+                        strongSelf.decoderFailed = true
+                        strongSelf.elapsedDebt = 0.0
+                        strongSelf.updateIsPlaying()
                     }
                 }
             }, queueAffinity: self.queueAffinity)

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scope": ["PNP-02", "PNP-03"],
+  "review": "docs/wave-2/reviews/portable-navigation-performance.md",
+  "status": "native fixtures supplied; BUILD owner integration and Apple execution pending",
+  "logic_seconds_per_fixture": 30,
+  "runner": "//Tests/Exteraless:Runner",
+  "host": "//Tests/Exteraless:NativeTestHost",
+  "build_handoff": "docs/wave-2/performance-renderer-fixtures-build.patch",
+  "test_configuration": "debug/fastbuild with swift.enable_testing on the production renderer modules; existing rules_swift enables this by default in those modes",
+  "required_sources": {
+    "submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Tests/ToolsDCTRendererTimingTests.swift": "//submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl:ExteralessDCTTimingTests",
+    "submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Tests/ToolsSubcodecRendererTimingTests.swift": "//submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl:ExteralessSubcodecTimingTests"
+  },
+  "fixtures": [
+    {
+      "finding": "PNP-02",
+      "methods": 5,
+      "actual_path": "ItemAnimationContext -> DCTAnimationCacheImpl writer/loadItem -> AnimationCacheItemAccessor.advance(.frames(1))/loadNextFrame -> renderer target pixels",
+      "data": "Five or seven generated 16x16 opaque grayscale frames; real encoded DCT cache in a disposable directory",
+      "checks": ["15 ms + 18 1/3 ms selects actual frame 2", "jittered 30/60 Hz indices and loops", "elapsed while worker and completion are pending", "variable durations and 250 ms/64-step caps", "energy veto rechecked at queued frame delivery"],
+      "dependencies": ["DCTMultiAnimationRendererImpl", "DCTAnimationCacheImpl", "AnimationCache", "MultiAnimationRenderer", "SwiftSignalKit", "ExteralessCore", "UIKit/CoreGraphics/XCTest"]
+    },
+    {
+      "finding": "PNP-03",
+      "methods": 4,
+      "actual_path": "SurfaceGroup -> SCMuxSurface mark/emit rounds -> unchanged SCVideoToolboxDecoder -> decoded pixel crop and target delivery",
+      "reference": "Same real MBS, one mark/emit per source frame, independently decoded with unchanged SCOpenH264Decoder",
+      "data": "Seven generated 16x16 YUV/alpha frames via real SCSprite.extractor; metadata read through real SubcodecAnimationCacheImpl.loadMetadata",
+      "checks": ["30/60 Hz decoded identity, emitted frames and loop boundary", "one final delivery per target per tick", "shared-sprite per-target energy veto", "checkpoint compaction preserves context identity and paused pixels", "250 ms and 64 actual decoder-frame work cap, including dependencies/checkpoints"],
+      "dependencies": ["SubcodecMultiAnimationRendererImpl", "SubcodecAnimationCacheImpl", "MultiAnimationRenderer", "SwiftSignalKit", "SubcodecObjC", "ExteralessCore", "UIKit/CoreGraphics/XCTest"]
+    }
+  ],
+  "common_decoder_or_mux_changes": false,
+  "Core_12_tests_modified": false,
+  "native_executed_here": false,
+  "real_media_account_network_used": false,
+  "ci_or_commit_performed": false
+}

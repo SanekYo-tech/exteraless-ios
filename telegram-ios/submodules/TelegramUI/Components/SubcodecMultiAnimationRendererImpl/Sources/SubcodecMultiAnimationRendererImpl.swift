@@ -1,5 +1,4 @@
 import Foundation
-import ExteralessCore
 import UIKit
 import SwiftSignalKit
 import Display
@@ -18,14 +17,16 @@ private func roundUp(_ numToRound: Int, multiple: Int) -> Int {
     return numToRound + multiple - remainder
 }
 
-private final class SpriteContext {
+// Internal renderer seams are exercised with real local sprites by native tests.
+final class SpriteContext {
     let mbsPath: String
-    let region: SCSpriteRegion
+    var region: SCSpriteRegion
     let targets = Bag<Weak<MultiAnimationRenderTarget>>()
     let metadata: MbsMetadata
 
     var currentFrameIndex: Int = 0
     var remainingDuration: Double = 0.0
+    var hasEmittedFrame = false
 
     var isPlaying: Bool {
         for target in self.targets.copyItems() {
@@ -40,13 +41,12 @@ private final class SpriteContext {
         self.mbsPath = mbsPath
         self.region = region
         self.metadata = metadata
-        if !metadata.frameDurations.isEmpty {
-            self.remainingDuration = metadata.frameDurations[0]
-        }
+        let duration = metadata.frameDurations.first ?? 0.0
+        self.remainingDuration = duration.isFinite && duration > 0.0 ? duration : 1.0 / 60.0
     }
 }
 
-private final class SurfaceGroup {
+final class SurfaceGroup {
     let spriteWidth: Int
     let spriteHeight: Int
 
@@ -54,20 +54,36 @@ private final class SurfaceGroup {
     private(set) var decoder: SCVideoToolboxDecoder?
     private(set) var spriteContexts: [Int: SpriteContext] = [:]
     private var currentMaxSlots: Int = 64
-    private var accumulatedNalData = Data()
-    private var lastDecodedFrame: SCDecodedFrame?
+    // SCVideoToolboxDecoder is a bulk decoder: each call creates a fresh session.
+    // Keep a complete, bounded SPS/PPS/IDR + dependent P-frame window, not P-only
+    // fragments. Existing MuxSurface.resize supplies periodic I_PCM checkpoints.
+    private var streamData = Data()
+    private var streamFrames = 1
+    private var streamOverflowed = false
+    private(set) var lastDecodedFrame: SCDecodedFrame?
+    private(set) var failed = false
+    private(set) var decodedFrameCount = 0
+    private(set) var emittedFrameCount = 0
+    private static let maximumStreamBytes = 32 * 1024 * 1024
+    private static let maximumDecodedBytes = 64 * 1024 * 1024
+    private static let maximumWindowFrames = 8
+    private static let maximumWorkFrames = 64
+    private static let maximumElapsed = 0.25
+    private static let epsilon = 0.0000001
 
-    init(spriteWidth: Int, spriteHeight: Int) {
+    init(spriteWidth: Int, spriteHeight: Int, initialMaxSlots: Int = 64) {
         self.spriteWidth = spriteWidth
         self.spriteHeight = spriteHeight
+        self.currentMaxSlots = max(1, min(maxSlotsLimit, initialMaxSlots))
     }
 
     func ensureInitialized() -> Bool {
+        guard !self.failed else { return false }
         if self.surface != nil {
             return true
         }
         let sink: (Data) -> Void = { [weak self] data in
-            self?.accumulatedNalData.append(data)
+            self?.appendStream(data)
         }
         guard let surface = try? SCMuxSurface.create(
             withSpriteWidth: Int32(self.spriteWidth),
@@ -80,7 +96,9 @@ private final class SurfaceGroup {
         }
         self.surface = surface
 
-        guard let decoder = try? SCVideoToolboxDecoder.createDecoder() else {
+        guard !self.streamOverflowed, self.windowFrameLimit() >= 2,
+              let decoder = try? SCVideoToolboxDecoder.createDecoder() else {
+            self.failed = true
             return false
         }
         self.decoder = decoder
@@ -116,10 +134,6 @@ private final class SurfaceGroup {
     }
 
     private func tryGrow() -> Bool {
-        guard let surface = self.surface, let decoder = self.decoder else {
-            return false
-        }
-
         let newMaxSlots: Int
         if self.currentMaxSlots * 2 <= maxSlotsLimit {
             newMaxSlots = self.currentMaxSlots * 2
@@ -130,24 +144,47 @@ private final class SurfaceGroup {
         }
 
         if self.lastDecodedFrame == nil {
-            self.accumulatedNalData = Data()
-            guard let _ = try? surface.advanceFrame(sink: { [weak self] data in
-                self?.accumulatedNalData.append(data)
-            }) else {
-                return false
-            }
-            if !self.accumulatedNalData.isEmpty {
-                if let frames = try? decoder.decodeStream(self.accumulatedNalData) {
-                    self.lastDecodedFrame = frames.last
-                }
-            }
+            self.tick(advanceTimestamp: 0.0)
         }
+        return self.checkpoint(maxSlots: newMaxSlots)
+    }
 
-        guard let decodedFrame = self.lastDecodedFrame else {
+    private func appendStream(_ data: Data) {
+        guard !self.streamOverflowed, data.count <= Self.maximumStreamBytes - self.streamData.count else {
+            self.streamOverflowed = true
+            return
+        }
+        self.streamData.append(data)
+    }
+
+    private func windowFrameLimit() -> Int {
+        guard let surface = self.surface else { return 0 }
+        let width = Int64(surface.widthMbs) * 16
+        let height = Int64(surface.heightMbs) * 16
+        guard width > 0, height > 0, width <= Int64(Self.maximumDecodedBytes) / height else { return 0 }
+        let frameBytes = width * height * 3 / 2
+        return min(Self.maximumWindowFrames, Int(Int64(Self.maximumDecodedBytes) / max(1, frameBytes)))
+    }
+
+    private func decodeWindow() -> Bool {
+        guard !self.streamOverflowed, let decoder = self.decoder,
+              let frames = try? decoder.decodeStream(self.streamData), frames.count == self.streamFrames,
+              let decoded = frames.last else {
+            self.failed = true
             return false
         }
+        self.lastDecodedFrame = decoded
+        self.decodedFrameCount += frames.count
+        return true
+    }
 
-        self.accumulatedNalData = Data()
+    private func checkpoint(maxSlots: Int) -> Bool {
+        guard !self.failed, let surface = self.surface, let decodedFrame = self.lastDecodedFrame else { return false }
+        // resize compacts slots in old-slot order; preserve the context objects so
+        // target removal callbacks continue to address their current slot.
+        let contexts = self.spriteContexts.keys.sorted().compactMap { self.spriteContexts[$0] }
+        self.streamData.removeAll(keepingCapacity: true)
+        self.streamFrames = 1
         let yData = decodedFrame.y
         let cbData = decodedFrame.cb
         let crData = decodedFrame.cr
@@ -156,7 +193,7 @@ private final class SurfaceGroup {
         let chromaWidth = decodedWidth / 2
 
         guard let resizeResult = try? surface.resize(
-            toMaxSlots: Int32(newMaxSlots),
+            toMaxSlots: Int32(maxSlots),
             yPlane: yData,
             cbPlane: cbData,
             crPlane: crData,
@@ -166,97 +203,124 @@ private final class SurfaceGroup {
             strideCb: Int32(chromaWidth),
             strideCr: Int32(chromaWidth),
             withSink: { [weak self] data in
-                self?.accumulatedNalData.append(data)
+                self?.appendStream(data)
             }
-        ) else {
+        ), resizeResult.regions.count == contexts.count else {
+            self.failed = true
             return false
         }
 
-        if !self.accumulatedNalData.isEmpty {
-            if let frames = try? decoder.decodeStream(self.accumulatedNalData) {
-                self.lastDecodedFrame = frames.last
-            }
-        }
-
         var updatedContexts: [Int: SpriteContext] = [:]
-        for newRegion in resizeResult.regions {
-            let newSlot = Int(newRegion.slot)
-            for (_, context) in self.spriteContexts {
-                if updatedContexts.values.contains(where: { $0 === context }) {
-                    continue
-                }
-                let updated = SpriteContext(mbsPath: context.mbsPath, region: newRegion, metadata: context.metadata)
-                updated.currentFrameIndex = context.currentFrameIndex
-                updated.remainingDuration = context.remainingDuration
-                for target in context.targets.copyItems() {
-                    if let target = target.value {
-                        let _ = updated.targets.add(Weak(target))
-                    }
-                }
-                updatedContexts[newSlot] = updated
-                break
-            }
+        for (context, region) in zip(contexts, resizeResult.regions) {
+            context.region = region
+            updatedContexts[Int(region.slot)] = context
         }
-
         self.spriteContexts = updatedContexts
-        self.currentMaxSlots = newMaxSlots
-        self.accumulatedNalData = Data()
-        return true
+        self.currentMaxSlots = maxSlots
+        guard self.windowFrameLimit() >= 2 else { self.failed = true; return false }
+        return self.decodeWindow()
     }
 
     func tick(advanceTimestamp: Double) {
-        guard let surface = self.surface, let decoder = self.decoder else {
-            return
+        guard !self.failed, let surface = self.surface, self.decoder != nil else { return }
+        let elapsed = advanceTimestamp.isFinite ? max(0.0, min(Self.maximumElapsed, advanceTimestamp)) : 0.0
+        for context in self.spriteContexts.values where context.isPlaying {
+            context.remainingDuration = max(-Self.maximumElapsed, context.remainingDuration - elapsed)
         }
 
-        var anyAdvanced = false
-        var loopedSlots = Set<Int>()
-        for (slot, context) in self.spriteContexts {
-            guard context.isPlaying else {
-                continue
+        struct Progress {
+            let context: SpriteContext
+            var index: Int
+            var remaining: Double
+            var introduced: Bool
+        }
+        func duration(_ context: SpriteContext, _ index: Int) -> Double {
+            guard index >= 0, index < context.metadata.frameDurations.count else { return 1.0 / 60.0 }
+            let value = context.metadata.frameDurations[index]
+            return value.isFinite && value > 0.0 ? value : 1.0 / 60.0
+        }
+        func isDue(_ context: SpriteContext) -> Bool {
+            return !context.hasEmittedFrame || (context.isPlaying && context.remainingDuration <= Self.epsilon)
+        }
+        var changed = Set<ObjectIdentifier>()
+        var introduced = Set<ObjectIdentifier>()
+        var looped = Set<ObjectIdentifier>()
+        var rounds = 0
+        var decodedWork = 0
+
+        while rounds < Self.maximumWorkFrames && self.spriteContexts.values.contains(where: isDue) {
+            if self.streamFrames >= self.windowFrameLimit() {
+                guard decodedWork + 1 < Self.maximumWorkFrames else { break }
+                guard self.checkpoint(maxSlots: self.currentMaxSlots) else { return }
+                decodedWork += 1
             }
-            if advanceTimestamp > 0.0 {
-                let step = ToolsPerformancePolicy.advanceFrames(frameCount: context.metadata.frameCount,
-                    frameIndex: context.currentFrameIndex, remainingDuration: context.remainingDuration,
-                    durations: context.metadata.frameDurations, elapsed: advanceTimestamp)
-                for _ in 0..<step.frames {
-                    surface.advanceSprite(atSlot: Int32(slot))
+            // Each bulk decode includes its dependency window. Count those real
+            // decoder frames too, rather than budgeting only a Swift counter.
+            let capacity = min(self.windowFrameLimit() - self.streamFrames,
+                min(Self.maximumWorkFrames - rounds, Self.maximumWorkFrames - decodedWork - self.streamFrames))
+            guard capacity > 0 else { break }
+            var progress = self.spriteContexts.mapValues { context in
+                Progress(context: context, index: context.currentFrameIndex,
+                    remaining: context.remainingDuration, introduced: context.hasEmittedFrame)
+            }
+            var emitted = 0
+            for _ in 0..<capacity {
+                let due = progress.keys.sorted().filter { slot in
+                    guard let value = progress[slot] else { return false }
+                    return !value.introduced || (value.context.isPlaying && value.remaining <= Self.epsilon)
                 }
-                context.currentFrameIndex = step.index
-                context.remainingDuration = step.remainingDuration
-                anyAdvanced = anyAdvanced || step.frames > 0
-                if step.didLoop { loopedSlots.insert(slot) }
-            } else {
-                surface.advanceSprite(atSlot: Int32(slot))
-                anyAdvanced = true
+                if due.isEmpty { break }
+                for slot in due { surface.advanceSprite(atSlot: Int32(slot)) }
+                let before = self.streamData.count
+                guard (try? surface.emitFrameIfNeeded(sink: { [weak self] data in self?.appendStream(data) })) != nil,
+                      !self.streamOverflowed, self.streamData.count > before else {
+                    self.failed = true
+                    return
+                }
+                self.streamFrames += 1
+                self.emittedFrameCount += 1
+                rounds += 1
+                emitted += 1
+                // advanceSprite only marks. Exactly this successful emit consumed
+                // one source frame for each marked slot (emit, then advance).
+                for slot in due {
+                    guard var value = progress[slot] else { continue }
+                    let id = ObjectIdentifier(value.context)
+                    if value.introduced {
+                        // Float32 boundary tolerance, not accumulated drift.
+                        if value.remaining > 0.0 { value.remaining = 0.0 }
+                        value.index += 1
+                        if value.index >= value.context.metadata.frameCount {
+                            value.index = 0
+                            if value.context.metadata.frameCount > 1 { looped.insert(id) }
+                        }
+                        value.remaining += duration(value.context, value.index)
+                    } else {
+                        value.introduced = true
+                        value.index = 0
+                        introduced.insert(id)
+                    }
+                    changed.insert(id)
+                    progress[slot] = value
+                }
+            }
+            guard emitted > 0 else { break }
+            guard self.decodeWindow() else { return }
+            decodedWork += self.streamFrames
+            for value in progress.values {
+                value.context.currentFrameIndex = value.index
+                value.context.remainingDuration = value.remaining
+                value.context.hasEmittedFrame = value.introduced
             }
         }
-
-        if !anyAdvanced {
-            return
+        // Discard excess stalled time at the work bound. Never advance indices for
+        // frames which the mux/decoder did not actually process.
+        for context in self.spriteContexts.values where context.hasEmittedFrame && context.remainingDuration <= Self.epsilon {
+            context.remainingDuration = duration(context, context.currentFrameIndex)
         }
+        guard !changed.isEmpty, let decodedFrame = self.lastDecodedFrame else { return }
 
-        self.accumulatedNalData = Data()
-        guard let _ = try? surface.emitFrameIfNeeded(sink: { [weak self] data in
-            self?.accumulatedNalData.append(data)
-        }) else {
-            return
-        }
-
-        guard !self.accumulatedNalData.isEmpty else {
-            return
-        }
-
-        guard let frames = try? decoder.decodeStream(self.accumulatedNalData) else {
-            return
-        }
-        guard let decodedFrame = frames.last else {
-            return
-        }
-
-        self.lastDecodedFrame = decodedFrame
-
-        for (slot, context) in self.spriteContexts {
+        for context in self.spriteContexts.values where changed.contains(ObjectIdentifier(context)) {
             let region = context.region
             let colorRect = region.colorRect
             let alphaRect = region.alphaRect
@@ -275,11 +339,11 @@ private final class SurfaceGroup {
                 frameHeight: frameHeight
             )
 
-            let didLoop = loopedSlots.contains(slot)
+            let didLoop = looped.contains(ObjectIdentifier(context))
 
             for targetRef in context.targets.copyItems() {
                 if let target = targetRef.value {
-                    guard advanceTimestamp <= 0.0 || target.contents == nil || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
+                    guard introduced.contains(ObjectIdentifier(context)) || target.contents == nil || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
                     if let cgImage = cgImage {
                         target.transitionToContents(cgImage, didLoop: didLoop)
                     }
@@ -293,6 +357,7 @@ private final class SurfaceGroup {
     }
 
     var hasPlayingSprites: Bool {
+        if self.failed { return false }
         for (_, context) in self.spriteContexts {
             if context.isPlaying {
                 return true
@@ -445,8 +510,6 @@ public final class SubcodecMultiAnimationRendererImpl: MultiAnimationRenderer {
                 let targetIndex = spriteContext.targets.add(Weak(target))
                 target.numFrames = metadata.frameCount
 
-                let slot = Int(spriteContext.region.slot)
-
                 let deinitIndex = target.deinitCallbacks.add { [weak self, weak surfaceGroup] in
                     Queue.mainQueue().async {
                         guard let strongSelf = self, let surfaceGroup = surfaceGroup else {
@@ -454,7 +517,7 @@ public final class SubcodecMultiAnimationRendererImpl: MultiAnimationRenderer {
                         }
                         spriteContext.targets.remove(targetIndex)
                         if spriteContext.targets.isEmpty {
-                            surfaceGroup.removeSprite(slot: slot)
+                            surfaceGroup.removeSprite(slot: Int(spriteContext.region.slot))
                             if surfaceGroup.isEmpty {
                                 strongSelf.surfaceGroups.removeValue(forKey: sizeKey)
                             }
@@ -477,7 +540,7 @@ public final class SubcodecMultiAnimationRendererImpl: MultiAnimationRenderer {
                     }
                     spriteContext.targets.remove(targetIndex)
                     if spriteContext.targets.isEmpty {
-                        surfaceGroup.removeSprite(slot: slot)
+                        surfaceGroup.removeSprite(slot: Int(spriteContext.region.slot))
                         if surfaceGroup.isEmpty {
                             strongSelf.surfaceGroups.removeValue(forKey: sizeKey)
                         }
@@ -619,5 +682,6 @@ public final class SubcodecMultiAnimationRendererImpl: MultiAnimationRenderer {
                 group.tick(advanceTimestamp: frameInterval)
             }
         }
+        self.updateIsPlaying()
     }
 }

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "scope": ["PNP-02", "PNP-03"],
+  "review": "docs/wave-2/reviews/portable-navigation-performance.md",
+  "reported_native_baseline": "4476f853",
+  "reported_Core_test_baseline": "d8cbdaca",
+  "status": "renderer source fixes and native fixtures supplied; native execution pending",
+  "source_sha256": {
+    "telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Sources/DCTMultiAnimationRendererImpl.swift": "94eda197066a008fe3ba01d554fe1598bc8c25b29823d4e8fd63d6dc5865b2ef",
+    "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Sources/SubcodecMultiAnimationRendererImpl.swift": "43def3873f4c647fbdbc821c98cbcbcbbb4ef2170f3dadd3a779ac178e3a5569",
+    "telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Tests/ToolsDCTRendererTimingTests.swift": "58f8f34444ad529676490698237c653f3961a1cea3c0f2b3f6ebc676d7b39175",
+    "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Tests/ToolsSubcodecRendererTimingTests.swift": "2f51c9dae756c16e641d5939702b938f84f351a3a74dbb97678df39a94ef8687"
+  },
+  "preserved_sha256": {
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsPerformancePolicyTests.swift": "cb24284049116a67f5b5e1ffa1d55cf03ff15ff2ea2438616f937dbcf8bbae98",
+    "telegram-ios/submodules/TelegramUI/Components/DCTAnimationCacheImpl/Sources/DCTAnimationCacheImpl.swift": "844a1231151fc4d6c2ee38b14a5512354655479bc7dabaa7815f5ded5edfd024",
+    "telegram-ios/third-party/subcodec/Sources/SubcodecObjC/SCVideoToolboxDecoder.mm": "7896d657299ee021b9ce25f6918302fb1be6cbd51b2e506716146c32ead341fd",
+    "telegram-ios/third-party/subcodec/src/mux_surface.cpp": "b7756bdb74bc364000cf3f674952ae5fad52581eba92704264f295f725d84dec"
+  },
+  "limits": {
+    "elapsed_catch_up_seconds": 0.25,
+    "DCT_actual_source_reads_per_request": 64,
+    "Subcodec_actual_decoded_frames_per_tick_including_dependencies": 64,
+    "Subcodec_mux_rounds_per_tick": 64,
+    "Subcodec_maximum_dependency_window_frames": 8,
+    "Subcodec_maximum_stream_bytes": 33554432,
+    "Subcodec_maximum_decoded_plane_bytes": 67108864
+  },
+  "native_fixture_map": "docs/wave-2/performance-native-fixtures.json",
+  "pending_BUILD_and_map_patch": "docs/wave-2/performance-renderer-fixtures-build.patch",
+  "authored_native_tests": {"DCT": 5, "Subcodec": 4},
+  "source_checks": {"delimiters": "pass", "scoped_diff_check": "pass", "fixture_BUILD_map_dry_run": "pass; in-memory only", "common_source_hashes": "unchanged"},
+  "native_compile_or_execution_performed": false,
+  "common_decoder_fork_or_fps_expansion": false,
+  "commit_CI_real_media_account_network_operations": false
+}
