@@ -294,3 +294,9 @@ fingerprint patterns. The Original Other-page `resetSettings/resetSettingsRow`
 search alias now opens the registered `general.settingsReset` preview page; the
 link itself performs no reset. Native scope selection and confirmation remain on
 that page. This is a source join, pending the new Core/native execution gates.
+
+Linux43758843590/d1df6ad6 compiled and ran the cohort. Its sole failing method had
+omitted `DialogFeatures.definitions` from the fixture's simulated Root registration,
+so three archive-policy keys were absent (145 instead of148). The fixture now
+registers that actual group; the148-key and exact unavailable-field assertions are
+retained. No reset resolver or production scope was changed for this correction.

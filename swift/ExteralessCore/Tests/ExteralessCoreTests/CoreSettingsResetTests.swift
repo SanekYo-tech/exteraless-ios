@@ -74,7 +74,7 @@ final class CoreSettingsResetTests: XCTestCase {
         let registered = definitions + AppearanceFeatures.definitions + ChatFeatures.definitions + AIFeatures.definitions
             + AINativeVisibilityPolicy.definitions + PlayerFeatures.definitions + PlayerFeatures.galleryDefinitions
             + FeedFeatures.definitions + PillFeatures.definitions
-            + StickerFeatures.definitions + IdentityFeatures.definitions + PrivacyExtrasFeatures.definitions
+            + StickerFeatures.definitions + IdentityFeatures.definitions + PrivacyExtrasFeatures.definitions + DialogFeatures.definitions
         let selected = try CoreSettingsResetPreview.resolve(scope: .exteraless, snapshot: self.snapshot(registered))
         XCTAssertEqual(selected.keys.count, 148)
         XCTAssertEqual(Set(selected.unavailable.map(\.source.symbol)), ["GeneralConfig.showNagramSettings", "AppearanceConfig.centerTitle",
