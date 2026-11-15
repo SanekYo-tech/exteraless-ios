@@ -955,11 +955,11 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                         accountPeerId: authorizedState.peerId, snapshot: retentionSnapshot)
                                     let recovery = ExteralessAccountRetentionRecovery(accountRecordId: id.int64,
                                         owner: retentionScope.account, canResetArchive: !supplementary)
-                                    return exteralessAccountRetentionStartup(recovery: recovery, prepare: { readiness, startup in
+                                    return exteralessAccountRetentionStartup(recovery: recovery, prepare: { readiness, startup -> Signal<Network, NoError> in
                                         postbox.transaction { transaction -> String? in
                                             return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
                                         }
-                                        |> mapToSignal { phoneNumber in
+                                        |> mapToSignal { phoneNumber -> Signal<Network, NoError> in
                                             guard startup.isCurrent, retentionScope.account.isReadinessCurrent(readiness) else { return .complete() }
                                             return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, networkEngine: networkEngine, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
                                         }

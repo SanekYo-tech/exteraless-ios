@@ -71,3 +71,11 @@ Paths are relative to repository root; hashes describe raw working-tree bytes.
   fixtures. The original failed run is diagnostic evidence, not a build of this fix.
 
 No CI, commit, real account, network startup or new enum/model-only test was run.
+
+## Subsequent compiler result: 43743182219 / e16f3808
+
+The three original diagnostics passed. The compiler next required the generic
+`Prepared` type of the authorized retention startup chain. Its `prepare` closure
+and nested `mapToSignal` now explicitly return `Signal<Network, NoError>`.
+Readiness/transfer checks and the optional Account construction remain the same;
+the correction supplies type context rather than a cast or fallback result.
