@@ -105,3 +105,10 @@ LocationUI compiled. Floating-compose visibility now requires the optional prima
 chat-list context to explicitly allow it. A missing/not-yet-installed context keeps
 the control absent, consistent with the policy's initial false state; preview/search
 suppression and the native layout/action remain in place.
+
+## PeerInfo pass from 43758245026 / 590ce05b
+
+Bubble compiled. The PeerInfo header retained an unused `rawHeight` declaration
+and two side-effect-free assignments after adopting expanded-avatar geometry.
+Those three lines are removed; the consumed height/background calculations still
+use `expandedAvatarGeometry` and the native collapsed-layout branch.

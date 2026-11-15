@@ -2054,17 +2054,14 @@ final class PeerInfoHeaderNode: ASDisplayNode {
             panelWithAvatarHeight = balanceBottom + contentBelowBalance - navigationHeight - existingHeaderExtension
         }
 
-        let rawHeight: CGFloat
         let height: CGFloat
         let maxY: CGFloat
         let backgroundHeight: CGFloat
         if self.isAvatarExpanded {
-            rawHeight = expandedAvatarHeight
             height = CGFloat(expandedAvatarGeometry.headerHeight)
             maxY = height - 98.0
             backgroundHeight = height
         } else {
-            rawHeight = navigationHeight + panelWithAvatarHeight
             var expandablePart: CGFloat = panelWithAvatarHeight - contentOffset
             if self.isSettings || self.isMyProfile {
                 expandablePart += 20.0
