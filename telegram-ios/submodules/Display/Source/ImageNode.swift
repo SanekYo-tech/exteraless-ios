@@ -129,6 +129,9 @@ public func ==(lhs: ImageCorners, rhs: ImageCorners) -> Bool {
     return lhs.topLeft == rhs.topLeft && lhs.topRight == rhs.topRight && lhs.bottomLeft == rhs.bottomLeft && lhs.bottomRight == rhs.bottomRight && lhs.curve == rhs.curve
 }
 
+private final class ImageNodeTransitionLayer: CALayer {
+}
+
 public class ImageNode: ASDisplayNode {
     private var disposable = MetaDisposable()
     private let hasImage: ValuePromise<Bool>?
@@ -185,7 +188,8 @@ public class ImageNode: ASDisplayNode {
                     if let image = next?.cgImage {
                         if animate, let previousContents = strongSelf.contents, !wasSynchronous {
                             strongSelf.contents = image
-                            let tempLayer = CALayer()
+                            let tempLayer = ImageNodeTransitionLayer()
+                            tempLayer.name = "ImageNode.Crossfade"
                             tempLayer.contents = previousContents
                             tempLayer.frame = strongSelf.layer.bounds
                             strongSelf.layer.addSublayer(tempLayer)
@@ -221,6 +225,17 @@ public class ImageNode: ASDisplayNode {
     
     public override func clearContents() {
         super.clearContents()
+
+        // Semantic image replacement also retires already-running crossfades.
+        // Each completion owns only its layer, so a late completion cannot remove
+        // a new image transition or an unrelated overlay on this node.
+        if self.isNodeLoaded {
+            for case let transition as ImageNodeTransitionLayer in self.layer.sublayers ?? [] {
+                transition.removeAllAnimations()
+                transition.contents = nil
+                transition.removeFromSuperlayer()
+            }
+        }
         
         self.contents = nil
         self.disposable.set(nil)
@@ -235,4 +250,3 @@ public class ImageNode: ASDisplayNode {
         }
     }
 }
-

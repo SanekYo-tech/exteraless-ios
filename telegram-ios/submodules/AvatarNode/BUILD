@@ -36,10 +36,14 @@ swift_library(
     name = "ExteralessAppearanceAvatarTestsLib",
     testonly = True,
     module_name = "ExteralessAppearanceAvatarTests",
-    srcs = ["Tests/AppearanceAvatarRenderingTests.swift"],
+    srcs = [
+        "Tests/AppearanceAvatarRenderingTests.swift",
+        "Tests/AvatarImageTransitionResetTests.swift",
+    ],
     copts = ["-swift-version", "6"],
     deps = [
         ":AvatarNode",
+        "//submodules/Display:Display",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/TelegramCore:TelegramCore",

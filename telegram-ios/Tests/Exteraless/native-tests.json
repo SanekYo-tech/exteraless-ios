@@ -70,6 +70,7 @@
     "submodules/TelegramUI/Tests/Player/PlayerSurfaceFollowingTests.swift": "//submodules/TelegramUI:ExteralessPlayerNativeTests",
     "submodules/TelegramUI/Tests/Appearance/AppearanceRootTabsTests.swift": "//submodules/TelegramUI:ExteralessAppearanceRootTests",
     "submodules/AvatarNode/Tests/AppearanceAvatarRenderingTests.swift": "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
+    "submodules/AvatarNode/Tests/AvatarImageTransitionResetTests.swift": "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
     "submodules/TelegramPresentationData/Tests/AppearancePresentationRevisionTests.swift": "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
     "submodules/TelegramStringFormatting/Tests/AppearancePresenceTests.swift": "//submodules/TelegramStringFormatting:ExteralessAppearancePresenceTests",
     "submodules/TelegramUI/Components/NavigationExpansionTransition/Tests/GlassShapeKeyframesTests.swift": "//submodules/TelegramUI/Components/NavigationExpansionTransition:ExteralessGlassTests",
