@@ -79,6 +79,11 @@ public struct WatchdogLimits: Sendable {
 /// Сторож: пометки notResponding, RSS-лимиты, маркер падений, страйки.
 public actor PluginWatchdog {
 
+    public struct RiskyOperation: Hashable, Sendable {
+        fileprivate let id: UUID
+        fileprivate let pluginId: String
+    }
+
     /// Уведомление UI-слоя: плагин завис/отвыс.
     public typealias NotRespondingObserver = @Sendable (String, Bool) -> Void
     /// Снимок footprint живых плагинов (КБ) из менеджера интерпретаторов.
@@ -100,18 +105,23 @@ public actor PluginWatchdog {
     private var notRespondingIds: Set<String> = []
     private var state = State()
     private var persistedMarker: String?
+    private var markerGeneration = UUID()
+    private var riskyOperations: [RiskyOperation] = []
+    private let markerSleep: @Sendable (UInt64) async throws -> Void
     private var sweepTask: Task<Void, Never>?
-    private var markerClearTask: Task<Void, Never>?
+    private(set) var markerClearTask: Task<Void, Never>?
     private var abandonedIds: Set<String> = []
 
     private var observer: NotRespondingObserver?
     private var abandonAction: AbandonAction?
     private var footprintProvider: FootprintProvider?
 
-    init(markerURL: URL, persistURL: URL, log: (@Sendable (String) -> Void)? = nil) {
+    init(markerURL: URL, persistURL: URL, log: (@Sendable (String) -> Void)? = nil,
+         markerSleep: @escaping @Sendable (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }) {
         self.markerURL = markerURL
         self.persist = persistURL
         self.log = log
+        self.markerSleep = markerSleep
     }
 
     public init(store: PluginStore,
@@ -119,6 +129,7 @@ public actor PluginWatchdog {
         self.markerURL = store.watchdogMarkerURL
         self.persist = store.directory.appendingPathComponent("watchdog.json")
         self.log = log
+        self.markerSleep = { try await Task.sleep(nanoseconds: $0) }
     }
 
     // MARK: - Жизненный цикл
@@ -136,7 +147,9 @@ public actor PluginWatchdog {
         if sweepTask == nil {
             sweepTask = Task { [weak self, interval = limits.rssSweepIntervalSeconds] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                    do { try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000)) }
+                    catch { return }
+                    guard !Task.isCancelled else { return }
                     await self?.sweepFootprints()
                 }
             }
@@ -219,29 +232,57 @@ public actor PluginWatchdog {
     /// Записать id в маркер перед рискованной операцией (загрузка плагина):
     /// только при изменении, без fsync — страничный кэш переживает смерть
     /// процесса (noteMarker в PluginsWatchdog.java).
-    public func noteRiskyOperation(_ pluginId: String) {
+    @discardableResult
+    public func noteRiskyOperation(_ pluginId: String) -> RiskyOperation {
+        let operation = RiskyOperation(id: UUID(), pluginId: pluginId)
+        riskyOperations.append(operation)
+        writeMarker(pluginId)
+        return operation
+    }
+
+    private func writeMarker(_ pluginId: String) {
         markerClearTask?.cancel()
         markerClearTask = nil
+        markerGeneration = UUID()
         guard persistedMarker != pluginId else { return }
         try? pluginId.data(using: .utf8)?.write(to: markerURL, options: .atomic)
         persistedMarker = pluginId
     }
 
     /// Выход из последнего плагина: очистка маркера отложена на idleClearDelay.
-    public func scheduleMarkerClear() {
-        guard persistedMarker != nil else { return }
+    public func scheduleMarkerClear(_ operation: RiskyOperation? = nil) {
+        if let operation = operation ?? riskyOperations.last {
+            guard let index = riskyOperations.firstIndex(of: operation) else { return }
+            riskyOperations.remove(at: index)
+        }
+        if let stillRunning = riskyOperations.last {
+            writeMarker(stillRunning.pluginId)
+            return
+        }
+        guard let marker = persistedMarker else { return }
         guard markerClearTask == nil else { return }
-        let delay = limits.idleClearDelayMs
-        markerClearTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
-            await self?.clearMarkerNow()
+        let delay = max(0, min(86_400_000, limits.idleClearDelayMs))
+        let generation = markerGeneration
+        markerClearTask = Task { [weak self, markerSleep = self.markerSleep] in
+            do { try await markerSleep(UInt64(delay) * 1_000_000) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            await self?.clearMarkerIfCurrent(generation: generation, marker: marker)
         }
     }
+
+    func clearMarkerIfCurrent(generation: UUID, marker: String) {
+        guard generation == markerGeneration, persistedMarker == marker, riskyOperations.isEmpty else { return }
+        clearMarkerNow()
+    }
+
+    var markerIdentity: (generation: UUID, marker: String?) { (markerGeneration, persistedMarker) }
 
     private func clearMarkerNow() {
         markerClearTask?.cancel()
         markerClearTask = nil
-        guard persistedMarker != nil else { return }
+        markerGeneration = UUID()
+        riskyOperations.removeAll()
         try? FileManager.default.removeItem(at: markerURL)
         persistedMarker = nil
     }

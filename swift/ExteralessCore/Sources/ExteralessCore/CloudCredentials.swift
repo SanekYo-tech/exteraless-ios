@@ -45,16 +45,22 @@ public enum CloudCredentialID: Hashable, Codable, Sendable {
 
 public struct CloudCredentialEntry: Codable, Sendable, CustomStringConvertible, CustomReflectable {
     public let id: CloudCredentialID
+    public let cloudflareAccountID: String?
     private let value: String
 
-    public init(id: CloudCredentialID, value: String) throws {
+    public init(id: CloudCredentialID, value: String, cloudflareAccountID: String? = nil) throws {
         try id.validate()
         guard !value.isEmpty, value.utf8.count <= 128 * 1_024, !value.contains("\0") else { throw CloudError.invalidCredential }
+        if let cloudflareAccountID {
+            guard id == CloudCloudflareMetadata.credential else { throw CloudError.invalidCredential }
+            _ = try CloudCloudflareMetadata.validated(cloudflareAccountID)
+        }
         self.id = id
         self.value = value
+        self.cloudflareAccountID = cloudflareAccountID
     }
 
-    func validated() throws -> Self { try Self(id: id, value: value) }
+    func validated() throws -> Self { try Self(id: id, value: value, cloudflareAccountID: cloudflareAccountID) }
     func withValue<Result>(_ body: (String) throws -> Result) rethrows -> Result { try body(value) }
     public var description: String { "CloudCredentialEntry(value: redacted)" }
     public var customMirror: Mirror { Mirror(self, children: ["value": "redacted"]) }
@@ -88,7 +94,10 @@ public enum CloudCredentials {
             guard let value = try storage.read(id), !value.isEmpty else { continue }
             do {
                 guard let exported = try CloudAICredentialBridge.exportValue(value, id: id, metadata: snapshot.values) else { continue }
-                result.append(try CloudCredentialEntry(id: id, value: exported))
+                let account: String?
+                if id == CloudCloudflareMetadata.credential { account = try CloudCloudflareMetadata.account(in: snapshot.values) }
+                else { account = nil }
+                result.append(try CloudCredentialEntry(id: id, value: exported, cloudflareAccountID: account))
             } catch { throw CloudError.invalidCredential }
         }
         return result
@@ -107,6 +116,7 @@ public enum CloudCredentials {
     }
 
     static func validate(_ entries: [CloudCredentialEntry], publicValues: [String: ClientSettingValue]) throws {
+        let publicValues = try CloudCloudflareMetadata.sourceMetadata(entries: entries, metadata: publicValues)
         let admitted = try admittedIDs(publicValues: publicValues)
         guard entries.count <= 128, Set(entries.map(\.id)).count == entries.count else { throw CloudError.invalidCredential }
         for entry in entries {

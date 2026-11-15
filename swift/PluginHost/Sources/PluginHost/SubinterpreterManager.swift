@@ -142,7 +142,7 @@ func bridgePluginError(_ error: sending any Error) -> PluginHostError {
 final class InterpreterMailbox: @unchecked Sendable {
     struct Job {
         let id: Int64
-        let closure: @Sendable (InterpreterCallContext) -> Void
+        var closure: (@Sendable (InterpreterCallContext) -> Void)?
     }
 
     private let condition = NSCondition()
@@ -191,9 +191,12 @@ final class InterpreterMailbox: @unchecked Sendable {
                 condition.unlock()
                 return
             }
-            let job = jobs.removeFirst()
+            var job = jobs.removeFirst()
             condition.unlock()
-            job.closure(context)
+            job.closure?(context)
+            // Do not retain the last payload/credit while this thread waits for
+            // its next job. Native work has ended, so release its closure now.
+            job.closure = nil
         }
     }
 
@@ -410,7 +413,8 @@ public actor SubinterpreterManager {
 
     func invoke(_ handle: InterpreterHandle, script: String,
                 shouldExecute: @escaping @Sendable () -> Bool,
-                maintenanceEpoch: UUID?) async throws -> String {
+                maintenanceEpoch: UUID?,
+                onExecutionFinished: @escaping @Sendable () -> Void = {}) async throws -> String {
         guard !stopping else { throw PluginHostError.notRunning }
         guard settingsMaintenance == maintenanceEpoch else {
             throw PluginHostError.superseded("Interpreter admission is paused for settings maintenance")
@@ -423,6 +427,7 @@ public actor SubinterpreterManager {
         }
         let reply = OneShotResult<String>()
         let accepted = managed.mailbox.submit { context in
+            defer { onExecutionFinished() }
             // This check is on the actual owner thread, after its earlier jobs.
             // An earlier check in a dispatcher/Task cannot protect queued UI work.
             guard shouldExecute() else {
@@ -522,6 +527,11 @@ public actor SubinterpreterManager {
         // Py_EndInterpreter returning is not the mailbox thread's exit. Retain
         // its pool slot until no owner job can execute after the quiescence proof.
         _ = try? await mailbox.finished.wait(cancellable: false)
+        guard let current = interpreters[handle.id], current.handle == handle,
+              current.destruction === completion else {
+            completion.fail(.superseded("Interpreter destruction owner changed"))
+            return
+        }
         if succeeded {
             interpreters[handle.id] = nil
             stats.destroyed += 1
@@ -562,11 +572,17 @@ public actor SubinterpreterManager {
 
     /// Терминальный стоп: закрыть приём до снимка/await. Pending bootstrap
     /// не ждём — createInterpreter сам уберёт его поздний результат.
-    public func destroyAll() async {
+    public func destroyAll(timeout: TimeInterval = 5) async {
         stopping = true
         let all = interpreters.values.map(\.handle)
-        for handle in all {
-            await destroy(handle)
+        // Start every independent destruction before awaiting any of them. A
+        // stuck old destructor must not prevent healthy workers from retiring.
+        let completions = all.compactMap { beginDestruction($0) }
+        guard timeout.isFinite, timeout > 0,
+              let deadline = try? PluginLifecycleDeadline(seconds: min(timeout, 86_400)) else { return }
+        for completion in completions {
+            do { _ = try await deadline.run { try await completion.wait() } }
+            catch { return } // Keep .destroying/mailbox evidence; never pretend success.
         }
     }
 }

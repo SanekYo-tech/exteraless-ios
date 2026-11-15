@@ -68,7 +68,8 @@ public struct CloudRestoreAdmission: Sendable {
 
     public func syncNow(acknowledging heads: Set<UUID>? = nil) async throws -> CloudSyncResult {
         let value = try await run(.sync(heads), status: .syncing) { [self] token in
-            let snapshot = settings.readSnapshot()
+            let snapshot = try await CloudSettingsArchive.readLatestSnapshot(settings: settings)
+            try check(token)
             let includeKeys = CloudSyncPolicy(snapshot: snapshot).includeApiKeys
             let owner = scope.owner
             let appVersion = self.appVersion
@@ -117,7 +118,8 @@ public struct CloudRestoreAdmission: Sendable {
 
     public func preview(_ revision: CloudRevision, expectedHeads: Set<UUID>) async throws -> CloudRestorePlan {
         let value = try await run(.preview, status: .reading) { [self] token in
-            let snapshot = settings.readSnapshot() // The CAS image belongs to this preview.
+            let snapshot = try await CloudSettingsArchive.readLatestSnapshot(settings: settings)
+            try check(token) // The refreshed CAS image belongs only to this NEW preview.
             let catalog = try await remote.catalog()
             guard catalog.heads == expectedHeads, catalog.revisions.contains(revision) else { throw CloudError.conflict }
             let data = try await remote.read(revision)
@@ -181,7 +183,8 @@ public struct CloudRestoreAdmission: Sendable {
 
     public func previewAndroid() async throws -> CloudLegacyRestorePlan {
         let value = try await run(.previewAndroid, status: .reading) { [self] token in
-            let snapshot = settings.readSnapshot()
+            let snapshot = try await CloudSettingsArchive.readLatestSnapshot(settings: settings)
+            try check(token)
             let includeKeys = CloudSyncPolicy(snapshot: snapshot).includeApiKeys
             let legacy = try await remote.readAndroidSnapshot()
             try check(token)
@@ -233,11 +236,8 @@ public struct CloudRestoreAdmission: Sendable {
         _ = try await run(.delete, status: .deleting) { [self] token in
             try await remote.deleteDamagedNativeData()
             try check(token)
-            var next = state
-            next.acceptedHeads = []
-            next.uploadedContentDigest = nil
-            try stateStorage.save(next)
-            state = next
+            // Repair does not delete healthy history or acknowledge unseen heads.
+            // Keep this device's previous receipt; any changed head still conflicts.
             latestCatalog = nil
             return .deleted
         }

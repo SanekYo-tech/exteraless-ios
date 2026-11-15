@@ -231,7 +231,10 @@ public struct PluginTextMessageRequest: Sendable {
 public struct PluginNativeCallLease: Sendable {
     private let current: @Sendable () -> Bool
 
-    public init(isCurrent: @escaping @Sendable () -> Bool) { self.current = isCurrent }
+    public init(isCurrent: @escaping @Sendable () -> Bool) {
+        let execution = PluginNativeExecutionContext.captureGuard()
+        self.current = { execution() && isCurrent() }
+    }
     public var isCurrent: Bool { self.current() }
     public func check() throws {
         guard isCurrent else { throw BridgeFailure.invalidHandle("Native effect owner or permission expired") }

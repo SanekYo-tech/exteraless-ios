@@ -122,6 +122,8 @@ struct MaintenanceTestFixture: Sendable {
 class HostLifecycleTestCase: XCTestCase {
     func fixture(engine: MaintenanceTestEngine = MaintenanceTestEngine(),
                  callTimeout: TimeInterval = 2,
+                 queueLimits: PluginEventQueue.Limits = .init(dispatchTimeout: 2),
+                 stopTimeout: TimeInterval = 5,
                  log: (@Sendable (String) -> Void)? = nil) throws -> MaintenanceTestFixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("host-maintenance-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -130,7 +132,8 @@ class HostLifecycleTestCase: XCTestCase {
         }
         let host = try PluginHost(engine: engine, configuration: .init(
             runtime: .init(pluginRootDirectory: root.appendingPathComponent("plugins").path),
-            interpreters: .init(callTimeout: callTimeout), queue: .init(dispatchTimeout: 2), storageDirectory: root),
+            interpreters: .init(callTimeout: callTimeout), queue: queueLimits, storageDirectory: root,
+            stopTimeout: stopTimeout),
             unsafePermissionsMode: true, log: log)
         addTeardownBlock {
             await host.stop()

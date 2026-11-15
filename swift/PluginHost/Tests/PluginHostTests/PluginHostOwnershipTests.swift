@@ -373,22 +373,28 @@ final class PluginHostOwnershipTests: XCTestCase {
         let fresh = InterpreterHandle(id: 2, pluginId: id)
         try activate(state, old)
         try state.beginInvocation(old) // Direct setting update.
-        try state.beginInvocation(old) // Callback already queued on the same worker.
-        let oldBatch = state.beginBatch()
+        try state.beginInvocation(old) // Event call already queued on the same worker.
+        let retained = PluginEventRetention([])
+        let oldBatch = PluginEventExecution(retention: retained, shouldExecute: { true })
+        let oldCall = UUID()
         state.endInvocation(old)
-        XCTAssertEqual(state.batchInflightSnapshot(), [old])
+        XCTAssertTrue(oldBatch.start(oldCall, handle: old))
+        XCTAssertEqual(state.inflightSnapshot(), [old])
+        XCTAssertEqual(oldBatch.runningHandles.filter { state.isCurrent($0) }, [old])
         _ = try XCTUnwrap(state.beginUnloading(id: id, expected: old))
         XCTAssertTrue(state.finishUnloading(old, errorMessage: nil))
         try activate(state, fresh)
         try state.beginInvocation(fresh)
         state.endInvocation(old) // A delayed defer from the retired worker.
         XCTAssertEqual(state.inflightSnapshot(), [fresh])
-        XCTAssertTrue(state.batchInflightSnapshot().isEmpty) // Old timeout cannot abandon the new worker.
-        let newBatch = state.beginBatch()
-        state.endBatch(oldBatch.id)
-        XCTAssertEqual(state.batchInflightSnapshot(), [fresh])
+        XCTAssertTrue(oldBatch.runningHandles.filter { state.isCurrent($0) }.isEmpty) // Old timeout cannot abandon the new worker.
+        let newBatch = PluginEventExecution(retention: retained, shouldExecute: { true })
+        let newCall = UUID()
+        XCTAssertTrue(newBatch.start(newCall, handle: fresh))
+        oldBatch.finish(oldCall)
+        XCTAssertEqual(newBatch.runningHandles, [fresh])
         state.endInvocation(fresh)
-        state.endBatch(newBatch.id)
+        newBatch.finish(newCall)
         XCTAssertTrue(state.inflightSnapshot().isEmpty)
     }
 

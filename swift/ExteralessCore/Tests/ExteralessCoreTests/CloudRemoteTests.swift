@@ -147,9 +147,8 @@ final class CloudRemoteTests: XCTestCase, @unchecked Sendable {
         do { _ = try await remote.catalog(); XCTFail("Cycle must fail") } catch { XCTAssertEqual(error as? CloudError, .malformedRemote) }
         await transport.seed([CloudProtocol.manifestKey(a): try manifest(a, parents: [b])])
         do { _ = try await remote.catalog(); XCTFail("Missing parent must fail") } catch { XCTAssertEqual(error as? CloudError, .malformedRemote) }
-        try await remote.deleteDamagedNativeData()
-        let repaired = try await remote.catalog()
-        XCTAssertTrue(repaired.heads.isEmpty)
+        do { try await remote.deleteDamagedNativeData(); XCTFail("Dangling valid records are ambiguous, not deletion authority") }
+        catch { XCTAssertEqual(error as? CloudError, .conflict) }
         await transport.seed([CloudProtocol.manifestKey(a): try manifest(a, parents: [], version: 2)])
         do { _ = try await remote.catalog(); XCTFail("Future schema must fail") } catch { XCTAssertEqual(error as? CloudError, .unsupportedVersion) }
     }

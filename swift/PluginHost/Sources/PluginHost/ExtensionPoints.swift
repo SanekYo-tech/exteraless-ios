@@ -315,46 +315,57 @@ public final class PluginEventBus: @unchecked Sendable {
         self.queue = queue
     }
 
+    public func queueStatistics() async -> PluginEventQueue.Stats { await queue.stats }
+
     /// app_start / app_stop / app_pause / app_resume.
-    public func emitAppEvent(_ name: String) {
-        guard subscribers.hasSubscribers(.appEvent) else { return }
-        queue.submitAsync(.appEvent(AppEventPayload(name: name)))
+    @discardableResult
+    public func emitAppEvent(_ name: String) -> Bool {
+        guard subscribers.hasSubscribers(.appEvent) else { return false }
+        return queue.submitAsync(.appEvent(AppEventPayload(name: name)))
     }
 
     /// Входящий TL-запрос (pre_request_hook). Вызов возвращается сразу.
-    public func emitPreRequest(_ payload: RequestPayload) {
-        guard subscribers.hasSubscribers(.preRequest) else { return }
-        queue.submitAsync(.preRequest(payload))
+    @discardableResult
+    public func emitPreRequest(_ payload: RequestPayload) -> Bool {
+        guard subscribers.hasSubscribers(.preRequest) else { return false }
+        return queue.submitAsync(.preRequest(payload))
     }
 
     /// Ответ на TL-запрос (post_request_hook).
-    public func emitPostRequest(_ payload: RequestResponsePayload) {
-        guard subscribers.hasSubscribers(.postRequest) else { return }
-        queue.submitAsync(.postRequest(payload))
+    @discardableResult
+    public func emitPostRequest(_ payload: RequestResponsePayload) -> Bool {
+        guard subscribers.hasSubscribers(.postRequest) else { return false }
+        return queue.submitAsync(.postRequest(payload))
     }
 
     /// Один входящий апдейт. Очередь коалесцирует N апдейтов в один вход.
-    public func emitUpdate(name: String, account: Int32, updateJSON: String) {
-        guard subscribers.hasSubscribers(.update) else { return }
-        queue.submitAsync(.update(UpdatePayload(
+    @discardableResult
+    public func emitUpdate(name: String, account: Int32, updateJSON: String) -> Bool {
+        guard subscribers.hasSubscribers(.update) else { return false }
+        return queue.submitAsync(.update(UpdatePayload(
             updateName: name, account: account, updateJSON: updateJSON)))
     }
 
     /// Контейнер апдейтов (TL_updates и т.п.).
-    public func emitUpdates(container: String, account: Int32, updatesJSON: [String]) {
-        guard subscribers.hasSubscribers(.updates) else { return }
-        queue.submitAsync(.updates(UpdatesPayload(
+    @discardableResult
+    public func emitUpdates(container: String, account: Int32, updatesJSON: [String]) -> Bool {
+        guard subscribers.hasSubscribers(.updates) else { return false }
+        return queue.submitAsync(.updates(UpdatesPayload(
             containerName: container, account: account, updatesJSON: updatesJSON)))
     }
 
     /// Исходящее сообщение: ждёт стратегию хуков (DEFAULT/CANCEL/MODIFY/...).
-    public func preSendMessage(_ payload: SendMessagePayload) async throws -> HookStrategy {
-        try await preSendMessageResult(payload).strategy
+    public func preSendMessage(_ payload: SendMessagePayload,
+                               shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> HookStrategy {
+        try await preSendMessageResult(payload, shouldExecute: shouldExecute).strategy
     }
 
-    public func preSendMessageResult(_ payload: SendMessagePayload) async throws -> PluginSendMessageResult {
+    public func preSendMessageResult(_ payload: SendMessagePayload,
+                                     shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> PluginSendMessageResult {
+        try Task.checkCancellation()
+        guard shouldExecute() else { throw PluginHostError.superseded("Native send was cancelled") }
         guard subscribers.hasSubscribers(.sendMessage) else { return PluginSendMessageResult() }
-        switch try await queue.submitAwaiting(.sendMessage(payload)) {
+        switch try await queue.submitAwaiting(.sendMessage(payload), shouldExecute: shouldExecute) {
         case .sendMessage(let result): return result
         case .strategy(let strategy): return PluginSendMessageResult(strategy: strategy)
         default: return PluginSendMessageResult()
@@ -363,9 +374,10 @@ public final class PluginEventBus: @unchecked Sendable {
 
     /// Awaited TL transformations are never coalesced into observation batches.
     public func transformTL(_ payload: PluginTLHostPayload) async throws -> PluginTLHookDecision {
-        try payload.validate()
+        // Full JSON validation runs in Host after common ingress admission, so
+        // an overloaded producer cannot allocate decoded trees before its credit.
         guard subscribers.hasSubscribers(payload.kind), payload.shouldExecute() else { return .init() }
-        switch try await queue.submitAwaiting(.tlTransform(payload)) {
+        switch try await queue.submitAwaiting(.tlTransform(payload), shouldExecute: payload.shouldExecute) {
         case let .tlTransform(value): return value
         default: return .init()
         }

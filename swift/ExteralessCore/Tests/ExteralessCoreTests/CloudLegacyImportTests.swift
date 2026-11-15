@@ -3,8 +3,9 @@ import XCTest
 @testable import ExteralessCore
 
 final class CloudLegacyImportTests: XCTestCase, @unchecked Sendable {
-    private func target(_ secrets: CloudFixtureSecrets = CloudFixtureSecrets()) throws -> ClientSettings {
-        let settings = try ClientSettings(storageURL: cloudTemporaryDirectory().appendingPathComponent("settings.json"), secretStore: secrets)
+    private func target(_ secrets: CloudFixtureSecrets = CloudFixtureSecrets(), storageURL: URL? = nil) throws -> ClientSettings {
+        let file = try storageURL ?? cloudTemporaryDirectory().appendingPathComponent("settings.json")
+        let settings = try ClientSettings(storageURL: file, secretStore: secrets)
         try settings.register(AppearanceFeatures.definitions + ChatFeatures.definitions + PrivacyFeatures.definitions
             + AIFeatures.definitions + ToolsFeatures.definitions + CloudFeatures.definitions + ClientAPIFeatures.definitions)
         return settings
@@ -93,19 +94,38 @@ final class CloudLegacyImportTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(settings.bool("cloud.autoSync"))
     }
 
-    func testLegacyOverlayCASPreservesAbsentUnrelatedFieldsAndRejectsChangedPresence() throws {
-        let settings = try target()
+    func testLegacyOverlayCASPreservesAbsentUnrelatedFieldsAndRejectsChangedPresence() async throws {
+        let file = try cloudTemporaryDirectory().appendingPathComponent("settings.json")
+        let secrets = CloudFixtureSecrets()
+        let settings = try target(secrets, storageURL: file)
+        let external = try ClientSettings(storageURL: file, secretStore: secrets)
+        try external.register(settings.definitions())
         let input: [String: ClientSettingValue] = ["nkmrcfg": .object(["showSeconds": .bool(true)])]
         let stale = try inspect(input, settings: settings)
-        try settings.applyPublic(["appearance.showSeconds": .bool(false)]) // Same value, now a stored override.
+        try external.applyPublic(["appearance.showSeconds": .bool(false), "appearance.mediaPreview": .bool(false)])
+        let beforeRejectedApply = try Data(contentsOf: file)
         XCTAssertThrowsError(try CloudLegacySettingsArchive.apply(stale, settings: settings, includeApiKeys: false, credentials: CloudFixtureSecrets())) {
             XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
         }
-        let fresh = try inspect(input, settings: settings)
-        try settings.applyPublic(["appearance.disableVibration": .bool(true)])
+        XCTAssertEqual(try Data(contentsOf: file), beforeRejectedApply)
+        XCTAssertEqual(settings.readSnapshot().lastError, .concurrentModification)
+        XCTAssertThrowsError(try inspect(input, settings: settings)) { XCTAssertEqual($0 as? CloudError, .localStorage) }
+        try external.applyPublic(["appearance.disableVibration": .bool(true)],
+            resetting: ["appearance.showSeconds", "appearance.mediaPreview"])
+        let beforeRefresh = try Data(contentsOf: file)
+        let snapshot = try await CloudSettingsArchive.readLatestSnapshot(settings: settings)
+        XCTAssertNil(snapshot.lastError)
+        XCTAssertEqual(snapshot.values["appearance.disableVibration"], .bool(true))
+        XCTAssertEqual(snapshot.values["appearance.mediaPreview"], .bool(true))
+        XCTAssertFalse(snapshot.storedKeys.contains("appearance.showSeconds"))
+        XCTAssertFalse(snapshot.storedKeys.contains("appearance.mediaPreview"))
+        XCTAssertEqual(try Data(contentsOf: file), beforeRefresh)
+        let fresh = try CloudLegacySettingsArchive.inspect(remote(input), snapshot: snapshot, includeApiKeys: false, date: CloudFixture.date)
+        try external.applyPublic(["appearance.customTitle": .string("Unrelated external edit")])
         _ = try CloudLegacySettingsArchive.apply(fresh, settings: settings, includeApiKeys: false, credentials: CloudFixtureSecrets())
         XCTAssertTrue(settings.bool("appearance.showSeconds"))
         XCTAssertTrue(settings.bool("appearance.disableVibration"))
+        XCTAssertEqual(settings.string("appearance.customTitle"), "Unrelated external edit")
         XCTAssertFalse(settings.readSnapshot().storedKeys.contains("appearance.squareFab"))
     }
 
@@ -222,5 +242,50 @@ final class CloudLegacyImportTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(native.apiKey(for: service), "")
         try native.save(service: service, credential: .unchanged, authorizeDestinationChange: true)
         XCTAssertEqual(native.apiKey(for: service), "old-unbound-fixture")
+    }
+
+    func testChatLegacyAliasPrecedenceIsProjectedBeforeTypedAdmission() throws {
+        let settings = try target()
+        let preview = try inspect(["nkmrcfg": .object([
+            "DisableChannelMuteButton": .bool(true), "OEChatsBottomButton": .integer(2),
+            "HideReactions": .bool(true), "OEChatsHideReactionsChannels": .bool(false),
+            "OEChatsHideReactionsGroups": .bool(false), "OEChatsHideReactionsPrivate": .bool(false),
+            "MessageColoredBackground": .bool(false), "OEChatsReplyBackground": .bool(true)
+        ])], settings: settings)
+        let values = preview.publicInspection.settings
+        XCTAssertEqual(values["chats.bottomButton"], .integer(0))
+        for key in ["chats.hideReactionsInChannels", "chats.hideReactionsInGroups", "chats.hideReactionsInPrivate"] { XCTAssertEqual(values[key], .bool(true)) }
+        XCTAssertEqual(values["chats.replyBackground"], .bool(false))
+        try CloudPublicRestoreProjection.validate(preview.publicInspection)
+        XCTAssertFalse(preview.publicInspection.payload.clientSettings.keys.contains { $0.hasPrefix("clientAPI.") || $0.hasPrefix("cloud.") })
+    }
+
+    func testChatInactiveOrAbsentAliasesDoNotMaterializeNativeDefaults() throws {
+        let settings = try target()
+        let preview = try inspect(["nkmrcfg": .object([
+            "DisableChannelMuteButton": .bool(false), "HideReactions": .bool(false), "MessageColoredBackground": .bool(true)
+        ])], settings: settings)
+        XCTAssertEqual(preview.settingCount, 0)
+        XCTAssertTrue(preview.mapped.isEmpty)
+        XCTAssertEqual(preview.skipped.count, 3)
+        let absent = try inspect(["nkmrcfg": .object(["showSeconds": .bool(true)])], settings: settings)
+        for key in ["chats.bottomButton", "chats.replyBackground", "chats.defaultHlsVideoQuality", "chats.preferOriginalQuality"] {
+            XCTAssertNil(absent.publicInspection.payload.clientSettings[key])
+        }
+    }
+
+    func testChatLegacyHighestQualityBecomesExplicitAutoPlusOriginalQuality() throws {
+        let settings = try target()
+        try settings.applyPublic(["chats.defaultHlsVideoQuality": .integer(4), "chats.preferOriginalQuality": .bool(false)])
+        let preview = try inspect(["nkmrcfg": .object([
+            "DefaultHlsVideoQuality": .integer(1), "OEChatsPreferOriginalQuality": .bool(false)
+        ])], settings: settings)
+        XCTAssertEqual(preview.publicInspection.settings["chats.defaultHlsVideoQuality"], .integer(0))
+        XCTAssertEqual(preview.publicInspection.settings["chats.preferOriginalQuality"], .bool(true))
+        XCTAssertTrue(preview.publicInspection.resetting.isEmpty) // Source writes Auto; it does not remove the override.
+        _ = try CloudLegacySettingsArchive.apply(preview, settings: settings, includeApiKeys: false, credentials: CloudFixtureSecrets())
+        XCTAssertEqual(settings.integer("chats.defaultHlsVideoQuality"), 0)
+        XCTAssertTrue(settings.bool("chats.preferOriginalQuality"))
+        XCTAssertTrue(settings.readSnapshot().storedKeys.contains("chats.defaultHlsVideoQuality"))
     }
 }

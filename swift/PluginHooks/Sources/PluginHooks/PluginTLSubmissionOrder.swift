@@ -9,10 +9,16 @@ public final class PluginTLSubmissionOrder: @unchecked Sendable {
         fileprivate let id: UUID
         fileprivate let account: Int64
     }
+    public enum Admission: Equatable, Sendable {
+        case bypass
+        case reserved(Ticket)
+        case full
+    }
     private final class Entry {
         let ticket: Ticket
         var ready = false
         var preparationStarted = false
+        var submitting = false
         var preparation: (() -> Void)?
         var action: (() -> Void)?
         init(_ ticket: Ticket) { self.ticket = ticket }
@@ -25,12 +31,20 @@ public final class PluginTLSubmissionOrder: @unchecked Sendable {
     public init() {}
 
     public func reserve(accountRecordId: Int64) -> Ticket? {
+        if case let .reserved(ticket) = self.reserveIfNeeded(accountRecordId: accountRecordId, transformsEnabled: true) { return ticket }
+        return nil
+    }
+
+    /// The empty-gate fast path and pending-lane admission have ONE linearization
+    /// point. A gate-off request still joins an earlier prefix's account lane.
+    public func reserveIfNeeded(accountRecordId: Int64, transformsEnabled: Bool) -> Admission {
         self.lock.lock(); defer { self.lock.unlock() }
-        guard self.count < 256 else { return nil }
+        guard transformsEnabled || self.lanes[accountRecordId]?.isEmpty == false else { return .bypass }
+        guard self.count < 256 else { return .full }
         let ticket = Ticket(id: UUID(), account: accountRecordId)
         self.lanes[accountRecordId, default: []].append(Entry(ticket))
         self.count += 1
-        return ticket
+        return .reserved(ticket)
     }
 
     public func ready(_ ticket: Ticket, submission: @escaping () -> Void) {
@@ -54,7 +68,7 @@ public final class PluginTLSubmissionOrder: @unchecked Sendable {
 
     private func set(_ ticket: Ticket, action: (() -> Void)?) {
         self.lock.lock()
-        if let entry = self.lanes[ticket.account]?.first(where: { $0.ticket == ticket }) {
+        if let entry = self.lanes[ticket.account]?.first(where: { $0.ticket == ticket }), !entry.submitting {
             // Cancellation may replace ready work; late ready cannot resurrect it.
             if !entry.ready || action == nil {
                 entry.ready = true
@@ -77,11 +91,19 @@ public final class PluginTLSubmissionOrder: @unchecked Sendable {
                 preparation?()
                 return
             }
+            guard !entry.submitting else { self.lock.unlock(); return }
+            entry.submitting = true
+            let action = entry.action
+            entry.action = nil
+            self.lock.unlock()
+            // Keep the head visible until add() RETURNS. Removing it before this
+            // action lets a concurrent empty-gate caller bypass and overtake it.
+            action?()
+            self.lock.lock()
             self.lanes[account]?.removeFirst()
             if self.lanes[account]?.isEmpty == true { self.lanes.removeValue(forKey: account) }
             self.count -= 1
             self.lock.unlock()
-            entry.action?()
         }
     }
 }

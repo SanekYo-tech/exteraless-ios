@@ -14,6 +14,10 @@ public enum CloudLegacySettingsArchive {
             guard count <= 4_096, fields.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 && !$0.contains("\0") }) else { throw CloudError.sizeLimit }
             sections[name] = fields
         }
+        let originalChatPreferences = sections["nkmrcfg"] ?? [:]
+        if sections["nkmrcfg"] != nil {
+            sections["nkmrcfg"] = ChatLegacyPreferenceMigration.apply(to: originalChatPreferences)
+        }
         let definitions = Dictionary(uniqueKeysWithValues: snapshot.definitions.map { ($0.key, $0) })
         var patch: [String: ClientSettingValue] = [:]
         var reports: [CloudLegacyFieldReport] = []
@@ -47,6 +51,7 @@ public enum CloudLegacySettingsArchive {
                 }
                 if section == "aiConfig", ["services", "selectedServiceId", "selectedService"].contains(key) { continue }
                 if section == "nkmrcfg", key == "TranslatorModeWithOriginalMigrated" { continue }
+                if section == "nkmrcfg", ["DisableChannelMuteButton", "HideReactions", "MessageColoredBackground"].contains(key) { continue }
                 guard ids.count == 1, let id = ids.first else {
                     report(section, key, ids, .skipped, reason: ToolsBackupPolicy.isSensitiveKey(key) ? .excludedCredential : .unsupportedSetting)
                     continue
@@ -87,7 +92,12 @@ public enum CloudLegacySettingsArchive {
                         default: detail = "Validated native value."
                         }
                     }
-                    report(section, key, ids, .mapped, native: [rule.key], detail: detail)
+                    if id == "nagram.defaultHlsVideoQuality", originalChatPreferences["DefaultHlsVideoQuality"] == .integer(1) {
+                        report(section, key, ids, .mapped, native: [rule.key, "chats.preferOriginalQuality"],
+                            detail: "Legacy value 1 enables Prefer highest video quality; the streaming selector becomes Auto.")
+                    } else {
+                        report(section, key, ids, .mapped, native: [rule.key], detail: detail)
+                    }
                 } catch {
                     report(section, key, ids, .skipped, reason: (error as? CloudLegacySkipReason) ?? .invalidValue)
                 }
@@ -101,6 +111,23 @@ public enum CloudLegacySettingsArchive {
             }
         } else if neko["TranslatorModeWithOriginalMigrated"] != nil {
             report("nkmrcfg", "TranslatorModeWithOriginalMigrated", ["nagram.translatorModeWithOriginalMigrated"], .skipped, reason: .deviceOrAccountState)
+        }
+
+        let chatAliases: [(String, Bool, [String])] = [
+            ("DisableChannelMuteButton", true, ["chats.bottomButton"]),
+            ("HideReactions", true, ["chats.hideReactionsInChannels", "chats.hideReactionsInGroups", "chats.hideReactionsInPrivate"]),
+            ("MessageColoredBackground", false, ["chats.replyBackground"])
+        ]
+        for (source, activeValue, targets) in chatAliases {
+            guard let value = originalChatPreferences[source] else { continue }
+            guard case let .bool(enabled) = value else {
+                report("nkmrcfg", source, CloudLegacyCatalog.ids(section: "nkmrcfg", key: source), .skipped, reason: .incompatibleType)
+                continue
+            }
+            let native = enabled == activeValue ? targets.filter { patch[$0] != nil } : []
+            report("nkmrcfg", source, CloudLegacyCatalog.ids(section: "nkmrcfg", key: source), native.isEmpty ? .skipped : .mapped,
+                native: native, reason: native.isEmpty ? .unsupportedSetting : nil,
+                detail: native.isEmpty ? "Inactive or unavailable legacy alias; no native override was synthesized." : "Source-defined ChatsConfig migration; canonical controls receive the imported value.")
         }
 
         if let value = ai["services"] {
@@ -165,17 +192,36 @@ public enum CloudLegacySettingsArchive {
                     nativeKeys: [], disposition: .skipped, reason: .conflictingFields, detail: nil)
             }
         }
+        if originalChatPreferences["DefaultHlsVideoQuality"] == .integer(1) {
+            reports = reports.map { item in
+                guard item.disposition == .mapped, item.originalIDs.contains("nagram.defaultHlsVideoQuality") else { return item }
+                let keys = ["chats.defaultHlsVideoQuality", "chats.preferOriginalQuality"].filter { patch[$0] != nil }
+                return CloudLegacyFieldReport(sourcePreference: item.sourcePreference, originalIDs: item.originalIDs,
+                    nativeKeys: keys, disposition: .mapped, reason: nil, detail: item.detail)
+            }
+        }
         let payload = ToolsBackupPayload(createdAt: ISO8601DateFormatter().string(from: date), appVersion: "Android cloud import",
             clientSettings: patch, clientStoredKeys: Set(patch.keys))
-        let inspection = try ToolsBackupArchive.inspect(ToolsBackupArchive.encode(payload), definitions: snapshot.definitions, secretKeys: snapshot.secretKeys)
+        let originalInspection = try ToolsBackupArchive.inspect(ToolsBackupArchive.encode(payload), definitions: snapshot.definitions, secretKeys: snapshot.secretKeys)
+        let credentialMetadata = try CloudCloudflareMetadata.sourceMetadata(entries: credentials, metadata: patch)
+        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: credentials, metadata: credentialMetadata, expected: snapshot)
+        let inspection = try CloudPublicRestoreProjection.make(candidate, expected: snapshot)
+        if patch[CloudCloudflareMetadata.accountKey] != nil, inspection.settings[CloudCloudflareMetadata.accountKey] == nil {
+            reports = reports.map { item in
+                guard item.nativeKeys.contains(CloudCloudflareMetadata.accountKey) else { return item }
+                return CloudLegacyFieldReport(sourcePreference: item.sourcePreference, originalIDs: item.originalIDs,
+                    nativeKeys: [], disposition: .skipped, reason: snapshot.storedKeys.contains(CloudCloudflareMetadata.tokenKey) ? .existingCredential : .missingServiceMetadata, detail: nil)
+            }
+        }
         return CloudLegacyRestorePlan(owner: remote.owner, remoteFingerprint: remote.fingerprint,
             reportedUpdatedAtMilliseconds: remote.reportedUpdatedAtMilliseconds, fields: reports,
-            includedApiKeys: includeApiKeys, publicInspection: inspection, expectedSettings: snapshot, credentials: credentials)
+            includedApiKeys: includeApiKeys, publicInspection: inspection, expectedSettings: snapshot, credentials: credentials, credentialMetadata: credentialMetadata)
     }
 
     public static func apply(_ plan: CloudLegacyRestorePlan, settings: ClientSettings,
                              includeApiKeys: Bool, credentials: any CloudCredentialStorage) throws -> CloudRestoreResult {
         try Task.checkCancellation()
+        try plan.verifyCredentialTarget(includeApiKeys: includeApiKeys, storage: credentials)
         try settings.applyPublic(plan.publicInspection.settings, expected: plan.expectedSettings)
         return try restoreMissingCredentials(plan, settings: settings, includeApiKeys: includeApiKeys, credentials: credentials)
     }
@@ -185,7 +231,7 @@ public enum CloudLegacySettingsArchive {
         let entries = includeApiKeys && plan.includedApiKeys ? plan.credentials : []
         var added = 0, retained = 0
         do {
-            try CloudCredentials.validate(entries, publicValues: plan.publicInspection.settings)
+            try CloudCredentials.validate(entries, publicValues: plan.credentialMetadata)
             if !entries.isEmpty { try CloudCredentials.register(entries, settings: settings) }
             for entry in entries {
                 guard permitKeys() else { throw CloudError.restorePartiallyApplied }

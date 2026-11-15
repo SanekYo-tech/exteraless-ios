@@ -16,6 +16,7 @@ public enum PluginHostError: Error, Equatable, Sendable, LocalizedError {
     case timeout(String)
     /// Очередь остановлена.
     case queueStopped
+    case eventQueueFull
     /// Событие замещено более новым (коалесценг очереди).
     case superseded(String)
     /// Плагин не прошёл валидацию (id и пр.).
@@ -34,6 +35,7 @@ public enum PluginHostError: Error, Equatable, Sendable, LocalizedError {
         case .pluginNotResponding(let id): return "плагин \(id) не отвечает и отключён"
         case .timeout(let what): return "таймаут вызова плагина (\(what))"
         case .queueStopped: return "очередь событий остановлена"
+        case .eventQueueFull: return "превышен общий лимит событий или их памяти"
         case .superseded(let what): return "запрос замещён более новым (\(what))"
         case .invalidPlugin(let why): return "некорректный плагин: \(why)"
         case .runtimeFailure(let why): return "ошибка Python-рантайма: \(why)"
@@ -84,19 +86,24 @@ public final class PluginHost: @unchecked Sendable {
         public var storageDirectory: URL?
         /// Строгий reflection-режим (по умолчанию permissive — принцип 3).
         public var strictReflection: Bool
+        /// Whole terminal unload/destruction wait budget, including already
+        /// destroying interpreters left behind by timed-out maintenance.
+        public var stopTimeout: TimeInterval
 
         public init(runtime: PythonRuntimeConfiguration = .standard(),
                     interpreters: PythonInterpreterLimits = PythonInterpreterLimits(),
                     watchdog: WatchdogLimits = WatchdogLimits(),
                     queue: PluginEventQueue.Limits = PluginEventQueue.Limits(),
                     storageDirectory: URL? = nil,
-                    strictReflection: Bool = false) {
+                    strictReflection: Bool = false,
+                    stopTimeout: TimeInterval = 5) {
             self.runtime = runtime
             self.interpreters = interpreters
             self.watchdog = watchdog
             self.queue = queue
             self.storageDirectory = storageDirectory
             self.strictReflection = strictReflection
+            self.stopTimeout = stopTimeout
         }
     }
 
@@ -140,7 +147,6 @@ public final class PluginHost: @unchecked Sendable {
         private var mutations: Set<String> = []
         private var loading: Set<String> = []
         private var unloading: [String: InterpreterHandle] = [:]
-        private var batch: (id: UUID, owners: Set<InterpreterHandle>)?
         private var running = false
         private var startedInSafeMode = false
         private var starting = false
@@ -194,7 +200,6 @@ public final class PluginHost: @unchecked Sendable {
             stopping = true
             running = false
             handles.removeAll()
-            batch = nil
             for index in plugins.indices { plugins[index].loaded = false }
             return active
         }
@@ -372,28 +377,15 @@ public final class PluginHost: @unchecked Sendable {
             return inflight.keys.filter { handles[$0.pluginId] == $0 }
         }
 
-        func beginBatch() -> (id: UUID, targets: [(plugin: Plugin, handle: InterpreterHandle)]) {
+        func eventTargets() -> [(plugin: Plugin, handle: InterpreterHandle)] {
             lock.lock(); defer { lock.unlock() }
-            let id = UUID()
-            guard !stopping else { return (id, []) }
-            batch = (id, Set(handles.values))
+            guard !stopping else { return [] }
             let targets: [(plugin: Plugin, handle: InterpreterHandle)] = plugins.compactMap { plugin in
                 guard plugin.loaded, !plugin.notResponding, unloading[plugin.id] == nil,
                       let handle = handles[plugin.id] else { return nil }
                 return (plugin, handle)
             }
-            return (id, targets)
-        }
-
-        func endBatch(_ id: UUID) {
-            lock.lock(); defer { lock.unlock() }
-            if batch?.id == id { batch = nil }
-        }
-
-        func batchInflightSnapshot() -> [InterpreterHandle] {
-            lock.lock(); defer { lock.unlock() }
-            guard !stopping, let batch else { return [] }
-            return inflight.keys.filter { batch.owners.contains($0) && handles[$0.pluginId] == $0 }
+            return targets
         }
 
         func beginMutation(_ id: String) throws {
@@ -676,13 +668,13 @@ public final class PluginHost: @unchecked Sendable {
                 }
                 return snapshot
             })
-        await queue.start(
-            handler: { [weak self] event in
+        await queue.startControlled(
+            handler: { [weak self] event, execution in
                 guard let self else { throw PluginHostError.notRunning }
-                return try await self.handleEvent(event)
+                return try await self.handleEvent(event, execution: execution)
             },
-            onTimeout: { [weak self] event in
-                await self?.handleBatchTimeout(event)
+            onTimeout: { [weak self] event, execution in
+                await self?.handleBatchTimeout(event, execution: execution)
             },
             limits: configuration.queue)
     }
@@ -728,6 +720,9 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     private func performStop(maintenanceEpoch: UUID?) async {
+        let configured = configuration.stopTimeout
+        let seconds = configured.isFinite && configured > 0 ? min(configured, 86_400) : 5
+        let deadline = try! PluginLifecycleDeadline(seconds: seconds)
         let active = state.beginStopping()
         gate.reset()
         await queue.stop()
@@ -742,11 +737,13 @@ public final class PluginHost: @unchecked Sendable {
             return
         }
         for (plugin, handle) in active {
+            guard let remaining = try? deadline.remaining() else { break }
             // An already-retiring worker owns its unload hook. A FIFO barrier
             // still bounds its drain before destroyAll can mark it destroying.
             let script = state.ownsUnloading(handle) ? "None" : "_exteraless_runtime.unload()"
             do {
-                _ = try await withDispatchTimeout(configuration.interpreters.callTimeout) {
+                let callLimit = configuration.interpreters.callTimeout
+                _ = try await withDispatchTimeout(min(remaining, callLimit > 0 ? callLimit : remaining)) {
                     try await self.interpreters.invoke(handle, script: script, shouldExecute: { true },
                                                        maintenanceEpoch: maintenanceEpoch)
                 }
@@ -757,7 +754,7 @@ public final class PluginHost: @unchecked Sendable {
                 log?("PluginHost unload \(plugin.id): \(error)")
             }
         }
-        await interpreters.destroyAll()
+        await interpreters.destroyAll(timeout: (try? deadline.remaining()) ?? 0)
         for plugin in state.pluginList() {
             bridge.releaseInstances(pluginId: plugin.id)
             tlOrigins.retire(pluginId: plugin.id)
@@ -1068,21 +1065,49 @@ public final class PluginHost: @unchecked Sendable {
         return try await events.requestCreateSettings(CreateSettingsPayload(pluginId: id, account: account))
     }
 
-    public func updateSetting(id: String, key: String, valueJSON: String) async throws {
+    public func updateSetting(id: String, key: String, valueJSON: String,
+                              expectedOwner: CallbackOwner? = nil, account: Int32? = nil,
+                              shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
+        let target = try settingsTarget(id: id, expectedOwner: expectedOwner)
+        guard shouldExecute() else { throw PluginHostError.superseded("Settings execution scope expired") }
         _ = try PluginRuntimeScript.jsonValue(valueJSON)
-        guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
-        _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_changed_json", [key, valueJSON]),
-                                   expectedHandle: target.handle)
+        _ = try await invokePlugin(target.plugin, try settingsScript("setting_changed_json", [key, valueJSON], account: account),
+                                   expectedHandle: target.handle, shouldExecute: shouldExecute)
     }
 
-    public func clickSetting(id: String, callbackId: String) async throws {
+    public func clickSetting(id: String, callbackId: String,
+                             expectedOwner: CallbackOwner? = nil, account: Int32? = nil,
+                             shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
+        let target = try settingsTarget(id: id, expectedOwner: expectedOwner)
+        guard shouldExecute() else { throw PluginHostError.superseded("Settings execution scope expired") }
+        _ = try await invokePlugin(target.plugin, try settingsScript("setting_click_json", [callbackId], account: account),
+                                   expectedHandle: target.handle, shouldExecute: shouldExecute)
+    }
+
+    private func settingsTarget(id: String, expectedOwner: CallbackOwner?) throws -> (plugin: Plugin, handle: InterpreterHandle) {
+        if let expectedOwner {
+            guard expectedOwner.hostIdentity == callbackHostIdentity, expectedOwner.pluginId == id,
+                  let target = state.target(id: id, expected: expectedOwner.interpreter),
+                  target.wireToken == expectedOwner.wireToken else {
+                throw PluginHostError.superseded("Settings interpreter owner expired: \(id)")
+            }
+            return (target.plugin, target.handle)
+        }
         guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
-        _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_click_json", [callbackId]),
-                                   expectedHandle: target.handle)
+        return (target.plugin, target.handle)
+    }
+
+    private func settingsScript(_ method: String, _ arguments: [String], account: Int32?) throws -> String {
+        let legacy = PluginRuntimeScript.call(method, arguments)
+        guard let account else { return legacy }
+        guard account >= 0 else { throw PluginHostError.invalidPlugin("Settings account must be a nonnegative Int32 index") }
+        // Only the typed integer is Python syntax. User strings/JSON retain the
+        // existing quoting, and a nil account preserves the legacy SDK arity.
+        return String(legacy.dropLast()) + ", \(account))"
     }
 
     /// Synchronous and safe on the C callback worker, including on_plugin_load
@@ -1200,6 +1225,7 @@ public final class PluginHost: @unchecked Sendable {
         var plugin = plugin
         var created: InterpreterHandle?
         var publishedHandle = false
+        var riskyOperation: PluginWatchdog.RiskyOperation?
         do {
             try state.beginLoading(plugin.id, duringMutation: duringMutation)
         } catch {
@@ -1215,7 +1241,7 @@ public final class PluginHost: @unchecked Sendable {
             guard let path = plugin.path else { throw PluginHostError.invalidPlugin("Plugin file path is missing") }
             // Загрузка — рискованная операция: маркер сторожа немедленно
             // (notePluginEnter(id, risky=true) в PluginsWatchdog.java).
-            await watchdog.noteRiskyOperation(plugin.id)
+            riskyOperation = await watchdog.noteRiskyOperation(plugin.id)
             guard !state.isStopping else { throw PluginHostError.notRunning }
             let handle = try await interpreters.createInterpreter(
                 for: plugin.id,
@@ -1259,7 +1285,7 @@ public final class PluginHost: @unchecked Sendable {
             }
             if let created { await watchdog.clearNotResponding(created.hostWatchdogKey) }
         }
-        await watchdog.scheduleMarkerClear()
+        if let riskyOperation { await watchdog.scheduleMarkerClear(riskyOperation) }
         if state.isStopping { await watchdog.stop() }
         persistPlugins()
         recomputeGate()
@@ -1312,14 +1338,13 @@ public final class PluginHost: @unchecked Sendable {
         return true
     }
 
-    private func handleEvent(_ event: PluginEvent) async throws -> PluginEventResult {
+    private func handleEvent(_ event: PluginEvent, execution: PluginEventExecution) async throws -> PluginEventResult {
+        try execution.check()
         if case .appEvent(let payload) = event, lifecycle.isBarrier(payload.name) { return .none }
         let activity = try lifecycle.enter()
         defer { activity.finish() }
-        let batch = state.beginBatch()
-        defer { state.endBatch(batch.id) }
         let kind = event.kind
-        let subscribers = batch.targets.filter { target in
+        let subscribers = state.eventTargets().filter { target in
             let plugin = target.plugin
             guard plugin.isEnabled else { return false }
             if case let .coalescedUpdates(_, items) = event {
@@ -1332,7 +1357,8 @@ public final class PluginHost: @unchecked Sendable {
             guard let target = subscribers.first(where: { $0.plugin.id == payload.pluginId }) else {
                 return .settingsJSON("[]")
             }
-            let output = try await invokePlugin(target.plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle)
+            let output = try await invokePlugin(target.plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle,
+                                                batch: execution)
             return .settingsJSON(output)
 
         case .sendMessage(let payload):
@@ -1340,13 +1366,15 @@ public final class PluginHost: @unchecked Sendable {
             var currentParams = payload.paramsJSON
             let sendRoot = UUID().uuidString
             for target in subscribers {
+                try execution.check()
                 let plugin = target.plugin
                 do {
                     let currentEvent = PluginEvent.sendMessage(SendMessagePayload(
                         account: payload.account, paramsJSON: currentParams))
                     let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [plugin.id])
                     let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle,
-                        tlOrigin: origin)
+                        tlOrigin: origin, batch: execution)
+                    try execution.check()
                     let decision = try PluginRuntimeScript.applyingSendResult(output, to: currentParams)
                     switch decision.strategy {
                     case .default:
@@ -1359,6 +1387,7 @@ public final class PluginHost: @unchecked Sendable {
                         if decision.strategy == .modifyFinal { return .sendMessage(result) }
                     }
                 } catch {
+                    try execution.check()
                     await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
             }
@@ -1370,6 +1399,7 @@ public final class PluginHost: @unchecked Sendable {
             let origin = try PluginTLInvocationOrigin(rootId: payload.originRootId ?? UUID().uuidString, pluginIds: payload.originPluginIds)
             var ordered: [(plugin: Plugin, handle: InterpreterHandle, priority: Int32)] = []
             for target in subscribers where !payload.originPluginIds.contains(target.plugin.id) {
+                try execution.check()
                 guard payload.shouldExecute() else { return .tlTransform(.init()) }
                 do {
                     let queryOrigin = try origin.entering(target.plugin.id)
@@ -1377,7 +1407,8 @@ public final class PluginHost: @unchecked Sendable {
                         [payload.kind.protocolName, payload.name, payload.canonicalName])
                     let output = try await invokePlugin(target.plugin, source, expectedHandle: target.handle,
                         shouldExecute: { [weak self] in self?.canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) == true },
-                        tlOrigin: queryOrigin)
+                        tlOrigin: queryOrigin, batch: execution)
+                    try execution.check()
                     guard payload.shouldExecute() else { return .tlTransform(.init()) }
                     guard canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) else { continue }
                     guard output.utf8.count <= 128 else {
@@ -1393,6 +1424,7 @@ public final class PluginHost: @unchecked Sendable {
                     }
                     ordered.append((target.plugin, target.handle, priority))
                 } catch {
+                    try execution.check()
                     // A query/decoder failure is not a plugin execution verdict.
                     // Never unload a replacement generation (or this owner's valid
                     // callback leases) because its priority could not be inspected.
@@ -1403,6 +1435,7 @@ public final class PluginHost: @unchecked Sendable {
             var current = payload.valueJSON
             var decision = PluginTLHookDecision()
             for target in ordered {
+                try execution.check()
                 guard payload.shouldExecute() else { return .tlTransform(.init()) }
                 var next = payload
                 next.valueJSON = current
@@ -1413,8 +1446,10 @@ public final class PluginHost: @unchecked Sendable {
                 do {
                     output = try await invokePlugin(target.plugin,
                         try PluginScriptBuilder.dispatch(for: .tlTransform(next)), expectedHandle: target.handle,
-                        shouldExecute: { [weak self] in self?.canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) == true }, tlOrigin: childOrigin)
+                        shouldExecute: { [weak self] in self?.canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) == true },
+                        tlOrigin: childOrigin, batch: execution)
                 } catch {
+                    try execution.check()
                     switch bridgePluginError(error) {
                     case .superseded, .notRunning, .pluginNotResponding:
                         break
@@ -1425,6 +1460,7 @@ public final class PluginHost: @unchecked Sendable {
                     }
                     continue
                 }
+                try execution.check()
                 guard payload.shouldExecute() else { return .tlTransform(.init()) }
                 guard canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) else { continue }
                 do {
@@ -1449,13 +1485,15 @@ public final class PluginHost: @unchecked Sendable {
         case .coalescedUpdates(_, let items):
             let observationRoot = UUID().uuidString
             for target in subscribers {
+                try execution.check()
                 let plugin = target.plugin
                 do {
                     let interested = items.filter { plugin.handles($0.kind) }
                     let origin = try PluginTLInvocationOrigin(rootId: observationRoot, pluginIds: [plugin.id])
                     _ = try await invokePlugin(plugin, try PluginScriptBuilder.batchDispatch(interested), expectedHandle: target.handle,
-                        tlOrigin: origin)
+                        tlOrigin: origin, batch: execution)
                 } catch {
+                    try execution.check()
                     await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
             }
@@ -1465,14 +1503,16 @@ public final class PluginHost: @unchecked Sendable {
             // N апдейтов = один вход: батч уже собран очередью, диспатчим целиком.
             let observationRoot = UUID().uuidString
             for target in subscribers {
+                try execution.check()
                 let plugin = target.plugin
                 do {
                     let origin: PluginTLInvocationOrigin?
                     if kind == .appEvent { origin = nil }
                     else { origin = try PluginTLInvocationOrigin(rootId: observationRoot, pluginIds: [plugin.id]) }
                     _ = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle,
-                        tlOrigin: origin)
+                        tlOrigin: origin, batch: execution)
                 } catch {
+                    try execution.check()
                     await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
             }
@@ -1485,10 +1525,13 @@ public final class PluginHost: @unchecked Sendable {
     private func invokePlugin(_ plugin: Plugin, _ script: String, expectedHandle handle: InterpreterHandle,
                                allowUnloading: Bool = false,
                                shouldExecute: @escaping @Sendable () -> Bool = { true },
-                               maintenanceEpoch: UUID? = nil, timeout overrideTimeout: TimeInterval? = nil,
-                               tlOrigin: PluginTLInvocationOrigin? = nil) async throws -> String {
+                                maintenanceEpoch: UUID? = nil, timeout overrideTimeout: TimeInterval? = nil,
+                                tlOrigin: PluginTLInvocationOrigin? = nil, batch: PluginEventExecution? = nil) async throws -> String {
+        try Task.checkCancellation()
+        try batch?.check()
         try state.beginInvocation(handle, allowUnloading: allowUnloading)
-        defer { state.endInvocation(handle) }
+        let retained = PluginInvocationRetention(batch: batch) { [state] in state.endInvocation(handle) }
+        let invocationCancellation = PluginEventRevocation(external: { true })
         let originScope: PluginTLInvocationScope?
         if let tlOrigin, let target = state.target(id: plugin.id, expected: handle, allowLoading: true) {
             let owner = CallbackOwner(wireToken: target.wireToken, hostIdentity: callbackHostIdentity, interpreter: handle)
@@ -1497,20 +1540,33 @@ public final class PluginHost: @unchecked Sendable {
         defer { originScope?.close() }
         do {
             let timeout = overrideTimeout ?? configuration.interpreters.callTimeout
-            return try await withDispatchTimeout(timeout) {
+            return try await withTaskCancellationHandler(operation: {
+              try await withDispatchTimeout(timeout) {
+                defer { withExtendedLifetime(retained) {} }
                 // Admission and detached execution may straddle unload. Recheck
                 // the same handle, never resolve pluginId to a newer interpreter.
                 try self.state.checkInvocation(handle, allowUnloading: allowUnloading)
                 return try await self.interpreters.invoke(handle, script: script, shouldExecute: {
                     // Recheck after the FIFO wait, on the actual owner worker.
-                    guard (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil, shouldExecute() else {
+                    guard invocationCancellation.error == nil,
+                          (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil,
+                          shouldExecute(), retained.start(handle: handle) else {
                         PluginTLNativeOrigin.install(nil)
+                        PluginNativeExecutionContext.install(nil)
                         return false
                     }
                     PluginTLNativeOrigin.install(originScope)
+                    PluginNativeExecutionContext.install(batch?.revocation)
                     return true
-                }, maintenanceEpoch: maintenanceEpoch)
-            }
+                }, maintenanceEpoch: maintenanceEpoch, onExecutionFinished: {
+                    retained.nativeFinished()
+                    PluginTLNativeOrigin.install(nil)
+                    PluginNativeExecutionContext.install(nil)
+                })
+              }
+            }, onCancel: {
+                invocationCancellation.revoke(.superseded("Plugin invocation cancelled"))
+            })
         } catch is DispatchTimeoutError {
             await interpreters.abandon(handle)
             await reportTimeout(handle)
@@ -1533,11 +1589,10 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     /// Диспатч завис целиком: бросить все ещё исполняющиеся интерпретаторы.
-    private func handleBatchTimeout(_ event: PluginEvent) async {
-        guard let activity = try? lifecycle.enter() else { return }
-        defer { activity.finish() }
+    private func handleBatchTimeout(_ event: PluginEvent, execution: PluginEventExecution) async {
         log?("PluginHost: таймаут диспатча \(String(describing: event.kind))")
-        for handle in state.batchInflightSnapshot() {
+        for handle in execution.runningHandles {
+            await interpreters.abandon(handle)
             await reportTimeout(handle)
         }
     }

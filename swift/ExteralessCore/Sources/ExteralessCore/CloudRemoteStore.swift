@@ -7,6 +7,7 @@ public actor CloudRemoteStore {
     private let owner: CloudRemoteOwner
     private let transport: any CloudKeyValueTransport
     private let compression: CloudCompression
+    private var abandonedUploads = Set<UUID>()
 
     public init(owner: CloudRemoteOwner, transport: any CloudKeyValueTransport, compression: CloudCompression) {
         self.owner = owner
@@ -69,6 +70,12 @@ public actor CloudRemoteStore {
         guard before.allKeys.count + count + 1 <= CloudProtocol.maximumKeys,
               before.revisions.count < CloudProtocol.maximumRevisions else { throw CloudError.storageFull }
         let id = UUID()
+        var manifestStarted = false
+        defer {
+            // Only this process knows a failed local uploader will never publish
+            // a commit record. Unknown orphan chunks are not repair authority.
+            if !manifestStarted { abandonedUploads.insert(id) }
+        }
         let revision = CloudRevision(version: 1, id: id, parents: expectedHeads.sorted { $0.uuidString < $1.uuidString }, owner: owner,
             createdAtMilliseconds: Int64(milliseconds), encoding: CloudProtocol.encoding,
             chunks: count, encodedCharacters: bytes.count, sha256: ToolsSHA256.hex(compressed))
@@ -87,6 +94,7 @@ public actor CloudRemoteStore {
         guard allowed() else { throw CancellationError() }
         let manifest = try CloudProtocol.encode(revision)
         guard manifest.count <= CloudProtocol.chunkCharacters else { throw CloudError.sizeLimit }
+        manifestStarted = true
         try await transport.set(key: CloudProtocol.manifestKey(id), value: String(decoding: manifest, as: UTF8.self))
         try Task.checkCancellation()
         let after = try await catalog()
@@ -160,20 +168,41 @@ public actor CloudRemoteStore {
         try await deleteCapturedKeys(keys)
     }
 
-    /// Explicit repair action for an interrupted upload/deletion. Healthy history
-    /// cannot enter this path; it needs the ordinary reviewed-head deletion.
+    /// Delete only a stable captured set proven malformed or locally abandoned.
+    /// Healthy revisions, required parents and unknown/in-flight chunks survive.
     public func deleteDamagedNativeData() async throws {
-        do {
-            let current = try await catalog()
-            guard current.revisions.isEmpty else { throw CloudError.conflict }
-        } catch let error as CloudError {
-            guard error == .malformedRemote else { throw error }
+        let abandoned = abandonedUploads
+        let captured = try await repairSnapshot()
+        let plan = try CloudRepairPlan.make(snapshot: captured, owner: owner, abandoned: abandoned)
+        var expected = captured
+        for batch in batches(plan.keys.sorted()) {
+            try Task.checkCancellation()
+            // A second listing can only invalidate this plan, never add targets.
+            guard try await repairSnapshot() == expected else { throw CloudError.conflict }
+            try await transport.remove(batch)
+            expected = expected.removing(Set(batch))
         }
+        try Task.checkCancellation()
+        guard try await repairSnapshot() == expected else { throw CloudError.conflict }
+        abandonedUploads.subtract(plan.abandonedIDs)
+    }
+
+    private func repairSnapshot() async throws -> CloudRepairSnapshot {
+        try Task.checkCancellation()
         let all = try await transport.keys()
-        guard all.count <= CloudProtocol.maximumKeys else { throw CloudError.sizeLimit }
+        guard all.count <= CloudProtocol.maximumKeys, Set(all).count == all.count,
+              all.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }) else { throw CloudError.malformedRemote }
         let keys = all.filter { $0.hasPrefix(CloudProtocol.nativePrefix) }.sorted()
-        guard !keys.isEmpty else { throw CloudError.noBackup }
-        try await deleteCapturedKeys(keys)
+        var result: [String: Data] = [:]
+        for batch in batches(keys) {
+            try Task.checkCancellation()
+            let values = try await transport.get(batch)
+            for key in batch {
+                guard let value = values[key], value.utf8.count <= CloudProtocol.chunkCharacters else { throw CloudError.conflict }
+                result[key] = Data(value.utf8)
+            }
+        }
+        return CloudRepairSnapshot(values: result)
     }
 
     private func deleteCapturedKeys(_ keys: [String]) async throws {

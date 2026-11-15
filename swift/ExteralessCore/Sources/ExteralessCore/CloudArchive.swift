@@ -81,6 +81,7 @@ public struct CloudRestorePlan: Sendable, CustomStringConvertible, CustomReflect
     let envelope: CloudBackupEnvelope
     let inspection: ToolsBackupInspection
     let expectedSettings: ClientSettingsSnapshot
+    let credentialMetadata: [String: ClientSettingValue]
 
     /// The public-only shared archive inspection; credentials stay in this plan's
     /// separate typed envelope and never enter the Tools filesystem journal.
@@ -100,6 +101,10 @@ public struct CloudRestorePlan: Sendable, CustomStringConvertible, CustomReflect
         }
     }
 
+    public func verifyCredentialTarget(includeApiKeys: Bool, storage: any CloudCredentialStorage) throws {
+        try CloudCloudflareMetadata.verifyTarget(inspection: inspection, includeApiKeys: includeApiKeys, storage: storage)
+    }
+
     public var description: String { "CloudRestorePlan(settings: \(settingCount), credentials: \(credentialCount))" }
     public var customMirror: Mirror { Mirror(self, children: ["settings": settingCount, "credentials": credentialCount]) }
 }
@@ -111,6 +116,24 @@ public struct CloudRestoreResult: Sendable, Equatable {
 }
 
 public enum CloudSettingsArchive {
+    /// Prepare a NEW preview/export from the selected store, including external
+    /// writes and override presence. A cached operation error is cleared only by
+    /// Core's successful reload; corrupt data and unavailable Keychain still fail.
+    /// Never use this to replace an already confirmed plan's expected CAS image.
+    public static func readLatestSnapshot(settings: ClientSettings) async throws -> ClientSettingsSnapshot {
+        let read = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            try settings.reload()
+            try Task.checkCancellation()
+            let snapshot = settings.readSnapshot()
+            if let error = snapshot.lastError { throw error }
+            return snapshot
+        }
+        return try await withTaskCancellationHandler(operation: {
+            try await read.value
+        }, onCancel: { read.cancel() })
+    }
+
     public static func prepare(snapshot: ClientSettingsSnapshot, owner: CloudRemoteOwner, appVersion: String,
                                includeApiKeys: Bool, credentials: any CloudCredentialStorage, date: Date = Date()) throws -> CloudPreparedBackup {
         let portable = try CloudArchivePolicy.snapshot(snapshot)
@@ -140,18 +163,22 @@ public enum CloudSettingsArchive {
         guard envelope.owner == owner, revision.owner == owner else { throw CloudError.wrongAccount }
         guard envelope.includesApiKeys || envelope.credentials.isEmpty else { throw CloudError.malformedRemote }
         let portable = try CloudArchivePolicy.snapshot(snapshot)
-        let inspection = try ToolsBackupArchive.inspect(envelope.archive, definitions: portable.definitions, secretKeys: snapshot.secretKeys)
+        let originalInspection = try ToolsBackupArchive.inspect(envelope.archive, definitions: portable.definitions, secretKeys: snapshot.secretKeys)
+        let credentialMetadata = try CloudCloudflareMetadata.sourceMetadata(entries: envelope.credentials, metadata: originalInspection.payload.clientSettings)
+        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: envelope.credentials, metadata: credentialMetadata, expected: snapshot)
+        let inspection = try CloudPublicRestoreProjection.make(candidate, expected: snapshot)
         guard inspection.payload.pluginSettings.isEmpty else { throw CloudError.malformedRemote }
         // Never let an imported archive smuggle an API identity/history key through
         // an ignored/unknown field. Only already-registered portable values apply.
-        guard !inspection.payload.clientSettings.keys.contains(where: { $0.hasPrefix("clientAPI.") || $0.hasPrefix("cloud.") || $0.hasPrefix("ai.history.") }) else {
+        guard !originalInspection.payload.clientSettings.keys.contains(where: { $0.hasPrefix("clientAPI.") || $0.hasPrefix("cloud.") || $0.hasPrefix("ai.history.") }) else {
             throw CloudError.malformedRemote
         }
-        if let services = inspection.payload.clientSettings["ai.services"] { _ = try CloudArchivePolicy.services(services) }
-        try CloudCredentials.validate(envelope.credentials, publicValues: inspection.payload.clientSettings)
+        if let services = originalInspection.payload.clientSettings["ai.services"] { _ = try CloudArchivePolicy.services(services) }
+        try CloudCredentials.validate(envelope.credentials, publicValues: credentialMetadata)
         return CloudRestorePlan(revision: revision, expectedHeads: heads, settingCount: inspection.settingCount,
             credentialCount: envelope.credentials.count, ignoredCount: inspection.ignoredKeys.count,
-            envelope: envelope, inspection: inspection, expectedSettings: snapshot)
+            envelope: envelope, inspection: inspection, expectedSettings: snapshot,
+            credentialMetadata: credentialMetadata)
     }
 
     /// One public file CAS, then add-only Keychain restoration. This deliberately
@@ -162,6 +189,7 @@ public enum CloudSettingsArchive {
         try Task.checkCancellation()
         let entries = includeApiKeys ? plan.envelope.credentials : []
         if !entries.isEmpty { try CloudCredentials.register(entries, settings: settings) }
+        try plan.verifyCredentialTarget(includeApiKeys: includeApiKeys, storage: credentials)
         do {
             try settings.applyPublic(plan.inspection.settings, resetting: plan.inspection.resetting, expected: plan.expectedSettings)
         } catch let error as ClientSettingsError {
@@ -185,7 +213,7 @@ public enum CloudSettingsArchive {
             // credential that another native writer changed during this operation.
             for entry in entries {
                 guard permitKeys() else { throw CloudError.restorePartiallyApplied }
-                try CloudAICredentialBridge.validate(entry, metadata: plan.inspection.payload.clientSettings)
+                try CloudAICredentialBridge.validate(entry, metadata: plan.credentialMetadata)
                 switch try credentials.insertIfAbsent(entry) {
                 case .inserted: inserted += 1
                 case .alreadyPresent: retained += 1

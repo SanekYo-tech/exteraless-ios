@@ -47,6 +47,13 @@ public struct PluginHookMessageId: Codable, Equatable, Sendable {
 /// One member of an enqueue batch, before media transformation or a Postbox transaction.
 /// All fields except text/silent/disableLinkPreviews are read-only in a MODIFY result.
 public struct PluginSendPayload: Codable, Equatable, Sendable {
+    var ingressLifetime = PluginHookPayloadLifetime()
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, accountRecordId, peerId, messageIndex, messageCount, kind, text, silent,
+             disableLinkPreviews, canModifyText, hasMedia, hasTextEntities, hasInlineStickers, hasRichText,
+             attributeTypes, threadId, replyToMessageId, hasReplyQuote, hasReplyInnerSubject, hasReplyToStory,
+             localGroupingKey, correlationId, scheduleTime, scheduleRepeatPeriod, forwardSource
+    }
     public enum Kind: String, Codable, Sendable {
         case message
         case forward
@@ -134,7 +141,20 @@ public struct PluginSendPayload: Codable, Equatable, Sendable {
     }
 
     public func jsonString() throws -> String {
-        return String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
+        if let credit = ingressLifetime.credit {
+            // Reserve before JSONEncoder allocates (a control byte may expand to
+            // six JSON bytes). Fixed metadata and per-name punctuation are bounded.
+            var upperBound = 2048 + (text?.utf8.count ?? 0) * 6
+            for name in attributeTypes {
+                guard upperBound <= 16 * 1024 * 1024, name.utf8.count <= (16 * 1024 * 1024 - upperBound) / 6 else {
+                    throw PluginHookIngressError.queueFull
+                }
+                upperBound += name.utf8.count * 6 + 3
+            }
+            guard credit.reserveDeliveryBytes(upperBound) else { throw PluginHookIngressError.queueFull }
+        }
+        let value = String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
+        return value
     }
 }
 
@@ -213,6 +233,11 @@ public struct PluginRPCError: Codable, Equatable, Sendable {
 
 /// Observation only: no result channel exists for replacing/cancelling an RPC or its response.
 public struct PluginRequestObservation: Codable, Equatable, Sendable {
+    var ingressLifetime = PluginHookPayloadLifetime()
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, observational, phase, metadata, serializedTLBytes, tlBytesEncoding,
+             responseTypeName, response, error
+    }
     public enum Phase: String, Codable, Sendable {
         case beforeSubmission
         case completed
@@ -243,6 +268,11 @@ public struct PluginRequestObservation: Codable, Equatable, Sendable {
 
 /// An immutable TL snapshot; the callback may run after Core has advanced/committed its state.
 public struct PluginUpdateObservation: Codable, Equatable, Sendable {
+    var ingressLifetime = PluginHookPayloadLifetime()
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, observational, accountRecordId, name, source, stage, serializedTLBytes,
+             tlBytesEncoding, batchIndex, batchCount
+    }
     public enum Source: String, Codable, Sendable {
         case incomingContainer
         case difference
@@ -293,6 +323,33 @@ public enum PluginHookObservation: Equatable, Sendable {
         case .postRequest: return .postRequest
         case .update: return .update
         case .updates: return .updates
+        }
+    }
+
+    /// Claim the encoded payload before retaining it in a MainActor/other Task.
+    /// Exactly one delivery claim per observation. The event copy carries credit.
+    public func reserveDeliveryBytes(_ bytes: Int) -> Bool {
+        switch self {
+        case .preRequest(let value), .postRequest(let value):
+            return value.ingressLifetime.credit?.reserveDeliveryBytes(bytes) ?? false
+        case .update(let value), .updates(let value):
+            return value.ingressLifetime.credit?.reserveDeliveryBytes(bytes) ?? false
+        }
+    }
+
+    func retaining(_ credit: PluginHookIngressCredit) -> PluginHookObservation? {
+        switch self {
+        case .preRequest(var value), .postRequest(var value):
+            let bytes = (value.serializedTLBytes?.count ?? 0) + value.metadata.requestId.utf8.count
+                + value.metadata.requestName.utf8.count + (value.responseTypeName?.utf8.count ?? 0)
+                + (value.error?.message.utf8.count ?? 0)
+            guard credit.addRawBytes(bytes) else { return nil }
+            value.ingressLifetime.credit = credit
+            return kind == .preRequest ? .preRequest(value) : .postRequest(value)
+        case .update(var value), .updates(var value):
+            guard credit.addRawBytes(value.serializedTLBytes.count + value.name.utf8.count) else { return nil }
+            value.ingressLifetime.credit = credit
+            return kind == .update ? .update(value) : .updates(value)
         }
     }
 

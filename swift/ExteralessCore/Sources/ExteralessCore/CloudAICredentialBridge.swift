@@ -31,7 +31,10 @@ enum CloudAICredentialBridge {
         } else {
             value = try AICredentialBinding.validated(raw, multiple: multiple(id))
         }
-        return try CloudCredentialEntry(id: id, value: value)
+        let account: String?
+        if id == CloudCloudflareMetadata.credential { account = try CloudCloudflareMetadata.account(in: metadata) }
+        else { account = nil }
+        return try CloudCredentialEntry(id: id, value: value, cloudflareAccountID: account)
     }
 
     static func validate(_ entry: CloudCredentialEntry, metadata: [String: ClientSettingValue]) throws {
@@ -47,6 +50,9 @@ enum CloudAICredentialBridge {
     }
 
     static func destinationLabel(_ id: CloudCredentialID, metadata: [String: ClientSettingValue]) throws -> String? {
+        if id == CloudCloudflareMetadata.credential {
+            return "https://api.cloudflare.com/client/v4/accounts/" + (try CloudCloudflareMetadata.account(in: metadata)) + "/ai/run · Workers AI"
+        }
         guard let destination = try destination(id, metadata: metadata) else { return nil }
         return "\(destination.scheme)://\(destination.host):\(destination.port)\(destination.path) · \(destination.wireProtocol.rawValue)"
     }

@@ -1,26 +1,9 @@
 import Foundation
 
-/// ОДНА очередь доставки событий в плагины.
-///
-/// Свойства (требования этапа 4):
-/// - батчинг/коалесценг: N апдейтов одного ключа (аккаунт + имя) = ОДИН вход
-///   в интерпретатор (событие `.coalescedUpdates`);
-/// - приоритеты: UI/settings > поток сообщений > запросы > апдейты;
-/// - дроп устаревших: create_settings для того же плагина заменяет прежний
-///   запрос, переполнение отрезает самые старые апдейты, переполнение глубины
-///   роняет fire-and-forget события низкого приоритета;
-/// - таймаут на вызов: зависший диспатч не останавливает очередь — воркер
-///   остаётся висеть (политика abandon в SubinterpreterManager/Watchdog),
-///   ожидающему вызывающему возвращается ошибка таймаута.
-///
-/// Диспатчер один: события обрабатываются последовательно; параллельность
-/// внутри батча (несколько плагинов на своих интерпретаторах) — решение
-/// обработчика (PluginHost запускает их в TaskGroup).
+/// Bounded event ingress and serial dispatch. Every path reserves count/bytes
+/// before its actor hop. Drop-newest for observations; awaiting callers receive
+/// eventQueueFull. Credits remain attached to retained/worker work after timeout.
 public actor PluginEventQueue {
-
-    // MARK: - Типы
-
-    /// Результат одного диспатча (для UI-отладки и тестов).
     public struct Stats: Equatable, Sendable {
         public var enqueued = 0
         public var dispatched = 0
@@ -28,308 +11,289 @@ public actor PluginEventQueue {
         public var droppedStale = 0
         public var droppedOverflow = 0
         public var timedOut = 0
+        public var retainedCount = 0
+        public var retainedBytes = 0
         public init() {}
     }
 
-    /// Лимиты очереди.
     public struct Limits: Sendable {
-        /// Таймаут одного диспатча (батча), секунды. По умолчанию — 5 с,
-        /// как FREEZE_TIMEOUT_SECONDS у PluginsWatchdog.java.
         public var dispatchTimeout: TimeInterval
-        /// Максимум апдейтов в одном коалесценг-батче (старые выбрасываются).
         public var maxCoalescedPerKey: Int
-        /// Общая глубина (fire-and-forget выбрасываются при переполнении).
+        /// Includes pre-actor, queued, executing and still-retained terminal work.
         public var maxQueueDepth: Int
-        public init(dispatchTimeout: TimeInterval = 5.0,
-                    maxCoalescedPerKey: Int = 512,
-                    maxQueueDepth: Int = 1024) {
-            self.dispatchTimeout = dispatchTimeout
-            self.maxCoalescedPerKey = maxCoalescedPerKey
-            self.maxQueueDepth = maxQueueDepth
+        public var maxQueueBytes: Int
+        public init(dispatchTimeout: TimeInterval = 5, maxCoalescedPerKey: Int = 512,
+                    maxQueueDepth: Int = 1024, maxQueueBytes: Int = 32 * 1024 * 1024) {
+            self.dispatchTimeout = dispatchTimeout.isFinite ? max(0, min(86_400, dispatchTimeout)) : 5
+            self.maxCoalescedPerKey = max(1, maxCoalescedPerKey)
+            self.maxQueueDepth = max(1, maxQueueDepth)
+            self.maxQueueBytes = max(1, maxQueueBytes)
         }
     }
 
     public typealias Handler = @Sendable (PluginEvent) async throws -> PluginEventResult
     public typealias TimeoutObserver = @Sendable (PluginEvent) async -> Void
+    public typealias ControlledHandler = @Sendable (PluginEvent, PluginEventExecution) async throws -> PluginEventResult
+    public typealias ControlledTimeoutObserver = @Sendable (PluginEvent, PluginEventExecution) async -> Void
 
-    private struct Envelope {
-        let event: PluginEvent
-        let reply: OneShotReply?
-        let sequence: Int
-        var tlReservation: UUID? = nil
+    private final class Reply: @unchecked Sendable {
+        let value = OneShotResult<PluginEventResult>()
     }
-
-    private struct CoalescedBucket {
-        var items: [PluginEvent] = []
+    private struct Envelope: Sendable {
+        let event: PluginEvent
+        let reply: Reply?
+        let retention: PluginEventRetention
+        let execution: PluginEventExecution
+        var sequence: Int = 0
+    }
+    private struct Bucket {
+        var items: [Envelope] = []
         var sequence = 0
     }
 
-    /// Одноразовый ответ ожидающему вызывающему (резюмится ровно один раз,
-    /// из любого потока/задачи).
-    final class OneShotReply: @unchecked Sendable {
-        private let box = OneShotResult<PluginEventResult>()
-        func succeed(_ value: PluginEventResult) { box.succeed(value) }
-        func fail(_ error: any Error & Sendable) { box.fail(error) }
-        func awaitValue() async throws -> PluginEventResult { try await box.awaitValue() }
-    }
-
-    // MARK: - Состояние
-
-    private var handler: Handler?
-    private var onTimeout: TimeoutObserver?
+    nonisolated private let ingress = PluginEventIngress()
+    private var handler: ControlledHandler?
+    private var onTimeout: ControlledTimeoutObserver?
     private var limits = Limits()
-    private(set) public var stats = Stats()
+    private var counters = Stats()
     private var stopped = false
-
+    private var generation = UUID()
     private var uiSettings: [Envelope] = []
-    private var sendMessage: [Envelope] = []
+    private var sends: [Envelope] = []
     private var requests: [Envelope] = []
-    private var coalesced: [CoalesceKey: CoalescedBucket] = [:]
-    private var latestSettingsRequest: [String: Int] = [:]
-    private var tlReservations: [UUID: Int] = [:]
-    private var tlReservedBytes = 0
+    private var coalesced: [CoalesceKey: Bucket] = [:]
+    private var active: [UUID: (PluginEventExecution, Reply?)] = [:]
     private var nextSequence = 0
     private var loopTask: Task<Void, Never>?
 
-    // MARK: - Публичное API
+    public var stats: Stats {
+        var result = counters
+        let retained = ingress.snapshot
+        result.retainedCount = retained.count
+        result.retainedBytes = retained.bytes
+        result.droppedOverflow += retained.dropped
+        return result
+    }
 
-    /// Запустить потребителя. Повторный вызов заменяет обработчик.
-    public func start(handler: @escaping Handler,
-                      onTimeout: @escaping TimeoutObserver = { _ in },
+    public func start(handler: @escaping Handler, onTimeout: @escaping TimeoutObserver = { _ in },
                       limits: Limits = Limits()) {
+        startControlled(handler: { event, _ in try await handler(event) },
+                        onTimeout: { event, _ in await onTimeout(event) }, limits: limits)
+    }
+
+    public func startControlled(handler: @escaping ControlledHandler,
+                                onTimeout: @escaping ControlledTimeoutObserver = { _, _ in },
+                                limits: Limits = Limits()) {
         self.handler = handler
         self.onTimeout = onTimeout
-        self.limits = limits
+        self.limits = Limits(dispatchTimeout: limits.dispatchTimeout, maxCoalescedPerKey: limits.maxCoalescedPerKey,
+                             maxQueueDepth: limits.maxQueueDepth, maxQueueBytes: limits.maxQueueBytes)
+        ingress.configure(count: self.limits.maxQueueDepth, bytes: self.limits.maxQueueBytes)
         stopped = false
         ensureLoop()
     }
 
-    /// Остановить: ожидающие получают ошибку, новые submit — отказ.
     public func stop() {
         stopped = true
+        ingress.stop()
+        generation = UUID()
         loopTask?.cancel()
         loopTask = nil
-        failPending(PluginHostError.queueStopped)
-        for envelope in uiSettings + sendMessage + requests { releaseTLReservation(envelope.tlReservation) }
-        uiSettings = []
-        sendMessage = []
-        requests = []
-        coalesced.removeAll()
-        latestSettingsRequest.removeAll()
+        for envelope in uiSettings + sends + requests + coalesced.values.flatMap(\.items) {
+            envelope.execution.revoke(.queueStopped)
+            envelope.reply?.value.fail(PluginHostError.queueStopped)
+        }
+        for (execution, reply) in active.values {
+            execution.revoke(.queueStopped)
+            reply?.value.fail(PluginHostError.queueStopped)
+        }
+        uiSettings.removeAll(); sends.removeAll(); requests.removeAll(); coalesced.removeAll()
+        // Running handlers/mailboxes retain their own credits; stop cannot reset them.
     }
 
-    /// Постановка fire-and-forget события (не ждёт результата).
-    public func submit(_ event: PluginEvent) {
-        enqueue(event, reply: nil)
+    @discardableResult
+    public nonisolated func submit(_ event: PluginEvent) async -> Bool {
+        guard let envelope = try? prepare(event, awaiting: false, shouldExecute: { true }) else { return false }
+        await enqueue(envelope)
+        return true
     }
 
-    /// Постановка fire-and-forget из не-async контекста (точки входа telegram-ios).
-    public nonisolated func submitAsync(_ event: PluginEvent) {
-        Task { await self.submit(event) }
+    /// The reservation happens on the caller, before creating this Task.
+    @discardableResult
+    public nonisolated func submitAsync(_ event: PluginEvent) -> Bool {
+        guard let envelope = try? prepare(event, awaiting: false, shouldExecute: { true }) else { return false }
+        Task { await self.enqueue(envelope) }
+        return true
     }
 
-    /// Постановка ждущего события; возвращает результат обработки.
-    public func submitAwaiting(_ event: PluginEvent) async throws -> PluginEventResult {
-        guard !stopped, handler != nil else { throw PluginHostError.queueStopped }
-        let reply = OneShotReply()
-        enqueue(event, reply: reply)
-        return try await reply.awaitValue()
+    public nonisolated func submitAwaiting(_ event: PluginEvent,
+                                          shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> PluginEventResult {
+        try Task.checkCancellation()
+        let envelope = try prepare(event, awaiting: true, shouldExecute: shouldExecute)
+        guard let reply = envelope.reply else { throw PluginHostError.internalInconsistency("Missing event reply") }
+        return try await withTaskCancellationHandler(operation: {
+            await self.enqueue(envelope)
+            let value = try await reply.value.awaitValue()
+            try Task.checkCancellation()
+            return value
+        }, onCancel: {
+            envelope.execution.revoke(.superseded("Event waiter cancelled"))
+            reply.value.fail(CancellationError())
+        })
     }
 
-    // MARK: - Постановка
+    private nonisolated func prepare(_ event: PluginEvent, awaiting: Bool,
+                                     shouldExecute: @escaping @Sendable () -> Bool) throws -> Envelope {
+        guard shouldExecute() else { throw PluginHostError.superseded("Native event execution expired") }
+        let credit = try ingress.reserve(event, awaiting: awaiting)
+        let retention = PluginEventRetention([credit])
+        // TL's current adapter closes its isActive scope even after a successful
+        // reply. That is not cancellation of already-valid effects. Native send
+        // supplies a cancellation-only guard which remains meaningful afterwards.
+        let followExternalAfterSuccess: Bool
+        if case .tlTransform = event { followExternalAfterSuccess = false }
+        else { followExternalAfterSuccess = true }
+        let execution = PluginEventExecution(retention: retention, shouldExecute: shouldExecute,
+                                             effectsFollowExternalAfterSuccess: followExternalAfterSuccess)
+        return Envelope(event: event, reply: awaiting ? Reply() : nil, retention: retention, execution: execution)
+    }
 
-    private func enqueue(_ event: PluginEvent, reply: OneShotReply?) {
-        guard !stopped else {
-            reply?.fail(PluginHostError.queueStopped)
+    private func enqueue(_ value: Envelope) {
+        guard !stopped, value.retention.credits.allSatisfy({ ingress.isCurrent($0) }) else {
+            value.execution.revoke(.queueStopped)
+            value.reply?.value.fail(PluginHostError.queueStopped)
             return
         }
-        stats.enqueued += 1
-
-        var tlReservation: UUID?
-        if case let .tlTransform(payload) = event {
-            let bytes = payload.valueJSON.utf8.count + payload.metadataJSON.utf8.count + (payload.errorJSON?.utf8.count ?? 0)
-            guard depth < limits.maxQueueDepth, tlReservations.count < 256,
-                  bytes <= 32 * 1024 * 1024 - tlReservedBytes else {
-                stats.droppedOverflow += 1
-                reply?.fail(PluginHostError.runtimeFailure("TL transform queue is full"))
-                return
-            }
-            // Router deadlines can expire while a Host envelope is still queued.
-            // Host must independently bound the retained payloads until dispatch.
-            let id = UUID()
-            tlReservation = id
-            tlReservations[id] = bytes
-            tlReservedBytes += bytes
-        }
-
-        // Коалесценг create_settings: новый запрос того же плагина замещает
-        // невзятый старый (дроп устаревших) — старому резюмится ошибка.
-        if case .createSettings(let payload) = event, reply != nil {
-            if let previous = latestSettingsRequest[payload.pluginId],
-               let envelopeIndex = uiSettings.firstIndex(where: { $0.sequence == previous }) {
-                let stale = uiSettings.remove(at: envelopeIndex)
-                stale.reply?.fail(PluginHostError.superseded(payload.pluginId))
-                stats.droppedStale += 1
-            }
-            latestSettingsRequest[payload.pluginId] = nextSequence
-        }
-
-        // Апдейты — в коалесценг-бакеты.
-        if let key = event.coalesceKey {
-            var bucket = coalesced[key] ?? CoalescedBucket()
-            bucket.items.append(event)
-            bucket.sequence = nextSequence
-            if bucket.items.count > limits.maxCoalescedPerKey {
-                bucket.items.removeFirst(bucket.items.count - limits.maxCoalescedPerKey)
-                stats.droppedOverflow += 1
-            }
-            coalesced[key] = bucket
-            ensureLoop()
+        guard value.execution.isValid else {
+            value.reply?.value.fail(PluginHostError.superseded("Event cancelled before enqueue"))
+            counters.droppedStale += 1
             return
         }
-
-        let envelope = Envelope(event: event, reply: reply, sequence: nextSequence, tlReservation: tlReservation)
+        var envelope = value
+        envelope.sequence = nextSequence
         nextSequence += 1
-
-        // Переполнение глубины: роняем fire-and-forget низкого приоритета.
-        if depth + 1 > limits.maxQueueDepth, reply == nil,
-           event.priority.rawValue >= PluginEventPriority.updates.rawValue {
-            stats.droppedOverflow += 1
-            return
+        counters.enqueued += 1
+        if case .createSettings(let incoming) = envelope.event, envelope.reply != nil,
+           let index = uiSettings.firstIndex(where: {
+               if case .createSettings(let old) = $0.event { return old.pluginId == incoming.pluginId }
+               return false
+           }) {
+            let old = uiSettings.remove(at: index)
+            old.execution.revoke(.superseded(incoming.pluginId))
+            old.reply?.value.fail(PluginHostError.superseded(incoming.pluginId))
+            counters.droppedStale += 1
         }
-
-        switch event.priority {
-        case .uiSettings: uiSettings.append(envelope)
-        case .sendMessage: sendMessage.append(envelope)
-        case .request, .lifecycle, .updates: requests.append(envelope)
+        // Awaited observations keep their individual result/cancellation channel.
+        if envelope.reply == nil, let key = envelope.event.coalesceKey {
+            var bucket = coalesced[key] ?? Bucket()
+            if bucket.items.count == limits.maxCoalescedPerKey {
+                let old = bucket.items.removeFirst()
+                old.execution.revoke(.superseded("Coalesced bucket limit"))
+                counters.droppedOverflow += 1
+            }
+            bucket.items.append(envelope)
+            bucket.sequence = envelope.sequence
+            coalesced[key] = bucket
+        } else {
+            switch envelope.event.priority {
+            case .uiSettings: uiSettings.append(envelope)
+            case .sendMessage: sends.append(envelope)
+            case .request, .lifecycle, .updates: requests.append(envelope)
+            }
         }
         ensureLoop()
     }
 
-    private var depth: Int {
-        uiSettings.count + sendMessage.count + requests.count
-            + coalesced.values.reduce(0) { $0 + $1.items.count }
-    }
-
-    // MARK: - Потребитель
-
     private func ensureLoop() {
         guard loopTask == nil, handler != nil, !stopped else { return }
-        loopTask = Task { await self.runLoop() }
+        let current = generation
+        loopTask = Task { await self.runLoop(current) }
     }
 
-    private func runLoop() async {
-        while !stopped {
-            guard let envelope = popNext() else {
-                loopTask = nil
-                return
-            }
-            await dispatch(envelope)
-        }
-        loopTask = nil
-        failPending(PluginHostError.queueStopped)
+    private func runLoop(_ current: UUID) async {
+        while !stopped, generation == current, let envelope = popNext() { await dispatch(envelope) }
+        if generation == current { loopTask = nil }
     }
 
     private func popNext() -> Envelope? {
-        if let envelope = uiSettings.first {
-            uiSettings.removeFirst()
-            if case .createSettings(let payload) = envelope.event {
-                latestSettingsRequest[payload.pluginId] = nil
-            }
-            return envelope
-        }
-        if let envelope = sendMessage.first {
-            sendMessage.removeFirst()
-            return envelope
-        }
-        if !coalesced.isEmpty {
-            // Самый старый бакет становится ОДНИМ входом в интерпретатор.
-            let oldest = coalesced.min { $0.value.sequence < $1.value.sequence }!
-            let key = oldest.key
+        if !uiSettings.isEmpty { return uiSettings.removeFirst() }
+        if !sends.isEmpty { return sends.removeFirst() }
+        if let oldest = coalesced.min(by: { $0.value.sequence < $1.value.sequence }) {
+            coalesced.removeValue(forKey: oldest.key)
             let items = oldest.value.items
-            coalesced[key] = nil
-            stats.coalescedIntoBatches += items.count
-            return Envelope(event: .coalescedUpdates(key, items), reply: nil, sequence: oldest.value.sequence)
+            counters.coalescedIntoBatches += items.count
+            let retention = PluginEventRetention(items.flatMap { $0.retention.credits })
+            return Envelope(event: .coalescedUpdates(oldest.key, items.map(\.event)), reply: nil,
+                            retention: retention, execution: PluginEventExecution(retention: retention, shouldExecute: { true }),
+                            sequence: oldest.value.sequence)
         }
-        if let envelope = requests.first {
-            requests.removeFirst()
-            return envelope
-        }
+        if !requests.isEmpty { return requests.removeFirst() }
         return nil
     }
 
     private func dispatch(_ envelope: Envelope) async {
-        defer { releaseTLReservation(envelope.tlReservation) }
-        guard let handler else {
-            envelope.reply?.fail(PluginHostError.queueStopped)
+        guard let handler, envelope.execution.isValid else {
+            envelope.reply?.value.fail(PluginHostError.superseded("Event dispatch expired"))
             return
         }
-        stats.dispatched += 1
+        let execution = envelope.execution
+        active[execution.id] = (execution, envelope.reply)
+        defer { active.removeValue(forKey: execution.id); execution.onInterruption(nil) }
+        counters.dispatched += 1
+        let outcome = PluginLifecycleSignal<PluginEventResult>()
+        execution.onInterruption { outcome.fail($0) }
+        let event = envelope.event
+        let retention = envelope.retention
+        let work = Task.detached {
+            defer { withExtendedLifetime(retention) {} }
+            do {
+                try execution.check()
+                let result = try await handler(event, execution)
+                try execution.check()
+                outcome.succeed(result)
+            } catch { outcome.fail(bridgePluginError(error)) }
+        }
+        let timeout = limits.dispatchTimeout
+        let timer: Task<Void, Never>? = timeout > 0 ? Task.detached { [weak execution] in
+            do { try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000)) }
+            catch { return }
+            execution?.revoke(.timeout("event dispatch"), timeout: true)
+        } : nil
+        defer { timer?.cancel(); withExtendedLifetime(retention) {}; _ = work }
         do {
-            let timeout = limits.dispatchTimeout
-            let result = try await withDispatchTimeout(timeout) {
-                try await handler(envelope.event)
-            }
-            envelope.reply?.succeed(result)
-        } catch is DispatchTimeoutError {
-            stats.timedOut += 1
-            // Диспатч «завис»: обработчик не отменился — интерпретатор
-            // бросается (abandon) обсервером, очередь продолжает жить.
-            if let onTimeout { await onTimeout(envelope.event) }
-            envelope.reply?.fail(PluginHostError.timeout(String(describing: envelope.event.kind)))
+            let result = try await outcome.wait(cancellable: false)
+            try execution.markSuccessful()
+            envelope.reply?.value.succeed(result)
         } catch {
-            // `any Error` не Sendable: через границу ждёт только PluginHostError.
-            envelope.reply?.fail(bridgePluginError(error))
+            let failure = bridgePluginError(error)
+            execution.revoke(failure)
+            if execution.didTimeOut {
+                counters.timedOut += 1
+                if let onTimeout { await onTimeout(event, execution) }
+            }
+            envelope.reply?.value.fail(failure)
         }
-    }
-
-    private func failPending(_ error: any Error & Sendable) {
-        for envelope in uiSettings + sendMessage + requests {
-            envelope.reply?.fail(error)
-        }
-    }
-
-    private func releaseTLReservation(_ id: UUID?) {
-        if let id, let bytes = tlReservations.removeValue(forKey: id) { tlReservedBytes -= bytes }
     }
 }
 
-// MARK: - Таймаут
+// MARK: - Per-invocation timeout (native work is never forcibly terminated)
 
-/// Гонка операции с дедлайном. Операция запускается НЕСТРУКТУРИРОВАННОЙ
-/// задачей и НЕ отменяется по таймауту: зависший вызов CPython продолжает
-/// висеть в своём воркере до abandon (SubinterpreterManager/Watchdog) —
-/// structured-группа ждала бы её вечно, что противоречит политике.
-/// Побочный эффект: при таймауте задача операции живёт, пока операция не
-/// завершится (для брошенного интерпретатора — до конца процесса; осознано).
 func withDispatchTimeout<T: Sendable>(
     _ seconds: TimeInterval,
     _ operation: @escaping @Sendable () async throws -> T
 ) async throws -> T {
     if seconds <= 0 { return try await operation() }
     let outcome = OneShotResult<T>()
-    // detached: не наследовать изоляцию актора очереди. В Swift 6.2+ обычный
-    // Task из nonisolated async, вызванного с актора, сел бы на этот актор,
-    // и таймер не шёл бы параллельно зависшему диспатчу.
     let operationTask = Task.detached {
-        do {
-            outcome.succeed(try await operation())
-        } catch {
-            outcome.fail(bridgePluginError(error))
-        }
+        do { outcome.succeed(try await operation()) }
+        catch { outcome.fail(bridgePluginError(error)) }
     }
     let timerTask = Task.detached {
-        do {
-            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-        } catch {
-            return // отмена после успешного диспатча — не подменять результат
-        }
+        do { try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)) }
+        catch { return }
         outcome.fail(DispatchTimeoutError())
     }
-    defer {
-        timerTask.cancel()
-        _ = operationTask
-    }
+    defer { timerTask.cancel(); _ = operationTask }
     return try await outcome.awaitValue()
 }
 

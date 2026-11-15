@@ -64,29 +64,44 @@ public final class PluginHookRegistration: @unchecked Sendable {
 
 /// One process-wide adapter, with plugin fanout owned by the injected host.
 public enum PluginHookRouter {
+    private static let sendExecutionKey = "PluginHooks.native-send-execution"
+
+    /// Capture synchronously inside SendMessage, before its Task hop. Unlike an
+    /// isPending query this stays valid after a successful result, but is revoked
+    /// synchronously before timeout/detach/cancellation publishes its fallback.
+    public static func currentSendExecutionPredicate() -> @Sendable () -> Bool {
+        let scope = Thread.current.threadDictionary[sendExecutionKey] as? PluginHookSendExecution
+        return { scope?.isPermitted ?? false }
+    }
+
+    public static var ingressSnapshot: PluginHookIngressSnapshot { PluginHookIngressBudget.shared.snapshot }
     /// A C atomic load only: even the Swift registry/queues are lazy until attach or enabled work.
     public static func hasSubscribers(_ kind: PluginHookKind) -> Bool {
         return xthooks_subscriber_mask_load() & kind.rawValue != 0
     }
 
-    public static func attach(_ handlers: PluginHookHandlers, subscriptions: Set<PluginHookKind> = []) -> PluginHookRegistration {
+    public static func attach(_ handlers: PluginHookHandlers, subscriptions: Set<PluginHookKind> = [],
+                              ingressLimits: PluginHookIngressLimits = PluginHookIngressLimits()) -> PluginHookRegistration {
+        PluginHookIngressBudget.shared.configure(ingressLimits)
         return HookRegistry.shared.attach(handlers, kinds: subscriptions)
     }
 
     /// Fire-and-forget. The factory (including TL serialization) runs on a private serial queue.
-    /// At most 256 factories wait per registration; overload drops observations, never Core work.
+    /// Shared count/byte credits follow factories and retained handoffs across
+    /// registrations; overload drops newest observations, never Core work.
     public static func observe(_ kind: PluginHookKind, makeEvent: @escaping () -> PluginHookObservation) {
         guard hasSubscribers(kind), kind != .sendMessage,
-              let entry = HookRegistry.shared.snapshot(kind), entry.reserveObservation() else {
+              let entry = HookRegistry.shared.snapshot(kind),
+              let credit = PluginHookIngressBudget.shared.reserve() else {
             return
         }
         let work = HookObservationWork(makeEvent)
         HookQueues.observations.async {
-            defer { entry.releaseObservation() }
+            defer { withExtendedLifetime(credit) {} }
             guard entry.allows(kind) else {
                 return
             }
-            let event = work.makeEvent()
+            guard let event = work.makeEvent().retaining(credit) else { return }
             guard event.kind == kind else {
                 entry.report(PluginHookDiagnostic(code: .observationKindMismatch, detail: "Observation factory returned the wrong kind"))
                 return
@@ -107,7 +122,19 @@ public enum PluginHookRouter {
             completion(.keepOriginal)
             return nil
         }
-        let operation = HookSendOperation(payload: payload, entry: entry, completion: completion)
+        var bytes = 256 + (payload.text?.utf8.count ?? 0)
+        for name in payload.attributeTypes {
+            guard name.utf8.count + 32 <= 16 * 1024 * 1024 - bytes else { completion(.keepOriginal); return nil }
+            bytes += name.utf8.count + 32
+        }
+        guard let credit = PluginHookIngressBudget.shared.reserve(bytes: bytes) else {
+            completion(.keepOriginal)
+            return nil
+        }
+        var stagedPayload = payload
+        stagedPayload.ingressLifetime.credit = credit
+        let retainedPayload = stagedPayload
+        let operation = HookSendOperation(payload: retainedPayload, entry: entry, completion: completion)
         guard entry.add(operation) else {
             completion(.keepOriginal)
             return nil
@@ -118,7 +145,9 @@ public enum PluginHookRouter {
                 operation.finish(.keepOriginal, cancelHost: true)
                 return
             }
-            let cancellation = handler(payload, { [weak operation] result in
+            Thread.current.threadDictionary[sendExecutionKey] = operation.execution
+            defer { Thread.current.threadDictionary.removeObject(forKey: sendExecutionKey) }
+            let cancellation = handler(retainedPayload, { [weak operation] result in
                 operation?.resolve(result)
             })
             operation.installHostCancellation(cancellation)
@@ -212,8 +241,6 @@ private final class HookRegistrationEntry: @unchecked Sendable {
     private var active = true
     private var subscriptions: UInt32
     private var pending: [ObjectIdentifier: HookSendOperation] = [:]
-    private var pendingObservations = 0
-    private var reportedOverflow = false
 
     init(handlers: PluginHookHandlers, kinds: Set<PluginHookKind>) {
         self.handlers = handlers
@@ -255,31 +282,6 @@ private final class HookRegistrationEntry: @unchecked Sendable {
         }
     }
 
-    func reserveObservation() -> Bool {
-        self.lock.lock()
-        guard self.active, self.pendingObservations < 256 else {
-            let reportOverflow = self.active && !self.reportedOverflow
-            self.reportedOverflow = true
-            self.lock.unlock()
-            if reportOverflow {
-                self.report(PluginHookDiagnostic(code: .observationQueueFull, detail: "Observation dropped at the 256-event queue limit"))
-            }
-            return false
-        }
-        self.pendingObservations += 1
-        self.lock.unlock()
-        return true
-    }
-
-    func releaseObservation() {
-        self.lock.lock()
-        self.pendingObservations -= 1
-        if self.pendingObservations == 0 {
-            self.reportedOverflow = false
-        }
-        self.lock.unlock()
-    }
-
     func add(_ operation: HookSendOperation) -> Bool {
         self.lock.lock()
         defer { self.lock.unlock() }
@@ -304,6 +306,7 @@ private final class HookRegistrationEntry: @unchecked Sendable {
 }
 
 private final class HookSendOperation: @unchecked Sendable {
+    let execution = PluginHookSendExecution()
     private let lock = NSLock()
     private let payload: PluginSendPayload
     private weak var entry: HookRegistrationEntry?
@@ -387,6 +390,7 @@ private final class HookSendOperation: @unchecked Sendable {
         }
         self.finished = true
         self.cancelHost = cancelHost
+        if cancelHost { execution.revoke() }
         let cancellation = self.hostCancellation
         self.hostCancellation = nil
         let timeout = self.timeout
@@ -418,6 +422,7 @@ private final class HookSendOperation: @unchecked Sendable {
         self.finished = true
         self.completion = nil
         self.cancelHost = true
+        execution.revoke()
         let cancellation = self.hostCancellation
         self.hostCancellation = nil
         let timeout = self.timeout

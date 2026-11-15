@@ -7,6 +7,7 @@ public enum CloudError: String, Error, LocalizedError, Sendable {
     case secureStorage, invalidCredential, settingsChanged, maintenanceUnavailable
     case restorePartiallyApplied
     case nothingToRestore
+    case credentialDestinationConflict
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +33,7 @@ public enum CloudError: String, Error, LocalizedError, Sendable {
         case .maintenanceUnavailable: return "The application settings-maintenance binding is not ready."
         case .restorePartiallyApplied: return "Public settings were applied, but service-key restoration did not finish. Existing keys were retained. Preview and retry to add any remaining keys; no successful-sync date was recorded."
         case .nothingToRestore: return "No supported settings or missing service keys were applied. Review the skipped fields."
+        case .credentialDestinationConflict: return "This service has a different local destination. Review its credentials in the native service editor before importing this pair."
         }
     }
 }

@@ -5,7 +5,7 @@ public enum CloudLegacyDisposition: String, Sendable { case mapped, skipped, cre
 public enum CloudLegacySkipReason: String, Sendable {
     case unsupportedSetting, nativeUnavailable, incompatibleType, invalidValue, unsupportedOption
     case androidSystem, deviceOrAccountState, excludedCredential, privateContent, credentialsDisabled
-    case missingEndpoint, malformedServices, conflictingFields, missingServiceMetadata, stockTelegramPreference, requiresNativeResources
+    case missingEndpoint, malformedServices, conflictingFields, missingServiceMetadata, stockTelegramPreference, requiresNativeResources, existingCredential
 
     public var explanation: String {
         switch self {
@@ -25,6 +25,7 @@ public enum CloudLegacySkipReason: String, Sendable {
         case .missingServiceMetadata: return "Selection requires service metadata from the same backup."
         case .stockTelegramPreference: return "Requires a native Telegram preferences adapter; it is not part of the ClientSettings CAS archive."
         case .requiresNativeResources: return "The settings backup does not include compatible native assets or model packages."
+        case .existingCredential: return "The existing local credential keeps its destination; this incoming pair is not substituted."
         }
     }
 }
@@ -57,6 +58,7 @@ public struct CloudLegacyRestorePlan: Sendable, CustomStringConvertible, CustomR
     public let publicInspection: ToolsBackupInspection
     let expectedSettings: ClientSettingsSnapshot
     let credentials: [CloudCredentialEntry]
+    let credentialMetadata: [String: ClientSettingValue]
 
     public var mapped: [CloudLegacyFieldReport] { fields.filter { $0.disposition == .mapped } }
     public var skipped: [CloudLegacyFieldReport] { fields.filter { $0.disposition == .skipped } }
@@ -69,6 +71,10 @@ public struct CloudLegacyRestorePlan: Sendable, CustomStringConvertible, CustomR
         let stored = keys.intersection(expectedSettings.storedKeys)
         try settings.applyPublic(expectedSettings.values.filter { stored.contains($0.key) },
             resetting: keys.subtracting(stored), expected: expectedSettings)
+    }
+
+    public func verifyCredentialTarget(includeApiKeys: Bool, storage: any CloudCredentialStorage) throws {
+        try CloudCloudflareMetadata.verifyTarget(inspection: publicInspection, includeApiKeys: includeApiKeys && includedApiKeys, storage: storage)
     }
 
     public var description: String { "CloudLegacyRestorePlan(mapped: \(mapped.count), skipped: \(skipped.count), keys: \(credentialCount))" }

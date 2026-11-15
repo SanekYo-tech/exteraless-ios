@@ -65,6 +65,9 @@ import Foundation
         }
         lastPolicy = policy
         guard policy.autoSync else { cancelScheduled(cancelRunning: true); return }
+        // A failed preparation reload publishes an error-only invalidation. It
+        // must not schedule another reload/upload merely because that error changed.
+        guard !keys.isEmpty || snapshot.lastError == nil else { return }
         let admitted = (try? CloudCredentials.admittedIDs(publicValues: snapshot.values)) ?? []
         let credentialKeys = policy.includeApiKeys ? Set(admitted.map(\.settingKey)) : []
         let portableKeys = Set(snapshot.definitions.filter(CloudArchivePolicy.isPortable).map(\.key))
