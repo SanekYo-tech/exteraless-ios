@@ -145,7 +145,14 @@ final class PillProviderTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1000)
         let http = PillHTTPClient(transport: transport, now: { now })
         let first = http.get(PillEndpoints.coinbase, domain: "rates") { result in
-            XCTAssertThrowsError(try result.get().validate(now: now))
+            do {
+                try result.get().validate(now: now)
+                XCTFail("HTTP 429 was accepted as a valid rate response")
+            } catch let error as PillError {
+                XCTAssertEqual(error, .rateLimited(retryAt: now.addingTimeInterval(30)))
+            } catch {
+                XCTFail("Unexpected quota error: \(error)")
+            }
         }
         transport.finish(0, .success(.init(status: 429, headers: ["Retry-After": "30", "X-RateLimit-Remaining": "0"], data: Data())))
         let second = http.get(PillEndpoints.coinbase, domain: "rates") { result in
