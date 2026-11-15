@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "cohort": "sdk-tl-native-self-field-repair",
+  "handoff": "docs/wave-2/sdk-tl-self-fix.md",
+  "committed": false,
+  "mac_fixed_snapshot_executed": false,
+  "failed_mac": {
+    "run": "43735410090",
+    "commit": "cca2d83a",
+    "error": "flags2 mutation or nested ArrayList lost",
+    "first_sdk_child_passed": true,
+    "third_hns_child_started": false,
+    "artifact_directory": "build/artifacts/python-runtime-43735410090/diagnostics/python-plugin",
+    "artifact_sha256": {
+      "swift-sdk-tl-smoke.json": "2152ef3a9ac4e305ffbcdd70744ceb4278a7f86fd858673be4420a4983139dc0",
+      "swift-sdk-tl-console.log": "9d49a9936bd9943f5768f25de06891057c6b2009b6bd0b475183f1d806e9899d",
+      "build-inputs.json": "be6d62ed401c517e45a270fc2a4c332f5d672a4dd702a79dcf07f8854a56a0ed"
+    }
+  },
+  "root_cause": "Native normalization materializes user.self=false; Schema.decode passes it via **fields to TLObject.__init__(self, **fields), colliding with the bound receiver before the hook body.",
+  "fix": "TLObject.__init__(self, /, **fields)",
+  "captured_sample": {"path": "tools/compat/tests/fixtures/tl_native_user_response.json", "bytes": 1286, "equal_to_mac_dispatch_payload": true},
+  "pre_fix_real_c_reproduction": {
+    "python": "3.12.10",
+    "error": "TypeError: TLObject.__init__() got multiple values for argument 'self'",
+    "log": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-red-c-py312.log",
+    "sha256": "1f169fc40ea120207e7da5608bfd6291f774afec6692002f966ae36f5b1e89c8",
+    "bootstrap_security_warning_lines": 7
+  },
+  "suite_timeout_seconds": 30,
+  "unit_worker_timeout_seconds": 20,
+  "c_worker_timeout_seconds": 30,
+  "sample_limit_bytes": 32768,
+  "command": "python -X utf8 -B -m pytest tools/compat/tests/test_native_sdk_tl_fixture.py tools/compat/tests/test_sdk_tl_c_response.py tools/compat/tests/test_sdk_tl_remediation.py -k \"native_tl_python_fixture or actual_native_response or boolean_flags or vector_roots\" -q",
+  "c_bridge_environment_variable": "EXTERALESS_TL_C_BRIDGE",
+  "runs": [
+    {
+      "python": "3.12.10", "passed": 5, "failed": 0, "skipped": 0, "deselected": 2, "seconds": 2.74,
+      "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-green-py312.xml",
+      "junit_sha256": "c5c21ed6639e002878226e582d9be6ea5ab738766a8dea819f379ef6bfbc3129",
+      "c_build_inputs": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-bridge-py312/build-inputs.json",
+      "c_extension": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-bridge-py312/_exteraless_bridge.cp312-win_amd64.pyd",
+      "c_extension_sha256": "e930d67050661a4a5486cd60e046c3c584221296fdaf64223fd67cc25b5df407",
+      "worker_artifact_root": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-green-py312/test_actual_native_response_th0",
+      "native_calls_first_second": [138, 192], "bootstrap_security_rejections_each": 8, "handles_after_unload_each": 0
+    },
+    {
+      "python": "3.14.8", "passed": 5, "failed": 0, "skipped": 0, "deselected": 2, "seconds": 3.11,
+      "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-green-py314.xml",
+      "junit_sha256": "ad97a31be060dedc52278a3ebb8e35e77f68f0dd0cd28cd5f667ebee49e84dfd",
+      "c_build_inputs": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-bridge-py314/build-inputs.json",
+      "c_extension": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-bridge-py314/_exteraless_bridge.cp314-win_amd64.pyd",
+      "c_extension_sha256": "aa40823e5de9608f36c3a7c25dfdc261f819da37adc258d818b13b35555a63e8",
+      "worker_artifact_root": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-tl-self-green-py314/test_actual_native_response_th0",
+      "native_calls_first_second": [281, 407], "bootstrap_security_rejections_each": 8, "handles_after_unload_each": 0
+    }
+  ],
+  "local_boundary": "Current C extension/BridgeBackend and shipping Python SDK/plugin hooks; desktop host service recorders and captured native-normalized input. Swift codec and OWN_GIL execution remain the next Mac gate.",
+  "diagnostics": {"errors_per_interpreter": 4, "error_tail_characters": 1200, "normalized_result_preview_characters": 2048, "flags2_expectation": {"seen_close_friend": true, "seen_flags2": 5}},
+  "ready_files_sha256": {
+    "python/exteraless_runtime/_tl.py": "38421d438a8efedd32ce62cfa9946c5b31545d792e86ac8e7ad3c20e611773cf",
+    "python/runtime/smoke/swift_sdk_tl_probe.swift": "fa7a4ad4d62dacc451aef5a5100eb364700c65a50cc63db3cd526b97f2313f04",
+    "tools/compat/tests/test_native_sdk_tl_fixture.py": "518bf3e97de0c89526801c8052f559e4943b81e58929123abcb0bd38e269aa14",
+    "tools/compat/tests/test_sdk_tl_c_response.py": "3164b34bb687951dd22af53af5a911d621b39332a2f5eb8644710cfa0df26ecf",
+    "tools/compat/tests/fixtures/tl_native_user_response.json": "99b3119a66a859d7afd04e70812f79bffc68291c6592da8950d8d4888503e035"
+  },
+  "preserved_mac_source_sha256": {
+    "python/bridge/_exteraless_bridge.c": "f9a94d4ed8cbaa7fae9e23f7b232313fa838a89c5407b60a603cebcea277f92a",
+    "python/runtime/smoke/native_plugin_probe.py": "06a337723469eebe35897ff7a5fe5e90f98fccbedba70f69dcbcef0be9ea0e49",
+    "python/runtime/tl-schema.json": "e02140d484cabcafbaa0545a017c5be9f6904c74ab0a9e74c3848af8b7ecd221",
+    "python/sdk/extera_utils/plugin_loader.py": "c90134bde58559d675ffeff313eecd4223f39d60edbe0992137b41461b6547f5",
+    "python/exteraless_runtime/__init__.py": "02526f84911a0dfdbcb9927885f947730cbf4671e37f79ea28d44a656a3f16c6",
+    "python/exteraless_runtime/_codec.py": "a9c6b19357d0a637dd6f6c641198cd37552f317ac1202722291fde3a313fe6fb",
+    "python/virtualjava/finder.py": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71",
+    "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
+    "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
+    "python/runtime/smoke/plugins/native_tl_first.plugin": "8eb002a0596af05b71b9ec9e995398f8a7a5f64ed87cd395639abe83f50fa675",
+    "python/runtime/smoke/plugins/native_tl_second.plugin": "bafd68ab038a39910faf947afd50965c56366053f4d54b0cee71e8aeeeda614f",
+    "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLTransformCodec.swift": "14c865c86cd58ee31128a861aaf119ef9cf12a8b057f771bfc3883f7973ef336",
+    "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLCodec.swift": "c22611ed58f5594e27e8087da14f272eabed38e5c5b8306049d224af9c710863"
+  },
+  "next_native_checks": ["flags2_on true/5 and flags2_off false/1 through shipping response validator", "shared-bit missing/inconsistent rejection and bot version 9", "User/Int/Long vectors, origin, cancellation/text, epochs and cleanup", "third native HNS child after TL completion"]
+}

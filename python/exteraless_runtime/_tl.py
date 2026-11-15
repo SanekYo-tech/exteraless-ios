@@ -20,7 +20,9 @@ class TLObject(Object):
     _definition = None
     _field_aliases = {}
 
-    def __init__(self, **fields):
+    def __init__(self, /, **fields):
+        # Native TL constructors (including user) have a Boolean field named
+        # "self". Keep the receiver positional-only so that wire key stays data.
         object.__setattr__(self, "_values", {})
         object.__setattr__(self, "_tl_context", None)
         for name, value in fields.items():

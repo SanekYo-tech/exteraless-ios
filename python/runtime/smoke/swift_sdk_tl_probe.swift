@@ -93,6 +93,7 @@ struct SDKTLTrace: Encodable, Sendable {
     var observation: SDKTLObservation?
     var checks: SDKTLCheckIdentity?
     var sources: [String] = []
+    var dispatchErrors: [String] = []
 }
 
 /// Every source is forwarded unchanged to the actual CPython engine. Extra
@@ -140,7 +141,19 @@ final class SDKTLObservedEngine: CPythonEngine, @unchecked Sendable {
         let observer = sourceObserver
         lock.unlock()
         try observer?(source)
-        let value = try native.runScript(reference, source)
+        let value: String
+        do {
+            value = try native.runScript(reference, source)
+        } catch {
+            if source.hasPrefix("_exteraless_runtime.dispatch_json(") {
+                lock.lock()
+                if (records[reference.raw]?.dispatchErrors.count ?? 0) < 4 {
+                    records[reference.raw]?.dispatchErrors.append(String(String(describing: error).suffix(1200)))
+                }
+                lock.unlock()
+            }
+            throw error
+        }
         if source.hasPrefix("_exteraless_runtime.load_json(") {
             let json = try native.runScript(reference, "_native_tl_probe.loaded()")
             let identity = try JSONDecoder().decode(SDKTLCheckIdentity.self, from: Data(json.utf8))
@@ -212,6 +225,7 @@ private struct SDKTLReport: Encodable {
     var validatedRequestLengths: [Int] = []
     var legacyTextRecords: [PluginJSONValue] = []
     var boundaryReleases: [Int64] = []
+    var flags2Diagnostics: [String: PluginJSONValue] = [:]
     var error: String?
     func write(_ url: URL) throws {
         let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -352,7 +366,14 @@ enum SDKTLNativeProbe {
             let user = "[{\"_\":\"user\",\"id\":7,\"flags\":0,\"flags2\":1,\"usernames\":[]}]"
             try mode("flags2_on")
             let flagged = try await current.events.transformTL(payload(.postRequest, "users.getUsers", user))
-            try tlCheck(try stored("nativeTLSdkA", "seen_close_friend") == .bool(true) && stored("nativeTLSdkA", "seen_flags2") == .integer(5), "flags2 mutation or nested ArrayList lost")
+            let seenCloseFriend = try stored("nativeTLSdkA", "seen_close_friend")
+            let seenFlags2 = try stored("nativeTLSdkA", "seen_flags2")
+            report.flags2Diagnostics = [
+                "strategy": .string(String(describing: flagged.strategy)),
+                "normalized_result": flagged.valueJSON.map { PluginJSONValue.string(String($0.prefix(2048))) } ?? .null,
+                "seen_close_friend": seenCloseFriend, "seen_flags2": seenFlags2
+            ]
+            try tlCheck(seenCloseFriend == .bool(true) && seenFlags2 == .integer(5), "flags2 mutation or nested ArrayList lost")
             guard let flaggedJSON = flagged.valueJSON else { throw SDKTLFailure(description: "flags2 mutation missing") }
             try mode("flags2_off")
             _ = try await current.events.transformTL(payload(.postRequest, "users.getUsers", flaggedJSON))

@@ -78,7 +78,9 @@ def worker(role, directory):
     assert result["response"] == ([7, 29] if role == "first" else [7])
     result = transform("post_request_hook", "messages.receivedQueue", [9007199254740993])
     assert result["response"] == ([9007199254740994] if role == "first" else [9007199254740993])
-    user = [{"_": "user", "id": 7, "flags": 0, "flags2": 1, "usernames": [], "bot": False, "close_friend": False}]
+    # Exact normalized Mac 43735410090/cca2d83a input, including the TL field
+    # "self" materialized by the shipping codec even when its bit is clear.
+    user = json.loads((Path(__file__).parent / "fixtures/tl_native_user_response.json").read_text(encoding="utf-8"))["response"]["tl"]
     for mode in ("flags2_on", "flags2_off", "bot_missing", "bot_on"):
         host.seed("mode", mode)
         result = transform("post_request_hook", "users.getUsers", user)

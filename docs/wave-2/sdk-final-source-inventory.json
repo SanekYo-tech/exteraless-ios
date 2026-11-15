@@ -40,7 +40,7 @@
     "python/runtime/smoke/swift_sdk_config_root_fixture.swift": "fd8c180dd4c8c94457bbcd24f6bbbf32d1647d07f1f4bfbc574a27b0d470496e",
     "python/runtime/smoke/swift_sdk_hns_fixture.swift": "3fac3b4afae147757201c043f24cebb50e3f0dda71c8c2300dc5e4e0419f3161",
     "python/runtime/smoke/swift_sdk_hns_probe.swift": "e7afb3eb02dcea293eb5d3122dfa1db6c3dafffaffffabc8ace4adbc66f95afa",
-    "python/runtime/smoke/swift_sdk_tl_probe.swift": "6f60e66056186d39454fbb5532571c720305aee78a9cc91602ddda50662a017e",
+    "python/runtime/smoke/swift_sdk_tl_probe.swift": "fa7a4ad4d62dacc451aef5a5100eb364700c65a50cc63db3cd526b97f2313f04",
     "python/runtime/smoke/native_tl_probe.py": "6a90928a3082c24b1b8ef85dc08c8813b17031152241251ae60377fa9e744e3e",
     "python/runtime/smoke/native_hns_probe.py": "7d0fb49cea521f4599e8b76d41659221cf8d12cde4f03f5fd93963bee0591fc7",
     "docs/wave-2/tests/sdk-python-checks.json": "5f9f9f9f70826330517f6a9ef3f539a5584b971df13685360dd1c4a86333c5e1",
@@ -61,7 +61,7 @@
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
     "swift/ExteralessCore/Sources/ExteralessCore/ChatSwipeFeatures.swift": "008552b96198c40f255f8158ca3c72ee3e70bb3434af8c6aac9982a986a85c20",
     "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
-    "python/exteraless_runtime/_tl.py": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7",
+    "python/exteraless_runtime/_tl.py": "38421d438a8efedd32ce62cfa9946c5b31545d792e86ac8e7ad3c20e611773cf",
     "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
     "python/virtualjava/finder.py": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71"
   },
@@ -88,7 +88,7 @@
       "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
       "python/virtualjava/finder.py": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71",
       "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
-      "python/exteraless_runtime/_tl.py": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7",
+      "python/exteraless_runtime/_tl.py": "38421d438a8efedd32ce62cfa9946c5b31545d792e86ac8e7ad3c20e611773cf",
       "python/exteraless_runtime/_codec.py": "a9c6b19357d0a637dd6f6c641198cd37552f317ac1202722291fde3a313fe6fb",
       "tools/compat/tests/test_java_value_regressions.py": "12675f1b9820b7890fefe34cd03bc5228bb5a7bba65424bc3644b6778341e164",
       "tools/compat/tests/fixtures/java_values/schema.json": "49b2d7dff4f02074f645d42089751d4f9b1d625cbc489f52f3e07241fea725a3",
@@ -127,6 +127,15 @@
     "docs/wave-2/retention-parity.json": "e86cfdbccf762436f4eca4b8225eb0542e27ce464bf70c1e91158a99c63f982a",
     "docs/wave-2/sdk-config-binding-dispositions.json": "7251d9a8021c170f67fdd35e6382ec648be1986785bc7f6212dcb5c9ec08c8ea",
     "docs/wave-2/tools-parity.json": "15d6cb3f337d0650736ee3c20fa7839f77a7ba86d529b1bd4e6e8b55316c0daf"
+  },
+  "native_tl_self_repair": {
+    "handoff": "docs/wave-2/sdk-tl-self-fix.md",
+    "evidence": "docs/wave-2/tests/sdk-tl-self-checks.json",
+    "cause": "Native user.self field collided with the constructor receiver before either hook ran.",
+    "fixed_real_c_checks_each_python": 5,
+    "preserved_byte_branch": true,
+    "mac_fixed_snapshot_executed": false,
+    "historical_java_results_rerun": false
   },
   "remaining_config_ids": []
 }
