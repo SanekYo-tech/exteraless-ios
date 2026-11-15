@@ -540,9 +540,9 @@ public final class PluginHost: @unchecked Sendable {
     private let gate = SubscriberGate()
     private let store: PluginStore
     private let watchdog: PluginWatchdog
-    private let state = HostState()
+    private let state: HostState
     private let lifecycle = PluginHostLifecycle()
-    private let callbackHostIdentity = UUID()
+    private let callbackHostIdentity: UUID
     private let persistenceLock = NSLock()
     private let delegateBox = WeakDelegateBox()
     private let log: (@Sendable (String) -> Void)?
@@ -570,6 +570,10 @@ public final class PluginHost: @unchecked Sendable {
                 log: (@Sendable (String) -> Void)? = nil,
                 delegate: (any PluginHostDelegate)? = nil) throws {
         let resolvedEngine = engine ?? UnboundCPythonEngine()
+        let hostState = HostState()
+        let hostIdentity = UUID()
+        self.state = hostState
+        self.callbackHostIdentity = hostIdentity
         self.configuration = configuration
         self.runtime = PythonRuntime(engine: resolvedEngine)
         self.interpreters = SubinterpreterManager(
@@ -586,7 +590,9 @@ public final class PluginHost: @unchecked Sendable {
             messages: services.messages, settings: services.settings, ui: services.ui,
             permissions: permissionModel, reflection: gates)
         self.watchdog = PluginWatchdog(store: self.store, log: log)
-        self.events = PluginEventBus(subscribers: gate, queue: queue)
+        self.events = PluginEventBus(subscribers: gate, queue: queue, resolveSettingsOwner: { id, expected in
+            try PluginHost.resolveSettingsReadOwner(id: id, expectedOwner: expected, state: hostState, hostIdentity: hostIdentity)
+        })
         self.log = log
         self.delegate = delegate
         self.bridge.ownerValidator = { [state = self.state, lifecycle = self.lifecycle] pluginId, token, bootstrap in
@@ -1058,11 +1064,32 @@ public final class PluginHost: @unchecked Sendable {
         _ = try await queue.submitAwaiting(.appEvent(AppEventPayload(name: name)))
     }
 
-    public func settingsJSON(id: String, account: Int32) async throws -> String {
+    /// Pin this read before its queue hop. UI supplies its captured owner and a
+    /// lock-only account/page/read predicate, rechecked on the actual worker.
+    public func settingsJSON(id: String, account: Int32,
+                             expectedOwner: CallbackOwner? = nil,
+                             shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> String {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
-        guard let plugin = state.plugin(id: id), plugin.loaded else { throw PluginHostError.pluginNotFound(id) }
-        return try await events.requestCreateSettings(CreateSettingsPayload(pluginId: id, account: account))
+        try Task.checkCancellation()
+        let owner = try Self.resolveSettingsReadOwner(id: id, expectedOwner: expectedOwner,
+                                                      state: state, hostIdentity: callbackHostIdentity)
+        return try await events.requestCreateSettings(CreateSettingsPayload(
+            pluginId: id, account: account, expectedOwner: owner, shouldExecute: shouldExecute))
+    }
+
+    private static func resolveSettingsReadOwner(id: String, expectedOwner: CallbackOwner?,
+                                                 state: HostState, hostIdentity: UUID) throws -> CallbackOwner {
+        if let expectedOwner {
+            guard expectedOwner.hostIdentity == hostIdentity, expectedOwner.pluginId == id,
+                  let target = state.target(id: id, expected: expectedOwner.interpreter),
+                  target.wireToken == expectedOwner.wireToken else {
+                throw PluginHostError.superseded("Settings read interpreter owner expired: \(id)")
+            }
+            return expectedOwner
+        }
+        guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        return CallbackOwner(wireToken: target.wireToken, hostIdentity: hostIdentity, interpreter: target.handle)
     }
 
     public func updateSetting(id: String, key: String, valueJSON: String,
@@ -1354,11 +1381,17 @@ public final class PluginHost: @unchecked Sendable {
         }
         switch event {
         case .createSettings(let payload):
-            guard let target = subscribers.first(where: { $0.plugin.id == payload.pluginId }) else {
+            guard let owner = payload.expectedOwner else {
+                throw PluginHostError.superseded("Settings read has no captured native owner")
+            }
+            _ = try Self.resolveSettingsReadOwner(id: payload.pluginId, expectedOwner: owner,
+                                                  state: state, hostIdentity: callbackHostIdentity)
+            guard payload.shouldExecute() else { throw PluginHostError.superseded("Settings read execution scope expired") }
+            guard let target = subscribers.first(where: { $0.plugin.id == payload.pluginId && $0.handle == owner.interpreter }) else {
                 return .settingsJSON("[]")
             }
             let output = try await invokePlugin(target.plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle,
-                                                batch: execution)
+                                                shouldExecute: payload.shouldExecute, batch: execution)
             return .settingsJSON(output)
 
         case .sendMessage(let payload):

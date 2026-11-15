@@ -183,14 +183,34 @@ public struct SendMessagePayload: Hashable, Sendable {
     }
 }
 
-/// Запрос экрана настроек плагина (create_settings у конкретного плагина).
+/// Native-only settings-read envelope. Owner and predicate are runtime authority,
+/// never Codable/wire fields. Copies keep one request identity for Hashable;
+/// closures themselves are neither compared nor treated as serialized evidence.
 public struct CreateSettingsPayload: Hashable, Sendable {
     public let pluginId: String
     public let account: Int32
-    public init(pluginId: String, account: Int32) {
+    public private(set) var expectedOwner: PluginHost.CallbackOwner?
+    public private(set) var shouldExecute: @Sendable () -> Bool
+    private let identity = UUID()
+
+    public init(pluginId: String, account: Int32,
+                expectedOwner: PluginHost.CallbackOwner? = nil,
+                shouldExecute: @escaping @Sendable () -> Bool = { true }) {
         self.pluginId = pluginId
         self.account = account
+        self.expectedOwner = expectedOwner
+        self.shouldExecute = shouldExecute
     }
+
+    func pinned(owner: PluginHost.CallbackOwner?, shouldExecute: @escaping @Sendable () -> Bool) -> Self {
+        var result = self
+        result.expectedOwner = owner
+        result.shouldExecute = shouldExecute
+        return result
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool { lhs.identity == rhs.identity }
+    public func hash(into hasher: inout Hasher) { hasher.combine(identity) }
 }
 
 // MARK: - Событие
@@ -309,10 +329,13 @@ public final class PluginEventBus: @unchecked Sendable {
     /// Гейт подписчиков хот-пата (проверка «есть ли подписчики»).
     public let subscribers: SubscriberGate
     private let queue: PluginEventQueue
+    private let resolveSettingsOwner: (@Sendable (String, PluginHost.CallbackOwner?) throws -> PluginHost.CallbackOwner)?
 
-    init(subscribers: SubscriberGate, queue: PluginEventQueue) {
+    init(subscribers: SubscriberGate, queue: PluginEventQueue,
+         resolveSettingsOwner: (@Sendable (String, PluginHost.CallbackOwner?) throws -> PluginHost.CallbackOwner)? = nil) {
         self.subscribers = subscribers
         self.queue = queue
+        self.resolveSettingsOwner = resolveSettingsOwner
     }
 
     public func queueStatistics() async -> PluginEventQueue.Stats { await queue.stats }
@@ -384,9 +407,30 @@ public final class PluginEventBus: @unchecked Sendable {
     }
 
     /// create_settings: JSON-массив настроек плагина (PluginsConstants.Settings).
-    public func requestCreateSettings(_ payload: CreateSettingsPayload) async throws -> String {
+    /// Captures the Host owner before queue admission; both supplied predicates
+    /// must be lock-only and valid through actual worker entry.
+    public func requestCreateSettings(_ payload: CreateSettingsPayload,
+                                      expectedOwner: PluginHost.CallbackOwner? = nil,
+                                      shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> String {
+        try Task.checkCancellation()
+        guard payload.account >= 0 else { throw PluginHostError.invalidPlugin("Settings account must be a nonnegative Int32 index") }
+        if let expectedOwner, let carried = payload.expectedOwner, expectedOwner != carried {
+            throw PluginHostError.superseded("Conflicting settings read owners")
+        }
+        let requestedOwner = expectedOwner ?? payload.expectedOwner
+        let resolver = resolveSettingsOwner
+        let owner = try resolver?(payload.pluginId, requestedOwner) ?? requestedOwner
+        let payloadGuard = payload.shouldExecute
+        let pluginId = payload.pluginId
+        let readGuard: @Sendable () -> Bool = {
+            guard payloadGuard(), shouldExecute() else { return false }
+            if let resolver, let owner { return (try? resolver(pluginId, owner)) == owner }
+            return true // Standalone data-only bus fixtures have no Host resolver.
+        }
+        guard readGuard() else { throw PluginHostError.superseded("Settings read execution scope expired") }
+        let request = payload.pinned(owner: owner, shouldExecute: readGuard)
         guard subscribers.hasSubscribers(.createSettings) else { return "[]" }
-        switch try await queue.submitAwaiting(.createSettings(payload)) {
+        switch try await queue.submitAwaiting(.createSettings(request), shouldExecute: readGuard) {
         case .settingsJSON(let json): return json
         case .string(let json): return json
         default: return "[]"

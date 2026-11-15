@@ -207,7 +207,34 @@ private final class ToolsReleaseProgress: @unchecked Sendable {
     func last() -> (Int64, Int64)? { lock.lock(); defer { lock.unlock() }; return value }
 }
 
-private final class ToolsReleaseFixtureProtocol: URLProtocol, @unchecked Sendable {
+/// URLProtocol itself explicitly disallows Sendable on FoundationNetworking.
+/// Capture immutable callback inputs on its owning entry instead of reading its
+/// mutable request/client properties from the intentional late-delivery queue.
+private final class ToolsReleaseLateDelivery: @unchecked Sendable {
+    private let source: URLProtocol
+    private let client: (any URLProtocolClient)?
+    private let response: HTTPURLResponse?
+    private let data: Data
+    private let completed: (@Sendable () -> Void)?
+
+    init(source: URLProtocol, client: (any URLProtocolClient)?, url: URL?, data: Data,
+         completed: (@Sendable () -> Void)?) {
+        self.source = source
+        self.client = client
+        self.response = url.flatMap { HTTPURLResponse(url: $0, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Length": "\(data.count)"]) }
+        self.data = data
+        self.completed = completed
+    }
+
+    func deliver() {
+        if let response { client?.urlProtocol(source, didReceive: response, cacheStoragePolicy: .notAllowed) }
+        client?.urlProtocol(source, didLoad: data)
+        client?.urlProtocolDidFinishLoading(source)
+        completed?()
+    }
+}
+
+private final class ToolsReleaseFixtureProtocol: URLProtocol {
     struct Fixture: Sendable {
         var status: Int = 200
         var headers: [String: String] = [:]
@@ -260,16 +287,10 @@ private final class ToolsReleaseFixtureProtocol: URLProtocol, @unchecked Sendabl
         let stopped = stopCallback, data = lateData, delivered = lateDelivery
         stopCallback = nil; lateData = nil; lateDelivery = nil
         instanceLock.unlock()
+        let late = data.map { ToolsReleaseLateDelivery(source: self, client: client, url: request.url, data: $0, completed: delivered) }
         stopped?()
-        if let data {
-            DispatchQueue.global().async { [self] in
-                if let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Length": "\(data.count)"]) {
-                    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                }
-                client?.urlProtocol(self, didLoad: data)
-                client?.urlProtocolDidFinishLoading(self)
-                delivered?()
-            }
+        if let late {
+            DispatchQueue.global().async { late.deliver() }
         }
     }
 }
