@@ -80,6 +80,7 @@ extension ClientHarnessSession {
             "disk reload lost a UI mutation")
         self.report.facts["settings"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(actual))
         self.report.facts["realPython"] = false
+        try await self.runSecretAvailabilitySegment()
         try self.probe("core-cleanup")
     }
 

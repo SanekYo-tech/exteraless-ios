@@ -244,7 +244,7 @@ private final class CameraContext {
     }
     
     private var _positionPromise: ValuePromise<Camera.Position>
-    private let zoomStatePromise = Promise<Camera.ZoomState?>(.single(nil))
+    private let zoomStatePromise = Promise<Camera.ZoomState?>(nil)
     var zoomState: Signal<Camera.ZoomState?, NoError> { self.zoomStatePromise.get() }
     var position: Signal<Camera.Position, NoError> {
         return self._positionPromise.get()

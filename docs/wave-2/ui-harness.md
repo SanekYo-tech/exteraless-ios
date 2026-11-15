@@ -58,7 +58,7 @@ process and report UUID each:
 
 * `core-light`, `core-dark`: home button → real Settings → switch → selector →
   multiline text/keyboard → validated numeric editor, rejected `-1`, accepted `7`
-  → back → persisted-store reload.
+  → back → persisted-store reload → isolated native secret-status rows → home.
 * `sdk-ui`: home button → real Plugin Manager → plugin detail → real SDK settings
   → alert/keyboard/live dark-theme update/positive callback → sheet toggle and
   slider/action → immediate menu item → native settings route/back → zero SDK UI
@@ -97,7 +97,8 @@ includes account/Python bootstrap and waiting for the recording trigger.
 | `text-keyboard` | Real multiline UITextView contains `Fixture text 雪`; software keyboard is drawn, and the observed Display input height exceeds 100 pt. Text/caret must remain above the keyboard, clear of the navigation bar and rounded cell edges. No separate fake keyboard rectangle. |
 | `text-committed` | Keyboard dismisses with the native transition, editor pops, root shows the complete stored value. No duplicated caret or one-frame text disappearance during handoff. |
 | `number-error` | Numeric draft `-1` stays editable; a visible red **Settings error** row explains rejection. Stored value remains 0. Error text wraps; keyboard, editor and error must not hide the usable caret or Save button. No successful pop. |
-| `number-committed` / `core-cleanup` | Entering `7` persists, error/editor leave, then back returns to the harness home. No retained keyboard, overlay, or extra screen. Persisted reload returns all four exact values. |
+| `number-committed` / `core-cleanup` | Entering `7` persists, error/editor leave, then back returns to the harness home. Persisted reload returns all four exact values. The short secret-status segment below follows; final cleanup again shows home with no retained keyboard, overlay, or extra screen. |
+| `secret-availability` (both core palettes) | The real generic Settings list shows **Confirmed absent → Not set**, **Known quarantined → Stored value unavailable**, **Never observed → Secure storage unavailable** simultaneously. The native Settings error row can also explain the deliberately unreadable backend. All detail UILabels must fit/wrap without clipping, match the current light/dark palette and remain distinct after the normal initial reload. Neither `ExpectedLegacySecret` nor a false `Stored securely` status is visible. Back returns home. |
 | Every `core-dark` probe | Same geometry/actions, current Telegram dark backgrounds/text/navigation/keyboard. No light-color flash between opaque native surfaces. Light case must remain light throughout its scenario. |
 | `plugin-manager` → `plugin-settings` | Production manager displays the sole **Owned UI Fixture**, real running state and fixture-service runtime label. Real detail/settings route moves as one native push. Titles/details wrap without covering the switch or disclosure. |
 | `alert-shown` | SDK alert panel, message/input/action animate together: ~0.20 s ease-out, scale 0.97→1 and fade, no overshoot. Dim layer covers background evenly; corners clip only their intended rounded shape, never text or buttons. |
@@ -122,6 +123,59 @@ This first gate does not cover iPad/landscape, accessibility text sizes, share
 activities, server actions, full domain registrations, account replacement races
 or persistent menu placement hooks. The fixture definitions are explicitly named
 `harness.*`; their pass is acceptance of the connected Settings infrastructure.
+
+### SCR01 secret-label follow-up — existing core scenarios
+
+`Sources/ClientHarnessSecretAvailability.swift` adds **one probe** before
+`core-cleanup` in each of `core-light` / `core-dark`. The eight-scenario **3+3+2**
+selection and process counts remain explicit. Expected frames above are specified
+before recording; the coordinator's Core SCR01 Mac passes do not verify these labels.
+
+One isolated ClientSettings file and an injected synchronized dictionary/failing
+ClientSecretStore provide exactly three final String-secret definitions, each
+with the nonempty source default `ExpectedLegacySecret`. The initial owned file
+contains legacy JSON `false` for the known key. The absent key first exercises a
+real public CAS set/reload/reset, using only `readSnapshot()` results as expected
+states, then receives its monotonic secret schema promotion. Native registration
+rejects the wrong legacy type; native reset confirms absence and quarantines the
+other key's raw `false` through the supplied backend. A selective read failure
+then proves known presence survives reload, while the third key has been unreadable
+since its first read. Public CAS against the promoted secret is rejected without
+backend I/O. No snapshot constructor or replacement renderer supplies any state.
+
+The existing `exteralessSettingsController(context:settings:)` mounts that separate
+store. Its normal first-layout/refresh completes before inspection of the actual
+visible detail UILabels. Push settles for 0.65s, readiness is bounded to 1.5s, the
+three-row resting frame holds another 0.15s, and pop settles for 0.65s: typically
+about **1.5s additional UI time**, at most 2.95s of explicit UI waits. Preparation
+uses a finite worker sequence on its private file. The existing native alarm and
+external **30s total process ceiling** still include this work; no extra process.
+
+The `secret-availability` semantic payload contains actual label text/class/window
+rect/color, redacted typed availability and known-presence bits, backend counts
+and build-input fingerprints. Use its `wallTime` and the existing recording-start
+bracket to find the MP4 frames, then cite **ffprobe PTS / frame indices** from the
+standard sheets. Inspect the native initial reload, the settled three statuses
+and the return to home in both palettes; source/semantic checks alone are not a
+recorded-frame pass.
+
+**Small build handoff:** the new helper is already selected by
+`ClientUIHarnessLib.srcs = glob(["Sources/*.swift"])` and the existing
+`DomainFingerprintInputs` source glob. Display/ExteralessCore/Foundation/TelegramUI/UIKit
+imports use current edges; **no runtime assets** are added. The helper reads the
+existing bundled `client-ui-domain-sources.json` and requires its own source,
+scenario/router sources, **BUILD + Info.plist frozen configuration**, actual
+Settings controller/helper, and ClientSettings/definition/value/secret-store source
+pins. These are already declared in the joined fingerprint groups; preserve them
+when building the new source cohort. The Python change is only the added entry in
+`CORE_PROBES`; existing contract fixtures derive their list from that constant.
+The original core store/data and SDK/context setup are not rebound by this segment.
+Production `settingRow`, BUILD/workflow and native execution remain coordinator-owned.
+
+Source checks for this segment: **7 driver-contract tests passed**; the inlined
+Swift core sequence matches all **11 CORE_PROBES**; all **11 required source/config
+fingerprint paths** and existing glob coverage were verified. The three cohorts
+remain 3+3+2. These are source/driver checks; new UILabel frames remain pending.
 
 ## Coordinator production seams (apply once, before CI)
 

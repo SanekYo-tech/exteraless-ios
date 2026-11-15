@@ -59,3 +59,12 @@ Four downstream diagnostics required these local corrections:
   `Atomic<UInt64>`, `MetaDisposable` and `Subscriber<Data?, NoError>` use their
   existing pthread locks; emissions are serialized on the subscription queue and
   guarded by generation/cancellation. No own state or warning policy was widened.
+
+## Camera factories from 43747293127 / 99561d4a
+
+The next compiler pass reached Legacy/Neo camera factories. Their zoom promises
+now start with a cached optional nil value, using `Promise<T>.init(_ value: T)`.
+Passing `.single(nil)` selected the signal-initialization overload without its
+required label. A lazy `initializeOnFirstAccess` nil signal would also overwrite
+an already-attached live zoom stream at the first subscriber; the value initializer
+preserves that stream and retains the intended initial unavailable state.

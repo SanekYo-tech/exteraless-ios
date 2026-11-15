@@ -38,7 +38,7 @@ RUNTIME_SECONDS = 30
 DEVICE_PREFIX = "EXL-UI-"
 SCENARIOS = ("core-light", "core-dark", "sdk-ui")
 CORE_PROBES = ["home", "settings-root", "toggle-confirmed", "selector-open", "selector-committed",
-               "text-keyboard", "text-committed", "number-error", "number-committed", "core-cleanup"]
+               "text-keyboard", "text-committed", "number-error", "number-committed", "secret-availability", "core-cleanup"]
 SDK_PROBES = ["home", "plugin-manager", "plugin-settings", "alert-shown", "alert-keyboard",
               "alert-dark-draft", "alert-closed", "sheet-widgets", "sheet-closed", "menu-shown", "menu-closed",
               "sdk-navigation", "sdk-leases-clean", "fixture-reloaded", "sdk-cleanup"]

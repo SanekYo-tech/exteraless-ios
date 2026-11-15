@@ -67,7 +67,7 @@ final class CameraNeo: NSObject, CameraProtocol {
 
     private let positionValue: Atomic<Camera.Position>
     private let positionPromise: ValuePromise<Camera.Position>
-    private let zoomStatePromise = Promise<Camera.ZoomState?>(.single(nil))
+    private let zoomStatePromise = Promise<Camera.ZoomState?>(nil)
     private let flashModePromise = ValuePromise<Camera.FlashMode>(.off)
     private let hasTorchPromise = ValuePromise<Bool>(false)
     private let isFlashActivePromise = ValuePromise<Bool>(false)
