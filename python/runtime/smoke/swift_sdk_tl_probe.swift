@@ -284,7 +284,21 @@ enum SDKTLNativeProbe {
                 return PluginTLHostPayload(kind: kind, account: 2, name: hookName, canonicalName: name, valueJSON: normalized,
                     metadataJSON: "{\"requestName\":\(tlQuote(name)),\"fixture\":true}", errorJSON: error, canCancel: true,
                     originPluginIds: origin?.pluginIds ?? [], originRootId: origin?.rootId,
-                    normalize: { try schema.normalize($0, name: name, kind: kind) }, shouldExecute: { true })
+                    normalize: { replacement in
+                        if kind == .postRequest {
+                            try tlCheck(replacement.utf8.count <= 32_768, "canned TL input exceeds 32 KiB")
+                            guard error == nil else { throw SDKTLFailure(description: "RPC errors are read-only") }
+                            let codec = ExteralessTLCodec.shared
+                            let original = try ExteralessTLValue(jsonObject: JSONSerialization.jsonObject(with: Data(normalized.utf8), options: .fragmentsAllowed))
+                            let metadata = ExteralessTLValue.object(["requestName": .string(name), "fixture": .bool(true)])
+                            let body = try ExteralessTLTransformCodec.response(replacement, original: original,
+                                type: codec.resultTypeOfMethod(name), metadata: metadata)
+                            let result = try codec.decodeMethodResponse(body, methodName: name).jsonString()
+                            try tlCheck(result.utf8.count <= 32_768, "canned TL output exceeds 32 KiB")
+                            return result
+                        }
+                        return try schema.normalize(replacement, name: name, kind: kind)
+                    }, shouldExecute: { true })
             }
             let request = "{\"_\":\"users.getUsers\",\"id\":[{\"_\":\"inputUserSelf\"}]}"
             let modified = try await current.events.transformTL(payload(.preRequest, "users.getUsers", request))

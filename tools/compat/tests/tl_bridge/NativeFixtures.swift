@@ -145,6 +145,7 @@ private struct NativeFixtures {
         try self.lifetimes()
         try self.transformations()
         try self.reviewRegressions()
+        try self.optionalRolesAndPostVectors()
         try self.enqueueCommitOwnership()
         try self.executionGuardOwnership()
         print("TL native fixtures: 9 pre-engine goldens, truncation/flags/primitive bounds, request/response roundtrips and owner/cancel/deadline races passed")
@@ -334,6 +335,75 @@ private struct NativeFixtures {
             _ = try ExteralessTLTransformCodec.mediaEntityBodies([object("messageEntityBold", ["offset": .integer(1), "length": .integer(2)])], caption: "ab")
         }
         try expect(try ExteralessTLTransformCodec.mediaEntityBodies([], caption: "").isEmpty, "explicit empty caption with empty entities preserves presence")
+    }
+
+    private static func optionalRolesAndPostVectors() throws {
+        let codec = ExteralessTLCodec.shared
+        let metadata = ExteralessTLValue.object(["requestId": .string("closure-fixture")])
+        let shortFields: [String: ExteralessTLValue] = ["flags": .integer(0), "id": .integer(1), "user_id": .integer(2),
+            "message": .string("before"), "pts": .integer(3), "pts_count": .integer(1), "date": .integer(4)]
+        let original = try codec.normalize(object("updateShortMessage", shortFields), as: "Updates")
+        var changed = shortFields
+        changed["message"] = .string("after")
+        let omitted = try ExteralessTLTransformCodec.response(object("updateShortMessage", changed).jsonString(), original: original, type: "Updates", metadata: metadata)
+        changed["via_bot_id"] = .null
+        let null = try ExteralessTLTransformCodec.response(object("updateShortMessage", changed).jsonString(), original: original, type: "Updates", metadata: metadata)
+        let decodedNull = try codec.decode(null, as: "Updates")
+        try expect(omitted == null && decodedNull["message"] == .string("after"), "disabled optional peer null is canonical absence, not a rejected text edit")
+        var inferred = changed; inferred.removeValue(forKey: "flags")
+        try expect(try ExteralessTLTransformCodec.response(object("updateShortMessage", inferred).jsonString(), original: original, type: "Updates", metadata: metadata) == null, "optional null stays absent with inferred flags too")
+        for (field, value, flags) in [("via_bot_id", ExteralessTLValue.null, Int64(1 << 11)),
+                                      ("user_id", .null, 0), ("via_bot_id", .integer(Int64.max), 1 << 11),
+                                      ("via_bot_id", .integer(9), 1 << 11)] {
+            var bad = changed; bad[field] = value; bad["flags"] = .integer(flags)
+            try rejects("post optional role: required/enabled nil, overflow or nonnull retarget") {
+                _ = try ExteralessTLTransformCodec.response(object("updateShortMessage", bad).jsonString(), original: original, type: "Updates", metadata: metadata)
+            }
+        }
+        var withBot = shortFields; withBot["flags"] = .integer(1 << 11); withBot["via_bot_id"] = .integer(7)
+        let originalBot = try codec.normalize(object("updateShortMessage", withBot), as: "Updates")
+        withBot["via_bot_id"] = .integer(9)
+        try rejects("post nonnull optional peer cannot retarget") {
+            _ = try ExteralessTLTransformCodec.response(object("updateShortMessage", withBot).jsonString(), original: originalBot, type: "Updates", metadata: metadata)
+        }
+        let message = object("message", ["flags": .integer(0), "flags2": .integer(0), "id": .integer(1),
+            "peer_id": object("peerUser", ["user_id": .integer(2)]), "date": .integer(4), "message": .string("before")])
+        let update = try codec.normalize(object("updateNewMessage", ["message": message, "pts": .integer(3), "pts_count": .integer(1)]), as: "Update")
+        guard case var .object(messageFields) = message else { throw FixtureFailure.assertion("fixture message") }
+        messageFields["message"] = .string("after")
+        func updated(_ fields: [String: ExteralessTLValue]) -> ExteralessTLValue {
+            object("updateNewMessage", ["message": .object(fields), "pts": .integer(3), "pts_count": .integer(1)])
+        }
+        let updateOmitted = try ExteralessTLTransformCodec.update(updated(messageFields).jsonString(), original: update, metadata: metadata)
+        messageFields["via_bot_id"] = .null
+        try expect(try ExteralessTLTransformCodec.update(updated(messageFields).jsonString(), original: update, metadata: metadata) == updateOmitted, "accepted update compares canonical optional reference absence")
+        messageFields["flags"] = .integer(1 << 11)
+        try rejects("accepted update enabled optional nil") { _ = try ExteralessTLTransformCodec.update(updated(messageFields).jsonString(), original: update, metadata: metadata) }
+        messageFields["via_bot_id"] = .integer(7)
+        let updateWithBot = try codec.normalize(updated(messageFields), as: "Update")
+        messageFields["via_bot_id"] = .integer(9)
+        try rejects("accepted update nonnull optional retarget") { _ = try ExteralessTLTransformCodec.update(updated(messageFields).jsonString(), original: updateWithBot, metadata: metadata) }
+
+        let users = ExteralessTLValue.array([object("userEmpty", ["id": .integer(7)])])
+        let appended = ExteralessTLValue.array([object("userEmpty", ["id": .integer(7)]), object("userEmpty", ["id": .integer(29)])])
+        let added = try ExteralessTLTransformCodec.response(appended.jsonString(), original: users, type: "Vector<User>", metadata: metadata)
+        try expect(try codec.decode(added, as: "Vector<User>") == appended, "shipping post policy permits counter-free User append")
+        let filtered = ExteralessTLValue.array([object("userEmpty", ["id": .integer(29)])])
+        let removed = try ExteralessTLTransformCodec.response(filtered.jsonString(), original: appended, type: "Vector<User>", metadata: metadata)
+        try expect(try codec.decode(removed, as: "Vector<User>") == filtered, "shipping post policy permits counter-free User removal")
+        for (type, before, after) in [("Vector<int>", ExteralessTLValue.array([.integer(7)]), ExteralessTLValue.array([.integer(7), .integer(29)])),
+                                      ("Vector<long>", .array([.integer(9_007_199_254_740_993)]), .array([.integer(9_007_199_254_740_994)]))] {
+            let body = try ExteralessTLTransformCodec.response(after.jsonString(), original: before, type: type, metadata: metadata)
+            try expect(try codec.decode(body, as: type) == after, "shipping post policy preserves primitive vector mutation")
+        }
+        try rejects("User vector still validates native peer range") {
+            _ = try ExteralessTLTransformCodec.response(ExteralessTLValue.array([object("userEmpty", ["id": .integer(Int64.max)])]).jsonString(), original: users, type: "Vector<User>", metadata: metadata)
+        }
+        let state = object("updates", ["updates": .array([object("updateUser", ["user_id": .integer(7)])]), "users": .array([]), "chats": .array([]), "date": .integer(4), "seq": .integer(1)])
+        let retargeted = object("updates", ["updates": .array([object("updateUser", ["user_id": .integer(29)])]), "users": .array([]), "chats": .array([]), "date": .integer(4), "seq": .integer(1)])
+        try rejects("counter-bearing Updates still reject reference retarget") {
+            _ = try ExteralessTLTransformCodec.response(retargeted.jsonString(), original: state, type: "Updates", metadata: metadata)
+        }
     }
 
     private static func enqueueCommitOwnership() throws {

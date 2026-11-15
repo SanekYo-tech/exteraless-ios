@@ -86,6 +86,75 @@ final class ExteralessTLReviewTests: XCTestCase {
         XCTAssertEqual(ids.map { $0.id._internalGetInt64Value() }, [2])
     }
 
+    func testOptionalNullRolesUseDeclaredFlagsThroughShippingValidators() throws {
+        let codec = ExteralessTLCodec.shared
+        let metadata = ExteralessTLValue.object([:])
+        let fields: [String: ExteralessTLValue] = ["flags": .integer(0), "id": .integer(1), "user_id": .integer(2),
+            "message": .string("before"), "pts": .integer(3), "pts_count": .integer(1), "date": .integer(4)]
+        let original = try codec.normalize(object("updateShortMessage", fields), as: "Updates")
+        var changed = fields; changed["message"] = .string("after")
+        let omitted = try ExteralessTLTransformCodec.response(object("updateShortMessage", changed).jsonString(), original: original, type: "Updates", metadata: metadata)
+        changed["via_bot_id"] = .null
+        let nilBody = try ExteralessTLTransformCodec.response(object("updateShortMessage", changed).jsonString(), original: original, type: "Updates", metadata: metadata)
+        XCTAssertEqual(omitted, nilBody)
+        var inferred = changed; inferred.removeValue(forKey: "flags")
+        XCTAssertEqual(try ExteralessTLTransformCodec.response(object("updateShortMessage", inferred).jsonString(), original: original, type: "Updates", metadata: metadata), nilBody)
+        let native: Api.Updates = try parse(nilBody, as: Api.Updates.self)
+        guard case let .updateShortMessage(data) = native else { return XCTFail() }
+        XCTAssertEqual(data.message, "after"); XCTAssertNil(data.viaBotId)
+        for (key, value, flags) in [("via_bot_id", ExteralessTLValue.null, Int64(1 << 11)),
+                                    ("user_id", .null, 0), ("via_bot_id", .integer(Int64.max), 1 << 11),
+                                    ("via_bot_id", .integer(29), 1 << 11)] {
+            var invalid = changed; invalid[key] = value; invalid["flags"] = .integer(flags)
+            XCTAssertThrowsError(try ExteralessTLTransformCodec.response(object("updateShortMessage", invalid).jsonString(), original: original, type: "Updates", metadata: metadata))
+        }
+        var withBot = fields; withBot["flags"] = .integer(1 << 11); withBot["via_bot_id"] = .integer(7)
+        let originalBot = try codec.normalize(object("updateShortMessage", withBot), as: "Updates")
+        withBot["via_bot_id"] = .integer(29)
+        XCTAssertThrowsError(try ExteralessTLTransformCodec.response(object("updateShortMessage", withBot).jsonString(), original: originalBot, type: "Updates", metadata: metadata))
+        var message: [String: ExteralessTLValue] = ["flags": .integer(0), "flags2": .integer(0), "id": .integer(1), "peer_id": object("peerUser", ["user_id": .integer(2)]), "date": .integer(4), "message": .string("before")]
+        func update(_ fields: [String: ExteralessTLValue]) -> ExteralessTLValue {
+            object("updateNewMessage", ["message": object("message", fields), "pts": .integer(3), "pts_count": .integer(1)])
+        }
+        let originalUpdate = try codec.normalize(update(message), as: "Update")
+        message["message"] = .string("after")
+        let updateOmitted = try ExteralessTLTransformCodec.update(update(message).jsonString(), original: originalUpdate, metadata: metadata)
+        message["via_bot_id"] = .null
+        let updateNull = try ExteralessTLTransformCodec.update(update(message).jsonString(), original: originalUpdate, metadata: metadata)
+        XCTAssertEqual(updateOmitted, updateNull)
+        let parsed: Api.Update = try parse(updateNull, as: Api.Update.self)
+        guard case let .updateNewMessage(new) = parsed, case let .message(newMessage) = new.message else { return XCTFail() }
+        XCTAssertEqual(newMessage.message, "after"); XCTAssertNil(newMessage.viaBotId)
+        message["flags"] = .integer(1 << 11)
+        XCTAssertThrowsError(try ExteralessTLTransformCodec.update(update(message).jsonString(), original: originalUpdate, metadata: metadata))
+        message["via_bot_id"] = .integer(7)
+        let updateWithBot = try codec.normalize(update(message), as: "Update")
+        message["via_bot_id"] = .integer(29)
+        XCTAssertThrowsError(try ExteralessTLTransformCodec.update(update(message).jsonString(), original: updateWithBot, metadata: metadata))
+    }
+
+    func testShippingPostVectorsUseOriginalNativeMethodParsers() throws {
+        let metadata = ExteralessTLValue.object([:])
+        let users = ExteralessTLValue.array([object("userEmpty", ["id": .integer(7)])])
+        let appended = ExteralessTLValue.array([object("userEmpty", ["id": .integer(7)]), object("userEmpty", ["id": .integer(29)])])
+        let request = Api.functions.users.getUsers(id: [.inputUserSelf])
+        let addedBytes = try ExteralessTLTransformCodec.response(appended.jsonString(), original: users, type: "Vector<User>", metadata: metadata)
+        let added = try XCTUnwrap(request.2.parse(Buffer(data: addedBytes)))
+        XCTAssertEqual(added.compactMap { user -> Int64? in if case let .userEmpty(data) = user { return data.id }; return nil }, [7, 29])
+        let filtered = ExteralessTLValue.array([object("userEmpty", ["id": .integer(29)])])
+        let removedBytes = try ExteralessTLTransformCodec.response(filtered.jsonString(), original: appended, type: "Vector<User>", metadata: metadata)
+        let removed = try XCTUnwrap(request.2.parse(Buffer(data: removedBytes)))
+        XCTAssertEqual(removed.compactMap { user -> Int64? in if case let .userEmpty(data) = user { return data.id }; return nil }, [29])
+        let ints = try ExteralessTLTransformCodec.response("[7,29]", original: .array([.integer(7)]), type: "Vector<int>", metadata: metadata)
+        XCTAssertEqual(Api.functions.stories.readStories(peer: .inputPeerSelf, maxId: 1).2.parse(Buffer(data: ints)), [7, 29])
+        let longs = try ExteralessTLTransformCodec.response("[9007199254740994]", original: .array([.integer(9_007_199_254_740_993)]), type: "Vector<long>", metadata: metadata)
+        XCTAssertEqual(Api.functions.messages.receivedQueue(maxQts: 1).2.parse(Buffer(data: longs)), [9_007_199_254_740_994])
+        let counterUpdate = object("updates", ["updates": .array([object("updateUser", ["user_id": .integer(7)])]), "users": .array([]), "chats": .array([]), "date": .integer(4), "seq": .integer(1)])
+        let retargeted = object("updates", ["updates": .array([object("updateUser", ["user_id": .integer(29)])]), "users": .array([]), "chats": .array([]), "date": .integer(4), "seq": .integer(1)])
+        XCTAssertThrowsError(try ExteralessTLTransformCodec.response(retargeted.jsonString(), original: counterUpdate, type: "Updates", metadata: metadata))
+        XCTAssertThrowsError(try ExteralessTLTransformCodec.response("[{\"_\":\"userEmpty\",\"id\":9223372036854775807}]", original: users, type: "Vector<User>", metadata: metadata))
+    }
+
     func testReferenceSpoilerOnOffInGenuineEditBodiesPreservesOtherFields() throws {
         let photo: Api.InputPhoto = .inputPhoto(.init(id: Int64.max, accessHash: Int64.min, fileReference: Buffer(data: Data([1, 2]))))
         let document: Api.InputDocument = .inputDocument(.init(id: Int64.max, accessHash: Int64.min, fileReference: Buffer(data: Data([3, 4]))))

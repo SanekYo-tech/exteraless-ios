@@ -370,7 +370,8 @@ def main():
     core_package = ROOT / "swift/ExteralessCore"
     core_sources = sorted((core_package / "Sources/ExteralessCore").glob("*.swift"))
     codec_root = ROOT / "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime"
-    codec_sources = [codec_root / "TLCodec.swift", codec_root / "TLSchemaGenerated.swift"]
+    codec_sources = [codec_root / "TLCodec.swift", codec_root / "TLSchemaGenerated.swift",
+                     codec_root / "TLTransformCodec.swift", codec_root / "TLUpdatePolicy.swift"]
     sdk_swift_sources = [probe, dto_fixture, tl_probe, tl_fixture, hns_probe, hns_native_fixture, config_fixture, config_provider, root_fixture, *codec_sources]
     # Compile only the reviewed version-pinned compatibility translation unit.
     compat_sources = [native / "cpython312_compat.c"]
