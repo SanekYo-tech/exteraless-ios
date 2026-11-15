@@ -40,24 +40,37 @@ public enum FeedPresentationPolicy {
     public struct Retention: Sendable {
         public let identities: Set<ChatFeedIdentity>
         public let rewind: [Int64: ChatFeedPosition]
+        public let reloads: [Int64: Reload]
     }
 
-    /// At most a 500-message window plus 29 messages (one page and album tail) per source.
-    /// Eviction rewinds only that source, so no unread/unshown history disappears behind a cursor.
-    public static func retention(entries: [ChatFeedEntry], windowLimit: Int = 500, lookahead: Int = 29) -> Retention {
-        let peers = Set(entries.map { $0.identity.peerId })
-        let window = ChatFeedPolicy.ordered(entries, allowedPeers: peers, limit: max(1, windowLimit))
-        var retained = Set(window.map(\.identity))
-        var rewind: [Int64: ChatFeedPosition] = [:]
-        for (peer, source) in Dictionary(grouping: entries, by: { $0.identity.peerId }) {
-            let remaining = source.filter { !retained.contains($0.identity) }
-            let tail = ChatFeedPolicy.ordered(remaining, allowedPeers: [peer], limit: max(1, lookahead))
-            retained.formUnion(tail.map(\.identity))
-            if remaining.count > tail.count {
-                rewind[peer] = source.filter { retained.contains($0.identity) }.map(\.position).min()
-            }
+    public struct Reload: Sendable {
+        public let highestDiscarded: ChatFeedPosition
+        /// A real newer message cursor; nil means the native upper bound, never a fake ID.
+        public let before: ChatFeedPosition?
+        public init(highestDiscarded: ChatFeedPosition, before: ChatFeedPosition?) {
+            self.highestDiscarded = highestDiscarded
+            self.before = before
         }
-        return Retention(identities: retained, rewind: rewind)
+    }
+
+    public static let maximumWindow = 500
+    public static let maximumLookahead = 4 * 29
+
+    /// Global bound: one window + four pages/album tails, independent of channel count.
+    /// Each evicted source retains only a replay frontier and a real optional cursor.
+    public static func retention(entries: [ChatFeedEntry], windowLimit: Int = 500, lookahead: Int = FeedPresentationPolicy.maximumLookahead) -> Retention {
+        let peers = Set(entries.map { $0.identity.peerId })
+        let window = ChatFeedPolicy.ordered(entries, allowedPeers: peers, limit: max(1, min(maximumWindow, windowLimit)) + max(0, min(maximumLookahead, lookahead)))
+        let retained = Set(window.map(\.identity))
+        var rewind: [Int64: ChatFeedPosition] = [:]
+        var reloads: [Int64: Reload] = [:]
+        for (peer, source) in Dictionary(grouping: entries, by: { $0.identity.peerId }) {
+            guard let discarded = source.filter({ !retained.contains($0.identity) }).map(\.position).max() else { continue }
+            let before = source.filter { retained.contains($0.identity) && $0.position > discarded }.map(\.position).min()
+            reloads[peer] = Reload(highestDiscarded: discarded, before: before)
+            rewind[peer] = before
+        }
+        return Retention(identities: retained, rewind: rewind, reloads: reloads)
     }
 }
 

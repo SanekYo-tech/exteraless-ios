@@ -759,7 +759,9 @@ public final class BridgeServices: @unchecked Sendable {
         }
         try requirePermission(.messagesSend, pluginId: pluginId,
                               fqcn: "org.telegram.messenger.SendMessagesHelper", member: "sendMessage")
-        let request = PluginTextMessageRequest(pluginId: pluginId, account: account, peerKind: peerKind, peerId: id, text: message)
+        let origin = try PluginTLNativeOrigin.capture(pluginId: pluginId, ownerToken: ownerToken)
+        let request = PluginTextMessageRequest(pluginId: pluginId, account: account, peerKind: peerKind,
+            peerId: id, text: message, origin: origin)
         let requestId = try requirePlatform("Runtime.sendMessage").sendMessage(request,
             lease: nativeEffectLease(pluginId: pluginId, ownerToken: ownerToken, permission: .messagesSend))
         return ["status": "scheduled", "requestId": requestId]

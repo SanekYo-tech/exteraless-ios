@@ -44,6 +44,17 @@ public enum PluginTLNativeOrigin {
         else { Thread.current.threadDictionary.removeObject(forKey: key) }
     }
 
+    /// The legacy text-service bridge has the C-owned identity, not an exposed
+    /// CallbackOwner. Resolve only the scope on this actual OS worker. A stale or
+    /// mismatched scope must fail rather than silently start another root chain.
+    static func capture(pluginId: String, ownerToken: String?) throws -> PluginTLInvocationOrigin? {
+        guard let scope = Thread.current.threadDictionary[key] as? PluginTLInvocationScope else { return nil }
+        guard scope.owner.pluginId == pluginId, scope.owner.wireToken == ownerToken else {
+            throw BridgeFailure.invalidHandle("Text request does not match its native hook owner")
+        }
+        return try capture(owner: scope.owner)
+    }
+
     public static func capture(owner: PluginHost.CallbackOwner) throws -> PluginTLInvocationOrigin? {
         guard let scope = Thread.current.threadDictionary[key] as? PluginTLInvocationScope,
               scope.owner == owner else { return nil }

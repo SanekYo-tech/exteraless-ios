@@ -138,7 +138,7 @@ final class FeedTests: XCTestCase {
     func testEvictionRewindsOnlyTrimmedSourcesAndWindowsDoNotDuplicate() {
         let entries = (1 ... 1200).map { self.entry(Int64($0 % 3 + 1), Int32($0), Int32($0)) }
         let retention = FeedPresentationPolicy.retention(entries: entries)
-        XCTAssertLessThanOrEqual(retention.identities.count, 500 + 29 * 3)
+        XCTAssertLessThanOrEqual(retention.identities.count, 500 + 4 * 29)
         XCTAssertEqual(Set(retention.rewind.keys), [1, 2, 3])
         for (peer, cursor) in retention.rewind {
             XCTAssertEqual(cursor, entries.filter { $0.identity.peerId == peer && retention.identities.contains($0.identity) }.map(\.position).min())

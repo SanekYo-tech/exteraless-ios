@@ -211,14 +211,18 @@ public struct PluginTextMessageRequest: Sendable {
     public let peerKind: PeerKind
     public let peerId: Int64
     public let text: String
+    /// Captured from the native owner worker, never from plugin request JSON.
+    /// Carries causal request-hook ancestry across native asynchronous preparation.
+    public let origin: PluginTLInvocationOrigin?
 
     public init(pluginId: String, account: PluginServiceAccount, peerKind: PeerKind,
-                peerId: Int64, text: String) {
+                peerId: Int64, text: String, origin: PluginTLInvocationOrigin? = nil) {
         self.pluginId = pluginId
         self.account = account
         self.peerKind = peerKind
         self.peerId = peerId
         self.text = text
+        self.origin = origin
     }
 }
 
