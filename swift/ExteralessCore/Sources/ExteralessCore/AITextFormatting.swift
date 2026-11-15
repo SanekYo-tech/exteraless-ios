@@ -1,5 +1,24 @@
 import Foundation
 
+/// Telegram ranges count UTF-16 code units. Foundation's NSRange-to-String bridge
+/// has different surrogate-boundary behavior on Darwin and swift-corelibs.
+/// Validate scalar boundaries explicitly, without treating a whole grapheme
+/// (combining marks or a ZWJ sequence) as one indivisible protocol unit.
+private enum AIUTF16Range {
+    static func isValid(_ range: NSRange, in text: NSString) -> Bool {
+        let length = text.length
+        guard range.location >= 0, range.location <= length,
+              range.length >= 0, range.length <= length - range.location else { return false }
+        func isBoundary(_ offset: Int) -> Bool {
+            guard offset > 0, offset < length else { return true }
+            let previous = text.character(at: offset - 1)
+            let next = text.character(at: offset)
+            return !(0xd800 ... 0xdbff).contains(previous) || !(0xdc00 ... 0xdfff).contains(next)
+        }
+        return isBoundary(range.location) && isBoundary(range.location + range.length)
+    }
+}
+
 /// An entity's identity is retained out-of-band. The native adapter keeps the
 /// original Telegram type/URL/mention/emoji payload and changes only its range.
 public struct AITextSpan: Codable, Equatable, Sendable {
@@ -30,13 +49,12 @@ public struct AIFormattedText: Codable, Equatable, Sendable {
 
     public func selected(_ range: NSRange?) throws -> AIFormattedText {
         guard let range else { return self }
-        let length = text.utf16.count
-        guard range.location >= 0, range.location <= length, range.length >= 0, range.length <= length - range.location else { throw AIError.configuration }
+        let source = text as NSString
+        guard AIUTF16Range.isValid(range, in: source) else { throw AIError.configuration }
         if range.length == 0 { return self }
-        guard Range(range, in: text) != nil else { throw AIError.configuration }
-        let selected = (text as NSString).substring(with: range)
+        let selected = source.substring(with: range)
         let spans = try spans.compactMap { span -> AITextSpan? in
-            guard span.offset >= 0, span.offset <= length, span.length >= 0, span.length <= length - span.offset else { throw AIError.configuration }
+            guard AIUTF16Range.isValid(NSRange(location: span.offset, length: span.length), in: source) else { throw AIError.configuration }
             let start = max(range.location, span.offset)
             let end = min(range.location + range.length, span.offset + span.length)
             guard end > start else { return nil }
@@ -59,7 +77,7 @@ public enum AITextFormatting {
         for span in input.spans {
             guard span.id >= 0, ids.insert(span.id).inserted, span.length > 0, span.offset >= 0,
                   span.offset <= ns.length, span.length <= ns.length - span.offset,
-                  Range(NSRange(location: span.offset, length: span.length), in: input.text) != nil else { throw AIError.configuration }
+                  AIUTF16Range.isValid(NSRange(location: span.offset, length: span.length), in: ns) else { throw AIError.configuration }
             boundaries.insert(span.offset)
             boundaries.insert(span.offset + span.length)
         }
@@ -91,13 +109,14 @@ public enum AITextFormatting {
         guard output.utf16.count <= AILimits.inputUTF16 else { throw AIError.responseTooLarge }
         guard !original.spans.isEmpty else { return AIFormattedText(text: output) }
         var originalIds = Set<Int>()
-        let originalLength = original.text.utf16.count
+        let originalText = original.text as NSString
+        let originalLength = originalText.length
         guard original.spans.count <= 1024 else { throw AIError.inputTooLarge }
         for span in original.spans {
             guard span.id >= 0, originalIds.insert(span.id).inserted,
                   span.offset >= 0, span.offset <= originalLength, span.length > 0,
                   span.length <= originalLength - span.offset,
-                  Range(NSRange(location: span.offset, length: span.length), in: original.text) != nil else { throw AIError.configuration }
+                  AIUTF16Range.isValid(NSRange(location: span.offset, length: span.length), in: originalText) else { throw AIError.configuration }
         }
         let regex = try NSRegularExpression(pattern: "</?(?:b|i|u|s|q|tt|tg-pre|blockquote|a|tg-emoji)\\b[^>]*>", options: [.caseInsensitive])
         let idRegex = try NSRegularExpression(pattern: "data-e\\s*=\\s*[\"']?(\\d+)", options: [.caseInsensitive])

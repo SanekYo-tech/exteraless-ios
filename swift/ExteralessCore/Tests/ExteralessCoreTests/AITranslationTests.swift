@@ -75,6 +75,26 @@ final class AITranslationTests: XCTestCase, @unchecked Sendable {
         XCTAssertThrowsError(try AITextFormatting.decode("missing formatting", original: original)) { XCTAssertEqual($0 as? AIError, .formattingLost) }
     }
 
+    func testUTF16SelectionsAndSpansRejectSurrogateSplitsOnEveryPlatform() throws {
+        let value = AIFormattedText(text: "e\u{301}👩‍💻X")
+        for range in [NSRange(location: 2, length: 1), NSRange(location: 3, length: 1),
+                      NSRange(location: 5, length: 1), NSRange(location: 6, length: 1),
+                      NSRange(location: 3, length: 0)] {
+            XCTAssertThrowsError(try value.selected(range)) { XCTAssertEqual($0 as? AIError, .configuration) }
+            if range.length != 0 {
+                let malformed = AIFormattedText(text: value.text, spans: [
+                    .init(id: 0, offset: range.location, length: range.length, tag: .bold)
+                ])
+                XCTAssertThrowsError(try AITextFormatting.encode(malformed))
+                XCTAssertThrowsError(try AITextFormatting.decode(value.text, original: malformed))
+            }
+        }
+        XCTAssertEqual(try value.selected(NSRange(location: 2, length: 5)).text, "👩‍💻")
+        XCTAssertEqual(try value.selected(NSRange(location: 1, length: 1)).text, "\u{301}")
+        let scalarSpan = AIFormattedText(text: value.text, spans: [.init(id: 0, offset: 1, length: 1, tag: .bold)])
+        XCTAssertEqual(try AITextFormatting.decode(AITextFormatting.encode(scalarSpan), original: scalarSpan), scalarSpan)
+    }
+
     func testLanguageMappingsAndContextDefaults() throws {
         XCTAssertEqual(try AITranslationLanguage.normalize("zh_HK", provider: .microsoft), "zh-Hant")
         XCTAssertEqual(try AITranslationLanguage.normalize("zh-Hans", provider: .google), "zh-CN")
