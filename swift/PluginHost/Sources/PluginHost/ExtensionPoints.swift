@@ -208,6 +208,7 @@ public enum PluginEventResult: Equatable, Sendable {
     case none
     case strategy(HookStrategy)
     case sendMessage(PluginSendMessageResult)
+    case tlTransform(PluginTLHookDecision)
     case settingsJSON(String)
     case string(String)
 }
@@ -242,6 +243,7 @@ public enum PluginEvent: Equatable, Sendable {
     case updates(UpdatesPayload)
     case sendMessage(SendMessagePayload)
     case createSettings(CreateSettingsPayload)
+    case tlTransform(PluginTLHostPayload)
     // indirect: кейс снова содержит PluginEvent. Косвенность даёт кейсу
     // конечный размер (массив и так на куче; indirect не меняет матчинг).
     indirect case coalescedUpdates(CoalesceKey, [PluginEvent])
@@ -258,6 +260,7 @@ extension PluginEvent {
         case .updates: return .updates
         case .sendMessage: return .sendMessage
         case .createSettings: return .createSettings
+        case let .tlTransform(payload): return payload.kind
         case .coalescedUpdates: return .updates
         }
     }
@@ -269,6 +272,7 @@ extension PluginEvent {
         case .appEvent: return .uiSettings
         case .sendMessage: return .sendMessage
         case .preRequest, .postRequest: return .request
+        case .tlTransform: return .request
         case .update, .updates, .coalescedUpdates: return .updates
         }
     }
@@ -354,6 +358,16 @@ public final class PluginEventBus: @unchecked Sendable {
         case .sendMessage(let result): return result
         case .strategy(let strategy): return PluginSendMessageResult(strategy: strategy)
         default: return PluginSendMessageResult()
+        }
+    }
+
+    /// Awaited TL transformations are never coalesced into observation batches.
+    public func transformTL(_ payload: PluginTLHostPayload) async throws -> PluginTLHookDecision {
+        try payload.validate()
+        guard subscribers.hasSubscribers(payload.kind), payload.shouldExecute() else { return .init() }
+        switch try await queue.submitAwaiting(.tlTransform(payload)) {
+        case let .tlTransform(value): return value
+        default: return .init()
         }
     }
 

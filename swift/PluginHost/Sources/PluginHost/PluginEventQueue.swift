@@ -56,6 +56,7 @@ public actor PluginEventQueue {
         let event: PluginEvent
         let reply: OneShotReply?
         let sequence: Int
+        var tlReservation: UUID? = nil
     }
 
     private struct CoalescedBucket {
@@ -85,6 +86,8 @@ public actor PluginEventQueue {
     private var requests: [Envelope] = []
     private var coalesced: [CoalesceKey: CoalescedBucket] = [:]
     private var latestSettingsRequest: [String: Int] = [:]
+    private var tlReservations: [UUID: Int] = [:]
+    private var tlReservedBytes = 0
     private var nextSequence = 0
     private var loopTask: Task<Void, Never>?
 
@@ -107,6 +110,7 @@ public actor PluginEventQueue {
         loopTask?.cancel()
         loopTask = nil
         failPending(PluginHostError.queueStopped)
+        for envelope in uiSettings + sendMessage + requests { releaseTLReservation(envelope.tlReservation) }
         uiSettings = []
         sendMessage = []
         requests = []
@@ -141,6 +145,23 @@ public actor PluginEventQueue {
         }
         stats.enqueued += 1
 
+        var tlReservation: UUID?
+        if case let .tlTransform(payload) = event {
+            let bytes = payload.valueJSON.utf8.count + payload.metadataJSON.utf8.count + (payload.errorJSON?.utf8.count ?? 0)
+            guard depth < limits.maxQueueDepth, tlReservations.count < 256,
+                  bytes <= 32 * 1024 * 1024 - tlReservedBytes else {
+                stats.droppedOverflow += 1
+                reply?.fail(PluginHostError.runtimeFailure("TL transform queue is full"))
+                return
+            }
+            // Router deadlines can expire while a Host envelope is still queued.
+            // Host must independently bound the retained payloads until dispatch.
+            let id = UUID()
+            tlReservation = id
+            tlReservations[id] = bytes
+            tlReservedBytes += bytes
+        }
+
         // Коалесценг create_settings: новый запрос того же плагина замещает
         // невзятый старый (дроп устаревших) — старому резюмится ошибка.
         if case .createSettings(let payload) = event, reply != nil {
@@ -167,7 +188,7 @@ public actor PluginEventQueue {
             return
         }
 
-        let envelope = Envelope(event: event, reply: reply, sequence: nextSequence)
+        let envelope = Envelope(event: event, reply: reply, sequence: nextSequence, tlReservation: tlReservation)
         nextSequence += 1
 
         // Переполнение глубины: роняем fire-and-forget низкого приоритета.
@@ -238,6 +259,7 @@ public actor PluginEventQueue {
     }
 
     private func dispatch(_ envelope: Envelope) async {
+        defer { releaseTLReservation(envelope.tlReservation) }
         guard let handler else {
             envelope.reply?.fail(PluginHostError.queueStopped)
             return
@@ -265,6 +287,10 @@ public actor PluginEventQueue {
         for envelope in uiSettings + sendMessage + requests {
             envelope.reply?.fail(error)
         }
+    }
+
+    private func releaseTLReservation(_ id: UUID?) {
+        if let id, let bytes = tlReservations.removeValue(forKey: id) { tlReservedBytes -= bytes }
     }
 }
 

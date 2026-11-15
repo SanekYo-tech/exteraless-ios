@@ -137,7 +137,8 @@ final class PluginHostOwnershipTests: XCTestCase {
     }
 
     private func bridgeValue(_ host: PluginHost, member: String, args: [Any], fqcn: String = "exteraless.ios.Runtime") throws -> Any {
-        let object: [String: Any] = ["op": "call", "fqcn": fqcn, "member": member, "args": args]
+        var object: [String: Any] = ["op": "call", "fqcn": fqcn, "member": member, "args": args]
+        object["ownerToken"] = host.callbackOwner(id: id)?.wireToken
         let json = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
         let reply = host.bridge.dispatchJSON(json, pluginId: id)
         let response = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
@@ -151,7 +152,11 @@ final class PluginHostOwnershipTests: XCTestCase {
         try await install(host, source: source)
         let oldOwner = try XCTUnwrap(host.callbackOwner(id: id))
         let scheduled = Recorder<Int64>()
-        host.bridge.onCallback = { _, handle, _, _, _ in scheduled.append(handle) }
+        host.bridge.onOwnedCallback = { [weak host] pluginId, token, handle, _, _, _ in
+            guard let owner = host?.callbackOwner(id: pluginId), owner.wireToken == token else { return false }
+            scheduled.append(handle)
+            return true
+        }
         let runnable: [String: Any] = ["__handle__": 77, "__fqcn__": NSNull()]
         _ = try bridgeValue(host, member: "runOnUIThread", args: [runnable, 1000], fqcn: "org.telegram.messenger.AndroidUtilities")
 
@@ -430,5 +435,39 @@ final class PluginHostOwnershipTests: XCTestCase {
         XCTAssertNil(state.target(id: id, expected: handle, allowLoading: true))
         XCTAssertTrue(state.finishUnloading(handle, errorMessage: nil))
         state.endMutation(id)
+    }
+
+    func testNativeOwnerTokensCoverBootstrapRetirementAndTerminalDrain() throws {
+        let state = PluginHost.HostState()
+        state.upsert(Plugin(id: id))
+        try state.beginLoading(id)
+        XCTAssertTrue(state.acceptsNativeOwner(pluginId: id, token: nil, bootstrapOperation: true))
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: nil, bootstrapOperation: false))
+        let first = InterpreterHandle(id: 1, pluginId: id)
+        XCTAssertTrue(state.setHandle(first))
+        let token = try XCTUnwrap(state.target(id: id, allowLoading: true)?.wireToken)
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: nil, bootstrapOperation: true))
+        XCTAssertTrue(state.acceptsNativeOwner(pluginId: id, token: token, bootstrapOperation: false))
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: "forged", bootstrapOperation: true))
+        var plugin = try XCTUnwrap(state.plugin(id: id))
+        plugin.loaded = true
+        XCTAssertTrue(state.publishLoaded(plugin, handle: first))
+        state.endLoading(id)
+        _ = try XCTUnwrap(state.beginUnloading(id: id, expected: first))
+        XCTAssertNil(state.target(id: id, allowLoading: true))
+        XCTAssertTrue(state.acceptsNativeOwner(pluginId: id, token: token, bootstrapOperation: false))
+        XCTAssertTrue(state.finishUnloading(first, errorMessage: nil))
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: token, bootstrapOperation: false))
+
+        let second = InterpreterHandle(id: 2, pluginId: id)
+        try activate(state, second)
+        let nextToken = try XCTUnwrap(state.target(id: id)?.wireToken)
+        XCTAssertNotEqual(token, nextToken)
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: token, bootstrapOperation: false))
+        _ = try XCTUnwrap(state.beginStopping())
+        XCTAssertTrue(state.acceptsNativeOwner(pluginId: id, token: nextToken, bootstrapOperation: false))
+        XCTAssertThrowsError(try state.beginMutation(id))
+        state.finishStopping()
+        XCTAssertFalse(state.acceptsNativeOwner(pluginId: id, token: nextToken, bootstrapOperation: false))
     }
 }

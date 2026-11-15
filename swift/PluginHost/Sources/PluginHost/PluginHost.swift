@@ -121,6 +121,9 @@ public final class PluginHost: @unchecked Sendable {
     /// lifetime. Tokens from another host or a reloaded interpreter are rejected.
     public struct CallbackOwner: Hashable, Sendable {
         public var pluginId: String { interpreter.pluginId }
+        /// Random per-interpreter generation, bound into immutable C state before
+        /// user code loads. It must not be derived from a guessable handle counter.
+        public let wireToken: String
         fileprivate let hostIdentity: UUID
         fileprivate let interpreter: InterpreterHandle
     }
@@ -132,12 +135,14 @@ public final class PluginHost: @unchecked Sendable {
         private let lock = NSLock()
         private var plugins: [Plugin] = []
         private var handles: [String: InterpreterHandle] = [:]
+        private var ownerTokens: [InterpreterHandle: String] = [:]
         private var inflight: [InterpreterHandle: Int] = [:]
         private var mutations: Set<String> = []
         private var loading: Set<String> = []
         private var unloading: [String: InterpreterHandle] = [:]
         private var batch: (id: UUID, owners: Set<InterpreterHandle>)?
         private var running = false
+        private var startedInSafeMode = false
         private var starting = false
         private var stopping = false
         private var stopped = false
@@ -164,11 +169,17 @@ public final class PluginHost: @unchecked Sendable {
             lock.lock(); starting = false; lock.unlock()
         }
 
-        func markRunning() -> Bool {
+        func markRunning(safeMode: Bool = false) -> Bool {
             lock.lock(); defer { lock.unlock() }
             guard starting, !stopping else { return false }
             running = true
+            startedInSafeMode = safeMode
             return true
+        }
+
+        var resumesAllEnabledPlugins: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return !startedInSafeMode
         }
 
         func beginStopping() -> [(Plugin, InterpreterHandle)]? {
@@ -194,7 +205,10 @@ public final class PluginHost: @unchecked Sendable {
         }
 
         func finishStopping() {
-            lock.lock(); stopped = true; lock.unlock()
+            lock.lock()
+            stopped = true
+            ownerTokens.removeAll()
+            lock.unlock()
         }
 
         func pluginList() -> [Plugin] { lock.lock(); defer { lock.unlock() }; return plugins }
@@ -232,16 +246,18 @@ public final class PluginHost: @unchecked Sendable {
             lock.lock(); defer { lock.unlock() }
             plugins.removeAll { $0.id == id }
             handles[id] = nil
+            for handle in ownerTokens.keys.filter({ $0.pluginId == id }) { ownerTokens[handle] = nil }
         }
 
         func target(id: String, expected: InterpreterHandle? = nil,
-                    allowLoading: Bool = false) -> (plugin: Plugin, handle: InterpreterHandle)? {
+                    allowLoading: Bool = false) -> (plugin: Plugin, handle: InterpreterHandle, wireToken: String)? {
             lock.lock(); defer { lock.unlock() }
             guard !stopping, unloading[id] == nil, let handle = handles[id],
                   expected == nil || expected == handle,
                   let plugin = plugins.first(where: { $0.id == id }), !plugin.notResponding,
-                  plugin.loaded || (allowLoading && loading.contains(id)) else { return nil }
-            return (plugin, handle)
+                  plugin.loaded || (allowLoading && loading.contains(id)),
+                  let token = ownerTokens[handle] else { return nil }
+            return (plugin, handle, token)
         }
 
         func handlesSnapshot() -> [InterpreterHandle] {
@@ -259,7 +275,58 @@ public final class PluginHost: @unchecked Sendable {
             guard !stopping, loading.contains(handle.pluginId), handles[handle.pluginId] == nil,
                   unloading[handle.pluginId] == nil else { return false }
             handles[handle.pluginId] = handle
+            ownerTokens[handle] = UUID().uuidString
             return true
+        }
+
+        func acceptsNativeOwner(pluginId: String, token: String?, bootstrapOperation: Bool) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopped else { return false }
+            if let token {
+                // Retiring workers can finish their native cleanup. Once retired,
+                // the token is removed even if a Python thread had to be abandoned.
+                return ownerTokens.contains { pair in
+                    pair.key.pluginId == pluginId && pair.value == token
+                        && (handles[pluginId] == pair.key || unloading[pluginId] == pair.key || stopping)
+                }
+            }
+            // Bootstrap precedes publication of the interpreter handle. It can
+            // discover runtime paths/constants, not create async native effects.
+            return bootstrapOperation && !stopping && loading.contains(pluginId) && handles[pluginId] == nil
+        }
+
+        func isRetiringNativeOwner(pluginId: String, token: String?) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard let token, let handle = unloading[pluginId] else { return false }
+            return ownerTokens[handle] == token
+        }
+
+        func maintenanceTarget(_ handle: InterpreterHandle) -> (plugin: Plugin, retiring: Bool)? {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, handles[handle.pluginId] == handle,
+                  let plugin = plugins.first(where: { $0.id == handle.pluginId }) else { return nil }
+            return (plugin, unloading[handle.pluginId] == handle)
+        }
+
+        func requireSettingsQuiescence() throws {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, handles.isEmpty, ownerTokens.isEmpty, loading.isEmpty,
+                  unloading.isEmpty, mutations.isEmpty, inflight.isEmpty else {
+                throw PluginHostError.runtimeFailure("Host still owns work during settings maintenance")
+            }
+        }
+
+        func restoreMaintenanceEnabledFlags(_ original: [Plugin]) throws {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopping, handles.isEmpty, loading.isEmpty, unloading.isEmpty,
+                  Set(plugins.map(\.id)) == Set(original.map(\.id)) else {
+                throw PluginHostError.runtimeFailure("Plugin model changed during settings maintenance")
+            }
+            let enabled = Dictionary(uniqueKeysWithValues: original.map { ($0.id, $0.enabled) })
+            for index in plugins.indices {
+                plugins[index].enabled = enabled[plugins[index].id] ?? false
+                plugins[index].loaded = false
+            }
         }
 
         func isCurrent(_ handle: InterpreterHandle) -> Bool {
@@ -331,6 +398,7 @@ public final class PluginHost: @unchecked Sendable {
 
         func beginMutation(_ id: String) throws {
             lock.lock(); defer { lock.unlock() }
+            guard !stopping else { throw PluginHostError.notRunning }
             guard !mutations.contains(id), !loading.contains(id), unloading[id] == nil else {
                 throw PluginHostError.runtimeFailure("Plugin operation already in progress: \(id)")
             }
@@ -385,7 +453,11 @@ public final class PluginHost: @unchecked Sendable {
             failed.loaded = false
             failed.notResponding = plugins[index].notResponding
             handles[plugin.id] = nil
-            if let expected { inflight.removeValue(forKey: expected) }
+            if let expected {
+                inflight.removeValue(forKey: expected)
+                // stop owns the still-live worker's final unload/drain.
+                if !stopping { ownerTokens.removeValue(forKey: expected) }
+            }
             plugins[index] = failed
             return failed
         }
@@ -415,6 +487,7 @@ public final class PluginHost: @unchecked Sendable {
             handles[handle.pluginId] = nil
             unloading[handle.pluginId] = nil
             inflight.removeValue(forKey: handle)
+            ownerTokens.removeValue(forKey: handle)
             if let index = plugins.firstIndex(where: { $0.id == handle.pluginId }) {
                 plugins[index].loaded = false
                 if let errorMessage {
@@ -476,6 +549,7 @@ public final class PluginHost: @unchecked Sendable {
     private let store: PluginStore
     private let watchdog: PluginWatchdog
     private let state = HostState()
+    private let lifecycle = PluginHostLifecycle()
     private let callbackHostIdentity = UUID()
     private let persistenceLock = NSLock()
     private let delegateBox = WeakDelegateBox()
@@ -487,7 +561,9 @@ public final class PluginHost: @unchecked Sendable {
         set { delegateBox.store(newValue) }
     }
 
-    public var isRunning: Bool { state.isRunning }
+    public var isRunning: Bool { state.isRunning && lifecycle.isOpen }
+    public var isSettingsMaintenanceActive: Bool { lifecycle.isMaintaining }
+    private let tlOrigins = PluginTLOriginRegistry()
 
     // MARK: - Инициализация
 
@@ -521,6 +597,21 @@ public final class PluginHost: @unchecked Sendable {
         self.events = PluginEventBus(subscribers: gate, queue: queue)
         self.log = log
         self.delegate = delegate
+        self.bridge.ownerValidator = { [state = self.state, lifecycle = self.lifecycle] pluginId, token, bootstrap in
+            guard lifecycle.permitsNativeWork || state.isStopping
+                || (lifecycle.permitsNativeCleanup && state.isRetiringNativeOwner(pluginId: pluginId, token: token)) else { return false }
+            return state.acceptsNativeOwner(pluginId: pluginId, token: token, bootstrapOperation: bootstrap)
+        }
+        self.bridge.effectOwnerValidator = { [state = self.state, lifecycle = self.lifecycle] pluginId, token in
+            // Validation returns a Bool only: the effect itself never executes
+            // while either lifecycle/state lock is held. Retirement/stop cleanup
+            // authorization above is deliberately insufficient for new effects.
+            var active = false
+            lifecycle.publishEffectAdmission { open in
+                if open { active = state.target(id: pluginId, allowLoading: true)?.wireToken == token }
+            }
+            return active
+        }
         for plugin in self.store.loadPlugins() {
             self.state.upsert(plugin)
         }
@@ -531,6 +622,8 @@ public final class PluginHost: @unchecked Sendable {
     /// Поднять движок: CPython → сторож → очередь → плагины.
     /// safeMode (PluginsConstants.KEY_SAFE_MODE): рантайм стартует без плагинов.
     public func start(safeMode: Bool = false) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         guard try state.shouldStart() else { return }
         defer { state.endStarting() }
         try await runtime.initialize(configuration.runtime)
@@ -539,34 +632,7 @@ public final class PluginHost: @unchecked Sendable {
             atPath: configuration.runtime.pluginRootDirectory,
             withIntermediateDirectories: true)
 
-        await watchdog.start(
-            limits: configuration.watchdog,
-            observer: { [weak self] watchdogKey, isNotResponding in
-                self?.applyNotResponding(watchdogKey, isNotResponding)
-            },
-            abandon: { [weak self] watchdogKey in
-                await self?.abandonInterpreter(watchdogKey: watchdogKey)
-            },
-            footprint: { [weak self] in
-                guard let self else { return [] }
-                var snapshot: [(String, Int)] = []
-                for handle in self.state.handlesSnapshot() {
-                    let footprint = await self.interpreters.footprintKB(handle)
-                    snapshot.append((handle.hostWatchdogKey, footprint))
-                }
-                return snapshot
-            })
-        try await checkStartStillAllowed()
-
-        await queue.start(
-            handler: { [weak self] event in
-                guard let self else { throw PluginHostError.notRunning }
-                return try await self.handleEvent(event)
-            },
-            onTimeout: { [weak self] event in
-                await self?.handleBatchTimeout(event)
-            },
-            limits: configuration.queue)
+        await startActorServices()
         try await checkStartStillAllowed()
 
         if !safeMode {
@@ -585,11 +651,40 @@ public final class PluginHost: @unchecked Sendable {
                 try await checkStartStillAllowed()
             }
         }
-        guard state.markRunning() else {
+        guard state.markRunning(safeMode: safeMode) else {
             await stop()
             throw PluginHostError.notRunning
         }
         notifyReload()
+    }
+
+    private func startActorServices() async {
+        await watchdog.start(
+            limits: configuration.watchdog,
+            observer: { [weak self] watchdogKey, isNotResponding in
+                self?.applyNotResponding(watchdogKey, isNotResponding)
+            },
+            abandon: { [weak self] watchdogKey in
+                await self?.abandonInterpreter(watchdogKey: watchdogKey)
+            },
+            footprint: { [weak self] in
+                guard let self else { return [] }
+                var snapshot: [(String, Int)] = []
+                for handle in self.state.handlesSnapshot() {
+                    let footprint = await self.interpreters.footprintKB(handle)
+                    snapshot.append((handle.hostWatchdogKey, footprint))
+                }
+                return snapshot
+            })
+        await queue.start(
+            handler: { [weak self] event in
+                guard let self else { throw PluginHostError.notRunning }
+                return try await self.handleEvent(event)
+            },
+            onTimeout: { [weak self] event in
+                await self?.handleBatchTimeout(event)
+            },
+            limits: configuration.queue)
     }
 
     private func checkStartStillAllowed() async throws {
@@ -604,6 +699,35 @@ public final class PluginHost: @unchecked Sendable {
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
     /// Терминальная операция. При pending/abandoned CPython не финализируется.
     public func stop() async {
+        var loggedWaiting = false
+        while true {
+            switch lifecycle.requestStop() {
+            case .wait(let signal):
+                if !loggedWaiting {
+                    loggedWaiting = true
+                    log?("PluginHost: stop waiting for settings maintenance")
+                }
+                _ = try? await signal.wait(cancellable: false)
+            case .inProgress:
+                await queue.stop()
+                await watchdog.stop()
+                return
+            case .finished:
+                // A start admitted before stop can arrive late at these actors.
+                await queue.stop()
+                await watchdog.stop()
+                let canFinalize = await interpreters.canFinalizeProcess
+                await runtime.shutdown(canFinalizeProcess: canFinalize)
+                return
+            case .perform(let context):
+                await performStop(maintenanceEpoch: context?.managerPaused == true ? context?.epoch : nil)
+                lifecycle.finishStop()
+                return
+            }
+        }
+    }
+
+    private func performStop(maintenanceEpoch: UUID?) async {
         let active = state.beginStopping()
         gate.reset()
         await queue.stop()
@@ -623,7 +747,8 @@ public final class PluginHost: @unchecked Sendable {
             let script = state.ownsUnloading(handle) ? "None" : "_exteraless_runtime.unload()"
             do {
                 _ = try await withDispatchTimeout(configuration.interpreters.callTimeout) {
-                    try await self.interpreters.invoke(handle, script: script)
+                    try await self.interpreters.invoke(handle, script: script, shouldExecute: { true },
+                                                       maintenanceEpoch: maintenanceEpoch)
                 }
             } catch is DispatchTimeoutError {
                 await interpreters.abandon(handle)
@@ -633,18 +758,170 @@ public final class PluginHost: @unchecked Sendable {
             }
         }
         await interpreters.destroyAll()
-        for plugin in state.pluginList() { bridge.releaseInstances(pluginId: plugin.id) }
+        for plugin in state.pluginList() {
+            bridge.releaseInstances(pluginId: plugin.id)
+            tlOrigins.retire(pluginId: plugin.id)
+        }
         let canFinalize = await interpreters.canFinalizeProcess
         await runtime.shutdown(canFinalizeProcess: canFinalize)
         state.finishStopping()
         notifyReload()
     }
 
+    // MARK: - Nonterminal settings maintenance
+
+    /// Closes admission synchronously before the first await. The returned lease
+    /// proves SDK unload, native destruction and owner-mailbox exit for every
+    /// interpreter, including inspectors/pending/abandoned-state checks. It never
+    /// initializes or finalizes the process runtime. Tools may mutate files only
+    /// after this method returns successfully, and must always finish the lease.
+    public func beginSettingsMaintenance(timeout: TimeInterval = 10) async throws -> PluginSettingsMaintenanceLease {
+        try Task.checkCancellation()
+        let deadline = try PluginLifecycleDeadline(seconds: timeout)
+        let context = try lifecycle.beginMaintenance()
+        recomputeGate()
+        do {
+            try await deadline.run { try await self.lifecycle.waitUntilIdle(context.attempt) }
+            var current = try lifecycle.check(context.attempt)
+            // An awaited barrier runs after the old queue's dispatch/timeout
+            // continuations. Its runLoop reaches idle before stop/start can reuse
+            // the actor; merely counting interpreter replies is not that barrier.
+            if !current.servicesStopped, state.isRunning {
+                let name = "__host_maintenance_\(context.attempt.uuidString)"
+                _ = try await deadline.run {
+                    try await self.queue.submitAwaiting(.appEvent(AppEventPayload(name: name)))
+                }
+            }
+            if current.snapshot == nil {
+                try lifecycle.update(context.attempt, snapshot: .init(plugins: state.pluginList(), wasRunning: state.isRunning,
+                                                                      resumeAllEnabled: state.resumesAllEnabledPlugins))
+            }
+            _ = try lifecycle.check(context.attempt)
+            await queue.stop()
+            await watchdog.stop()
+            try lifecycle.update(context.attempt, servicesStopped: true, stage: .quiescing)
+            try Task.checkCancellation()
+            try await interpreters.pauseForSettingsMaintenance(context.epoch)
+            try lifecycle.update(context.attempt, managerPaused: true)
+            current = try lifecycle.check(context.attempt)
+            let pool = await interpreters.maintenanceState
+            guard pool.pendingCreations == 0, pool.pendingInvocations == 0, pool.abandoned == 0 else {
+                throw PluginHostError.runtimeFailure("Cannot prepare settings maintenance with pending or abandoned interpreter work")
+            }
+            for handle in state.handlesSnapshot() {
+                _ = try lifecycle.check(context.attempt)
+                try Task.checkCancellation()
+                try await retireForSettingsMaintenance(handle, context: current, deadline: deadline)
+            }
+            try await interpreters.requireSettingsQuiescence(context.epoch)
+            try state.requireSettingsQuiescence()
+            try Task.checkCancellation()
+            _ = try lifecycle.check(context.attempt)
+            try lifecycle.hold(context.attempt)
+            notifyReload()
+            return PluginSettingsMaintenanceLease { [self] resume in
+                try await self.finishSettingsMaintenance(context.attempt, resume: resume)
+            }
+        } catch {
+            // No lease => no authorization for Tools to stage/apply files. Keep
+            // the epoch/snapshot and closed admission for recovery or a retry.
+            lifecycle.release(context.attempt, resume: false)
+            recomputeGate()
+            notifyReload()
+            throw error
+        }
+    }
+
+    private func retireForSettingsMaintenance(_ handle: InterpreterHandle, context: PluginHostLifecycle.Context,
+                                              deadline: PluginLifecycleDeadline) async throws {
+        guard let target = state.maintenanceTarget(handle) else {
+            throw PluginHostError.superseded("Maintenance interpreter owner changed: \(handle.pluginId)")
+        }
+        var unloadError: PluginHostError?
+        if !target.retiring {
+            guard state.beginUnloading(id: handle.pluginId, expected: handle) != nil else {
+                throw PluginHostError.runtimeFailure("Interpreter retirement is busy: \(handle.pluginId)")
+            }
+            if !target.plugin.notResponding {
+                do {
+                    let configured = configuration.interpreters.callTimeout
+                    let timeout = min(try deadline.remaining(), configured > 0 ? configured : 5)
+                    _ = try await invokePlugin(target.plugin, "_exteraless_runtime.unload()", expectedHandle: handle,
+                                               allowUnloading: true, maintenanceEpoch: context.epoch, timeout: timeout)
+                } catch {
+                    unloadError = bridgePluginError(error)
+                }
+            }
+        }
+        try Task.checkCancellation()
+        try await interpreters.destroyForSettingsMaintenance(handle, epoch: context.epoch, deadline: deadline)
+        guard state.ownsUnloading(handle) else {
+            throw PluginHostError.superseded("Maintenance retirement owner expired: \(handle.pluginId)")
+        }
+        bridge.releaseInstances(pluginId: handle.pluginId)
+        tlOrigins.retire(pluginId: handle.pluginId)
+        guard state.finishUnloading(handle, errorMessage: nil) else {
+            throw PluginHostError.superseded("Maintenance retirement owner expired: \(handle.pluginId)")
+        }
+        if let unloadError { throw unloadError }
+    }
+
+    private func finishSettingsMaintenance(_ attempt: UUID, resume: Bool) async throws {
+        let (context, resume) = try lifecycle.beginFinish(attempt, resume: resume)
+        guard resume else {
+            lifecycle.release(attempt, resume: false)
+            recomputeGate()
+            notifyReload()
+            return
+        }
+        do {
+            guard let snapshot = context.snapshot else {
+                throw PluginHostError.internalInconsistency("Maintenance snapshot is missing")
+            }
+            try await interpreters.requireSettingsQuiescence(context.epoch)
+            try state.requireSettingsQuiescence()
+            try state.restoreMaintenanceEnabledFlags(snapshot.plugins)
+            try await interpreters.resumeAfterSettingsMaintenance(context.epoch)
+            try lifecycle.update(attempt, managerPaused: false)
+            if snapshot.wasRunning {
+                await startActorServices()
+                try lifecycle.update(attempt, servicesStopped: false)
+                // Ordinary startup retries the original enabled set (restored
+                // settings may fix a prior load error). Safe mode does not start
+                // previously inactive plugins merely because a backup finished.
+                let active = Set(snapshot.plugins.filter { $0.enabled && (snapshot.resumeAllEnabled || $0.loaded) }.map(\.id))
+                for plugin in state.pluginList() where active.contains(plugin.id) {
+                    _ = try lifecycle.check(attempt)
+                    await loadPlugin(plugin)
+                }
+            }
+            _ = try lifecycle.check(attempt)
+            lifecycle.release(attempt, resume: true)
+            recomputeGate()
+            notifyReload()
+        } catch {
+            try? lifecycle.update(attempt, stage: .recovery)
+            await queue.stop()
+            await watchdog.stop()
+            try? lifecycle.update(attempt, servicesStopped: true)
+            lifecycle.release(attempt, resume: false)
+            recomputeGate()
+            notifyReload()
+            throw error
+        }
+    }
+
     // MARK: - Жизненный цикл плагинов
 
     /// Прочитать метаданные через AST SDK, не исполняя устанавливаемый файл.
     public func readPluginMetadata(sourceURL: URL) async throws -> Plugin {
-        guard isRunning else { throw PluginHostError.notRunning }
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        return try await readPluginMetadataImpl(sourceURL: sourceURL)
+    }
+
+    private func readPluginMetadataImpl(sourceURL: URL) async throws -> Plugin {
+        guard state.isRunning else { throw PluginHostError.notRunning }
         var policy = PythonInterpreterConfiguration()
         policy.allowThreads = false
         let inspector = try await interpreters.createInterpreter(
@@ -665,13 +942,21 @@ public final class PluginHost: @unchecked Sendable {
 
     @discardableResult
     public func importPlugin(sourceURL: URL) async throws -> Plugin {
-        let metadata = try await readPluginMetadata(sourceURL: sourceURL)
-        return try await installPlugin(sourceURL: sourceURL, metadata: metadata)
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        let metadata = try await readPluginMetadataImpl(sourceURL: sourceURL)
+        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata)
     }
 
     /// Установить проверенный файл, затем загрузить его на worker плагина.
     @discardableResult
     public func installPlugin(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata)
+    }
+
+    private func installPluginImpl(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
         guard Plugin.isValidID(metadata.id) else {
             throw PluginHostError.invalidPlugin("id \(metadata.id) не проходит валидацию ^[A-Za-z][A-Za-z0-9_-]{1,31}$")
         }
@@ -707,6 +992,8 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Удалить плагин: интерпретатор, файл, модель, согласия.
     public func uninstallPlugin(id: String) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         try state.beginMutation(id)
         defer { state.endMutation(id) }
         await unloadPlugin(id: id, duringMutation: true)
@@ -721,6 +1008,8 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Включить/выключить плагин (персистентно).
     public func setPluginEnabled(id: String, _ enabled: Bool) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         try state.beginMutation(id)
         defer { state.endMutation(id) }
         guard var plugin = state.plugin(id: id) else { throw PluginHostError.pluginNotFound(id) }
@@ -738,6 +1027,8 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Перезагрузить плагин (developer mode).
     public func reloadPlugin(id: String) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         try state.beginMutation(id)
         defer { state.endMutation(id) }
         await unloadPlugin(id: id, duringMutation: true)
@@ -755,6 +1046,8 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     public func setGrantedPermissions(id: String, permissions grants: [PluginPermission]) throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
         permissions.setGranted(id, grants, to: store)
         recomputeGate()
@@ -762,16 +1055,22 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     public func deliverAppEvent(_ name: String) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         guard events.subscribers.hasSubscribers(.appEvent) else { return }
         _ = try await queue.submitAwaiting(.appEvent(AppEventPayload(name: name)))
     }
 
     public func settingsJSON(id: String, account: Int32) async throws -> String {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         guard let plugin = state.plugin(id: id), plugin.loaded else { throw PluginHostError.pluginNotFound(id) }
         return try await events.requestCreateSettings(CreateSettingsPayload(pluginId: id, account: account))
     }
 
     public func updateSetting(id: String, key: String, valueJSON: String) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         _ = try PluginRuntimeScript.jsonValue(valueJSON)
         guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
         _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_changed_json", [key, valueJSON]),
@@ -779,6 +1078,8 @@ public final class PluginHost: @unchecked Sendable {
     }
 
     public func clickSetting(id: String, callbackId: String) async throws {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         guard let target = state.target(id: id) else { throw PluginHostError.pluginNotFound(id) }
         _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("setting_click_json", [callbackId]),
                                    expectedHandle: target.handle)
@@ -787,34 +1088,106 @@ public final class PluginHost: @unchecked Sendable {
     /// Synchronous and safe on the C callback worker, including on_plugin_load
     /// after setHandle and before plugin.loaded becomes true. Capture before delay.
     public func callbackOwner(id: String) -> CallbackOwner? {
+        guard lifecycle.permitsCallbacks else { return nil }
+        return currentCallbackOwner(id: id)
+    }
+
+    private func currentCallbackOwner(id: String) -> CallbackOwner? {
         guard let target = state.target(id: id, allowLoading: true) else { return nil }
-        return CallbackOwner(hostIdentity: callbackHostIdentity, interpreter: target.handle)
+        return CallbackOwner(wireToken: target.wireToken, hostIdentity: callbackHostIdentity, interpreter: target.handle)
     }
 
     /// Immediate/unscheduled invocation (e.g. the strict native probe). Delayed
     /// callbacks must use the expectedOwner overload with a token captured at enqueue.
-    public func invokeCallback(id: String, handle: Int64, method: String, argumentsJSON: String = "[]") async throws {
-        guard let owner = callbackOwner(id: id) else { throw PluginHostError.pluginNotFound(id) }
-        try await invokeCallback(id: id, handle: handle, method: method, argumentsJSON: argumentsJSON,
-                                 expectedOwner: owner)
+    public func invokeCallback(id: String, handle: Int64, method: String, argumentsJSON: String = "[]",
+                               shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws {
+        let activity = try lifecycle.enter(callback: true)
+        defer { activity.finish() }
+        guard let owner = currentCallbackOwner(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        _ = try await performCallbackResult(id: id, handle: handle, method: method, argumentsJSON: argumentsJSON,
+                                            expectedOwner: owner, shouldExecute: shouldExecute, activity: activity)
     }
 
     /// Stale tokens fail before Python entry. In particular, this path performs
     /// no completeCallback/release against the replacement interpreter's accounting;
     /// unload already retired the old owner's bridge objects and pending callbacks.
     public func invokeCallback(id: String, handle: Int64, method: String, argumentsJSON: String = "[]",
-                               expectedOwner: CallbackOwner) async throws {
+                                 expectedOwner: CallbackOwner,
+                                 shouldExecute: @escaping @Sendable () -> Bool = { true },
+                                 tlOrigin: PluginTLInvocationOrigin? = nil) async throws {
+        _ = try await invokeCallbackResult(id: id, handle: handle, method: method,
+                                          argumentsJSON: argumentsJSON, expectedOwner: expectedOwner,
+                                          shouldExecute: shouldExecute, tlOrigin: tlOrigin)
+    }
+
+    /// Result-bearing native barriers (e.g. an intent before-handler) await the
+    /// actual Python return value, not the Bool saying a callback was queued.
+    public func invokeCallbackResult(id: String, handle: Int64, method: String, argumentsJSON: String = "[]",
+                                      expectedOwner: CallbackOwner,
+                                      shouldExecute: @escaping @Sendable () -> Bool = { true },
+                                      tlOrigin: PluginTLInvocationOrigin? = nil) async throws -> String {
+        let activity = try reserveCallbackActivity(expectedOwner)
+        defer { activity.finish() }
+        return try await performCallbackResult(id: id, handle: handle, method: method, argumentsJSON: argumentsJSON,
+                                               expectedOwner: expectedOwner, shouldExecute: shouldExecute, activity: activity, tlOrigin: tlOrigin)
+    }
+
+    /// A dispatcher reserves at FIFO admission, so maintenance also waits for work
+    /// which has not reached the interpreter mailbox yet.
+    func reserveCallbackActivity(_ owner: CallbackOwner) throws -> PluginHostActivity {
+        let activity = try lifecycle.enter(callback: true)
+        guard currentCallbackOwner(id: owner.pluginId) == owner else {
+            activity.finish()
+            throw PluginHostError.superseded("Callback interpreter owner expired: \(owner.pluginId)")
+        }
+        return activity
+    }
+
+    func performCallbackResult(id: String, handle: Int64, method: String, argumentsJSON: String,
+                                expectedOwner: CallbackOwner, shouldExecute: @escaping @Sendable () -> Bool,
+                                activity: PluginHostActivity, tlOrigin: PluginTLInvocationOrigin? = nil) async throws -> String {
+        guard lifecycle.owns(activity) else { throw PluginHostError.superseded("Callback admission expired") }
         guard expectedOwner.hostIdentity == callbackHostIdentity, expectedOwner.pluginId == id,
-              let target = state.target(id: id, expected: expectedOwner.interpreter, allowLoading: true) else {
+              let target = state.target(id: id, expected: expectedOwner.interpreter, allowLoading: true),
+              target.wireToken == expectedOwner.wireToken else {
             throw PluginHostError.superseded("Callback interpreter owner expired: \(id)")
         }
         _ = try PluginRuntimeScript.jsonValue(argumentsJSON)
         let source = "_exteraless_runtime.invoke_handle_json(\(handle), \(PluginRuntimeScript.quote(method)), \(PluginRuntimeScript.quote(argumentsJSON)))"
+        return try await invokePlugin(target.plugin, source, expectedHandle: target.handle, shouldExecute: shouldExecute,
+            tlOrigin: tlOrigin ?? tlOrigins.origin(owner: expectedOwner, handle: handle))
+    }
+
+    /// Release a provider's unique callback lease on its original interpreter.
+    /// Providers sharing a Python callback must use distinct wrapper handles or
+    /// retain it themselves until the final native owner releases the lease.
+    public func releaseCallbackHandles(_ handles: [Int64], expectedOwner: CallbackOwner) async throws {
+        let activity = try reserveCallbackActivity(expectedOwner)
+        defer { activity.finish() }
+        try await performCallbackRelease(handles, expectedOwner: expectedOwner, activity: activity)
+    }
+
+    func performCallbackRelease(_ handles: [Int64], expectedOwner: CallbackOwner,
+                                activity: PluginHostActivity) async throws {
+        guard lifecycle.owns(activity) else { throw PluginHostError.superseded("Callback release admission expired") }
+        guard handles.count <= 4096, handles.allSatisfy({ $0 > 0 }) else {
+            throw PluginHostError.runtimeFailure("Invalid or oversized callback release lease")
+        }
+        guard expectedOwner.hostIdentity == callbackHostIdentity,
+              let target = state.target(id: expectedOwner.pluginId, expected: expectedOwner.interpreter,
+                                        allowLoading: true), target.wireToken == expectedOwner.wireToken else {
+            throw PluginHostError.superseded("Callback release owner expired: \(expectedOwner.pluginId)")
+        }
+        let ids = Set(handles).sorted().map(String.init).joined(separator: ",")
+        let source = PluginRuntimeScript.call("release_handles_json", ["[\(ids)]"])
         _ = try await invokePlugin(target.plugin, source, expectedHandle: target.handle)
+        tlOrigins.release(owner: expectedOwner, handles: handles)
     }
 
     /// Обновить hasSettings-флаг плагина (этап 5: после разбора create_settings).
     public func updatePluginFlags(id: String, hasSettings: Bool) {
+        guard let activity = try? lifecycle.enter() else { return }
+        defer { activity.finish() }
         guard state.updateFlags(id: id, hasSettings: hasSettings) else { return }
         persistPlugins()
         recomputeGate()
@@ -852,6 +1225,11 @@ public final class PluginHost: @unchecked Sendable {
                 throw PluginHostError.notRunning
             }
             publishedHandle = true
+            guard let owner = currentCallbackOwner(id: plugin.id) else { throw PluginHostError.notRunning }
+            let tokenJSON = try PluginRuntimeScript.encodeJSON(owner.wireToken)
+            let bindSource = "_exteraless_bridge.xt_set_owner_token(\(PluginRuntimeScript.quote(owner.wireToken)))\n"
+                + PluginRuntimeScript.call("bind_owner_json", [tokenJSON])
+            _ = try await invokePlugin(plugin, bindSource, expectedHandle: handle)
             let output = try await invokePlugin(plugin, PluginRuntimeScript.call("load_json", [path]), expectedHandle: handle)
             plugin = try PluginRuntimeScript.applyLoadResult(output, to: plugin)
             guard state.publishLoaded(plugin, handle: handle) else {
@@ -876,6 +1254,7 @@ public final class PluginHost: @unchecked Sendable {
                 // The loading reservation is still held, so no replacement can
                 // publish native objects between the state check and this release.
                 bridge.releaseInstances(pluginId: plugin.id)
+                tlOrigins.retire(pluginId: plugin.id)
                 notifyFailure(plugin.id, plugin.loadError ?? "load error")
             }
             if let created { await watchdog.clearNotResponding(created.hostWatchdogKey) }
@@ -905,6 +1284,7 @@ public final class PluginHost: @unchecked Sendable {
         // Keep the retirement reservation until the bridge has been cleared.
         // A new load cannot reuse this pluginId while cleanup is suspended.
         bridge.releaseInstances(pluginId: id)
+        tlOrigins.retire(pluginId: id)
         guard state.finishUnloading(target.handle, errorMessage: errorMessage) else { return false }
         persistPlugins()
         recomputeGate()
@@ -925,7 +1305,17 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Диспатч событий (обработчик очереди)
 
+    private func canInvokeTL(_ payload: PluginTLHostPayload, pluginId: String, handle: InterpreterHandle) -> Bool {
+        guard payload.shouldExecute(), permissions.has(pluginId, payload.kind.requiredPermission),
+              let target = state.target(id: pluginId, expected: handle), target.plugin.isEnabled,
+              target.plugin.handles(payload.kind), !payload.originPluginIds.contains(pluginId) else { return false }
+        return true
+    }
+
     private func handleEvent(_ event: PluginEvent) async throws -> PluginEventResult {
+        if case .appEvent(let payload) = event, lifecycle.isBarrier(payload.name) { return .none }
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
         let batch = state.beginBatch()
         defer { state.endBatch(batch.id) }
         let kind = event.kind
@@ -948,12 +1338,15 @@ public final class PluginHost: @unchecked Sendable {
         case .sendMessage(let payload):
             var result = PluginSendMessageResult()
             var currentParams = payload.paramsJSON
+            let sendRoot = UUID().uuidString
             for target in subscribers {
                 let plugin = target.plugin
                 do {
                     let currentEvent = PluginEvent.sendMessage(SendMessagePayload(
                         account: payload.account, paramsJSON: currentParams))
-                    let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle)
+                    let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [plugin.id])
+                    let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle,
+                        tlOrigin: origin)
                     let decision = try PluginRuntimeScript.applyingSendResult(output, to: currentParams)
                     switch decision.strategy {
                     case .default:
@@ -971,12 +1364,97 @@ public final class PluginHost: @unchecked Sendable {
             }
             return .sendMessage(result)
 
+        case let .tlTransform(payload):
+            try payload.validate()
+            guard payload.shouldExecute() else { return .tlTransform(.init()) }
+            let origin = try PluginTLInvocationOrigin(rootId: payload.originRootId ?? UUID().uuidString, pluginIds: payload.originPluginIds)
+            var ordered: [(plugin: Plugin, handle: InterpreterHandle, priority: Int32)] = []
+            for target in subscribers where !payload.originPluginIds.contains(target.plugin.id) {
+                guard payload.shouldExecute() else { return .tlTransform(.init()) }
+                do {
+                    let queryOrigin = try origin.entering(target.plugin.id)
+                    let source = PluginRuntimeScript.call("hook_priority_json",
+                        [payload.kind.protocolName, payload.name, payload.canonicalName])
+                    let output = try await invokePlugin(target.plugin, source, expectedHandle: target.handle,
+                        shouldExecute: { [weak self] in self?.canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) == true },
+                        tlOrigin: queryOrigin)
+                    guard payload.shouldExecute() else { return .tlTransform(.init()) }
+                    guard canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) else { continue }
+                    guard output.utf8.count <= 128 else {
+                        log?("TL_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
+                        continue
+                    }
+                    let raw = try PluginRuntimeScript.jsonValue(output)
+                    if raw is NSNull { continue }
+                    let value = try PluginServiceArgument.integer(raw, name: "TL hook priority")
+                    guard let priority = Int32(exactly: value) else {
+                        log?("TL_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
+                        continue
+                    }
+                    ordered.append((target.plugin, target.handle, priority))
+                } catch {
+                    // A query/decoder failure is not a plugin execution verdict.
+                    // Never unload a replacement generation (or this owner's valid
+                    // callback leases) because its priority could not be inspected.
+                    if payload.shouldExecute() { log?("TL_HOOK_PRIORITY_UNAVAILABLE: \(target.plugin.id)") }
+                }
+            }
+            ordered.sort { $0.priority == $1.priority ? $0.plugin.id < $1.plugin.id : $0.priority > $1.priority }
+            var current = payload.valueJSON
+            var decision = PluginTLHookDecision()
+            for target in ordered {
+                guard payload.shouldExecute() else { return .tlTransform(.init()) }
+                var next = payload
+                next.valueJSON = current
+                let childOrigin: PluginTLInvocationOrigin
+                do { childOrigin = try origin.entering(target.plugin.id) }
+                catch { log?("TL_HOOK_ORIGIN_DEPTH_LIMIT: \(target.plugin.id)"); continue }
+                let output: String
+                do {
+                    output = try await invokePlugin(target.plugin,
+                        try PluginScriptBuilder.dispatch(for: .tlTransform(next)), expectedHandle: target.handle,
+                        shouldExecute: { [weak self] in self?.canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) == true }, tlOrigin: childOrigin)
+                } catch {
+                    switch bridgePluginError(error) {
+                    case .superseded, .notRunning, .pluginNotResponding:
+                        break
+                    default:
+                        if canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) {
+                            await recordExecutionFailure(target.plugin, expectedHandle: target.handle, message: String(describing: error))
+                        }
+                    }
+                    continue
+                }
+                guard payload.shouldExecute() else { return .tlTransform(.init()) }
+                guard canInvokeTL(payload, pluginId: target.plugin.id, handle: target.handle) else { continue }
+                do {
+                    let value = try payload.decision(output)
+                    switch value.strategy {
+                    case .default: break
+                    case .cancel:
+                        if payload.canCancel { return .tlTransform(.init(strategy: .cancel)) }
+                        log?("TL_HOOK_CANCEL_UNSUPPORTED: \(payload.canonicalName)")
+                    case .modify, .modifyFinal:
+                        guard let json = value.valueJSON else { continue }
+                        current = json
+                        decision = value
+                        if value.strategy == .modifyFinal { return .tlTransform(decision) }
+                    }
+                } catch {
+                    log?("TL_HOOK_INVALID_REPLACEMENT: \(payload.canonicalName)")
+                }
+            }
+            return .tlTransform(decision)
+
         case .coalescedUpdates(_, let items):
+            let observationRoot = UUID().uuidString
             for target in subscribers {
                 let plugin = target.plugin
                 do {
                     let interested = items.filter { plugin.handles($0.kind) }
-                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.batchDispatch(interested), expectedHandle: target.handle)
+                    let origin = try PluginTLInvocationOrigin(rootId: observationRoot, pluginIds: [plugin.id])
+                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.batchDispatch(interested), expectedHandle: target.handle,
+                        tlOrigin: origin)
                 } catch {
                     await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
@@ -985,10 +1463,15 @@ public final class PluginHost: @unchecked Sendable {
 
         case .update, .updates, .appEvent, .preRequest, .postRequest:
             // N апдейтов = один вход: батч уже собран очередью, диспатчим целиком.
+            let observationRoot = UUID().uuidString
             for target in subscribers {
                 let plugin = target.plugin
                 do {
-                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle)
+                    let origin: PluginTLInvocationOrigin?
+                    if kind == .appEvent { origin = nil }
+                    else { origin = try PluginTLInvocationOrigin(rootId: observationRoot, pluginIds: [plugin.id]) }
+                    _ = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: event), expectedHandle: target.handle,
+                        tlOrigin: origin)
                 } catch {
                     await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
                 }
@@ -1000,16 +1483,33 @@ public final class PluginHost: @unchecked Sendable {
     /// Вызов интерпретатора плагина с пер-плагинным таймаутом; таймаут →
     /// сторож (abandon, notResponding), остальные плагины продолжают.
     private func invokePlugin(_ plugin: Plugin, _ script: String, expectedHandle handle: InterpreterHandle,
-                              allowUnloading: Bool = false) async throws -> String {
+                               allowUnloading: Bool = false,
+                               shouldExecute: @escaping @Sendable () -> Bool = { true },
+                               maintenanceEpoch: UUID? = nil, timeout overrideTimeout: TimeInterval? = nil,
+                               tlOrigin: PluginTLInvocationOrigin? = nil) async throws -> String {
         try state.beginInvocation(handle, allowUnloading: allowUnloading)
         defer { state.endInvocation(handle) }
+        let originScope: PluginTLInvocationScope?
+        if let tlOrigin, let target = state.target(id: plugin.id, expected: handle, allowLoading: true) {
+            let owner = CallbackOwner(wireToken: target.wireToken, hostIdentity: callbackHostIdentity, interpreter: handle)
+            originScope = PluginTLInvocationScope(owner: owner, origin: tlOrigin, registry: tlOrigins)
+        } else { originScope = nil }
+        defer { originScope?.close() }
         do {
-            let timeout = configuration.interpreters.callTimeout
+            let timeout = overrideTimeout ?? configuration.interpreters.callTimeout
             return try await withDispatchTimeout(timeout) {
                 // Admission and detached execution may straddle unload. Recheck
                 // the same handle, never resolve pluginId to a newer interpreter.
                 try self.state.checkInvocation(handle, allowUnloading: allowUnloading)
-                return try await self.interpreters.invoke(handle, script: script)
+                return try await self.interpreters.invoke(handle, script: script, shouldExecute: {
+                    // Recheck after the FIFO wait, on the actual owner worker.
+                    guard (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil, shouldExecute() else {
+                        PluginTLNativeOrigin.install(nil)
+                        return false
+                    }
+                    PluginTLNativeOrigin.install(originScope)
+                    return true
+                }, maintenanceEpoch: maintenanceEpoch)
             }
         } catch is DispatchTimeoutError {
             await interpreters.abandon(handle)
@@ -1034,6 +1534,8 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Диспатч завис целиком: бросить все ещё исполняющиеся интерпретаторы.
     private func handleBatchTimeout(_ event: PluginEvent) async {
+        guard let activity = try? lifecycle.enter() else { return }
+        defer { activity.finish() }
         log?("PluginHost: таймаут диспатча \(String(describing: event.kind))")
         for handle in state.batchInflightSnapshot() {
             await reportTimeout(handle)
@@ -1043,7 +1545,10 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Гейт и уведомления
 
     private func recomputeGate() {
-        state.recomputeGate(gate, permissions: permissions)
+        lifecycle.publishEventAdmission { allowed in
+            if allowed { state.recomputeGate(gate, permissions: permissions) }
+            else { gate.reset() }
+        }
     }
 
     private func applyNotResponding(_ watchdogKey: String, _ isNotResponding: Bool) {
@@ -1115,6 +1620,22 @@ extension Plugin {
 enum PluginScriptBuilder {
     static func dispatch(for event: PluginEvent) throws -> String {
         switch event {
+        case let .tlTransform(payload):
+            try payload.validate()
+            var snapshot: [String: Any] = ["schemaVersion": 1, "observational": false, "phase": payload.phase,
+                "metadata": try PluginRuntimeScript.jsonValue(payload.metadataJSON),
+                "tl": try PluginRuntimeScript.jsonValue(payload.valueJSON), "canCancel": payload.canCancel]
+            if let error = payload.errorJSON { snapshot["tlError"] = try PluginRuntimeScript.jsonValue(error) }
+            var arguments: [String: Any] = ["account": payload.account, payload.valueField: snapshot]
+            arguments["canonical_name"] = payload.canonicalName
+            switch payload.kind {
+            case .preRequest, .postRequest: arguments["request_name"] = payload.name
+            case .update: arguments["update_name"] = payload.name
+            case .updates: arguments["container_name"] = payload.name
+            default: throw PluginHostError.runtimeFailure("Unsupported TL transform kind")
+            }
+            if payload.kind == .postRequest { arguments["error"] = try payload.errorJSON.map(PluginRuntimeScript.jsonValue) ?? NSNull() }
+            return try call(payload.kind.protocolName, arguments)
         case .appEvent(let payload):
             return try call("on_app_event", ["event_type": payload.name])
         case .preRequest(let payload):
@@ -1124,11 +1645,16 @@ enum PluginScriptBuilder {
                 "request": try PluginRuntimeScript.jsonValue(payload.requestJSON),
             ])
         case .postRequest(let payload):
+            let response: Any = try payload.responseJSON.map(PluginRuntimeScript.jsonValue) ?? NSNull()
+            let error: Any
+            if let nativeError = (response as? [String: Any])?["tlError"] { error = nativeError }
+            else if let message = payload.errorMessage { error = message }
+            else { error = NSNull() }
             return try call("post_request_hook", [
                 "request_name": payload.requestName,
                 "account": payload.account,
-                "response": try payload.responseJSON.map(PluginRuntimeScript.jsonValue) ?? NSNull(),
-                "error": payload.errorMessage ?? "",
+                "response": response,
+                "error": error,
             ])
         case .update(let payload):
             return try call("on_update_hook", [
@@ -1137,10 +1663,18 @@ enum PluginScriptBuilder {
                 "update": try PluginRuntimeScript.jsonValue(payload.updateJSON),
             ])
         case .updates(let payload):
+            let values = try payload.updatesJSON.map(PluginRuntimeScript.jsonValue)
+            // The native observer forwards one complete container snapshot in its
+            // historical array envelope. SDK on_updates_hook consumes that TL object.
+            let value: Any
+            if values.count == 1, let snapshot = values[0] as? [String: Any], snapshot["schemaVersion"] != nil,
+               snapshot["observational"] as? Bool == true, snapshot["tl"] != nil {
+                value = snapshot
+            } else { value = values }
             return try call("on_updates_hook", [
                 "container_name": payload.containerName,
                 "account": payload.account,
-                "updates": try payload.updatesJSON.map(PluginRuntimeScript.jsonValue),
+                "updates": value,
             ])
         case .coalescedUpdates(_, let items):
             return try batchDispatch(items)

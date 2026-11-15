@@ -219,9 +219,16 @@ public final class BridgeServices: @unchecked Sendable {
                 } else if request.operation == .memberKind {
                     if methods.contains(request.member) { return encode(["ok": true, "value": "method"]) }
                 } else {
-                    var owned = object
-                    owned["pluginId"] = pluginId
-                    let source = String(decoding: try JSONSerialization.data(withJSONObject: owned), as: UTF8.self)
+                    let source: String
+                    if object["pluginId"] as? String == pluginId {
+                        // The C bridge already injected this identity. Preserve
+                        // exact JSON numeric tokens for typed extension decoders.
+                        source = json
+                    } else {
+                        var owned = object
+                        owned["pluginId"] = pluginId
+                        source = String(decoding: try JSONSerialization.data(withJSONObject: owned), as: UTF8.self)
+                    }
                     if let response = try provider.dispatch(requestJSON: source, pluginId: pluginId) {
                         try validateExtensionResponse(response)
                         return response

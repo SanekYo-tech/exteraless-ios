@@ -150,6 +150,7 @@ final class InterpreterMailbox: @unchecked Sendable {
     private var poisoned = false
     private var nextJobId: Int64 = 0
     private var thread: Thread?
+    let finished = PluginLifecycleSignal<Void>()
 
     var isPoisoned: Bool {
         condition.lock(); defer { condition.unlock() }
@@ -161,7 +162,9 @@ final class InterpreterMailbox: @unchecked Sendable {
     func start(name: String, spawn: @escaping @Sendable () throws -> InterpreterCallContext,
                onSpawnFailure: @escaping @Sendable (PluginHostError) -> Void) {
         precondition(thread == nil, "mailbox уже запущен")
+        let finished = self.finished
         let thread = Thread { [weak self] in
+            defer { finished.succeed(()) }
             guard let self else { return }
             let context: InterpreterCallContext
             do {
@@ -251,6 +254,7 @@ public actor SubinterpreterManager {
         var state: State
         let reference: InterpRef
         var pendingReplies: [OneShotResult<String>] = []
+        var destruction: PluginLifecycleSignal<Bool>? = nil
     }
 
     private let engine: any CPythonEngine
@@ -259,6 +263,7 @@ public actor SubinterpreterManager {
     private var nextInterpreterId: Int64 = 1
     private var pendingCreations = 0
     private var stopping = false
+    private var settingsMaintenance: UUID?
     public private(set) var stats = Stats()
 
     public init(engine: any CPythonEngine, limits: PythonInterpreterLimits = PythonInterpreterLimits()) {
@@ -275,6 +280,41 @@ public actor SubinterpreterManager {
     /// Только после завершения всех созданий/выгрузок и при пустом пуле.
     public var canFinalizeProcess: Bool { pendingCreations == 0 && interpreters.isEmpty }
 
+    struct MaintenanceState: Sendable {
+        let interpreters: Int
+        let pendingCreations: Int
+        let pendingInvocations: Int
+        let abandoned: Int
+        let destroying: Int
+    }
+
+    var maintenanceState: MaintenanceState {
+        MaintenanceState(interpreters: interpreters.count, pendingCreations: pendingCreations,
+            pendingInvocations: interpreters.values.reduce(0) { $0 + $1.pendingReplies.count },
+            abandoned: abandonedCount,
+            destroying: interpreters.values.filter { if case .destroying = $0.state { return true }; return false }.count)
+    }
+
+    func pauseForSettingsMaintenance(_ epoch: UUID) throws {
+        guard !stopping else { throw PluginHostError.notRunning }
+        guard settingsMaintenance == nil || settingsMaintenance == epoch else {
+            throw PluginHostError.superseded("Interpreter maintenance epoch changed")
+        }
+        settingsMaintenance = epoch
+    }
+
+    func requireSettingsQuiescence(_ epoch: UUID) throws {
+        guard !stopping, settingsMaintenance == epoch else { throw PluginHostError.notRunning }
+        guard canFinalizeProcess else {
+            throw PluginHostError.runtimeFailure("Settings maintenance cannot prove quiescence: \(interpreters.count) interpreters, \(pendingCreations) pending creations, \(abandonedCount) abandoned")
+        }
+    }
+
+    func resumeAfterSettingsMaintenance(_ epoch: UUID) throws {
+        try requireSettingsQuiescence(epoch)
+        settingsMaintenance = nil
+    }
+
     /// Создать интерпретатор плагина и выполнить бутстрап (virtualjava + мост).
     public func createInterpreter(
         for pluginId: String,
@@ -282,6 +322,9 @@ public actor SubinterpreterManager {
         configuration: PythonInterpreterConfiguration = PythonInterpreterConfiguration()
     ) async throws -> InterpreterHandle {
         guard !stopping else { throw PluginHostError.notRunning }
+        guard settingsMaintenance == nil else {
+            throw PluginHostError.runtimeFailure("Interpreters are paused for settings maintenance")
+        }
         guard interpreters.count + pendingCreations < limits.maxInterpreters else {
             throw PluginHostError.interpreterLimitReached(limits.maxInterpreters)
         }
@@ -323,14 +366,20 @@ public actor SubinterpreterManager {
             })
 
         // Ждём завершения бутстрапа (включая время Py_NewInterpreterFromConfig).
-        let outcome = try await spawnReply.awaitValue()
+        let outcome: SpawnOutcome
+        do {
+            outcome = try await spawnReply.awaitValue()
+        } catch {
+            _ = try? await mailbox.finished.wait(cancellable: false)
+            throw error
+        }
         stats.created += 1
         switch outcome {
         case let .ready(reference):
             interpreters[id] = Managed(
                 handle: handle, mailbox: mailbox, state: .ready,
                 reference: reference, pendingReplies: [])
-            if stopping {
+            if stopping || settingsMaintenance != nil {
                 // destroyAll не ждёт bootstrap. Поздний ref освобождается
                 // через тот же mailbox на владельце; handle наружу не выходит.
                 await destroy(handle)
@@ -338,6 +387,7 @@ public actor SubinterpreterManager {
             }
             return handle
         case let .bootstrapFailed(reference, error, cleanupFailed):
+            _ = try? await mailbox.finished.wait(cancellable: false)
             if cleanupFailed {
                 interpreters[id] = Managed(
                     handle: handle, mailbox: mailbox, state: .abandoned,
@@ -353,9 +403,19 @@ public actor SubinterpreterManager {
     /// Выполнить скрипт в интерпретаторе. Таймаут — на стороне очереди
     /// (PluginEventQueue.withDispatchTimeout); здесь только отказ для
     /// брошенных интерпретаторов.
-    public func invoke(_ handle: InterpreterHandle, script: String) async throws -> String {
+    public func invoke(_ handle: InterpreterHandle, script: String,
+                       shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> String {
+        try await invoke(handle, script: script, shouldExecute: shouldExecute, maintenanceEpoch: nil)
+    }
+
+    func invoke(_ handle: InterpreterHandle, script: String,
+                shouldExecute: @escaping @Sendable () -> Bool,
+                maintenanceEpoch: UUID?) async throws -> String {
         guard !stopping else { throw PluginHostError.notRunning }
-        guard var managed = interpreters[handle.id] else {
+        guard settingsMaintenance == maintenanceEpoch else {
+            throw PluginHostError.superseded("Interpreter admission is paused for settings maintenance")
+        }
+        guard var managed = interpreters[handle.id], managed.handle == handle else {
             throw PluginHostError.pluginNotFound(handle.pluginId)
         }
         guard case .ready = managed.state else {
@@ -363,6 +423,12 @@ public actor SubinterpreterManager {
         }
         let reply = OneShotResult<String>()
         let accepted = managed.mailbox.submit { context in
+            // This check is on the actual owner thread, after its earlier jobs.
+            // An earlier check in a dispatcher/Task cannot protect queued UI work.
+            guard shouldExecute() else {
+                reply.fail(PluginHostError.superseded("Native callback execution scope expired"))
+                return
+            }
             do {
                 reply.succeed(try context.engine.runScript(context.reference, script))
             } catch {
@@ -401,9 +467,30 @@ public actor SubinterpreterManager {
     /// Мягко уничтожить интерпретатор (вызывается только для .ready):
     /// Py_EndInterpreter исполняется на потоке-владельце, затем поток выходит.
     public func destroy(_ handle: InterpreterHandle) async {
-        guard var managed = interpreters[handle.id] else { return }
-        guard case .ready = managed.state else { return }
+        guard let completion = beginDestruction(handle) else { return }
+        _ = try? await completion.wait(cancellable: false)
+    }
+
+    func destroyForSettingsMaintenance(_ handle: InterpreterHandle, epoch: UUID,
+                                       deadline: PluginLifecycleDeadline) async throws {
+        guard !stopping, settingsMaintenance == epoch else { throw PluginHostError.notRunning }
+        guard interpreters[handle.id] != nil else { return }
+        guard let completion = beginDestruction(handle) else {
+            throw PluginHostError.runtimeFailure("Cannot quiesce abandoned interpreter \(handle.pluginId)")
+        }
+        let destroyed = try await deadline.run { try await completion.wait() }
+        guard destroyed else {
+            throw PluginHostError.runtimeFailure("Interpreter destruction failed: \(handle.pluginId)")
+        }
+    }
+
+    private func beginDestruction(_ handle: InterpreterHandle) -> PluginLifecycleSignal<Bool>? {
+        guard var managed = interpreters[handle.id], managed.handle == handle else { return nil }
+        if case .destroying = managed.state { return managed.destruction }
+        guard case .ready = managed.state else { return nil }
+        let completion = PluginLifecycleSignal<Bool>()
         managed.state = .destroying
+        managed.destruction = completion
         interpreters[handle.id] = managed
         let done = OneShotResult<Bool>()
         let accepted = managed.mailbox.submit { context in
@@ -416,11 +503,29 @@ public actor SubinterpreterManager {
         }
         managed.mailbox.poison()
         if !accepted { done.fail(PluginHostError.pluginNotResponding(handle.pluginId)) }
+        // Native destruction owns its completion independently of a maintenance
+        // caller's timeout/cancellation. Only this task removes the managed slot.
+        let mailbox = managed.mailbox
+        Task { await self.completeDestruction(handle, done: done, mailbox: mailbox, completion: completion) }
+        return completion
+    }
+
+    private func completeDestruction(_ handle: InterpreterHandle, done: OneShotResult<Bool>,
+                                     mailbox: InterpreterMailbox, completion: PluginLifecycleSignal<Bool>) async {
+        let succeeded: Bool
         do {
             _ = try await done.awaitValue()
+            succeeded = true
+        } catch {
+            succeeded = false
+        }
+        // Py_EndInterpreter returning is not the mailbox thread's exit. Retain
+        // its pool slot until no owner job can execute after the quiescence proof.
+        _ = try? await mailbox.finished.wait(cancellable: false)
+        if succeeded {
             interpreters[handle.id] = nil
             stats.destroyed += 1
-        } catch {
+        } else {
             // Native state мог остаться живым. Он всё ещё занимает место в
             // пуле и запрещает финализацию процесса даже после выхода воркера.
             if var current = interpreters[handle.id] {
@@ -429,6 +534,7 @@ public actor SubinterpreterManager {
                 stats.abandoned += 1
             }
         }
+        completion.succeed(succeeded)
     }
 
     /// Диагностическая оценка памяти движка, КБ; не per-plugin RSS (см. CPythonEngine).
