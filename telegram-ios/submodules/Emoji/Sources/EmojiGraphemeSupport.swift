@@ -39,7 +39,7 @@ final class EmojiGraphemeSupport: @unchecked Sendable {
         for index in scalars.indices {
             let value = scalars[index].value
             if (0xfe00...0xfe0f).contains(value) || (0xe0100...0xe01ef).contains(value) {
-                guard index > 0, self.hasVariation(base: scalars[index - 1].value, selector: value, font: font) else { return false }
+                guard index > 0, self.hasVariation(base: scalars[index - 1].value, selector: value) else { return false }
             }
         }
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
@@ -67,10 +67,12 @@ final class EmojiGraphemeSupport: @unchecked Sendable {
     /// CoreText may silently discard an unsupported variation selector. Require
     /// an explicit cmap-14 default/non-default mapping before accepting it. This
     /// is a conservative per-grapheme fallback, not a change to SFNT admission.
-    private func hasVariation(base: UInt32, selector: UInt32, font: CTFont) -> Bool {
+    private func hasVariation(base: UInt32, selector: UInt32) -> Bool {
         if !self.didReadCmap {
             self.didReadCmap = true
-            if let data = CTFontCopyTable(font, 0x636d6170, .excludeSynthetic) as Data?, data.count <= 1024 * 1024 {
+            // Read the installed face's raw table. CoreText's excludeSynthetic
+            // option is unavailable on iOS, and fallback tables are not evidence.
+            if let data = self.graphicsFont.table(for: 0x636d6170) as Data?, data.count <= 1024 * 1024 {
                 self.cmap = Array(data)
             }
         }

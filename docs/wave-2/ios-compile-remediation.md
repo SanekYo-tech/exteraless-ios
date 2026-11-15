@@ -22,3 +22,14 @@ timeout in the original Foundation UI fixture before it reached SDK execution.
 That driver now uses the existing process-tree-bounded launcher with a separate
 120-second compile budget and 25-second execution budget. It retains the same
 fixture source set and assertions; this is not a longer SDK/plugin runtime limit.
+
+## Follow-up from 43738711102 / 136c946f
+
+The next full compile found unannotated properties/block arguments in the same
+two MtProtoKit headers. All remaining pointer sites now explicitly retain
+`_Null_unspecified`, including nested callback arguments and return types.
+
+The Emoji cmap-14 reader used CoreText's iOS-unavailable `excludeSynthetic` option.
+It now reads the exact installed `CGFont` table through `table(for:)` (available
+since iOS 2), preserving raw-font variation support checks and the 1-MiB bound.
+Apple API declaration: https://developer.apple.com/documentation/coregraphics/cgfont/table(for:).

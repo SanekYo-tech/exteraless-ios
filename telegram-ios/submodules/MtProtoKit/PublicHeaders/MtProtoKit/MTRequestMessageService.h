@@ -20,12 +20,12 @@
 
 @interface MTRequestMessageService : NSObject <MTMessageService>
 
-@property (nonatomic, weak) id<MTRequestMessageServiceDelegate> delegate;
+@property (nonatomic, weak) id<MTRequestMessageServiceDelegate> _Null_unspecified delegate;
 
-@property (nonatomic, strong) MTApiEnvironment *apiEnvironment;
+@property (nonatomic, strong) MTApiEnvironment * _Null_unspecified apiEnvironment;
 @property (nonatomic) bool forceBackgroundRequests;
     
-@property (nonatomic, copy) void (^didReceiveSoftAuthResetError)(void);
+@property (nonatomic, copy) void (^ _Null_unspecified didReceiveSoftAuthResetError)(void);
 
 - (instancetype _Null_unspecified)initWithContext:(MTContext * _Null_unspecified)context;
 
