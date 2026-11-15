@@ -314,7 +314,7 @@ final class CoreSettingsResetTests: XCTestCase {
             writes.update { $0 += 1 }
             if fail.value { throw NSError(domain: NSPOSIXErrorDomain, code: 5) }
         })
-        let definition = self.definition("tools.downloadSpeedBoost", .integer(0), ["GeneralConfig.downloadSpeedBoost"])
+        let definition = try XCTUnwrap(ToolsFeatures.definitions.first { $0.key == "tools.downloadSpeedBoost" })
         try store.register([definition])
         try store.set(.integer(2), for: definition.key)
         let provider = CoreSettingsResetProvider(settings: store)
@@ -324,6 +324,8 @@ final class CoreSettingsResetTests: XCTestCase {
         fail.update { $0 = true }
         let result = session.run()
         XCTAssertFalse(result.isComplete)
+        XCTAssertFalse(result.requiresNewPreview)
+        XCTAssertEqual(result.error, .storage(.storageFailure(operation: "sync directory", code: 5)))
         XCTAssertEqual(result.observedResetKeys, [definition.key])
         XCTAssertTrue(result.confirmedKeys.isEmpty)
         XCTAssertFalse(store.readSnapshot().storedKeys.contains(definition.key))
@@ -331,6 +333,93 @@ final class CoreSettingsResetTests: XCTestCase {
         XCTAssertTrue(session.run().isComplete)
         XCTAssertEqual(writes.value, 1)
         XCTAssertFalse(store.readSnapshot().storedKeys.contains(definition.key))
+    }
+
+    func testRSR02PostRenameErrorAndObserverRestorationWithdrawOldRetry() throws {
+        let url = try self.url()
+        let failOnce = ResetFixtureBox(false)
+        let writes = ResetFixtureBox(0)
+        let store = try ClientSettings(storageURL: url, secretStore: ResetFixtureSecrets(), afterFileReplace: {
+            writes.update { $0 += 1 }
+            if failOnce.value {
+                failOnce.update { $0 = false }
+                throw NSError(domain: NSPOSIXErrorDomain, code: 5)
+            }
+        })
+        let key = "tools.downloadSpeedBoost"
+        try store.register(PrivacyFeatures.definitions + ToolsFeatures.definitions)
+        try store.set(.integer(2), for: key)
+        let provider = CoreSettingsResetProvider(settings: store)
+        let authority = CoreSettingsResetAuthority()
+        let plan = try provider.prepare(scope: .general, authority: authority)
+        let session = try provider.begin(plan, authority: authority)
+        let restored = ResetFixtureBox(false)
+        let observerFailure = ResetFixtureBox<ClientSettingsError?>(nil)
+        let observation = store.observe { changed in
+            let afterReset = store.readSnapshot()
+            guard changed.contains(key), !afterReset.storedKeys.contains(key), !restored.value else { return }
+            restored.update { $0 = true }
+            // Re-enter only from the public observer, after the writer/flock are
+            // released. This is a NEW stored override with the SAME old payload.
+            do { try store.applyPublic([key: .integer(2)], expected: afterReset) }
+            catch { observerFailure.update { $0 = error as? ClientSettingsError ?? .invalidJSON } }
+        }
+        defer { observation.cancel() }
+        writes.update { $0 = 0 }
+        failOnce.update { $0 = true }
+
+        let first = session.run()
+        XCTAssertTrue(restored.value)
+        XCTAssertNil(observerFailure.value)
+        XCTAssertEqual(writes.value, 2, "One committed reset and the observer's later write")
+        XCTAssertEqual(first.error, .storage(.storageFailure(operation: "sync directory", code: 5)))
+        XCTAssertTrue(first.requiresNewPreview)
+        XCTAssertTrue(first.confirmedKeys.isEmpty)
+        XCTAssertFalse(first.observedResetKeys.contains(key))
+        XCTAssertFalse(first.isComplete)
+        let restoredFile = try Data(contentsOf: url)
+
+        let retry = session.run()
+        XCTAssertEqual(retry.error, .settingsChanged)
+        XCTAssertTrue(retry.requiresNewPreview)
+        XCTAssertFalse(retry.isComplete)
+        XCTAssertEqual(writes.value, 2)
+        XCTAssertEqual(try Data(contentsOf: url), restoredFile)
+        XCTAssertEqual(store.value(key), .integer(2))
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(key))
+    }
+
+    func testRSR02PreRenameFailurePreservesFileAndRequiresFreshPreview() throws {
+        let url = try self.url()
+        let failOnce = ResetFixtureBox(false)
+        let store = try ClientSettings(storageURL: url, secretStore: ResetFixtureSecrets(), afterFileReplace: nil,
+            fileHooks: ClientSettingsFileHooks(beforeFileReplace: {
+                if failOnce.value {
+                    failOnce.update { $0 = false }
+                    throw NSError(domain: NSPOSIXErrorDomain, code: 5)
+                }
+            }))
+        let key = "tools.downloadSpeedBoost"
+        try store.register(PrivacyFeatures.definitions + ToolsFeatures.definitions)
+        try store.set(.integer(2), for: key)
+        let provider = CoreSettingsResetProvider(settings: store)
+        let authority = CoreSettingsResetAuthority()
+        let plan = try provider.prepare(scope: .general, authority: authority)
+        let session = try provider.begin(plan, authority: authority)
+        let before = try Data(contentsOf: url)
+        failOnce.update { $0 = true }
+        let failed = session.run()
+        XCTAssertEqual(failed.error, .storage(.storageFailure(operation: "replace", code: 5)))
+        XCTAssertTrue(failed.requiresNewPreview, "Without a committed-outcome receipt, the provider conservatively withdraws the old intent")
+        XCTAssertTrue(failed.confirmedKeys.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), before)
+        XCTAssertEqual(session.run().error, .settingsChanged)
+        XCTAssertEqual(try Data(contentsOf: url), before)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(key))
+
+        let fresh = try provider.prepare(scope: .general, authority: authority)
+        XCTAssertTrue(try provider.begin(fresh, authority: authority).run().isComplete)
+        XCTAssertFalse(store.readSnapshot().storedKeys.contains(key))
     }
 
     func testPreviewCancelAndPublicResetDoNotReadOrMutateUnavailableUnrelatedCredentials() throws {

@@ -165,7 +165,10 @@ public struct CoreSettingsResetReport: Sendable {
     public let observedResetKeys: Set<String>
     public let remainingKeys: Set<String>
     public let error: CoreSettingsResetError?
-    public var isComplete: Bool { self.error == nil && self.remainingKeys.isEmpty }
+    /// A failed reply may follow a committed reset and a later edit. Keep the
+    /// original typed error while separately withdrawing this session's retry.
+    public let requiresNewPreview: Bool
+    public var isComplete: Bool { self.error == nil && self.remainingKeys.isEmpty && !self.requiresNewPreview }
 }
 
 /// Used by the native page and bounded provider fixtures. Its only persistence
@@ -258,7 +261,7 @@ public final class CoreSettingsResetSession: @unchecked Sendable, CustomReflecta
             self.executionLock.unlock()
             return CoreSettingsResetReport(scope: self.plan.preview.scope, confirmedKeys: [],
                                            observedResetKeys: self.observedResetKeys(), remainingKeys: self.plan.preview.keys,
-                                           error: .operationInProgress)
+                                           error: .operationInProgress, requiresNewPreview: false)
         }
         self.executing = true
         self.executionLock.unlock()
@@ -283,11 +286,20 @@ public final class CoreSettingsResetSession: @unchecked Sendable, CustomReflecta
                 do {
                     try self.settings.applyPublic([:], resetting: self.plan.preview.publicKeys, expected: self.publicExpected)
                 } catch {
+                    let failure = Self.safeError(error)
                     let after = self.settings.readSnapshot()
-                    if Self.isDurabilityFailure(Self.safeError(error)), self.publicMatches(self.resetExpected, current: after) {
-                        self.publicExpected = self.resetExpected
+                    if Self.isDurabilityFailure(failure) {
+                        if self.publicMatches(self.resetExpected, current: after) {
+                            self.publicExpected = self.resetExpected
+                        } else {
+                            // The store delivers observers before throwing. An
+                            // observer may already have restored even the exact
+                            // old payload after our rename. That snapshot cannot
+                            // prove non-commit or re-authorize plan.before.
+                            self.requiresNewPreview = .settingsChanged
+                        }
                     }
-                    throw Self.safeError(error)
+                    throw failure
                 }
                 self.publicConfirmed = true
                 try self.checkScope()
@@ -410,7 +422,8 @@ public final class CoreSettingsResetSession: @unchecked Sendable, CustomReflecta
         var confirmed = self.credentialConfirmed
         if self.publicConfirmed { confirmed.formUnion(self.plan.preview.publicKeys) }
         return CoreSettingsResetReport(scope: self.plan.preview.scope, confirmedKeys: confirmed,
-                                       observedResetKeys: self.observedResetKeys(), remainingKeys: self.plan.preview.keys.subtracting(confirmed), error: error)
+                                       observedResetKeys: self.observedResetKeys(), remainingKeys: self.plan.preview.keys.subtracting(confirmed),
+                                       error: error, requiresNewPreview: self.requiresNewPreview != nil)
     }
 
     private func observedResetKeys() -> Set<String> { Set(self.plan.preview.entries.filter(self.isReset).map(\.key)) }
