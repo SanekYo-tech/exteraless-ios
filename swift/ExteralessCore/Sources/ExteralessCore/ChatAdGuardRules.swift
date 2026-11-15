@@ -106,6 +106,20 @@ public final class ChatAdGuardRules: @unchecked Sendable {
         return parsed.prefix + (retained.isEmpty ? "" : "?" + retained.joined(separator: "&")) + parsed.fragment
     }
 
+    /// Shared by the preview-only host mapper and tracking cleanup. Signed/user-info URLs
+    /// and unparseable/non-HTTP inputs must pass through byte-for-byte at every entry.
+    public static func allowsRewriting(_ url: String) -> Bool {
+        guard url.utf8.count <= 8192, !url.contains(where: \.isWhitespace),
+              let components = URLComponents(string: url), let host = components.host, !host.isEmpty,
+              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              components.user == nil, components.password == nil else { return false }
+        // Tracking removal itself needs a query; preview host mapping also applies to a
+        // normal query-less public URL. Both share the same query signature exclusion.
+        if components.percentEncodedQuery == nil { return true }
+        guard let parsed = ParsedURL(url) else { return false }
+        return !parsed.protected
+    }
+
     private struct ParsedURL {
         let host: String
         let prefix: String

@@ -32,6 +32,7 @@ private final class SettingsTestSecrets: ClientSecretStore, @unchecked Sendable 
     let failReads = SettingsTestBox(false)
     let failWrites = SettingsTestBox(false)
     let failWriteKey = SettingsTestBox<String?>(nil)
+    let failReadsAfterWriteKey = SettingsTestBox<String?>(nil)
 
     func data(for key: String) throws -> Data? {
         self.readCount.update { $0 += 1 }
@@ -43,6 +44,7 @@ private final class SettingsTestSecrets: ClientSecretStore, @unchecked Sendable 
         self.writeCount.update { $0 += 1 }
         if self.failWrites.value || self.failWriteKey.value == key { throw SettingsTestSecretFailure() }
         self.values.update { $0[key] = data }
+        if self.failReadsAfterWriteKey.value == key { self.failReads.update { $0 = true } }
     }
 }
 
@@ -475,7 +477,8 @@ final class ClientSettingsTests: XCTestCase {
         try secrets.set(corrupt, for: definition.key)
         XCTAssertThrowsError(try store.reload())
         XCTAssertEqual(try secrets.data(for: definition.key), corrupt)
-        XCTAssertEqual(store.string(definition.key), "previous")
+        XCTAssertNil(store.value(definition.key), "A confirmed invalid item is present but has no typed value")
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(definition.key))
         try store.set(.string("replacement"), for: definition.key)
         XCTAssertEqual(store.string(definition.key), "replacement")
         try secrets.set(corrupt, for: definition.key)
@@ -1318,11 +1321,15 @@ final class ClientSettingsTests: XCTestCase {
         XCTAssertEqual(try self.rawSecret(b.key, in: secrets), .bool(false), "The unrequested legacy value is preserved securely")
         XCTAssertEqual(store.value(a.key), .string(""))
         XCTAssertNil(store.value(b.key), "An invalid raw value is not published as a typed credential")
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+        XCTAssertFalse(store.readSnapshot().storedKeys.contains(a.key))
         XCTAssertNotNil(store.lastError)
         guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
         XCTAssertEqual(values, ["future": .integer(17)])
         let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
         XCTAssertThrowsError(try reopened.register([a, b, flag]), "The quarantined raw value still requires native repair")
+        XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(b.key))
+        XCTAssertNil(reopened.value(b.key))
         XCTAssertFalse(String(decoding: try reopened.exportJSON(), as: UTF8.self).contains("\"b\""))
         try reopened.set(.string("REPAIRED-B-FIXTURE"), for: b.key)
         XCTAssertEqual(reopened.string(b.key), "REPAIRED-B-FIXTURE")
@@ -1351,10 +1358,13 @@ final class ClientSettingsTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertNil(try secrets.data(for: a.key))
         XCTAssertEqual(try self.rawSecret(b.key, in: secrets), rawB)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key), "The successful copy survives failure of the next write")
+        XCTAssertFalse(store.readSnapshot().storedKeys.contains(a.key))
         secrets.failWriteKey.update { $0 = nil }
         XCTAssertThrowsError(try store.set(repaired, for: a.key), "B's raw shape error remains, but A must make progress")
         XCTAssertEqual(store.value(a.key), repaired)
         XCTAssertNil(store.value(b.key))
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key), "Matching-duplicate cleanup preserves physical presence")
         XCTAssertNotNil(store.lastError)
         XCTAssertEqual(try self.rawSecret(b.key, in: secrets), rawB)
         let json = String(decoding: try Data(contentsOf: url), as: UTF8.self)
@@ -1370,6 +1380,159 @@ final class ClientSettingsTests: XCTestCase {
         XCTAssertEqual(reopened.value(a.key), repaired)
         XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(a.key))
         XCTAssertFalse(reopened.readSnapshot().storedKeys.contains(b.key))
+    }
+
+    func testSCR01QuarantinePresenceSurvivesPublicBatchesAndUnreadableBackend() throws {
+        for raw in [ClientSettingValue.bool(false), .null] {
+            let url = try self.storageURL()
+            let secrets = SettingsTestSecrets()
+            let a = ClientSettingDefinition(key: "scr.a", title: "A", section: "Recovery", defaultValue: .string(""), isSecret: true)
+            let b = ClientSettingDefinition(key: "scr.b", title: "B", section: "Recovery", defaultValue: .string(""), isSecret: true)
+            let flag = self.definition("scr.flag", .bool(false))
+            try JSONEncoder().encode([a.key: raw, b.key: raw]).write(to: url)
+            let store = try ClientSettings(storageURL: url, secretStore: secrets)
+            XCTAssertThrowsError(try store.register([a, b, flag]))
+            XCTAssertThrowsError(try store.reset(a.key))
+            XCTAssertFalse(store.readSnapshot().storedKeys.contains(a.key))
+            XCTAssertEqual(store.value(a.key), .string(""))
+            XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+            XCTAssertNil(store.value(b.key))
+            let originalRaw = try XCTUnwrap(try secrets.data(for: b.key))
+            XCTAssertEqual(try ClientSettingValue.decodeJSON(originalRaw), raw)
+            var reads = secrets.readCount.value
+            var writes = secrets.writeCount.value
+            try store.applyPublic([flag.key: .bool(true)])
+            XCTAssertEqual(secrets.readCount.value, reads)
+            XCTAssertEqual(secrets.writeCount.value, writes)
+            XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+            XCTAssertNil(store.value(b.key))
+            XCTAssertNil(store.snapshot()[b.key])
+            XCTAssertFalse(String(decoding: try store.exportJSON(), as: UTF8.self).contains(b.key))
+
+            secrets.failReads.update { $0 = true }
+            XCTAssertThrowsError(try store.reload())
+            XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key), "Unreadability cannot erase known presence")
+            XCTAssertNil(store.value(b.key))
+            XCTAssertNil(store.value(a.key), "An unreadable backend must not supply an absence default")
+            reads = secrets.readCount.value
+            writes = secrets.writeCount.value
+            try store.applyPublic([flag.key: .bool(false)])
+            XCTAssertEqual(secrets.readCount.value, reads)
+            XCTAssertEqual(secrets.writeCount.value, writes)
+            XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+            XCTAssertNil(store.value(b.key))
+            XCTAssertNil(store.value(a.key))
+            secrets.failReads.update { $0 = false }
+            XCTAssertEqual(try secrets.data(for: b.key), originalRaw)
+            try store.set(.string(""), for: b.key)
+            XCTAssertEqual(store.value(b.key), .string(""))
+            XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key), "Explicit default is a stored override")
+            try store.reset(b.key)
+            XCTAssertFalse(store.readSnapshot().storedKeys.contains(b.key))
+            XCTAssertEqual(store.value(b.key), .string(""))
+            XCTAssertNil(try secrets.data(for: b.key))
+        }
+    }
+
+    func testSCR01RecoveryPreservesCommittedPresenceBeforeAndAfterRename() throws {
+        for raw in [ClientSettingValue.bool(false), .null] {
+            for beforeRename in [true, false] {
+                let url = try self.storageURL()
+                let secrets = SettingsTestSecrets()
+                let fail = SettingsTestBox(false)
+                let a = ClientSettingDefinition(key: "scr.a", title: "A", section: "Recovery", defaultValue: .string(""), isSecret: true)
+                let b = ClientSettingDefinition(key: "scr.b", title: "B", section: "Recovery", defaultValue: .string(""), isSecret: true)
+                let flag = self.definition("scr.flag", .bool(false))
+                let definitions = [a, b, flag]
+                let original = try JSONEncoder().encode([a.key: raw, b.key: raw, "future": .integer(17)])
+                try original.write(to: url)
+                let hooks = ClientSettingsFileHooks(beforeFileReplace: {
+                    if beforeRename && fail.value { throw NSError(domain: NSPOSIXErrorDomain, code: 5) }
+                })
+                let store = try ClientSettings(storageURL: url, secretStore: secrets, afterFileReplace: {
+                    if !beforeRename && fail.value { throw NSError(domain: NSPOSIXErrorDomain, code: 5) }
+                }, fileHooks: hooks)
+                XCTAssertThrowsError(try store.register(definitions))
+                fail.update { $0 = true }
+                XCTAssertThrowsError(try store.set(.string("COMMITTED-A-FIXTURE"), for: a.key)) { error in
+                    XCTAssertEqual(error as? ClientSettingsError, .storageFailure(operation: beforeRename ? "replace" : "sync directory", code: 5))
+                }
+                XCTAssertEqual(store.value(a.key), .string("COMMITTED-A-FIXTURE"))
+                XCTAssertTrue(store.readSnapshot().storedKeys.contains(a.key))
+                XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+                XCTAssertNil(store.value(b.key))
+                XCTAssertEqual(try self.rawSecret(b.key, in: secrets), raw)
+                if beforeRename {
+                    XCTAssertEqual(try Data(contentsOf: url), original)
+                } else {
+                    guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+                    XCTAssertEqual(values, ["future": .integer(17)])
+                }
+                fail.update { $0 = false }
+                let reads = secrets.readCount.value
+                let writes = secrets.writeCount.value
+                if beforeRename {
+                    XCTAssertThrowsError(try store.applyPublic([flag.key: .bool(true)]), "The original plaintext still requires native cleanup")
+                } else {
+                    try store.applyPublic([flag.key: .bool(true)])
+                }
+                XCTAssertEqual(secrets.readCount.value, reads)
+                XCTAssertEqual(secrets.writeCount.value, writes)
+                XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
+                XCTAssertNil(store.value(b.key))
+                let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+                XCTAssertThrowsError(try reopened.register(definitions))
+                XCTAssertEqual(reopened.value(a.key), .string("COMMITTED-A-FIXTURE"))
+                XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(a.key))
+                XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(b.key))
+                XCTAssertNil(reopened.value(b.key))
+                try reopened.reset(b.key)
+                XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(a.key))
+                XCTAssertFalse(reopened.readSnapshot().storedKeys.contains(b.key))
+                XCTAssertNil(try secrets.data(for: b.key))
+            }
+        }
+    }
+
+    func testSCR01PartialAliasWriteRetainsConfirmedPresenceWhenReadsBecomeUnavailable() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let a = ClientSettingDefinition(key: "a.new", title: "A", section: "Recovery", defaultValue: .bool(false), isSecret: true)
+        let b = ClientSettingDefinition(key: "b.new", title: "B", section: "Recovery", defaultValue: .bool(false), isSecret: true)
+        let flag = self.definition("scr.flag", .bool(false))
+        try JSONEncoder().encode(["a.old": ClientSettingValue.bool(true), "b.old": .bool(true)]).write(to: url)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        try store.register([self.definition("a.old", .bool(false)), self.definition("b.old", .bool(false)), a, b, flag])
+        secrets.failWrites.update { $0 = true }
+        XCTAssertThrowsError(try store.migrateKey(from: "a.old", to: a.key))
+        XCTAssertThrowsError(try store.migrateKey(from: "b.old", to: b.key))
+        let original = try Data(contentsOf: url)
+        secrets.failWrites.update { $0 = false }
+        secrets.failWriteKey.update { $0 = b.key }
+        secrets.failReadsAfterWriteKey.update { $0 = a.key }
+        XCTAssertThrowsError(try store.migrateKey(from: "a.old", to: a.key))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(a.key), "A's acknowledged write is known even when recovery reads fail")
+        XCTAssertFalse(store.readSnapshot().storedKeys.contains(b.key))
+        XCTAssertNil(store.value(a.key))
+        XCTAssertNil(store.value(b.key), "B is unknown/unavailable, not a confirmed absence default")
+        let reads = secrets.readCount.value
+        let writes = secrets.writeCount.value
+        XCTAssertThrowsError(try store.applyPublic([flag.key: .bool(true)]))
+        XCTAssertEqual(secrets.readCount.value, reads)
+        XCTAssertEqual(secrets.writeCount.value, writes)
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(a.key))
+        XCTAssertNil(store.value(a.key))
+        secrets.failReads.update { $0 = false }
+        secrets.failReadsAfterWriteKey.update { $0 = nil }
+        secrets.failWriteKey.update { $0 = nil }
+        XCTAssertEqual(try self.rawSecret(a.key, in: secrets), .bool(true))
+        XCTAssertNil(try secrets.data(for: b.key))
+        try store.migrateKey(from: "b.old", to: b.key)
+        XCTAssertTrue(store.bool(a.key))
+        XCTAssertTrue(store.bool(b.key))
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(a.key))
+        XCTAssertTrue(store.readSnapshot().storedKeys.contains(b.key))
     }
 
     #if !canImport(Security)

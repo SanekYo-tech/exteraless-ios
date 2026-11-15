@@ -97,7 +97,7 @@ final class NativeServicePhase2Tests: XCTestCase {
         let pool = NativeServiceLeasePool<String>()
         let released = NativePhase2Box<[Int64]>([])
         let lease = try pool.make(pluginId: "fixture", owner: "epoch", handle: 1, isCurrent: { _ in true },
-            callback: { _, _, _, _ in XCTFail("event used admission-only callback"); return false },
+            callback: { _, _, _, _, _ in XCTFail("event used admission-only callback"); return false },
             resultCallback: pending.callback, release: { _, values in released.change { $0 += values } })
         let delivery = NativeServiceEventDelivery<String>()
         func put(_ value: String, status: Bool) {
@@ -129,7 +129,7 @@ final class NativeServicePhase2Tests: XCTestCase {
         let pool = NativeServiceLeasePool<String>()
         let released = NativePhase2Box<Int>(0)
         let lease = try pool.make(pluginId: "fixture", owner: "epoch", handle: 1, isCurrent: { _ in true },
-            callback: { _, _, _, _ in true }, resultCallback: pending.callback,
+            callback: { _, _, _, _, _ in true }, resultCallback: pending.callback,
             release: { _, _ in released.change { $0 += 1 } })
         let delivery = NativeServiceEventDelivery<String>(maximumPerOwner: 2)
         XCTAssertTrue(delivery.enqueue(lease: lease, argumentsJSON: "[1]", coalescingKey: nil, valid: { true }, retire: { lease.close() }))
@@ -165,12 +165,12 @@ final class NativeServicePhase2Tests: XCTestCase {
         let pool = NativeServiceLeasePool<String>(maximumPerOwner: 1)
         let release: NativeServiceAcknowledgedRelease<String> = { owner, handles, done in queue.release(owner, handles, onAccepted: done) }
         let lease = try pool.make(pluginId: "fixture", owner: "epoch", handle: 9, isCurrent: { _ in true },
-            callback: { _, _, _, _ in true }, release: { _, _ in XCTFail("unacknowledged release") }, acknowledgedRelease: release)
+            callback: { _, _, _, _, _ in true }, release: { _, _ in XCTFail("unacknowledged release") }, acknowledgedRelease: release)
         lease.close()
         XCTAssertEqual(pool.count, 1)
         XCTAssertEqual(queue.pendingHandleCount, 1)
         XCTAssertThrowsError(try pool.make(pluginId: "fixture", owner: "epoch", handle: 10, isCurrent: { _ in true },
-            callback: { _, _, _, _ in true }, release: { _, _ in }))
+            callback: { _, _, _, _, _ in true }, release: { _, _ in }))
         permit.change { $0 = true }
         XCTAssertTrue(waitUntil { pool.count == 0 })
         XCTAssertEqual(successful.value, [9])

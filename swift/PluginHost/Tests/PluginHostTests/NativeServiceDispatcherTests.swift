@@ -30,7 +30,7 @@ final class NativeServiceDispatcherTests: XCTestCase {
         let pool = NativeServiceLeasePool<PluginHost.CallbackOwner>()
         let lease = try pool.make(pluginId: plugin.id, owner: owner, handle: 11,
             isCurrent: { dispatcher.captureOwner($0.pluginId) == $0 },
-            callback: { dispatcher.callback($0, $1, $2, $3) },
+            callback: NativeServiceCallbackTransport.callback(using: dispatcher),
             resultCallback: NativeServiceCallbackTransport.result(using: dispatcher),
             release: { dispatcher.release($0, $1) })
         let result = OneShotResult<NativeServiceOpenDecision>()

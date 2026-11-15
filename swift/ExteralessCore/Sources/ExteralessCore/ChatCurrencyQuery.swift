@@ -2,7 +2,13 @@ import Foundation
 
 public enum ChatCurrencyQuery {
     private static let words: Set<String> = {
-        var words = Set(Locale.isoCurrencyCodes.map { $0.lowercased() })
+        let codes: [String]
+        if #available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *) {
+            codes = Locale.Currency.isoCurrencies.map(\.identifier)
+        } else {
+            codes = Locale.isoCurrencyCodes
+        }
+        var words = Set(codes.map { $0.lowercased() })
         words.formUnion("usd eur rub uah kzt byn gbp jpy cny try inr brl cad aud chf pln czk sek nok dkk huf ron bgn gel amd azn uzs kgs tjs mdl ils aed sar krw hkd sgd thb vnd idr myr php mxn ars clp cop pen nzd zar egp rsd isk ton gram btc eth usdt usdc sol bnb trx ltc xrp doge not dogs ada shib dot xmr xtr xtrf kr kč zł lei".split(separator: " ").map(String.init))
         let aliases = [
             "дол", "длр", "доллар(а/ов/ы/ах/е)", "бакс(а/ов/ы/ах)", "юсд", "dollar", "dollars", "buck", "bucks",

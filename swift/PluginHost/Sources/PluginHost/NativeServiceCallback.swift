@@ -3,6 +3,11 @@ import Foundation
 /// Completion of Python execution, distinct from the dispatcher's Bool admission
 /// result. The coordinator's result route uses the SAME owner FIFO as release.
 public typealias NativeServiceCallbackResult = Result<PluginJSONValue, BridgeFailure>
+/// Both callback routes carry a mandatory worker execution control. A four-argument
+/// admission closure is intentionally not accepted: it cannot enforce revocation.
+public typealias NativeServiceCallback<Owner: Hashable & Sendable> = @Sendable (
+    Owner, Int64, String, String, NativeServiceCallbackControl
+) -> Bool
 public typealias NativeServiceAcknowledgedRelease<Owner: Hashable & Sendable> = @Sendable (
     Owner, [Int64], @escaping @Sendable () -> Void
 ) -> Void
@@ -23,7 +28,7 @@ public final class NativeServiceCallbackControl: @unchecked Sendable {
     private var executionCheck: (@Sendable () -> Bool)?
     public let deadlineNanoseconds: UInt64
 
-    public init(deadlineNanoseconds: UInt64) { self.deadlineNanoseconds = deadlineNanoseconds }
+    public init(deadlineNanoseconds: UInt64 = UInt64.max) { self.deadlineNanoseconds = deadlineNanoseconds }
 
     public var isActive: Bool {
         lock.lock(); defer { lock.unlock() }
@@ -73,6 +78,14 @@ public final class NativeServiceCallbackControl: @unchecked Sendable {
 }
 
 public enum NativeServiceCallbackTransport {
+    public static func callback(using dispatcher: PluginCallbackDispatcher) -> NativeServiceCallback<PluginHost.CallbackOwner> {
+        return { owner, handle, method, arguments, control in
+            guard control.isActive else { return false }
+            return dispatcher.callback(owner, handle, method, arguments,
+                shouldExecute: { control.allowsExecution })
+        }
+    }
+
     /// Adapts the actual coordinator API. Lease pins below cover the interval
     /// BEFORE this Task reaches the dispatcher's synchronous enqueue, so a racing
     /// unregister cannot put release ahead of the result request in its FIFO.
@@ -104,6 +117,26 @@ public enum NativeServiceCallbackTransport {
     }
 }
 
+/// Independent of the native lease object's lifetime. Successful terminal send
+/// closes further admission but keeps this delivery entitlement. External owner,
+/// permission and account validity are still checked at actual worker entry.
+private final class NativeServiceDeliveryEntitlement: @unchecked Sendable {
+    private let lock = NSLock()
+    private var revoked = false
+    private let isCurrent: @Sendable () -> Bool
+
+    init(isCurrent: @escaping @Sendable () -> Bool) { self.isCurrent = isCurrent }
+
+    var allowsExecution: Bool {
+        lock.lock()
+        let revoked = self.revoked
+        lock.unlock()
+        return !revoked && isCurrent()
+    }
+
+    func revoke() { lock.lock(); revoked = true; lock.unlock() }
+}
+
 /// A unique Python wrapper lease. Enqueue and release are serialized at this gate
 /// so removal cannot release a handle ahead of a concurrently admitted callback.
 /// Transport closures only enqueue: they must not call Python or re-enter the gate.
@@ -112,21 +145,23 @@ public final class NativeServiceCallbackLease<Owner: Hashable & Sendable>: @unch
     public let pluginId: String
     public let owner: Owner
     public let handle: Int64
+    private let ownerWireToken: String?
+    private let deliveryEntitlement: NativeServiceDeliveryEntitlement
     private let lock = NSLock()
     private var open = true
     private var releaseHandleOnClose = true
     private var retiredOnce = false
     private var pendingResults: [UUID: NativeServiceCallbackControl] = [:]
     private let isCurrent: @Sendable (Owner) -> Bool
-    private let callback: @Sendable (Owner, Int64, String, String) -> Bool
+    private let callback: NativeServiceCallback<Owner>
     private let resultCallback: NativeServiceResultCallback<Owner>?
     private let release: @Sendable (Owner, [Int64]) -> Void
     private let acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>?
     private let retired: @Sendable (String) -> Void
 
-    fileprivate init(pluginId: String, owner: Owner, handle: Int64,
+    fileprivate init(pluginId: String, owner: Owner, handle: Int64, ownerWireToken: String?,
                      isCurrent: @escaping @Sendable (Owner) -> Bool,
-                     callback: @escaping @Sendable (Owner, Int64, String, String) -> Bool,
+                     callback: @escaping NativeServiceCallback<Owner>,
                      resultCallback: NativeServiceResultCallback<Owner>?,
                      release: @escaping @Sendable (Owner, [Int64]) -> Void,
                      acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>?,
@@ -135,7 +170,9 @@ public final class NativeServiceCallbackLease<Owner: Hashable & Sendable>: @unch
         self.pluginId = pluginId
         self.owner = owner
         self.handle = handle
+        self.ownerWireToken = ownerWireToken
         self.isCurrent = isCurrent
+        self.deliveryEntitlement = NativeServiceDeliveryEntitlement(isCurrent: { isCurrent(owner) })
         self.callback = callback
         self.resultCallback = resultCallback
         self.release = release
@@ -150,19 +187,30 @@ public final class NativeServiceCallbackLease<Owner: Hashable & Sendable>: @unch
 
     public var supportsResults: Bool { resultCallback != nil }
 
+    /// Revoke-only identity check: no active-owner lookup, permission grant or
+    /// account lookup. A retiring interpreter can release only its stored lease.
+    public func matchesCleanup(_ identity: NativeServiceCleanupIdentity) -> Bool {
+        pluginId == identity.pluginId && ownerWireToken != nil && ownerWireToken == identity.ownerToken
+    }
+
     @discardableResult
     public func send(method: String = "__call__", argumentsJSON: String, terminal: Bool = false) -> Bool {
         lock.lock()
         guard open else { lock.unlock(); return false }
-        let admitted = isCurrent(owner) && callback(owner, handle, method, argumentsJSON)
+        let entitlement = deliveryEntitlement
+        let control = NativeServiceCallbackControl()
+        control.bindExecutionCheck { entitlement.allowsExecution }
+        let admitted = isCurrent(owner) && callback(owner, handle, method, argumentsJSON, control)
         // Rejected callbacks cannot leave an apparently active native lease behind.
         let shouldRetire = terminal || !admitted
         if shouldRetire {
             open = false
         }
+        if !admitted { deliveryEntitlement.revoke() }
         let controls = shouldRetire ? Array(pendingResults.values) : []
         let notify = retireIfReady()
         lock.unlock()
+        if !admitted { control.cancel() }
         for control in controls { control.cancel() }
         if notify { notifyRetired() }
         return admitted
@@ -176,7 +224,8 @@ public final class NativeServiceCallbackLease<Owner: Hashable & Sendable>: @unch
         guard open, isCurrent(owner), control.isActive, pendingResults.count < 64, let resultCallback else { lock.unlock(); return false }
         let identity = UUID()
         pendingResults[identity] = control
-        control.bindExecutionCheck { [weak self] in self?.isOpen == true }
+        let entitlement = deliveryEntitlement
+        control.bindExecutionCheck { entitlement.allowsExecution }
         let admitted = resultCallback(owner, handle, "__call__", argumentsJSON, control) { [self] result in
             if endResult(identity) { completion(result) }
         }
@@ -219,6 +268,7 @@ public final class NativeServiceCallbackLease<Owner: Hashable & Sendable>: @unch
         lock.lock()
         guard open else { lock.unlock(); return }
         open = false
+        deliveryEntitlement.revoke()
         releaseHandleOnClose = releaseHandle
         let controls = Array(pendingResults.values)
         let notify = retireIfReady()
@@ -243,10 +293,11 @@ public final class NativeServiceLeasePool<Owner: Hashable & Sendable>: @unchecke
 
     public func make(pluginId: String, owner: Owner, handle: Int64,
                      isCurrent: @escaping @Sendable (Owner) -> Bool,
-                     callback: @escaping @Sendable (Owner, Int64, String, String) -> Bool,
+                     callback: @escaping NativeServiceCallback<Owner>,
                      resultCallback: NativeServiceResultCallback<Owner>? = nil,
                      release: @escaping @Sendable (Owner, [Int64]) -> Void,
-                     acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil) throws -> NativeServiceCallbackLease<Owner> {
+                     acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil,
+                     ownerWireToken: String? = nil) throws -> NativeServiceCallbackLease<Owner> {
         guard handle > 0 else { throw BridgeFailure.malformed("Native service requires a positive callback handle") }
         lock.lock(); defer { lock.unlock() }
         let owned = leases.values.filter { $0.owner == owner }
@@ -256,7 +307,7 @@ public final class NativeServiceLeasePool<Owner: Hashable & Sendable>: @unchecke
         guard !owned.contains(where: { $0.handle == handle }) else {
             throw BridgeFailure.invalidHandle("A callback wrapper already belongs to another native service lease")
         }
-        let lease = NativeServiceCallbackLease(pluginId: pluginId, owner: owner, handle: handle,
+        let lease = NativeServiceCallbackLease(pluginId: pluginId, owner: owner, handle: handle, ownerWireToken: ownerWireToken,
             isCurrent: isCurrent, callback: callback, resultCallback: resultCallback, release: release, acknowledgedRelease: acknowledgedRelease,
             retired: { [weak self] id in self?.forget(id) })
         leases[lease.id] = lease

@@ -234,12 +234,20 @@ public final class NativeServiceInterceptions<Owner: Hashable & Sendable>: @unch
     }
 
     public func remove(id: String, owner: Owner, file: Bool) -> Bool {
+        remove(id: id, file: file, accepting: { $0.owner == owner })
+    }
+
+    public func remove(id: String, cleanup: NativeServiceCleanupIdentity, file: Bool) -> Bool {
+        remove(id: id, file: file, accepting: { $0.matchesCleanup(cleanup) })
+    }
+
+    private func remove(id: String, file: Bool, accepting: (NativeServiceCallbackLease<Owner>) -> Bool) -> Bool {
         lock.lock()
         let lease: NativeServiceCallbackLease<Owner>?
         if file {
-            let key = files.first { $0.value.lease.id == id && $0.value.lease.owner == owner }?.key
+            let key = files.first { $0.value.lease.id == id && accepting($0.value.lease) }?.key
             lease = key.flatMap { files.removeValue(forKey: $0)?.lease }
-        } else if let index = intents.firstIndex(where: { $0.lease.id == id && $0.lease.owner == owner }) {
+        } else if let index = intents.firstIndex(where: { $0.lease.id == id && accepting($0.lease) }) {
             lease = intents.remove(at: index).lease
         } else {
             lease = nil

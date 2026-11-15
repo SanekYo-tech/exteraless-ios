@@ -38,9 +38,9 @@ final class NativeServiceTests: XCTestCase {
     private func lease(_ pool: NativeServiceLeasePool<String>, handle: Int64, owner: String = "generation-a",
                        events: NativeServiceRecord<String>, results: NativeServiceResultCallback<String>? = nil,
                        current: @escaping @Sendable (String) -> Bool = { _ in true },
-                       callback: (@Sendable (String, Int64, String, String) -> Bool)? = nil) throws -> NativeServiceCallbackLease<String> {
+                       callback: NativeServiceCallback<String>? = nil) throws -> NativeServiceCallbackLease<String> {
         try pool.make(pluginId: "own-fixture", owner: owner, handle: handle, isCurrent: current,
-            callback: callback ?? { owner, handle, method, _ in events.add("call:\(owner):\(handle):\(method)"); return true },
+            callback: callback ?? { owner, handle, method, _, _ in events.add("call:\(owner):\(handle):\(method)"); return true },
             resultCallback: results, release: { owner, handles in events.add("release:\(owner):\(handles[0])") })
     }
 
@@ -49,7 +49,7 @@ final class NativeServiceTests: XCTestCase {
         let scheduler = NativeServiceOwnerScheduler<String>()
         let events = NativeServiceRecord<String>()
         let called = DispatchSemaphore(value: 0)
-        let first = try lease(pool, handle: 1, events: events, callback: { owner, handle, method, args in
+        let first = try lease(pool, handle: 1, events: events, callback: { owner, handle, method, args, _ in
             XCTAssertFalse(Thread.isMainThread)
             XCTAssertEqual(method, "run")
             XCTAssertEqual(args, "[]")
@@ -81,12 +81,12 @@ final class NativeServiceTests: XCTestCase {
         let entered = DispatchSemaphore(value: 0)
         let unblock = DispatchSemaphore(value: 0)
         let other = DispatchSemaphore(value: 0)
-        let slow = try lease(pool, handle: 1, events: events, callback: { _, _, _, _ in
+        let slow = try lease(pool, handle: 1, events: events, callback: { _, _, _, _, _ in
             entered.signal()
             XCTAssertEqual(unblock.wait(timeout: .now() + 2), .success)
             return true
         })
-        let fast = try lease(pool, handle: 2, events: events, callback: { _, _, _, _ in other.signal(); return true })
+        let fast = try lease(pool, handle: 2, events: events, callback: { _, _, _, _, _ in other.signal(); return true })
         _ = try scheduler.schedule(slow, delayMs: 0, queue: "SEARCH_QUEUE")
         XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
         _ = try scheduler.schedule(fast, delayMs: 0, queue: "UI")

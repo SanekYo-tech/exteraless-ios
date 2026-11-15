@@ -74,11 +74,14 @@ enum ClientSettingsDirectorySyncStage: Equatable, Sendable {
 struct ClientSettingsFileHooks: Sendable {
     var afterDirectoriesCreated: (@Sendable (URL) throws -> Void)?
     var beforeDirectorySync: (@Sendable (URL, ClientSettingsDirectorySyncStage) throws -> Void)?
+    var beforeFileReplace: (@Sendable () throws -> Void)?
 
     init(afterDirectoriesCreated: (@Sendable (URL) throws -> Void)? = nil,
-         beforeDirectorySync: (@Sendable (URL, ClientSettingsDirectorySyncStage) throws -> Void)? = nil) {
+         beforeDirectorySync: (@Sendable (URL, ClientSettingsDirectorySyncStage) throws -> Void)? = nil,
+         beforeFileReplace: (@Sendable () throws -> Void)? = nil) {
         self.afterDirectoriesCreated = afterDirectoriesCreated
         self.beforeDirectorySync = beforeDirectorySync
+        self.beforeFileReplace = beforeFileReplace
     }
 }
 
@@ -87,6 +90,9 @@ struct ClientSettingsFileHooks: Sendable {
 public struct ClientSettingsSnapshot: Sendable {
     public let definitions: [ClientSettingDefinition]
     public let values: [String: ClientSettingValue]
+    /// Known stored overrides, including invalid secret items with no typed value.
+    /// Unavailable secret reads retain last known presence; an omitted typed value
+    /// must not be interpreted as a confirmed absence/default.
     public let storedKeys: Set<String>
     public let secretKeys: Set<String>
     public let lastError: ClientSettingsError?
@@ -147,6 +153,15 @@ public final class ClientSettings: @unchecked Sendable {
         case delete
     }
 
+    /// Presence and typed availability are independent. A nil presence is an
+    /// unreadable backend, not evidence that the item is absent. Raw data never
+    /// enters this observation or the process cache.
+    private struct SecretObservation {
+        var stored: Bool?
+        var value: ClientSettingValue?
+        var error: ClientSettingsError?
+    }
+
     // Lock order: writer -> cache. Cache readers never take writer. Filesystem
     // locks serialize read/modify/replace across instances and app processes.
     private let writerLock = NSLock()
@@ -158,6 +173,9 @@ public final class ClientSettings: @unchecked Sendable {
     private var secretStore: any ClientSecretStore
     private var registeredDefinitions: [ClientSettingDefinition] = []
     private var learnedSecretAliases: [String: String] = [:]
+    // Writer-lock confined, cleared before observer delivery. Retains confirmed
+    // per-key facts if a later backend/file operation prevents a complete reload.
+    private var secretObservations: [String: SecretObservation] = [:]
     private let afterFileReplace: (@Sendable () throws -> Void)?
     private let fileHooks: ClientSettingsFileHooks
 
@@ -360,6 +378,7 @@ public final class ClientSettings: @unchecked Sendable {
 
     private func perform(_ operation: Operation) throws {
         self.writerLock.lock()
+        self.secretObservations.removeAll(keepingCapacity: true)
         let change: Change
         var failure: ClientSettingsError?
         do {
@@ -400,6 +419,7 @@ public final class ClientSettings: @unchecked Sendable {
             }
             self.cacheLock.lock()
             var next = recovered ?? self.cache
+            let previouslyStored = self.cache.storedKeys
             next.secretKeys.formUnion(self.cache.secretKeys)
             self.cacheLock.unlock()
             // Even a failed plaintext->secret migration must immediately stop
@@ -415,7 +435,13 @@ public final class ClientSettings: @unchecked Sendable {
             next.values = next.values.filter { registeredKeys.contains($0.key) }
             next.storedKeys.formIntersection(registeredKeys)
             for definition in next.definitions {
-                if definition.isSecret { next.secretKeys.insert(definition.key) }
+                if definition.isSecret {
+                    next.secretKeys.insert(definition.key)
+                    if let observation = self.secretObservations[definition.key] {
+                        Self.applySecretObservation(observation, definition: definition,
+                                                    previouslyStored: previouslyStored.contains(definition.key), to: &next)
+                    }
+                }
                 if let value = next.values[definition.key] {
                     next.values[definition.key] = try? definition.validatedValue(value)
                 }
@@ -423,6 +449,7 @@ public final class ClientSettings: @unchecked Sendable {
             next.error = safeError
             change = self.publish(next)
         }
+        self.secretObservations.removeAll(keepingCapacity: true)
         self.writerLock.unlock()
         change.deliver()
         if let failure { throw failure }
@@ -505,7 +532,10 @@ public final class ClientSettings: @unchecked Sendable {
             let key = definition.key
             if document.secretAliases[key] != nil { continue }
             if result.secretKeys.contains(key) {
-                result.values[key] = cached.values[key] ?? definition.defaultValue
+                // Missing typed data is meaningful (invalid/unreadable item).
+                // Public work must preserve it, without a Keychain read or a
+                // manufactured default/absence transition.
+                result.values[key] = cached.values[key]
                 if cached.storedKeys.contains(key) { result.storedKeys.insert(key) }
             } else {
                 if let value = validated[key] {
@@ -551,6 +581,7 @@ public final class ClientSettings: @unchecked Sendable {
         guard let url = self.storageURL, let root = self.durabilityRootURL else { throw ClientSettingsError.notConfigured }
         self.cacheLock.lock()
         let protectedSecretKeys = self.cache.secretKeys
+        let previouslyStored = self.cache.storedKeys
         self.cacheLock.unlock()
         if case let .migrateKey(oldKey, key) = operation {
             let destination = try Self.definition(key, in: definitions)
@@ -652,28 +683,35 @@ public final class ClientSettings: @unchecked Sendable {
                 }
                 document.secretKeys.insert(key)
                 let previous: ClientSettingValue?
-                do {
-                    if let loaded = loadedSecrets[key] { previous = loaded.value }
-                    else { previous = try self.readSecret(key, definition: definition) }
+                let observation: SecretObservation
+                let raw: ClientSettingValue?
+                if let loaded = loadedSecrets[key] {
+                    observation = SecretObservation(stored: loaded.present, value: loaded.value, error: nil)
+                    raw = nil
+                } else {
+                    let inspected = self.inspectSecret(key, definition: definition)
+                    observation = inspected.observation
+                    raw = inspected.raw
                 }
-                catch ClientSettingsError.invalidSecret where requestedSecrets[key] != nil {
-                    // An explicit replacement/reset can repair a corrupt secure
-                    // item; ordinary reads never discard it or invent a default.
-                    previous = nil
-                }
-                catch where requestedSecrets[key] == nil && !requestedSecrets.isEmpty {
-                    // Repair an explicitly addressed item even if another item
-                    // is unreadable. Keep the other failure visible; do not
-                    // publish a guessed credential or report an all-clear.
-                    next.error = next.error ?? Self.secretError(error)
-                    // A prior quarantine copy may have succeeded before another
-                    // backend/file step failed. It is safe to finish scrubbing
-                    // this duplicate; different/unreadable raw data is retained.
-                    if let plaintext = document.values[key],
-                       (try? self.hasStoredRawSecret(plaintext, for: key)) == true {
-                        document.values.removeValue(forKey: key)
+                if let error = observation.error {
+                    if error == .invalidSecret, requestedSecrets[key] != nil {
+                        // Explicit replacement/reset can repair this item.
+                        previous = nil
+                    } else if requestedSecrets[key] == nil && !requestedSecrets.isEmpty {
+                        Self.applySecretObservation(observation, definition: definition,
+                                                    previouslyStored: previouslyStored.contains(key), to: &next)
+                        next.error = next.error ?? error
+                        // A confirmed matching raw copy can finish cleanup after
+                        // an earlier partial write. It remains present/untyped.
+                        if let plaintext = document.values[key], let raw, raw.isSameJSONValue(as: plaintext) {
+                            document.values.removeValue(forKey: key)
+                        }
+                        continue
+                    } else {
+                        throw error
                     }
-                    continue
+                } else {
+                    previous = observation.value
                 }
                 let plaintext = document.values.removeValue(forKey: key)
                 let desired: ClientSettingValue?
@@ -692,6 +730,7 @@ public final class ClientSettings: @unchecked Sendable {
                             // in the absent Keychain slot before any JSON cleanup;
                             // omit it from the cache and keep its error visible.
                             secretWrites.append((key, try Self.encodeSecret(plaintext)))
+                            next.storedKeys.insert(key)
                             next.error = next.error ?? Self.storageError(error, operation: "validate legacy secret")
                             continue
                         }
@@ -715,7 +754,14 @@ public final class ClientSettings: @unchecked Sendable {
 
             for (key, data) in secretWrites {
                 do { try self.secretStore.set(data, for: key) }
-                catch { throw Self.secretError(error) }
+                catch {
+                    let failure = Self.secretError(error)
+                    _ = self.rememberSecret(SecretObservation(stored: nil, value: nil, error: failure), for: key)
+                    throw failure
+                }
+                let value = data == nil ? nil : next.values[key]
+                _ = self.rememberSecret(SecretObservation(stored: data != nil, value: value,
+                                                         error: data != nil && value == nil ? .invalidSecret : nil), for: key)
             }
             // Loading without a schema never copies a legacy plaintext document.
             // Structural v0 -> v1 migration happens with registration/mutation.
@@ -739,6 +785,9 @@ public final class ClientSettings: @unchecked Sendable {
 
     /// Read-only error recovery: no migrations, deletion or writes.
     private func resolve(_ document: ClientSettingsFile.Document, definitions: [ClientSettingDefinition]) throws -> Cache {
+        self.cacheLock.lock()
+        let previouslyStored = self.cache.storedKeys
+        self.cacheLock.unlock()
         var result = Cache()
         result.definitions = definitions.filter { document.secretAliases[$0.key] == nil }
         result.secretAliases = document.secretAliases
@@ -746,9 +795,10 @@ public final class ClientSettings: @unchecked Sendable {
         for definition in definitions {
             if document.secretAliases[definition.key] != nil { continue }
             if definition.isSecret {
-                let secret = try self.readSecret(definition.key, definition: definition)
-                result.values[definition.key] = secret ?? definition.defaultValue
-                if secret != nil { result.storedKeys.insert(definition.key) }
+                let observation = self.inspectSecret(definition.key, definition: definition).observation
+                Self.applySecretObservation(observation, definition: definition,
+                                            previouslyStored: previouslyStored.contains(definition.key), to: &result)
+                result.error = result.error ?? observation.error
             } else {
                 guard !document.secretKeys.contains(definition.key) else {
                     throw ClientSettingsError.conflictingDefinition(key: definition.key)
@@ -774,14 +824,48 @@ public final class ClientSettings: @unchecked Sendable {
     }
 
     private func readSecret(_ key: String, definition: ClientSettingDefinition) throws -> ClientSettingValue? {
+        let observation = self.inspectSecret(key, definition: definition).observation
+        if let error = observation.error { throw error }
+        return observation.value
+    }
+
+    private func inspectSecret(_ key: String, definition: ClientSettingDefinition) -> (observation: SecretObservation, raw: ClientSettingValue?) {
         let data: Data?
         do { data = try self.secretStore.data(for: key) }
-        catch { throw Self.secretError(error) }
-        guard let data else { return nil }
+        catch {
+            return (self.rememberSecret(SecretObservation(stored: nil, value: nil, error: Self.secretError(error)), for: key), nil)
+        }
+        guard let data else {
+            return (self.rememberSecret(SecretObservation(stored: false, value: nil, error: nil), for: key), nil)
+        }
+        let raw = try? ClientSettingValue.decodeJSON(data)
         do {
-            return try definition.validatedValue(ClientSettingValue.decodeJSON(data))
+            guard let raw else { throw ClientSettingsError.invalidSecret }
+            let value = try definition.validatedValue(raw)
+            return (self.rememberSecret(SecretObservation(stored: true, value: value, error: nil), for: key), raw)
         } catch {
-            throw ClientSettingsError.invalidSecret
+            return (self.rememberSecret(SecretObservation(stored: true, value: nil, error: .invalidSecret), for: key), raw)
+        }
+    }
+
+    private func rememberSecret(_ observation: SecretObservation, for key: String) -> SecretObservation {
+        var observation = observation
+        if observation.stored == nil { observation.stored = self.secretObservations[key]?.stored }
+        self.secretObservations[key] = observation
+        return observation
+    }
+
+    private static func applySecretObservation(_ observation: SecretObservation, definition: ClientSettingDefinition,
+                                               previouslyStored: Bool, to cache: inout Cache) {
+        let key = definition.key
+        if observation.stored ?? previouslyStored { cache.storedKeys.insert(key) }
+        else { cache.storedKeys.remove(key) }
+        if observation.error != nil {
+            cache.values.removeValue(forKey: key)
+        } else if observation.stored == false {
+            cache.values[key] = definition.defaultValue
+        } else {
+            cache.values[key] = observation.value
         }
     }
 
@@ -793,16 +877,6 @@ public final class ClientSettings: @unchecked Sendable {
         } catch {
             throw ClientSettingsError.invalidSecret
         }
-    }
-
-    /// Used only by native repair after a typed read failed. Raw equality proves
-    /// that removing the JSON duplicate loses no unrequested legacy value.
-    private func hasStoredRawSecret(_ value: ClientSettingValue, for key: String) throws -> Bool {
-        let data: Data?
-        do { data = try self.secretStore.data(for: key) }
-        catch { throw Self.secretError(error) }
-        guard let data, let stored = try? ClientSettingValue.decodeJSON(data) else { return false }
-        return stored.isSameJSONValue(as: value)
     }
 
     private static func definition(_ key: String, in definitions: [ClientSettingDefinition]) throws -> ClientSettingDefinition {
@@ -964,6 +1038,8 @@ private enum ClientSettingsFile {
             }
         }
         try self.sync(descriptor, operation: "sync file")
+        do { try hooks.beforeFileReplace?() }
+        catch { throw ClientSettingsError.storageFailure(operation: "replace", code: (error as NSError).code) }
         let renamed = temporary.path.withCString { source in
             url.path.withCString { destination in rename(source, destination) }
         }

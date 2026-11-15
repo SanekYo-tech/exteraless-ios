@@ -101,8 +101,18 @@ public final class NativeServiceOperations<Owner: Hashable & Sendable>: @uncheck
     }
 
     public func take(id: String, owner: Owner) -> Ticket? {
+        take(id: id, accepting: { $0.owner == owner })
+    }
+
+    public func cancel(id: String, cleanup: NativeServiceCleanupIdentity) -> Bool {
+        guard let ticket = take(id: id, accepting: { $0.matchesCleanup(cleanup) }) else { return false }
+        ticket.lease.close()
+        return true
+    }
+
+    private func take(id: String, accepting: (NativeServiceCallbackLease<Owner>) -> Bool) -> Ticket? {
         lock.lock()
-        guard entries[id]?.ticket.lease.owner == owner else { lock.unlock(); return nil }
+        guard let current = entries[id], accepting(current.ticket.lease) else { lock.unlock(); return nil }
         let entry = entries.removeValue(forKey: id)
         snapshotBytes -= entry?.latestBytes ?? 0
         lock.unlock()

@@ -58,8 +58,16 @@ public final class NativeServiceOwnerScheduler<Owner: Hashable & Sendable>: @unc
     }
 
     public func cancel(id: String, owner: Owner) -> Bool {
+        cancel(id: id, accepting: { $0.owner == owner })
+    }
+
+    public func cancel(id: String, cleanup: NativeServiceCleanupIdentity) -> Bool {
+        cancel(id: id, accepting: { $0.matchesCleanup(cleanup) })
+    }
+
+    private func cancel(id: String, accepting: (NativeServiceCallbackLease<Owner>) -> Bool) -> Bool {
         lock.lock()
-        guard let entry = entries[id], entry.lease.owner == owner else { lock.unlock(); return false }
+        guard let entry = entries[id], accepting(entry.lease) else { lock.unlock(); return false }
         entries.removeValue(forKey: id)
         arm(entry.queue)
         lock.unlock()
