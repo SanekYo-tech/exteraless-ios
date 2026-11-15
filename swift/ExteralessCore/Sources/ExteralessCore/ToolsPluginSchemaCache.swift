@@ -62,8 +62,12 @@ public final class ToolsPluginSchemaCache: @unchecked Sendable {
     /// a filename, never a plugin display name or a path supplied by an archive.
     public static func settingsFileName(pluginId: String) throws -> String {
         guard (2...32).contains(pluginId.utf8.count), let first = pluginId.utf8.first,
-              (65...90).contains(first) || (97...122).contains(first),
-              pluginId.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45 }) else {
+              pluginId.lowercased() != "exteralessmetadatainspector" else { throw ToolsError.unsafePath }
+        let letterFirst = (65...90).contains(first) || (97...122).contains(first)
+        // Native service IDs are the union of source and Elyx grammars. A
+        // digit/underscore-first Elyx ID cannot contain a source-only hyphen.
+        guard pluginId.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0)
+            || (48...57).contains($0) || $0 == 95 || (letterFirst && $0 == 45) }) else {
             throw ToolsError.unsafePath
         }
         return pluginId + "-" + pluginId.utf8.map { String(format: "%02x", $0) }.joined() + ".json"
