@@ -1,0 +1,219 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift
+@@
+                 let _ = (combineLatest(queue: .mainQueue(),
+                     self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id)),
+-                    forumSourcePeer
++                    forumSourcePeer,
++                    exteralessDialogForumLayout(account: self.context.account, peerId: peer.id) |> take(1)
+                 )
+-                |> deliverOnMainQueue).start(next: { [weak self] cachedPeerData, forumSourcePeer in
++                |> deliverOnMainQueue).start(next: { [weak self] cachedPeerData, forumSourcePeer, dialogForumLayout in
+@@
+                     if case let .channel(channel) = peer, channel.flags.contains(.isMonoforum) {
+                         openAsInlineForum = false
+-                    } else if case let .channel(channel) = peer, channel.flags.contains(.displayForumAsTabs) {
+-                        openAsInlineForum = false
+                     } else {
+-                        if let cachedData = cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
+-                            openAsInlineForum = false
+-                        }
++                        openAsInlineForum = !exteralessDialogViewForumAsMessages(peer: peer, layout: dialogForumLayout, nativeViewAsMessages: (cachedPeerData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: self.context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
+                     }
+@@
+             self.preloadStorySubscriptionsDisposable = (combineLatest(queue: .mainQueue(),
+-                self.context.engine.messages.preloadStorySubscriptions(isHidden: self.location == .chatList(groupId: .archive), preferHighQuality: preferHighQualityStories),
++                exteralessDialogStorySource({ [:] }, source: { [context, location = self.location] in
++                    context.engine.messages.preloadStorySubscriptions(isHidden: location == .chatList(groupId: .archive), preferHighQuality: preferHighQualityStories)
++                }),
+@@
+-                self.storySubscriptionsDisposable = (self.context.engine.messages.storySubscriptions(isHidden: self.location == .chatList(groupId: .archive))
++                self.storySubscriptionsDisposable = (exteralessDialogStorySource({ EngineStorySubscriptions(accountItem: nil, items: [], hasMoreToken: nil) }, source: { [context, location = self.location] in
++                    context.engine.messages.storySubscriptions(isHidden: location == .chatList(groupId: .archive))
++                })
+@@
+-                    self.storyArchiveSubscriptionsDisposable = (self.context.engine.messages.storySubscriptions(isHidden: true)
++                    self.storyArchiveSubscriptionsDisposable = (exteralessDialogStorySource({ EngineStorySubscriptions(accountItem: nil, items: [], hasMoreToken: nil) }, source: { [context] in
++                        context.engine.messages.storySubscriptions(isHidden: true)
++                    })
+@@
+     fileprivate func openStoryCamera(fromList: Bool, gesturePullOffset: CGFloat? = nil, sourceView: UIView? = nil) {
++        guard exteralessDialogStoriesEnabled() else { return }
+@@
+     public func openStoriesFromNotification(peerId: EnginePeer.Id, storyId: Int32) {
++        guard exteralessDialogStoriesEnabled() else { return }
+@@
+     public func openStories(peerId: EnginePeer.Id, completion: @escaping (StoryContainerScreen) -> Void = { _ in }) {
++        guard exteralessDialogStoriesEnabled() else { return }
+*** Update File: telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift
+@@
+             if item.interaction.inlineNavigationLocation != nil {
+                 peerRevealOptions = []
+                 peerLeftRevealOptions = []
+             }
++            if case .peer = item.content,
++               !exteralessDialogPolicy().allowsArchiveRowSwipe(isArchive: item.chatListLocation == .chatList(groupId: .archive), isPeer: true) {
++                peerRevealOptions = []
++                peerLeftRevealOptions = []
++            }
+@@
+     override public func revealOptionSelected(_ option: ItemListRevealOption, animated: Bool) {
+         guard let item = self.item else {
+             return
+         }
++        if case .peer = item.content,
++           !exteralessDialogPolicy().allowsArchiveRowSwipe(isArchive: item.chatListLocation == .chatList(groupId: .archive), isPeer: true) {
++            self.setRevealOptionsOpened(false, animated: true)
++            self.revealOptionsInteractivelyClosed()
++            return
++        }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/NavigateToChatController.swift
+@@
+     } else if case let .peer(peer) = params.chatLocation, case let .channel(channel) = peer, channel.flags.contains(.isForum) {
+-        if channel.flags.contains(.displayForumAsTabs) {
+-            viewForumAsMessages = .single(true)
+-        } else {
+-            viewForumAsMessages = params.context.engine.data.subscribe(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id))
+-            |> take(1)
+-            |> map { cachedPeerData in
+-                if let cachedData = cachedPeerData as? CachedChannelData, case let .known(viewForumAsMessages) = cachedData.viewForumAsMessages, viewForumAsMessages {
+-                    return true
+-                } else {
+-                    return false
+-                }
+-            }
+-        }
++        viewForumAsMessages = combineLatest(
++            params.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.CachedData(id: peer.id)),
++            exteralessDialogForumLayout(account: params.context.account, peerId: peer.id) |> take(1)
++        ) |> map { cachedPeerData, layout in
++            exteralessDialogViewForumAsMessages(peer: peer, layout: layout, nativeViewAsMessages: (cachedPeerData as? CachedChannelData)?.viewForumAsMessages.knownValue ?? false, allForumsHaveTabs: params.context.sharedContext.immediateExperimentalUISettings.allForumsHaveTabs)
++        }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+                     var publicPosts = false
+-                    if let peer = self.presentationInterfaceState.renderedPeer, let channel = peer.peer as? TelegramChannel, case .broadcast = channel.info, !(channel.addressName ?? "").isEmpty {
+-                        publicPosts = true
+-                    } else if case let .customChatContents(contents) = self.subject, case let .hashTagSearch(publicPostsValue) = contents.kind {
++                    if case let .customChatContents(contents) = self.subject, case let .hashTagSearch(publicPostsValue) = contents.kind {
+                         publicPosts = publicPostsValue
+                     }
+@@
+-                        if case let .channel(channel) = peerId, channel.isForum, !channel.displayForumAsTabs {
+-                            strongSelf.context.sharedContext.navigateToForumChannel(context: strongSelf.context, peerId: peerId.id, navigationController: navigationController)
+-                        } else {
+-                            strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, updateTextInputState: !peerId.id.isGroupOrChannel ? textInputState : nil, keepStack: .always, peekData: peekData))
+-                        }
++                        strongSelf.context.sharedContext.navigateToChatController(NavigateToChatControllerParams(navigationController: navigationController, context: strongSelf.context, chatLocation: .peer(peerId), subject: subject, updateTextInputState: !peerId.id.isGroupOrChannel ? textInputState : nil, keepStack: .always, peekData: peekData))
+@@
+     func updateNextChannelToReadVisibility() {
+         guard let contentData = self.contentData else {
+             return
+         }
+-        self.chatDisplayNode.historyNode.offerNextChannelToRead = contentData.state.offerNextChannelToRead && self.presentationInterfaceState.interfaceState.selectionState == nil
++        let policy = exteralessDialogPolicy()
++        self.chatDisplayNode.historyNode.offerNextChannelToRead = contentData.state.offerNextChannelToRead && self.presentationInterfaceState.interfaceState.selectionState == nil && policy.allowsSwipeToNext(isTopic: self.chatLocation.threadId != nil)
++        self.updateExteralessDialogHistoryControls(policy: policy)
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@
+-    var offerNextChannelToRead: Bool = false
++    var offerNextChannelToRead: Bool = false {
++        didSet {
++            if oldValue && !self.offerNextChannelToRead {
++                self.currentOverscrollExpandProgress = 0.0
++                if !self.freezeOverscrollControl {
++                    self.cancelOverscrollActionLanding()
++                    self.freezeOverscrollControlProgress = false
++                    self.listView.holdOverscrollAction(distance: 0.0, movesContent: false)
++                    self.maybeUpdateOverscrollAction(offset: nil)
++                }
++            }
++        }
++    }
+@@
+-            if strongSelf.offerNextChannelToRead, expandProgress >= 0.99 {
++            if strongSelf.offerNextChannelToRead, exteralessDialogPolicy().allowsSwipeToNext(isTopic: strongSelf.chatLocation.threadId != nil), expandProgress >= 0.99 {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift
+@@
+         if let initialNavigationBadge = contentData.initialNavigationBadge {
+             contentData.initialNavigationBadge = nil
+-            if self.showsUnreadChatsBackBadge {
+-                self.navigationItem.badge = initialNavigationBadge
+-            }
++            self.navigationItem.badge = exteralessDialogInitialBackBadge(context: self.context, nativeBadge: initialNavigationBadge, entryPointAllowsBadge: self.showsUnreadChatsBackBadge) ?? ""
+         }
+@@
+                 if case let .peer(peerId) = self.chatLocation {
+                     self.chatUnreadCountDisposable?.dispose()
+                     // A chat opened from News returns to the feed: there are no unread chats behind Back.
+-                    if self.showsUnreadChatsBackBadge {
+-                        self.chatUnreadCountDisposable = (self.context.engine.data.subscribe(
+-                            TelegramEngine.EngineData.Item.Messages.PeerUnreadCount(id: peerId),
+-                            TelegramEngine.EngineData.Item.Messages.TotalReadCounters(),
+-                            TelegramEngine.EngineData.Item.Peer.NotificationSettings(id: peerId)
+-                        )
+-                        |> deliverOnMainQueue).startStrict(next: { [weak self] peerUnreadCount, totalReadCounters, notificationSettings in
+-                            guard let strongSelf = self else {
+-                                return
+-                            }
+-                            let unreadCount: Int32 = Int32(peerUnreadCount)
+-                            
+-                            let inAppSettings = strongSelf.context.sharedContext.currentInAppNotificationSettings.with { $0 }
+-                            let totalChatCount: Int32 = renderedTotalUnreadCount(inAppSettings: inAppSettings, totalUnreadState: totalReadCounters._asCounters()).0
+-                            
+-                            var globalRemainingUnreadChatCount = totalChatCount
+-                            if !notificationSettings._asNotificationSettings().isRemovedFromTotalUnreadCount(default: false) && unreadCount > 0 {
+-                                if case .messages = inAppSettings.totalUnreadCountDisplayCategory {
+-                                    globalRemainingUnreadChatCount -= unreadCount
+-                                } else {
+-                                    globalRemainingUnreadChatCount -= 1
+-                                }
+-                            }
+-                            
+-                            if globalRemainingUnreadChatCount > 0 {
+-                                strongSelf.navigationItem.badge = "\(globalRemainingUnreadChatCount)"
+-                            } else {
+-                                strongSelf.navigationItem.badge = ""
+-                            }
+-                        })
+-                    }
++                    self.chatUnreadCountDisposable = (exteralessDialogBackBadge(context: self.context, peerId: peerId, entryPointAllowsBadge: self.showsUnreadChatsBackBadge)
++                    |> deliverOnMainQueue).startStrict(next: { [weak self] badge in
++                        self?.navigationItem.badge = badge ?? ""
++                    })
+*** Update File: telegram-ios/submodules/AvatarNode/Sources/AvatarNode.swift
+@@
+     public private(set) var storyStats: StoryStats?
++    private var exteralessUnfilteredStoryStats: StoryStats?
++    private var exteralessStoryPolicyDisposable: Disposable?
+@@
+     deinit {
+         self.cancelLoading()
++        self.exteralessStoryPolicyDisposable?.dispose()
+     }
+@@
+     public func setStoryStats(storyStats: StoryStats?, presentationParams: StoryPresentationParams, transition: ComponentTransition) {
++        self.exteralessUnfilteredStoryStats = storyStats
++        if self.exteralessStoryPolicyDisposable == nil {
++            self.exteralessStoryPolicyDisposable = (exteralessDialogPolicyUpdates()
++            |> map { !$0.disableStories }
++            |> distinctUntilChanged
++            |> deliverOnMainQueue).start(next: { [weak self] enabled in
++                guard let self else { return }
++                let value = enabled ? self.exteralessUnfilteredStoryStats : nil
++                if self.storyStats != value {
++                    self.storyStats = value
++                    self.updateStoryIndicator(transition: .immediate)
++                }
++            })
++        }
++        let storyStats = exteralessDialogStoriesEnabled() ? storyStats : nil
+*** Update File: telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@
+     func openStoryArchive() {
++        guard exteralessDialogStoriesEnabled() else { return }
+@@
+     private func openPostStory(sourceFrame: CGRect?) {
++        guard exteralessDialogStoriesEnabled() else { return }
+*** End Patch

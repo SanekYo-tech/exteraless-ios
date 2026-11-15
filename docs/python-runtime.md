@@ -2,20 +2,24 @@
 
 ## Полная client/SDK волна — 15.11.2026
 
-- **[Linux 43693106297](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43693106297)
-  на `b1424e10`: 280 Core + 89 PluginHost + 16 PluginHooks tests passed.**
-  В Core проверены settings/CAS, AI, appearance, feed/player/pills, filtering и
-  backup policies; execution Core suite — 2.689 s. Native UIKit в этом запуске нет.
-- C bridge теперь привязывает immutable owner epoch, отсоединяет handle tables до
-  reentrant DECREF и корректно участвует в cyclic GC. Windows CPython 3.12.10
-  debug-allocator probe: **219 native calls**, 27 terminal API refusals, 2/2 payloads
-  освобождены. Независимый reviewer закрыл воспроизведённую P2-утечку.
-- Apple runtime/SDK probe должен быть пересобран по актуальному source fingerprint:
-  новые C/Host/SDK изменения не покрываются прежним 169-call iOS artifact.
-- Source integration и independent review продолжаются. Найденные Settings/AI
-  P1/P2 исправляются отдельной подволной; запуск новой Telegram IPA и получение
-  UIKit frames — после стыковки. Актуальные owners/gates:
-  [wave-2/progress.md](wave-2/progress.md).
+- **[Runtime43738810843](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43738810843)
+  на `136c946f` — полностью GREEN.** Пройдены Foundation Core/Host/Hooks,
+  23 HNS-сценария, Java/TL codec, настоящий Swift/CPython engine и три SDK child
+  процесса с лимитом30с. iOS simulator выполнил новый **219-call gate**;
+  unsigned device probe скомпилирован и опубликован.
+- Артефакты run19 скачаны в `build/artifacts/python-runtime-43738810843/`.
+  Независимая локальная сверка manifests, Mach-O, cleanup и Git source fingerprints
+  выполняется; её отдельный receipt фиксирует именно этот commit.
+- **[Linux43732308228](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43732308228)
+  на `96bff39e`: 661 Core + 180 Host + 30 Hooks PASS.** Darwin storage aliases,
+  UTF-16 scalar boundaries и async-fixture исправления прошли последующий Mac gate.
+- SDK Config: **276 implemented / 0 blocked / 32 unsupported**,308 API;
+  59 raw source pins и canonical consumed-inventory contract. Пять portable
+  адаптаций (layout/fonts/swipe/performance/Monet) подключены к native consumers.
+- Native XCTest-map опубликован:36 targets/410 методов. UIKit recording protocol —
+  3+3+2 fresh processes. Их выполнение и просмотр реальных кадров ожидаются после
+  full-app compilation; Mac DTO/codec receipts не подтверждают Telegram network/UIKit.
+- Актуальная сборка/владение файлами: [wave-2/progress.md](wave-2/progress.md).
 
 Последняя проверенная Telegram IPA ниже — **build 23 на `68bb1adf`**. Новая волна
 в неё не входит. Полный app graph использует **runner `xcode-27`, Xcode 27.1**;

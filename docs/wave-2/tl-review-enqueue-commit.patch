@@ -1,0 +1,28 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+@@
+-public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
++public func enqueueMessagesFromPlugin(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<[MessageId?], NoError> {
+     let messages = exteralessPrepareOutgoingChatText(messages, peerId: peerId)
+     let messages = exteralessDefaultSendNotifications(messages, defaultSilent: ClientSettings.shared.bool("chats.silentMessageByDefault"))
+-    return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages)
++    return enqueueMessagesWithoutPluginHooks(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
+@@
+-private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
++private func enqueueMessagesWithoutPluginHooks(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<[MessageId?], NoError> {
+@@
+-        guard allowed else { return .single(Array(repeating: nil, count: messages.count)) }
++        guard allowed, tlCommit?.allowsContinuation() ?? true else { return .single(Array(repeating: nil, count: messages.count)) }
+-        return enqueueMessagesWithPrivacyAuthorization(account: account, peerId: peerId, messages: messages)
++        return enqueueMessagesWithPrivacyAuthorization(account: account, peerId: peerId, messages: messages, tlCommit: tlCommit)
+@@
+-private func enqueueMessagesWithPrivacyAuthorization(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
++private func enqueueMessagesWithPrivacyAuthorization(account: Account, peerId: PeerId, messages: [EnqueueMessage], tlCommit: ExteralessTLEnqueueCommit? = nil) -> Signal<[MessageId?], NoError> {
+@@
+     |> mapToSignal { messages -> Signal<[MessageId?], NoError> in
+         return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
++            guard tlCommit?.beginCommit() ?? true else {
++                return (Array<MessageId?>(repeating: nil, count: messages.count), [])
++            }
+             let messages = exteralessPrivacyOutgoingMessages(transaction: transaction, account: account, peerId: peerId, messages: messages)
+*** End Patch

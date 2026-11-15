@@ -1,0 +1,232 @@
+*** Begin Patch
+*** Add File: telegram-ios/submodules/AccountContext/Sources/ExteralessAIHooks.swift
++import Display
++import ExteralessCore
++import Foundation
++import SwiftSignalKit
++import TelegramCore
++
++@MainActor
++public protocol ExteralessAIEngineAdapter: AnyObject, Sendable {
++    func handles(context: AccountContext) -> Bool
++    func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>?
++    func summarize(context: AccountContext, messageId: EngineMessage.Id, toLanguage: String?) -> Signal<Never, SummarizeError>?
++    func translateMessages(context: AccountContext, messageIds: [EngineMessage.Id], fromLanguage: String?, toLanguage: String, automatic: Bool) -> Signal<Never, TranslationError>?
++    func articleController(context: AccountContext, text: String, entities: [MessageTextEntity], toLanguage: String?) -> ViewController?
++}
++
++private final class AIHookStorage: @unchecked Sendable {
++    struct Lease: Sendable { let id: UUID; let adapter: (any ExteralessAIEngineAdapter)? }
++    private let lock = NSLock()
++    private var current = Lease(id: UUID(), adapter: nil)
++    func install(_ adapter: (any ExteralessAIEngineAdapter)?) {
++        lock.lock(); defer { lock.unlock() }
++        if current.adapter === adapter { return }
++        current = Lease(id: UUID(), adapter: adapter)
++    }
++    func capture() -> Lease { lock.lock(); defer { lock.unlock() }; return current }
++    func valid(_ lease: Lease) -> Bool { lock.lock(); defer { lock.unlock() }; return current.id == lease.id }
++}
++
++/// AccountContext-level routing keeps lower UI components independent of TelegramUI.
++/// Queued/disposed requests cannot start a fallback on a newly selected account.
++public enum ExteralessAIHooks {
++    private static let storage = AIHookStorage()
++    private static let pageCache = AITranslatedPageCache()
++    public static func renderedPage(original: InstantPage, translated: InstantPage, includeOriginal: Bool) -> InstantPage {
++        includeOriginal ? pageCache.page(original: original, translated: translated) : translated
++    }
++    @MainActor public static func install(_ adapter: (any ExteralessAIEngineAdapter)?) { storage.install(adapter) }
++
++    private static func deferred<Value, Failure>(context: AccountContext, cancelled: Failure, choose: @escaping @MainActor (any ExteralessAIEngineAdapter) -> Signal<Value, Failure>?, fallback: @escaping () -> Signal<Value, Failure>) -> Signal<Value, Failure> {
++        let lease = storage.capture()
++        return Signal { subscriber in
++            let disposed = Atomic(value: false)
++            let disposable = MetaDisposable()
++            Queue.mainQueue().async {
++                guard !disposed.with({ $0 }) else { return }
++                MainActor.assumeIsolated {
++                    guard storage.valid(lease) else { subscriber.putError(cancelled); return }
++                    let selected: Signal<Value, Failure>
++                    if let adapter = lease.adapter {
++                        guard adapter.handles(context: context) else { subscriber.putError(cancelled); return }
++                        selected = choose(adapter) ?? fallback()
++                    } else { selected = fallback() }
++                    guard !disposed.with({ $0 }) else { return }
++                    disposable.set(selected.start(next: { subscriber.putNext($0) }, error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() }))
++                }
++            }
++            return ActionDisposable { _ = disposed.swap(true); disposable.dispose() }
++        }
++    }
++
++    public static func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?, fallback: @escaping () -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError> {
++        deferred(context: context, cancelled: .generic, choose: { $0.compose(context: context, text: text, mode: mode, styles: styles, sourceLanguage: sourceLanguage) }, fallback: fallback)
++    }
++    public static func summarize(context: AccountContext, messageId: EngineMessage.Id, toLanguage: String?, fallback: @escaping () -> Signal<Never, SummarizeError>) -> Signal<Never, SummarizeError> {
++        deferred(context: context, cancelled: .generic, choose: { $0.summarize(context: context, messageId: messageId, toLanguage: toLanguage) }, fallback: fallback)
++    }
++    public static func translateMessages(context: AccountContext, messageIds: [EngineMessage.Id], fromLanguage: String?, toLanguage: String, automatic: Bool, fallback: @escaping () -> Signal<Never, TranslationError>) -> Signal<Never, TranslationError> {
++        deferred(context: context, cancelled: .generic, choose: { $0.translateMessages(context: context, messageIds: messageIds, fromLanguage: fromLanguage, toLanguage: toLanguage, automatic: automatic) }, fallback: fallback)
++    }
++    @MainActor public static func articleController(context: AccountContext, text: String, entities: [MessageTextEntity], toLanguage: String?) -> ViewController? {
++        guard let adapter = storage.capture().adapter, adapter.handles(context: context) else { return nil }
++        return adapter.articleController(context: context, text: text, entities: entities, toLanguage: toLanguage)
++    }
++    public static func policyChanges() -> Signal<Void, NoError> {
++        Signal { subscriber in
++            let observation = ClientSettings.shared.observe { keys in
++                if keys.isEmpty || keys.contains("ai.telegramUIAutoTranslate") || keys.contains("ai.translationProvider") { subscriber.putNext(Void()) }
++            }
++            subscriber.putNext(Void())
++            return ActionDisposable { observation.cancel() }
++        } |> deliverOnMainQueue
++    }
++}
++
++private final class AITranslatedPageCache: @unchecked Sendable {
++    private struct Key: Hashable { let original: ObjectIdentifier; let translated: ObjectIdentifier }
++    private struct Value { let original: InstantPage; let translated: InstantPage; let combined: InstantPage }
++    private let lock = NSLock()
++    private var values: [Key: Value] = [:]
++    private var order: [Key] = []
++    func page(original: InstantPage, translated: InstantPage) -> InstantPage {
++        lock.lock(); defer { lock.unlock() }
++        let key = Key(original: ObjectIdentifier(original), translated: ObjectIdentifier(translated))
++        if let value = values[key] { return value.combined }
++        var media = original.media
++        for (id, value) in translated.media { media[id] = value }
++        let combined = InstantPage(blocks: original.blocks + [.divider] + translated.blocks, media: media, isComplete: translated.isComplete, rtl: translated.rtl, url: translated.url, views: translated.views)
++        values[key] = Value(original: original, translated: translated, combined: combined)
++        order.append(key)
++        if order.count > 32 { values.removeValue(forKey: order.removeFirst()) }
++        return combined
++    }
++}
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+         ai?.update(context: context)
++        ExteralessAIHooks.install(ai?.nativeAdapter)
+         tools?.update(context: context)
+@@
+     func clearContext() {
++        ExteralessAIHooks.install(nil)
+         appearance?.clearContext()
+@@
+ }
++
++extension ExteralessAINativeAdapter: ExteralessAIEngineAdapter {}
+*** Update File: telegram-ios/submodules/TelegramUI/Components/TextProcessingScreen/Sources/TextProcessingTranslateContentComponent.swift
+@@
+-                    self.processDisposable = (component.context.engine.messages.composeAIMessage(
+-                        text: component.inputText,
+-                        mode: mappedMode
+-                    ) |> deliverOnMainQueue).startStrict(next: { [weak self] processedText in
++                    self.processDisposable = (ExteralessAIHooks.compose(
++                        context: component.context,
++                        text: component.inputText,
++                        mode: mappedMode,
++                        styles: component.styles.map(\.cloudStyle),
++                        sourceLanguage: component.externalState.sourceLanguage,
++                        fallback: { component.context.engine.messages.composeAIMessage(text: component.inputText, mode: mappedMode) }
++                    ) |> deliverOnMainQueue).startStrict(next: { [weak self] processedText in
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@
+-                let _ = (item.context.engine.messages.summarizeMessage(messageId: item.message.id, translateToLang: translateToLanguage)
++                let _ = (ExteralessAIHooks.summarize(context: item.context, messageId: item.message.id, toLanguage: translateToLanguage, fallback: {
++                    item.context.engine.messages.summarizeMessage(messageId: item.message.id, translateToLang: translateToLanguage)
++                })
+                 |> deliverOnMainQueue).start(error: { error in
++                    item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
++                    let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
+                     if case .limitExceededPremium = error, let parentController = item.controllerInteraction.navigationController()?.topViewController as? ViewController {
+*** Update File: telegram-ios/submodules/TranslateUI/Sources/ChatTranslation.swift
+@@
+-        return context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible)
++        return ExteralessAIHooks.translateMessages(context: context, messageIds: messageIdsToTranslate, fromLanguage: fromLang, toLanguage: toLang, automatic: true, fallback: {
++            context.engine.messages.translateMessages(messageIds: messageIdsToTranslate, fromLang: fromLang, toLang: toLang, enableLocalIfPossible: enableLocalIfPossible)
++        })
+         |> `catch` { _ -> Signal<Never, NoError> in
+@@
+ public func chatTranslationState(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64?) -> Signal<ChatTranslationState?, NoError> {
++    ExteralessAIHooks.policyChanges() |> mapToSignal { _ in
++        exteralessBaseChatTranslationState(context: context, peerId: peerId, threadId: threadId)
++    }
++}
++
++private func exteralessBaseChatTranslationState(context: AccountContext, peerId: EnginePeer.Id, threadId: Int64?) -> Signal<ChatTranslationState?, NoError> {
+     if peerId.id == EnginePeer.Id.Id._internalFromInt64Value(777000) {
+*** Update File: telegram-ios/submodules/TranslateUI/Sources/Translate.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+ public func canTranslateChats(context: AccountContext) -> Bool {
++    let policy = AITranslationPolicy()
++    if !policy.autoEnabled { return false }
++    if policy.provider != .telegram { return true }
+     let translationConfiguration = TranslationConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                if let translationState, (isPremium || autoTranslate)  && translationState.isEnabled {
++                if let translationState, AITranslationPolicy().autoEnabled && (AITranslationPolicy().canAutomaticallyTranslate(isPremium: isPremium) || autoTranslate) && translationState.isEnabled {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/TranslateHeaderPanelComponent/Sources/ChatTranslationPanelNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-        if info.isPremium {
++        if AITranslationPolicy().canAutomaticallyTranslate(isPremium: info.isPremium) {
+             self.moreButton.isHidden = false
+@@
+-        var translationAvailable = isPremium
++        var translationAvailable = AITranslationPolicy().canAutomaticallyTranslate(isPremium: isPremium)
+         if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
+@@
+-        var translationAvailable = isPremium
++        var translationAvailable = AITranslationPolicy().canAutomaticallyTranslate(isPremium: isPremium)
+         if case let .channel(channel) = info.peer, channel.flags.contains(.autoTranslateEnabled) {
+*** Update File: telegram-ios/submodules/TextSelectionNode/Sources/TextSelectionNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-            if self.enableTranslate {
++            if self.enableTranslate && AITranslationPolicy().showTextTranslate {
+*** Update File: telegram-ios/submodules/BrowserUI/Sources/BrowserInstantPageContent.swift
+@@
+                             guard let self else {
+                                 return
+                             }
++                            if let controller = ExteralessAIHooks.articleController(context: context, text: text, entities: [], toLanguage: nil) {
++                                self.present(controller, nil)
++                                return
++                            }
+                             let controller = await TextProcessingScreen(
+                                 context: context,
+                                 mode: .translate(fromLanguage: language, applyResult: nil),
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+     override public func viewDidAppear(_ animated: Bool) {
++        MainActor.assumeIsolated { self.exteralessAIObserveSettings() }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
+@@
+         self.title = plugin.displayName
++        if ExteralessAIEntry.reviewPlugin != nil {
++            var review = PluginListRow(id: "ai-review", title: "Review with AI", detail: "Read-only review of this plugin's source and declared metadata")
++            review.action = { [weak self] in
++                guard let self else { return }
++                ExteralessAIEntry.reviewPlugin?(self.context, self, id)
++            }
++            sections.append(PluginListSection(rows: [review]))
++        }
+         var enabledRow = PluginListRow(id: "enabled", title: pluginText("Plugin.Enabled", "Enabled"), detail: self.stateDescription(plugin))
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+@@
+-        for definition in snapshot.definitions {
++        for definition in snapshot.definitions where definition.section != "AI state" {
+             append(self.settingRow(definition, snapshot: snapshot), section: definition.section)
+*** End Patch

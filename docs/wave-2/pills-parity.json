@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "domain": "PillStack",
+  "status": "source-implemented-pending-coordinator-assembly-and-native-verification",
+  "handoff": "docs/wave-2/pills.md",
+  "coordinatorPatch": "docs/wave-2/pills-native-hunks.patch",
+  "androidRoots": {
+    "java": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/pillstack/",
+    "kotlin": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/pillstack/",
+    "weather": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Stories/recorder/Weather.java"
+  },
+  "callsiteFiles": {
+    "PillFeatures": "swift/ExteralessCore/Sources/ExteralessCore/CorePillFeatures.swift",
+    "ChatFeatures": "swift/ExteralessCore/Sources/ExteralessCore/ChatFeatures.swift",
+    "PillLayout": "swift/ExteralessCore/Sources/ExteralessCore/PillRegistry.swift",
+    "PillRegistry": "swift/ExteralessCore/Sources/ExteralessCore/PillRegistry.swift",
+    "PillSettingsStore": "swift/ExteralessCore/Sources/ExteralessCore/PillSettings.swift",
+    "PillRateProvider": "swift/ExteralessCore/Sources/ExteralessCore/PillRateProvider.swift",
+    "PillRateTable": "swift/ExteralessCore/Sources/ExteralessCore/PillCurrencies.swift",
+    "PillWeatherProvider": "swift/ExteralessCore/Sources/ExteralessCore/PillWeatherProvider.swift",
+    "PillWeatherReading": "swift/ExteralessCore/Sources/ExteralessCore/PillWeatherPolicy.swift",
+    "PillHTTPClient": "swift/ExteralessCore/Sources/ExteralessCore/PillHTTPTransport.swift",
+    "PillRequestPool": "swift/ExteralessCore/Sources/ExteralessCore/PillRequestPool.swift",
+    "PillMetricPolicy": "swift/ExteralessCore/Sources/ExteralessCore/PillMetricPolicy.swift",
+    "PillModel": "swift/ExteralessCore/Sources/ExteralessCore/PillModel.swift",
+    "PillPluginRegistry": "swift/ExteralessCore/Sources/ExteralessCore/PillPluginRegistry.swift",
+    "ExteralessPillSubscription": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillRuntime.swift",
+    "ExteralessPillRuntime": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillRuntime.swift",
+    "ExteralessPillHeaderView": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessPillStack.swift",
+    "ExteralessPillSettingsController": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillSettingsController.swift",
+    "ExteralessPillDetailController": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillDetailController.swift",
+    "ExteralessPillLocation": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillLocation.swift",
+    "ExteralessPillWeatherSettingsController": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillWeatherSettingsController.swift",
+    "ExteralessPillMapController": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillMapController.swift",
+    "ExteralessPillMetrics": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillMetrics.swift",
+    "ExteralessPillCoreData": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPills/ExteralessPillCoreData.swift",
+    "ExteralessPillEntry": "telegram-ios/submodules/AccountContext/Sources/ExteralessPillEntry.swift",
+    "ExteralessPillIntegration": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillIntegration.swift",
+    "PluginPillBridgeExtension": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/PluginPillBridgeExtension.swift",
+    "PluginPillBridgeActions": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/PluginPillBridgeActions.swift",
+    "PluginPillCallbacks": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/PluginPillCallbacks.swift",
+    "PluginPillIdentityArchive": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/PluginPillIdentityArchive.swift",
+    "PluginPillWire": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/PluginPillWire.swift",
+    "ExteralessPillPassivePing": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPills/ExteralessPillPassivePing.swift",
+    "ExteralessPillSettingsActionGate": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills/ExteralessPillSettingsAction.swift"
+  },
+  "testRoot": "swift/ExteralessCore/Tests/ExteralessCoreTests/",
+  "pills": [
+    {
+      "originalId": 1,
+      "symbol": "PillType.WEATHER",
+      "source": ["pills/WeatherPill.java:onUpdateData", "pills/weather/WeatherSettingsActivity.java", "Weather.java:385-475", "Weather.java:340-383 (inactive HTTP source)"],
+      "callsite": ["ExteralessPillSubscription.refreshWeather", "PillWeatherProvider.read", "ExteralessPillLocation.request", "ExteralessPillMapController.selectedPoint"],
+      "status": "native-bot-with-explicit-http-adaptation-source-implemented",
+      "tests": ["PillWeatherProviderTests.testWeatherSourceAndCoordinatesAreCapturedAndNativeRequestsCoalesce", "PillWeatherProviderTests.testWeatherFailureRetainsItsOriginalTimestampAndDoesNotCrossCoordinates", "PillPolicyTests.testManualLocationValidationAndAtomicModeChange", "PillPolicyTests.testWeatherUnitsValidationAndSourceIdentity"],
+      "limits": ["No live weather or location/permission test executed", "Map and hint frames pending", "Open-Meteo was not the active Android provider"]
+    },
+    {
+      "originalId": 2,
+      "symbol": "PillType.GRAM",
+      "source": ["RateInstances.java:95-103", "RateInstances.java:250-305", "pills/RatePill.java", "ExchangeRates.java"],
+      "callsite": ["PillRegistry.descriptors", "PillRateProvider.read", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-source-implemented",
+      "tests": ["PillPolicyTests.testOriginalEndpointsCurrencyDirectionAndFreshness", "PillPolicyTests.testLegacyRatesMigrateAsOneDurableGenerationIncludingSelection"],
+      "limits": ["GRAM is TON, matching original alias", "Live provider availability not exercised"]
+    },
+    {
+      "originalId": 3,
+      "symbol": "PillType.BTC",
+      "source": ["pills/RatePill.java", "ExchangeRates.java:38-44"],
+      "callsite": ["PillRateProvider.read", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-source-implemented",
+      "tests": ["PillProviderTests.testTwoPairsShareOneRequestAndCacheCommitsTimestampAtomically", "PillProviderTests.testNetworkFailureKeepsStaleValueAndOriginalObservationTime"],
+      "limits": ["Live provider availability not exercised"]
+    },
+    {
+      "originalId": 4,
+      "symbol": "PillType.USD",
+      "source": ["pills/RatePill.java", "ExchangeRates.java:273-315"],
+      "callsite": ["PillRateProvider.read", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-source-implemented",
+      "tests": ["PillPolicyTests.testOriginalEndpointsCurrencyDirectionAndFreshness", "PillPolicyTests.testPairEditRejectsStaleScreenAndRemovalIsAtomic"],
+      "limits": ["AUTO phone-country is resolved from the selected account's cached peer; unavailable/unsupported currency falls back to USD"]
+    },
+    {
+      "originalId": 5,
+      "symbol": "PillType.CACHE",
+      "source": ["pills/CachePill.java:onUpdateData", "pills/CachePill.java:StorageProgressDrawable"],
+      "callsite": ["ExteralessPillSubscription.refreshCache", "ExteralessPillMetrics.disk", "ExteralessPillHeaderView.pressed"],
+      "status": "native-account-storage-and-volume-capacity-source-implemented",
+      "tests": ["PillPolicyTests.testMetricIntervalsRejectResetsAndBackgroundGapsWithoutInventingZero"],
+      "limits": ["Physical storage values and ring frames not verified"]
+    },
+    {
+      "originalId": 6,
+      "symbol": "PillType.PROXY",
+      "source": ["pills/ProxyPill.java:onUpdateData"],
+      "callsite": ["ExteralessPillSubscription.refreshConnection", "ExteralessPillHeaderView.pressed"],
+      "status": "adapted-native-readiness-source-implemented",
+      "tests": ["PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"],
+      "limits": ["Native interface lacks passive proxy RTT; explicit Proxy settings test remains native", "Live proxy/account actions not exercised"]
+    },
+    {
+      "originalId": 7,
+      "symbol": "PillType.GHOST",
+      "source": ["pills/GhostPill.java:onPillClicked"],
+      "callsite": ["ExteralessPillRuntime.toggleGhost", "ExteralessPillSubscription.emitGhost", "ExteralessPillHeaderView.pressed"],
+      "status": "native-privacy-policy-consumer-source-implemented",
+      "tests": ["PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults", "PillProviderTests.testAccountGenerationInvalidationBlocksLateCacheWrites"],
+      "limits": ["Existing PrivacyPolicy supplies ghost semantics; live account toggle and color frames not exercised"]
+    },
+    {
+      "originalId": 8,
+      "symbol": "PillType.RAM",
+      "source": ["pills/RamPill.java:measureText", "pills/TelemetryPill.java"],
+      "callsite": ["ExteralessPillMetrics.memory", "ExteralessPillSubscription.refreshMemory"],
+      "status": "adapted-native-process-and-system-metrics-source-implemented",
+      "tests": ["PillPolicyTests.testMetricIntervalsRejectResetsAndBackgroundGapsWithoutInventingZero"],
+      "limits": ["App physical footprint and system free pages are separately labelled", "No invented available-RAM percentage", "Physical kernel readings unverified"]
+    },
+    {
+      "originalId": 9,
+      "symbol": "PillType.CPU",
+      "source": ["pills/CpuPill.java:measureText"],
+      "callsite": ["ExteralessPillMetrics.cpu", "PillMetricPolicy.processCPU", "ExteralessPillSubscription.refreshCPU"],
+      "status": "adapted-native-process-cpu-source-implemented",
+      "tests": ["PillPolicyTests.testMetricIntervalsRejectResetsAndBackgroundGapsWithoutInventingZero"],
+      "limits": ["Process CPU as percent of one logical core, not Android whole-device /proc/stat", "First interval is measuring, not zero", "Physical interval readings unverified"]
+    },
+    {
+      "originalId": 10,
+      "symbol": "PillType.NET_SPEED",
+      "source": ["pills/NetSpeedPill.java:measureText"],
+      "callsite": ["PillMetricPolicy.networkSpeed", "ExteralessPillSubscription.refreshNetwork"],
+      "status": "adapted-native-account-throughput-source-implemented",
+      "tests": ["PillPolicyTests.testMetricIntervalsRejectResetsAndBackgroundGapsWithoutInventingZero"],
+      "limits": ["Account MTProto counters include native counted media/calls; exclude other apps and external HTTP", "No packet-drop field invented", "Physical throughput readings unverified"]
+    },
+    {
+      "originalId": 11,
+      "symbol": "PillType.DC_PING",
+      "source": ["pills/DcPingPill.java:measureText"],
+      "callsite": ["ExteralessPillCoreData.exteralessPillConnectionActivity", "ExteralessPillPassivePing.exteralessPillPassivePing", "ExteralessPillSubscription.refreshConnection"],
+      "status": "passive-rtt-projection-and-consumer-implemented-rust-forwarding-pending-network-owner",
+      "tests": ["PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"],
+      "limits": ["Existing Rust FFI event 17 value1 contains genuine ping/pong RTT; RustNetworkSession currently discards it", "New optional projection/UI consumer waits for Network-owner Rust/Recording/Switching forwarding; see docs/wave-2/pills-ping.md", "MtProtoKit retained passive RTT remains unexposed", "Activity age/RPC latency is explicitly not ping", "No independent socket or URL ping", "Physical connection measurements unverified"]
+    },
+    {
+      "originalId": 12,
+      "symbol": "PillType.GOLD",
+      "source": ["GoldPrice.java:28", "pills/RatePill.java:137-162"],
+      "callsite": ["PillRateProvider.loadGold", "PillRateProvider.quote", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-troy-ounce-source-implemented",
+      "tests": ["PillProviderTests.testGoldConversionUsesTroyOunceAndOlderOfBothTimestamps"],
+      "limits": ["Gold is per troy ounce, never per gram", "Live provider availability unverified"]
+    },
+    {
+      "originalId": 13,
+      "symbol": "PillType.ETH",
+      "source": ["RateInstances.java:250-305", "ExchangeRates.java"],
+      "callsite": ["PillRegistry.descriptors", "PillRateProvider.read", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-source-implemented",
+      "tests": ["PillPolicyTests.testPairEditRejectsStaleScreenAndRemovalIsAtomic", "PillProviderTests.testTwoPairsShareOneRequestAndCacheCommitsTimestampAtomically"],
+      "limits": ["Live provider availability unverified"]
+    },
+    {
+      "originalId": 14,
+      "symbol": "PillType.EUR",
+      "source": ["RateInstances.java:250-305", "ExchangeRates.java"],
+      "callsite": ["PillRegistry.descriptors", "PillRateProvider.read", "ExteralessPillSubscription.refreshRate"],
+      "status": "native-http-source-implemented",
+      "tests": ["PillPolicyTests.testOriginalEndpointsCurrencyDirectionAndFreshness", "PillProviderTests.testTwoPairsShareOneRequestAndCacheCommitsTimestampAtomically"],
+      "limits": ["Live provider availability unverified"]
+    },
+    {
+      "originalId": 15,
+      "symbol": "PillType.LAST_SEEN",
+      "source": ["pills/LastSeenPill.java:onUpdateData"],
+      "callsite": ["ExteralessPillCoreData.exteralessPillOwnStatus", "ExteralessPillSubscription.refreshLastSeen"],
+      "status": "adapted-account-scoped-observation-source-implemented",
+      "tests": ["PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"],
+      "limits": ["Reads native cached presence and existing encrypted Privacy OwnLastSeen observations", "Does not reproduce periodic Android users.getUsers(self) RPC", "Cached/local source is explicit; no invented online state", "Live account observations unverified"]
+    }
+  ],
+  "settingsSource": "PillStackConfig.kt",
+  "settings": [
+    {"originalId":"PillStackConfig.activePillsRaw","androidKey":"OEPillActivePills","default":"5,6","key":"chats.activePillsRaw","definitionOwner":"ChatFeatures","callsite":"PillLayout.visible","test":"PillPolicyTests.testDormantIdsAndHiddenSelectionSurviveReorderAndLoop","assembly":"restore coordinator hunk"},
+    {"originalId":"PillStackConfig.hiddenPillsRaw","androidKey":"OEPillHiddenPills","default":"","key":"chats.hiddenPillsRaw","definitionOwner":"ChatFeatures","callsite":"PillLayout.setActive","test":"PillPolicyTests.testDormantIdsAndHiddenSelectionSurviveReorderAndLoop","assembly":"restore coordinator hunk"},
+    {"originalId":"PillStackConfig.infiniteScrolling","androidKey":"OEPillInfiniteScrolling","default":true,"key":"chats.infiniteScrolling","definitionOwner":"ChatFeatures","callsite":"PillLayout.next","test":"PillPolicyTests.testDormantIdsAndHiddenSelectionSurviveReorderAndLoop","assembly":"restore coordinator hunk"},
+    {"originalId":"PillStackConfig.lastActivePillId","androidKey":"OEPillLastActiveId","default":-1,"key":"chats.lastActivePillId","definitionOwner":"ChatFeatures","callsite":"PillLayout.selection","test":"PillPolicyTests.testLegacyRatesMigrateAsOneDurableGenerationIncludingSelection","assembly":"restore coordinator hunk"},
+    {"originalId":"PillStackConfig.gramTargetCurrency","androidKey":"OEPillGramCurrency","default":"AUTO","key":"chats.gramTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.migrateLegacyRates","test":"PillPolicyTests.testLegacyRatesMigrateAsOneDurableGenerationIncludingSelection"},
+    {"originalId":"PillStackConfig.btcTargetCurrency","androidKey":"OEPillBtcCurrency","default":"AUTO","key":"chats.btcTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillRegistry.descriptors","test":"PillPolicyTests.testLegacyRatesMigrateAsOneDurableGenerationIncludingSelection"},
+    {"originalId":"PillStackConfig.usdTargetCurrency","androidKey":"OEPillUsdCurrency","default":"AUTO","key":"chats.usdTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillRegistry.descriptors","test":"PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"},
+    {"originalId":"PillStackConfig.ethTargetCurrency","androidKey":"OEPillEthCurrency","default":"AUTO","key":"chats.ethTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillRegistry.descriptors","test":"PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"},
+    {"originalId":"PillStackConfig.eurTargetCurrency","androidKey":"OEPillEurCurrency","default":"AUTO","key":"chats.eurTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillRegistry.descriptors","test":"PillPolicyTests.testRegistryContainsEveryOriginalIdAndKeepsOriginalDefaults"},
+    {"originalId":"PillStackConfig.goldTargetCurrency","androidKey":"OEPillGoldCurrency","default":"AUTO","key":"chats.goldTargetCurrency","definitionOwner":"PillFeatures","callsite":"PillRegistry.descriptors","test":"PillProviderTests.testGoldConversionUsesTroyOunceAndOlderOfBothTimestamps"},
+    {"originalId":"PillStackConfig.rateInstancesRaw","androidKey":"OEPillRateInstances","default":"","key":"chats.rateInstancesRaw","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.setPair","test":"PillPolicyTests.testPairEditRejectsStaleScreenAndRemovalIsAtomic"},
+    {"originalId":"PillStackConfig.rateInstancesMigrated","androidKey":"OEPillRateInstancesMigrated","default":false,"key":"chats.rateInstancesMigrated","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.migrateLegacyRates","test":"PillPolicyTests.testFailedMigrationDoesNotSetMarkerOrDiscardLayout"},
+    {"originalId":"PillStackConfig.goldPriceCache","androidKey":"OEPillGoldPriceCache","default":"","key":"chats.goldPriceCache","definitionOwner":"PillFeatures","callsite":"PillRateProvider.loadGold","test":"PillProviderTests.testGoldConversionUsesTroyOunceAndOlderOfBothTimestamps"},
+    {"originalId":"PillStackConfig.goldPriceCacheTime","androidKey":"OEPillGoldPriceCacheTime","default":0,"key":"chats.goldPriceCacheTime","definitionOwner":"PillFeatures","callsite":"PillRateProvider.loadGold","test":"PillProviderTests.testGoldConversionUsesTroyOunceAndOlderOfBothTimestamps"},
+    {"originalId":"PillStackConfig.ratesCache","androidKey":"OEPillRatesCache","default":"","key":"chats.ratesCache","definitionOwner":"PillFeatures","callsite":"PillRateProvider.loadRates","test":"PillProviderTests.testTwoPairsShareOneRequestAndCacheCommitsTimestampAtomically"},
+    {"originalId":"PillStackConfig.ratesCacheTime","androidKey":"OEPillRatesCacheTime","default":0,"key":"chats.ratesCacheTime","definitionOwner":"PillFeatures","callsite":"PillRateProvider.loadRates","test":"PillProviderTests.testNetworkFailureKeepsStaleValueAndOriginalObservationTime"},
+    {"originalId":"PillStackConfig.weatherUseCurrentLocation","androidKey":"OEPillWeatherCurrentLocation","default":true,"key":"chats.weatherUseCurrentLocation","definitionOwner":"PillFeatures","callsite":"ExteralessPillSubscription.refreshWeather","test":"PillPolicyTests.testManualLocationValidationAndAtomicModeChange"},
+    {"originalId":"PillStackConfig.weatherLatitude","androidKey":"OEPillWeatherLat","default":"","key":"chats.weatherLatitude","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.setWeather","test":"PillPolicyTests.testManualLocationValidationAndAtomicModeChange"},
+    {"originalId":"PillStackConfig.weatherLongitude","androidKey":"OEPillWeatherLon","default":"","key":"chats.weatherLongitude","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.setWeather","test":"PillPolicyTests.testManualLocationValidationAndAtomicModeChange"},
+    {"originalId":"PillStackConfig.weatherAddress","androidKey":"OEPillWeatherAddress","default":"","key":"chats.weatherAddress","definitionOwner":"PillFeatures","callsite":"PillSettingsStore.setWeather","test":"PillPolicyTests.testManualLocationValidationAndAtomicModeChange"}
+  ],
+  "providerURLs": [
+    {"url":"https://api.coinbase.com/v2/exchange-rates?currency=USD","source":"ExchangeRates.java:38","keyRequired":false},
+    {"url":"https://api.gold-api.com/price/XAU","source":"GoldPrice.java:28","keyRequired":false},
+    {"url":"https://api.open-meteo.com/v1/forecast?latitude=<lat>&longitude=<lon>&current_weather=true","source":"Weather.java:379 (commented original)","keyRequired":false,"selection":"explicit optional source"}
+  ],
+  "pluginSurface": {
+    "androidSources": ["PillRegistry.java", "PillStackEvents.java", "PillStackConfig.kt:163-227", "pills/BasePill.java", "com/exteragram/messenger/pillstack/core/PillRegistry.java", "com/exteragram/messenger/pillstack/core/PillStackConfig.java"],
+    "nativeCallsites": ["PluginPillBridgeExtension.dispatch", "PluginPillBridgeExtension.attach", "PluginPillBridgeExtension.publish", "PluginPillBridgeExtension.saveLayout", "PillPluginRegistry.register", "PillPluginRegistry.subscribe", "ExteralessPillSubscription.refresh", "ExteralessPillHeaderView.pressed"],
+    "nativeStatus": "five-method-plugin-bridge-persisted-identity-and-registry-header-consumer-implemented",
+    "sdkStatus": "pending-runtime-composite-binding-and-sdk-android-facades",
+    "wire": "docs/wave-2/pills-wire.md",
+    "tests": ["PillPluginRegistryTests.testOwnerUnloadStopsProviderAndRejectsOldGenerationSnapshots", "PillPluginRegistryTests.testCallerLeaseDeinitCancelsEvenWhileRegistryRetainsRegistration", "PillPluginRegistryTests.testDTOValidationAndActionsStayOffRenderThread", "PillPolicyTests.testPortableSnapshotUsesUnixMillisecondsAndRejectsNonFiniteProgress"]
+  },
+  "pluginBridgeFollowUp": {
+    "wire": "docs/wave-2/pills-wire.md",
+    "pingEvidenceAndNetworkHunks": "docs/wave-2/pills-ping.md",
+    "runtimeMethods": ["pillRegister", "pillUpdate", "pillUnregister", "pillGetLayout", "pillSaveLayout"],
+    "mapping": "protected shared exteraless/pills/plugin-identities.json; monotonic collision-checked IDs; retained across unload/restart",
+    "callbackLease": "unique wrapper set per registration, owner-token/selection/scope/foreground gates, dispatcher FIFO, result pins and bounded release outbox",
+    "nativeTestFiles": ["telegram-ios/Tests/Exteraless/PluginPillContractsTests.swift", "telegram-ios/Tests/Exteraless/PillPassivePingContractsTests.swift"],
+    "nativeTestMethods": 8,
+    "nativeTestsExecuted": false,
+    "frozenCoreFilesEdited": false,
+    "coreBaselineClaimedAsEvidence": false,
+    "runtimeCompositeAppliedByImplementer": false,
+    "networkOwnerPongForwardingAppliedByImplementer": false,
+    "sourceAudit": "passed bounded lexical/manifest/whitespace checks for ten Swift files, five Runtime methods, eight native fixture methods, ownership/lifecycle/CAS/FIFO routes and existing Rust RTT emitter; not native typechecking",
+    "rustForwardingObserved": "not present at follow-up source check; exact Network-owner hunks in pills-ping.md"
+  },
+  "reviewRemediation": {
+    "handoff": "docs/wave-2/pills-remediation.md",
+    "FPP-09": {
+      "status": "source-fixed-native-tests-written-not-run",
+      "actionId": "pills.status",
+      "source": ["ExteralessPillIntegration.init", "ExteralessPillSettingsActionGate.open"],
+      "testFile": "telegram-ios/Tests/Exteraless/PillSettingsEntryContractsTests.swift",
+      "tests": ["testCurrentAccountFactoryRunsForEmptyInvalidAndDormantLayouts", "testSavedActionCannotRecreateRetiredAccountAfterSwitchOrClear"]
+    },
+    "FPP-10": {
+      "status": "source-fixed-core-regressions-written-not-run",
+      "source": "swift/ExteralessCore/Sources/ExteralessCore/PillPluginRegistry.swift",
+      "bound": "one latest model and one trailing timer; 250000000ns minimum delivery interval; no phase bypass",
+      "testFile": "swift/ExteralessCore/Tests/ExteralessCoreTests/PillPluginRegistryTests.swift",
+      "tests": ["testSynchronousLoadingReadyUsesOneTrailingDeliveryAt250Milliseconds", "testSynchronousLoadingFailureEndsLoadingWithoutAnotherProviderEvent", "testLiveSchedulerDeliversCachedReadyAfterSynchronousStart", "testTerminalBurstsCoalesceLatestWithoutBypassingFourHertz", "testCancellationBeforeTrailingRemovesPendingModelAndTimer", "testOwnerUnloadBeforeTrailingNeverPublishesTerminalModel", "testSameIdReplacementCannotDeliverPreviousOwnersTrailingModel", "testAccountRetirementSuppressesPendingTrailingDelivery"]
+    },
+    "sourceAudit": "passed bounded lexical/whitespace/source checks of five Swift files, independent pre-factory settings gate, uniform 250ms latest-value/timer/cancel wiring, eight Core and two native regression references, 31 Pill Core fixture count and parity JSON; git diff --check passed; not Swift execution",
+    "baseline": "Initial 23 Pill Core tests reported green in 280-test CI at b142; not evidence for new regressions"
+  },
+  "verification": {
+    "ownSwiftTestMethods": 31,
+    "testExecution": "Initial 23 Pill Core tests reported green by coordinator in 280-test b142 baseline; eight new FPP-10 regressions not run locally because swift is unavailable",
+    "requiredOuterTestTimeoutSeconds": 30,
+    "nativeBuild": "pending-coordinator",
+    "visualFrames": [],
+    "physicalDeviceVerified": false,
+    "localChecks": [
+      {"name":"git apply --check docs/wave-2/pills-native-hunks.patch","result":"pass","timeoutSeconds":30,"applied":false},
+      {"name":"owned Swift lexical/manifest source audit","result":"pass","timeoutSeconds":30,"swiftFiles":27,"originalPillIds":15,"configRecords":20,"testMethods":23,"checks":["balanced lexical delimiters","no trailing whitespace","all declared callsite/test references exist","no Postbox import in Pill UI","tests inject transports rather than production URLSession"]},
+      {"name":"layout definition ownership","result":"coordinator prerequisite confirmed","detail":"Four layout definitions were removed by the concurrent ChatFeatures subwave; restoration exists only in coordinator hunks, not duplicated in PillFeatures."}
+    ],
+    "actualExternalRequests": false,
+    "actualLocationPermissionRequests": false,
+    "accountActionsExercised": false,
+    "externalPluginsExecuted": false,
+    "commitPushOrCI": false
+  }
+}

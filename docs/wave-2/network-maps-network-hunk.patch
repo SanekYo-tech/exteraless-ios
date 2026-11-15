@@ -1,0 +1,18 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
+@@
+-            let baseTcpConnectionInterfaceFactory = context.makeTcpConnectionInterface
++            #if os(iOS)
++            if !Bundle.main.bundlePath.hasSuffix(".appex"), #available(iOS 15.0, *) {
++                ExteralessNetworkResolverRuntime.shared.register(context: context)
++                context.makeTcpConnectionInterface = { delegate, delegateQueue in
++                    ExteralessNetworkResolverRuntime.shared.makeConnection(delegate: delegate, queue: delegateQueue)
++                }
++            }
++            #endif
++            let baseTcpConnectionInterfaceFactory = context.makeTcpConnectionInterface
+             let isAppExtension = Bundle.main.bundlePath.hasSuffix(".appex")
+@@
+-                context.setDiscoverBackupAddressListSignal(MTBackupAddressSignals.fetchBackupIps(testingEnvironment, currentContext: context, additionalSource: wrappedAdditionalSource, phoneNumber: phoneNumber, mainDatacenterId: datacenterId))
++                context.setDiscoverBackupAddressListSignal(ExteralessNetworkBackupDNS.backupSignal(context: context, testing: testingEnvironment, additionalSource: wrappedAdditionalSource, phoneNumber: phoneNumber, datacenterId: datacenterId))
+*** End Patch

@@ -1,0 +1,165 @@
+{
+  "schema_version": 2,
+  "owner": "native-plugin-ui-runtime-composition",
+  "family": "R-runtime",
+  "source_inventory": "docs/parity/client-features.json",
+  "source_inventory_sha256": "17cf1a8efad7469c8696045904105694347e26a2dbe70040d0f64658464ed99c",
+  "android_anchor_root": "third_party/exteraless-android/TMessagesProj/src/main/",
+  "handoff": "docs/wave-2/plugin-ui.md",
+  "proof_level": "Functional source and bounded source checks; native Swift/UIKit/Network execution and independent review pending. No ported=true claim.",
+  "verification": {
+    "source_checks": "PASS: 72 dependency targets; provider/FIFO/mode/Tools bindings and all 16 original-ID metadata/callsites",
+    "postbox_import_check": "PASS: full check from telegram-ios working directory, no allowlist changes",
+    "swift_fixture": "36 authored scenarios; execution pending swiftc",
+    "uikit_frames": "pending native runner; expected frames in handoff",
+    "developer_socket": "not opened by local checks"
+  },
+  "features": [
+    {
+      "id": "pluginscontroller.compactView",
+      "kind": "setting",
+      "android": {"symbol":"PluginsController.compactView","file":"java/app/exteraless/plugins/PluginsController.java","line":274,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":154,"symbol":"PluginsController.isCompactView"},{"file":"java/app/exteraless/plugins/ui/components/PluginCell.java","line":178,"symbol":"PluginsController.isCompactView"},{"file":"java/app/exteraless/plugins/ui/components/PluginCell.java","line":430,"symbol":"PluginsController.isCompactView"}],"ui":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":107,"symbol":"PluginsController.isCompactView"}]}},
+      "ios": {
+        "setting_key": "manager-presentation.json.compactView",
+        "scope": "installation-wide manager presentation",
+        "adaptation": "Atomic preference changes the actual manager list from metadata/error detail to a compact status row. Details remain available on the plugin screen.",
+        "implementation_callsites": [
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderList"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift","symbol":"apply"}
+        ]
+      },
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"managerPreferences"}]}
+    },
+    {
+      "id": "pluginscontroller.compatibilityMode",
+      "kind": "setting",
+      "android": {"symbol":"PluginsController.compatibilityMode","file":"java/app/exteraless/plugins/PluginsController.java","line":289,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":156,"symbol":"PluginsController.isCompatibilityMode"}],"ui":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":112,"symbol":"PluginsController.isCompatibilityMode"}]}},
+      "source_disposition": "The inventory's effect reference is the UI toggle. The getter/setter persists the flag; XposedHooks.java:155 calls disableProfileSaver unconditionally, without consuming it. The intended mechanism is Android ART Profile Saver.",
+      "ios": {"setting_key":null,"scope":"excluded Android ART mechanism","adaptation":"The manager explains the absent ART/Xposed mechanism. There is no inert compatibility/JIT toggle or fabricated successful getter.","platform_constraints":["android-art","jvm"],"implementation_callsites":[]},
+      "implementation": {"status":"unsupported","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/xposed/XposedHooks.java","line":155},{"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderRuntime"}]}
+    },
+    {
+      "id": "pluginscontroller.developerMode",
+      "kind": "setting",
+      "android": {"symbol":"PluginsController.developerMode","file":"java/app/exteraless/plugins/PluginsController.java","line":264,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PythonPluginsEngine.java","line":133,"symbol":"PluginsController.isDeveloperMode"},{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":587,"symbol":"PluginsController.isDeveloperMode"},{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":152,"symbol":"PluginsController.isDeveloperMode"}],"ui":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":102,"symbol":"PluginsController.isDeveloperMode"}]}},
+      "ios": {
+        "setting_key": "manager-presentation.json.developerMode",
+        "scope": "installation preference; revocable account/mode-scoped listener session",
+        "adaptation": "Real reload and full diagnostics rows plus Network.framework TCP on 127.0.0.1:42690. Original @/#/token line-JSON envelope, ping, get_plugins, enable/disable/reload/write/remove. Source upload validates AST metadata id before actual Host install; unknown ids and operation errors fail. Token is published only at NWListener.ready and revoked synchronously on account/mode/maintenance/termination changes.",
+        "platform_constraints": ["debugpy attach/PID injection into isolated native interpreters is explicitly unavailable; start_debugger and stop_debugger return a named error", "Elyx/Dex upload/commands are not implemented", "four connections; 512 KiB line and 256 KiB source limits; socket execution still pending"],
+        "implementation_callsites": [
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"handleDeveloperRequest"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"updateDeveloperServer"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperServer.swift","symbol":"startOnQueue"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderRuntime"}
+        ]
+      },
+      "implementation": {"status":"partial","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"developerProtocol"},{"kind":"original-protocol","path":"python/sdk/dev_server.py","symbol":"dispatch"}]}
+    },
+    {
+      "id": "pluginscontroller.engineEnabled",
+      "kind": "setting",
+      "android": {"symbol":"PluginsController.engineEnabled","file":"java/app/exteraless/plugins/PluginsController.java","line":199,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginInstallHelper.java","line":222,"symbol":"PluginsController.isEngineEnabled"},{"file":"java/app/exteraless/plugins/PluginsController.java","line":1285,"symbol":"PluginsController.isEngineEnabled"},{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":740,"symbol":"PluginsController.isEngineEnabled"},{"file":"java/app/exteraless/plugins/files/FilesControllerJava.java","line":145,"symbol":"PluginsController.isEngineEnabled"}]}},
+      "ios": {
+        "setting_key": "manager-presentation.json.engineEnabled",
+        "scope": "installation-wide native runtime admission",
+        "adaptation": "Fresh default false. Existing native manager files or preexisting enabled plugins migrate once to prior automatic-on behavior. Off hides installed rows and prevents fresh Python startup. Live off obtains real Host quiescence and finish(false); on finishes a new lease with resume(true), preserving enabled choices and allocating fresh owner epochs. CPython is never terminally stopped/reinitialized for this switch. Persistence/quiescence/resume failures are errors, not success. Runtime-owned Tools binding preserves this policy across backup/restore.",
+        "integration_pending": ["coordinator installs toolsBackupBindings(context:) into root Tools/Cloud configuration"],
+        "implementation_callsites": [
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"setRuntimeMode"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"requirePluginExecution"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"beginManagerAwareSettingsMaintenance"},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderList"}
+        ]
+      },
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"managerPreferences"},{"kind":"host-contract","path":"docs/wave-2/host-maintenance.md"}]}
+    },
+    {
+      "id": "pluginscontroller.pluginPinned",
+      "kind": "setting-template",
+      "android": {"symbol":"PluginsController.pluginPinned","file":"java/app/exteraless/plugins/PluginsController.java","line":304,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"compatibility":[{"file":"java/com/exteragram/messenger/plugins/PluginsController.java","line":85,"symbol":"PluginsController.isPluginPinned"}],"effect":[{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":172,"symbol":"PluginsController.isPluginPinned"},{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":371,"symbol":"PluginsController.isPluginPinned"},{"file":"java/app/exteraless/plugins/ui/components/PluginCell.java","line":177,"symbol":"PluginsController.isPluginPinned"},{"file":"java/app/exteraless/plugins/ui/components/PluginCell.java","line":429,"symbol":"PluginsController.isPluginPinned"}]}},
+      "ios": {"setting_key":"manager-presentation.json.pinned","scope":"per plugin id, installation-wide","adaptation":"Detail toggle and list long-press. Pinned first, then case-insensitive title and stable id tie-break. Atomic bounded id set; removal clears per-plugin state.","implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"readSnapshot"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderPlugin"},{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift","symbol":"precedes"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"managerPreferences"}]}
+    },
+    {
+      "id": "pluginscontroller.pluginSettingJson",
+      "kind": "state",
+      "android": {"symbol":"PluginsController.pluginSettingJson","file":"java/app/exteraless/plugins/PluginsController.java","line":1145,"type":"text","default":{"kind":"literal","value":null},"behavior":"unresolved","references":{}},
+      "source_disposition": "Source inspection of PluginsController.java:1141-1214 establishes JSON settings get/set/import/export storage, not a global setting or blanket receipt for client feature effects.",
+      "ios": {"setting_key":"PluginServiceStorage settings/<validated-id-plus-hex>.json","scope":"per plugin id; case-isolated filenames","adaptation":"Native owner-validated JSON get/set/remove and atomic merge/replace/reset; existing SDK settings facade and real Settings controllers consume it. Schema cache records only already-returned JSON metadata with captured account/owner epoch; Tools never executes Python to discover exportability.","implementation_callsites":[{"path":"swift/PluginHost/Sources/PluginHost/PluginServiceStorage.swift","symbol":"writeSettingsJSON"},{"path":"swift/PluginHost/Sources/PluginHost/BridgeServices.swift","symbol":"callRuntime"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginSettingsController.swift","symbol":"mutatePluginSettings"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"settingsSchemaCache.record"},{"path":"python/exteraless_runtime/_settings.py","symbol":"install"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"source","path":"docs/wave-2/sdk.md"},{"kind":"source-check","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_source_checks.py"}]}
+    },
+    {
+      "id": "pluginscontroller.safeMode",
+      "kind": "setting",
+      "android": {"symbol":"PluginsController.safeMode","file":"java/app/exteraless/plugins/PluginsController.java","line":224,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":740,"symbol":"PluginsController.isSafeMode"},{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":92,"symbol":"PluginsController.isSafeMode"},{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":162,"symbol":"PluginsController.isSafeMode"},{"file":"java/app/exteraless/shortcuts/QuickToggleActivity.java","line":54,"symbol":"PluginsController.isSafeMode"}]}},
+      "ios": {"setting_key":"manager-presentation.json.safeMode","scope":"installation-wide native runtime policy","adaptation":"Passed to real Host.start(safeMode:). Live entry drains/destroys plugin owners through maintenance, then holds admission with finish(false). Native runtime remains initialized. Explicit exit resumes and loads enabled plugins intentionally omitted by an initial safe startup. Read-only diagnostics/pin/mute remain accessible; plugin mutations and developer service are suspended. Tools uses the same mode-aware finish policy.","implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"host.start(safeMode: safeMode)"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"setRuntimeMode"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"finishManagerMaintenance"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderRuntime"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"managerPreferences"},{"kind":"host-contract","path":"docs/wave-2/host-maintenance.md"}]}
+    },
+    {
+      "id": "pluginswatchdog.pluginsSafeModeAuto",
+      "kind": "state",
+      "android": {"symbol":"PluginsWatchdog.pluginsSafeModeAuto","file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":812,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":825,"symbol":"PluginsWatchdog.consumeAutoSafeMode"},{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":746,"symbol":"PluginsWatchdog.consumeAutoSafeMode"}]}},
+      "ios": {"setting_key":"runtime-recovery.json.autoSafeMode","scope":"installation recovery notice","adaptation":"Three consecutive unclean, unattributed early native starts request real safe-mode policy. An interrupted policy write keeps the request pending. Notice is published only after safe-mode persistence, displayed in the actual manager, and atomically acknowledged without clearing the safe-mode choice.","implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift","symbol":"confirmAutomaticSafeMode"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"manager.apply(.safeMode(true))"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"runtimeSection"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"runtimeRecovery"}]}
+    },
+    {
+      "id": "pluginswatchdog.warningMuted",
+      "kind": "state",
+      "android": {"symbol":"PluginsWatchdog.warningMuted","file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":633,"type":"bool","default":{"kind":"literal","value":false},"behavior":"ui-only","references":{"ui":[{"file":"java/app/exteraless/plugins/ui/PluginSettingsActivity.java","line":818,"symbol":"PluginsWatchdog.isWarningMuted"}]}},
+      "source_disposition": "PluginsWatchdog.java:631-712 uses this per-plugin state to suppress actual watchdog UI; inventory ui-only is not interpreted as inertness.",
+      "ios": {"setting_key":"manager-presentation.json.warningMuted","scope":"per plugin id, installation-wide","adaptation":"Persistent mute gates the actual UIAlertController raised from Host.didMarkNotResponding and app_resume. Detail toggle and alert action both write it; unmuting a currently unresponsive plugin restores the warning. Execution limits/isolation remain active.","implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"presentWatchdogWarning"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"updateManagerPreference"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"renderPlugin"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"managerPreferences"}]}
+    },
+    {
+      "id": "pluginswatchdog.watchdog_crashed_plugin",
+      "kind": "state",
+      "android": {"symbol":"PluginsWatchdog.watchdog_crashed_plugin","file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":837,"type":"text","default":{"kind":"literal","value":null},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":828,"symbol":"PluginsWatchdog.consumeCrashedPlugin"},{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":753,"symbol":"PluginsWatchdog.consumeCrashedPlugin"}]}},
+      "ios": {"setting_key":"runtime-recovery.json.crashedPlugin","scope":"installation startup notice for a Host-confirmed plugin disable","adaptation":"Records only an enabled-before-start plugin which Host actually disables with its crash-recovery loadError. Manager presents and durably acknowledges it; no inferred culprit or success from a missing API.","integration_pending":["Host recoverAfterCrash must consume its read marker; current clearMarkerNow guard leaves a freshly read marker behind. Exact owner hunk is in plugin-ui.md."],"implementation_callsites":[{"path":"swift/PluginHost/Sources/PluginHost/PluginHost.swift","symbol":"watchdog.recoverAfterCrash"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"recordDisabledPlugin"},{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift","symbol":"acknowledgeNotice"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift","symbol":"runtimeSection"}]},
+      "implementation": {"status":"partial","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"runtimeRecovery"},{"kind":"remaining-host-hunk","path":"docs/wave-2/plugin-ui.md"}]}
+    },
+    {
+      "id": "pluginswatchdog.watchdog_early_crashes",
+      "kind": "state",
+      "android": {"symbol":"PluginsWatchdog.watchdog_early_crashes","file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":744,"type":"int","default":{"kind":"literal","value":0},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":725,"symbol":"PluginsWatchdog.recordUncaught"}]}},
+      "ios": {"setting_key":"runtime-recovery.json.armed / earlyUncleanStarts","scope":"installation native startup journal","adaptation":"Atomic journal arms immediately before native Host startup. Next process counts an uncleared early start; a valid known-plugin .watchdog marker keeps that death out of the global counter. Three consecutive unclean starts activate safe mode. Fifteen healthy seconds, app_pause, account clear or termination disarm/reset. A caught startup error is cleared, not counted as a crash.","platform_constraints":["This is conservative iOS unclean-start detection, not Java uncaught-exception/stack attribution; foreground force-kill can count", "Window is 15 seconds from native runtime startup, not Android Process.getStartElapsedRealtime"],"implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift","symbol":"beginStart"},{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift","symbol":"markHealthy"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"clearEarlyStartupMarker"},{"path":"telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift","symbol":"15_000_000_000"}]},
+      "implementation": {"status":"implemented","ported":false,"evidence":[{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"healthyRecovery"},{"kind":"fixture-pending","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIFixture.swift","symbol":"runtimeRecovery"}]}
+    },
+    {
+      "id": "pluginswatchdog.watchdog_loading_plugin",
+      "kind": "state",
+      "android": {"symbol":"PluginsWatchdog.watchdog_loading_plugin","file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":540,"type":"text","default":{"kind":"literal","value":null},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginsController.java","line":143,"symbol":"PluginsWatchdog.recoverAfterCrash"}]}},
+      "source_disposition": "PluginsConstants.java:41-43 marks the exact SharedPreferences key legacy; PluginsWatchdog.java:537-581 migrates it to .watchdog. It is not a user switch.",
+      "ios": {"setting_key":"native Host storage root/.watchdog and watchdog.json","scope":"process-death attribution to a real plugin load","adaptation":"Native Host writes plugin.id before actual owner load; PluginWatchdog maintains two-strike disabling. No Android legacy preference is fabricated. UI recovery reads only a bounded known-plugin marker to distinguish global early-start recovery.","integration_pending":["Host marker consumption and cancelled delayed-clear fix; background watchdog forwarding remains Host-owned (see handoff)"],"implementation_callsites":[{"path":"swift/PluginHost/Sources/PluginHost/PluginHost.swift","symbol":"watchdog.noteRiskyOperation"},{"path":"swift/PluginHost/Sources/PluginHost/PluginWatchdog.swift","symbol":"recoverAfterCrash"},{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift","symbol":"attributedPlugin"}]},
+      "implementation": {"status":"partial","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/PluginsConstants.java","line":43},{"kind":"remaining-host-hunk","path":"docs/wave-2/plugin-ui.md"}]}
+    },
+    {
+      "id": "xposedhooks.nativeHooksBroken",
+      "kind": "state",
+      "android": {"symbol":"XposedHooks.nativeHooksBroken","file":"java/app/exteraless/plugins/xposed/XposedHooks.java","line":73,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/ui/PluginsInfoActivity.java","line":94,"symbol":"XposedHooks.isNativeHooksBroken"}]}},
+      "ios": {"setting_key":null,"scope":"excluded Android Xposed native-library failure marker","adaptation":"The native iOS runtime uses CPython owners and compiled extension points. No false-valued hook-availability getter or retry switch is fabricated for the absent library.","platform_constraints":["android-xposed","jvm"],"implementation_callsites":[]},
+      "implementation": {"status":"unsupported","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/xposed/XposedHooks.java","line":73}]}
+    },
+    {
+      "id": "xposedhooks.native_hooks_init_pending",
+      "kind": "state",
+      "android": {"symbol":"XposedHooks.native_hooks_init_pending","file":"java/app/exteraless/plugins/xposed/XposedHooks.java","line":127,"type":"bool","default":{"kind":"literal","value":false},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginServices.java","line":43,"symbol":"XposedHooks.hookMethod"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":52,"symbol":"XposedHooks.hookAllMethods"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":61,"symbol":"XposedHooks.hookAllConstructors"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":84,"symbol":"XposedHooks.allocateInstance"}]}},
+      "ios": {"setting_key":null,"scope":"excluded Xposed/ART pre-initialization crash marker","adaptation":"No such loader exists in the iOS process. This flag is not renamed to a successful CPython lifecycle state.","platform_constraints":["android-xposed","jvm"],"implementation_callsites":[]},
+      "implementation": {"status":"unsupported","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/xposed/XposedHooks.java","line":127}]}
+    },
+    {
+      "id": "xposedhooks.native_hooks_init_strikes",
+      "kind": "state",
+      "android": {"symbol":"XposedHooks.native_hooks_init_strikes","file":"java/app/exteraless/plugins/xposed/XposedHooks.java","line":128,"type":"int","default":{"kind":"literal","value":0},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginServices.java","line":43,"symbol":"XposedHooks.hookMethod"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":52,"symbol":"XposedHooks.hookAllMethods"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":61,"symbol":"XposedHooks.hookAllConstructors"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":84,"symbol":"XposedHooks.allocateInstance"}]}},
+      "ios": {"setting_key":null,"scope":"excluded Xposed library-initialization failure count","adaptation":"These are failed Android hook-loader strikes, not plugin crashes. Native plugin/watchdog failures keep their own actual state; no zero-valued substitute is stored.","platform_constraints":["android-xposed","jvm"],"implementation_callsites":[]},
+      "implementation": {"status":"unsupported","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/xposed/XposedHooks.java","line":128}]}
+    },
+    {
+      "id": "xposedhooks.native_hooks_unsupported_stamp",
+      "kind": "state",
+      "android": {"symbol":"XposedHooks.native_hooks_unsupported_stamp","file":"java/app/exteraless/plugins/xposed/XposedHooks.java","line":116,"type":"long","default":{"kind":"literal","value":0},"behavior":"effect-callsite","references":{"effect":[{"file":"java/app/exteraless/plugins/PluginServices.java","line":43,"symbol":"XposedHooks.hookMethod"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":52,"symbol":"XposedHooks.hookAllMethods"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":61,"symbol":"XposedHooks.hookAllConstructors"},{"file":"java/app/exteraless/plugins/PluginServices.java","line":84,"symbol":"XposedHooks.allocateInstance"}]}},
+      "ios": {"setting_key":null,"scope":"excluded Android install-stamp retry key","adaptation":"The key controls retry of an absent Xposed/ART loader after installation changes. It has no native loader to govern and is not stored as a zero-valued iOS preference.","platform_constraints":["android-xposed","jvm"],"implementation_callsites":[]},
+      "implementation": {"status":"unsupported","ported":false,"evidence":[{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/plugins/xposed/XposedHooks.java","line":116}]}
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "state": "source-applied-with-reserved-integration-remaining",
+  "writer": "functions.patch only",
+  "runtime_or_visual_verified": false,
+  "frozen_core_changed": true,
+  "frozen_core_changed_by_identity_application": false,
+  "external_core_changes": {
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityDatePolicy.swift": {
+      "original_sha256": "7d3050c2e1ee61868912b0aad98e682ee57dd93930460ccdbd9ec6345ac6d8a9",
+      "current_sha256": "30754a8ab29fed413f193fbeefb9757fbeb6e3d31df0885e9359d7334dbb0878",
+      "origin": "concurrent working-tree fix, not written by this identity application session",
+      "change": "Persian calendar single-era conversion: remove Gregorian era == 1 guard and explicit era = 1 construction.",
+      "ci_input_changed": true
+    }
+  },
+  "core_ci_context": {"commit": "2a03061", "source": "user-reported coordinator push", "native_view_build_verified": false},
+  "handed_back_after_application": [
+    {"path":"telegram-ios/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift","owner":"Appearance remediation/AP10","policy":"read-only for Identity until owner completion; compose existing identity formatter with seconds/relative-last-seen"},
+    {"path":"telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoAvatarTransformContainerNode.swift","owner":"Appearance remediation","policy":"retain applied identity video gate; no further Identity writes"},
+    {"scope":"ChatListItem video/mask geometry; AvatarNode; AvatarStoryIndicator","owner":"Appearance remediation with Dialogs","policy":"remaining patch only; no direct Identity writes"}
+  ],
+  "frozen_core_sha256": {
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityArchive.swift": "b55e8b94a633e7c5795dcc23991a9dd10de1377a05b8751c69cdb70bd8d12c1f",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityDatePolicy.swift": "7d3050c2e1ee61868912b0aad98e682ee57dd93930460ccdbd9ec6345ac6d8a9",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityEditPermit.swift": "e364fd53d72db53b629fb4a40edd7e7584a8d0f147af39908e974a3316765d1d",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityFeatures.swift": "1aca621fb2c99d743970e651f4109beb7b379229ad1256aa8bb990ab36fdd4bf",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityMutation.swift": "9c610134b3bcce435397173c96a5a2a5bc1bf7558011578351d8cf3f61179f7c",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityPolicy.swift": "06d6a564815c158f5d4bcd3eea65d245bbbf67a1c2f1fc88b2c6a561fd911e6e",
+    "swift/ExteralessCore/Sources/ExteralessCore/IdentityPresentationCache.swift": "2f364e2ee3441fb902fdb18e126abc2c4285749c73e36604daa296ba1dca57a2",
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/IdentityCacheTests.swift": "bd96efd7306b8f6f5d81d41ecdf98b919b35b7e959d763fe42238661f313ded8",
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/IdentityDateTests.swift": "73c79c89807bdfbadf73324e4986e8372c444e378abe52aeffd3068898593e90",
+    "swift/ExteralessCore/Tests/ExteralessCoreTests/IdentityPolicyTests.swift": "783e4583981b791b21d6297d7240900709d9c84c5d7774045cf79d270890011d"
+  },
+  "applied_shared_files": [
+    "telegram-ios/submodules/TelegramPresentationData/Sources/PresentationData.swift",
+    "telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessAppearanceUpdates.swift",
+    "telegram-ios/submodules/ContactListUI/Sources/ContactsController.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
+    "telegram-ios/submodules/LocalizedPeerData/Sources/PeerTitle.swift",
+    "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift",
+    "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageReplyInfoNode/Sources/ChatMessageReplyInfoNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageForwardInfoNode/Sources/ChatMessageForwardInfoNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift",
+    "telegram-ios/submodules/ContactsPeerItem/Sources/ContactsPeerItem.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/ListItems/PeerInfoScreenLabeledValueItem.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode/Sources/ChatMessageContactBubbleContentNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatAvatarNavigationNode/Sources/ChatAvatarNavigationNode.swift",
+    "telegram-ios/submodules/AvatarVideoNode/Sources/AvatarVideoNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoAvatarTransformContainerNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageItemView/Sources/ChatMessageItemView.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageReactionsFooterContentNode/Sources/ChatMessageReactionsFooterContentNode.swift",
+    "telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift",
+    "telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiPagerContentSignals.swift",
+    "telegram-ios/submodules/TelegramStringFormatting/Sources/ExteralessIdentityDateFormat.swift",
+    "telegram-ios/submodules/TextFormat/Sources/DateFormat.swift",
+    "telegram-ios/submodules/TelegramStringFormatting/Sources/DateFormat.swift",
+    "telegram-ios/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift",
+    "telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessIdentityActivity.swift",
+    "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageItemImpl/Sources/ChatMessageDateHeader.swift"
+  ],
+  "remaining_shared_files": [
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift",
+    "telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift",
+    "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift",
+    "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift",
+    "telegram-ios/submodules/AvatarNode/Sources/AvatarNode.swift",
+    "telegram-ios/submodules/AvatarNode/Sources/PeerAvatar.swift"
+  ],
+  "remaining_patch": "docs/wave-2/identity-shared-remaining.patch",
+  "native_adapter_changes": [
+    "ExteralessPeerIdentityPresentation exposes explicit localAlias/localNameOrder to preserve native contact font composition.",
+    "exteralessIdentityContactName reads the actual contact-message first/last names and applies only a real local alias/order override; default payload names are retained.",
+    "Native civil-date adapter avoids Gregorian Calendar construction while Persian formatting is disabled."
+  ],
+  "counts": {"applied_shared_files": 36, "applied_anchors": 127, "remaining_shared_files": 6, "remaining_anchors": 27},
+  "checks": {"status": "passed-offline-source-contracts", "tests": 12, "elapsed_seconds": 0.544, "allowed_pending_diff_bytes": 0, "remaining_patch_check": "git apply --check --whitespace=error passed; unique preimages checked", "native_and_consumer_files_scanned": 43, "unicode_or_conflict_issues": 0, "git_diff_check": "passed", "swift_build": "not-run", "xctest": "not-run; original tests retained", "frames": "not-recorded"}
+}

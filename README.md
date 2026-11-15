@@ -20,6 +20,8 @@ exteraless), поверх — Python-рантайм и портированна�
 | `python/exteraless_runtime/` | адаптер настоящего SDK loader для iOS |
 | `swift/PluginHost/` | lifecycle, bridge services, permissions и callbacks |
 | `swift/PluginHooks/` | лёгкие send/request/update точки расширения TelegramCore |
+| `swift/ExteralessCore/` | типизированные настройки и независимые от UIKit client policies |
+| `docs/parity/` | сверка Java/Kotlin функций и SDK с конкретными iOS consumers |
 
 ## Манифест совместимости (этап 0)
 
@@ -69,7 +71,8 @@ python3 tools/runtime/prepare_telegram_runtime.py --telegram-root telegram-ios
 ```
 
 Подготовка создаёт декларированные Bazel inputs: pinned framework/stdlib,
-SDK/manifest и восемь pure-Python wheels. Повторить после изменения исходников;
+SDK/manifest и 12 закреплённых pure-Python distributions. Она также проверяет
+tracked patch к закреплённому Rust submodule. Повторить после изменения исходников;
 staging проверяет fingerprints. Полный контракт —
 [telegram-ios/build-system/exteraless/README.md](telegram-ios/build-system/exteraless/README.md).
 
@@ -78,9 +81,16 @@ staging проверяет fingerprints. Полный контракт —
 [build 23](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046),
 commit `68bb1adf`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046/artifacts/14131805640).
 Проверены 67 ARM64 Mach-O, 55 runtime frameworks, 1071 Python-ресурс и шесть extensions.
-CPython runtime, C callbacks и настоящий Swift/SDK plugin probe:
-[runtime build 12](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229).
+Актуальный CPython/Swift/SDK gate:
+[runtime build 19](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43738810843),
+commit `136c946f` — **GREEN**, включая три bounded native SDK-процесса и iOS probes.
 Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
+
+Проверенный Linux Core-срез: [43732308228](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43732308228),
+`96bff39e`: **661 Core + 180 Host + 30 Hooks**. SDK Config: **276 реализовано,
+0 заблокировано, 32 явно неподдерживаемых API**. Полная сборка новой IPA и UIKit
+приёмка продолжаются; актуальные результаты и владение файлами —
+[docs/wave-2/progress.md](docs/wave-2/progress.md).
 
 ## Статус этапов
 

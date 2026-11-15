@@ -1,0 +1,33 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+             + NewCloudFeatures.definitions + ClientAPIFeatures.definitions
++            + ToolsPerformancePolicy.definitions
+             + ExteraConfigCompatibility.definitions
+*** Update File: tools/compat/sdk_config_manifest.py
+@@
+     "ToolsFeatures.swift": {}, "ToolsNativeModePolicy.swift": {}, "FeedFeatures.swift": {},
++    "ToolsPerformancePolicy.swift": {},
+@@
+     "ToolsNativeModePolicy.swift": ("videoBitrateDefinition", "voiceEnhancementDefinition", "groupAudioBitrateDefinition", "rpcErrorsDefinition"),
++    "ToolsPerformancePolicy.swift": ("definition",),
+@@
+ def native_definitions(pins):
+-    root_registration(pins)
++    registered_root = root_registration(pins)
+@@
+-        constants = dict(re.findall(r'public static let (\w+)\s*=\s*"([^"\\]+)"', text)) if filename == "AINativePolicyVisibility.swift" else {}
++        constants = dict(re.findall(r'public static let (\w+)\s*=\s*"([^"\\]+)"', text)) if filename in ("AINativePolicyVisibility.swift", "ToolsPerformancePolicy.swift") else {}
+         registration = []
+-        if filename in NATIVE_REGISTRATIONS:
++        if filename == "ToolsPerformancePolicy.swift":
++            reference = "ToolsPerformancePolicy.definitions"
++            if reference not in registered_root["groups"]:
++                raise ValueError("native definition is no longer registered: " + reference)
++            group = selected_declarations(text, ("definitions",))
++            if not re.fullmatch(r"static\s+let\s+definitions\s*(?::\s*\[ClientSettingDefinition\])?\s*=\s*\[\s*definition\s*\]", group.strip()):
++                raise ValueError("review changed ToolsPerformancePolicy.definitions membership")
++            registration.append({"kind": "source", "path": CLIENT_ROOT,
++                "line": registered_root["line"], "note": reference})
++        elif filename in NATIVE_REGISTRATIONS:
+*** End Patch

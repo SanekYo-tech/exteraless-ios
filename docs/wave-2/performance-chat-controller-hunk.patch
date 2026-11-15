@@ -1,0 +1,13 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+             if let strongSelf = self, strongSelf.automaticMediaDownloadSettings != downloadSettings {
++                let energyChanged = strongSelf.automaticMediaDownloadSettings.energyUsageSettings != downloadSettings.energyUsageSettings
+                 strongSelf.automaticMediaDownloadSettings = downloadSettings
+                 strongSelf.controllerInteraction?.automaticMediaDownloadSettings = downloadSettings
++                strongSelf.controllerInteraction?.enableFullTranslucency = downloadSettings.energyUsageSettings.fullTranslucency
+                 if strongSelf.isNodeLoaded {
+-                    strongSelf.chatDisplayNode.updateAutomaticMediaDownloadSettings(downloadSettings)
++                    strongSelf.chatDisplayNode.updateAutomaticMediaDownloadSettings(downloadSettings, energyChanged: energyChanged)
+                 }
+*** End Patch

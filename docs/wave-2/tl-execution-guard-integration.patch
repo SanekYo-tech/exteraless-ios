@@ -1,0 +1,42 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+                 let tl = PluginTLBridgeExtension(
+                     storage: services.serviceStorage,
+                     hasPermission: { callbacks.hasPermission($0, $1) },
+                     captureOwner: { callbacks.captureOwner($0) },
+-                    callback: { callbacks.callback($0, $1, $2, $3) },
++                    callback: { callbacks.callback($0, $1, $2, $3, shouldExecute: $4) },
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
+@@
+             if let transformed = exteralessTransformedRequestWithAdditionalInfo(network: self, data: data,
+                 info: info, tag: tag, automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError) {
+                 return transformed.start(next: { subscriber.putNext($0) },
+                     error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+             }
++            guard exteralessTLCanExecuteRequest(network: self, description: data.0) else {
++                let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_EXECUTION_REVOKED")
++                subscriber.putError(error)
++                return EmptyDisposable
++            }
+@@
+             if let transformed = exteralessTransformedRequest(network: self, data: data, tag: tag,
+                 automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError) {
+                 return transformed.start(next: { subscriber.putNext($0) },
+                     error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+             }
++            guard exteralessTLCanExecuteRequest(network: self, description: data.0) else {
++                let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_EXECUTION_REVOKED")
++                subscriber.putError(error)
++                return EmptyDisposable
++            }
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
+@@
+             // FINAL params, after the async prefix and immediately before admission.
++            guard exteralessTLCanExecuteRequest(network: network, description: self.data.0),
++                  exteralessTLCanExecuteRequest(network: network, description: description) else {
++                refused = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_EXECUTION_REVOKED")
++                return nil
++            }
+             if let error = exteralessPrivacyRequestError(network: network, description: description, body: body) {
+*** End Patch

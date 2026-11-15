@@ -1,0 +1,140 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/AccountContext/Sources/AccountContext.swift
+@@ public struct ChatSendMessageActionSheetControllerSendParameters {
+     public var textIsAboveMedia: Bool
++    public var notificationOverride: Bool?
+@@
+-        textIsAboveMedia: Bool
++        textIsAboveMedia: Bool,
++        notificationOverride: Bool? = nil
+@@
+         self.textIsAboveMedia = textIsAboveMedia
++        self.notificationOverride = notificationOverride
+*** Update File: telegram-ios/submodules/TelegramUI/Components/ChatControllerInteraction/Sources/ChatControllerInteraction.swift
+@@
+-    public let sendCurrentMessage: (Bool, ChatSendMessageEffect?) -> Void
++    public let sendCurrentMessage: (Bool?, ChatSendMessageEffect?) -> Void
+@@
+-        sendCurrentMessage: @escaping (Bool, ChatSendMessageEffect?) -> Void,
++        sendCurrentMessage: @escaping (Bool?, ChatSendMessageEffect?) -> Void,
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+-                    self.sendMediaRecording(silentPosting: silentPosting, messageEffect: messageEffect)
++                    self.sendMediaRecording(silentPosting: silentPosting ?? (self.presentationInterfaceState.interfaceState.silentPosting || ClientSettings.shared.bool("chats.silentMessageByDefault")), messageEffect: messageEffect)
+@@
+-        let silentPosting = self.presentationInterfaceState.interfaceState.silentPosting
++        let silentPosting: Bool? = self.presentationInterfaceState.interfaceState.silentPosting ? true : nil
+@@
+-    func transformEnqueueMessages(_ messages: [EnqueueMessage], silentPosting: Bool, scheduleTime: Int32? = nil, repeatPeriod: Int32? = nil, postpone: Bool = false) -> [EnqueueMessage] {
++    func transformEnqueueMessages(_ messages: [EnqueueMessage], silentPosting: Bool?, scheduleTime: Int32? = nil, repeatPeriod: Int32? = nil, postpone: Bool = false) -> [EnqueueMessage] {
+@@
+-            return message.withUpdatedAttributes { attributes in
++            return message.withNotificationOverride(silent: silentPosting).withUpdatedAttributes { attributes in
+@@
+-                if silentPosting || scheduleTime != nil {
+-                    for i in (0 ..< attributes.count).reversed() {
+-                        if attributes[i] is NotificationInfoMessageAttribute {
+-                            attributes.remove(at: i)
+-                        } else if let _ = scheduleTime, attributes[i] is OutgoingScheduleInfoMessageAttribute {
+-                            attributes.remove(at: i)
+-                        }
+-                    }
+-                    if silentPosting {
+-                        attributes.append(NotificationInfoMessageAttribute(flags: .muted))
+-                    }
+-                    if let scheduleTime {
+-                         attributes.append(OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: repeatPeriod))
+-                    }
++                if let scheduleTime {
++                    attributes.removeAll { $0 is OutgoingScheduleInfoMessageAttribute }
++                    attributes.append(OutgoingScheduleInfoMessageAttribute(scheduleTime: scheduleTime, repeatPeriod: repeatPeriod))
+                 }
+@@
+-                let messages = strongSelf.transformEnqueueMessages(mappedMessages, silentPosting: silentPosting, scheduleTime: scheduleTime, postpone: postpone)
++                let messages = strongSelf.transformEnqueueMessages(mappedMessages, silentPosting: parameters?.notificationOverride ?? (silentPosting ? true : nil), scheduleTime: scheduleTime, postpone: postpone)
+@@
+-    func enqueueChatContextResult(_ results: ChatContextResultCollection, _ result: ChatContextResult, hideVia: Bool = false, closeMediaInput: Bool = false, silentPosting: Bool = false, scheduleTime: Int32? = nil, resetTextInputState: Bool = true, postpone: Bool = false) {
++    func enqueueChatContextResult(_ results: ChatContextResultCollection, _ result: ChatContextResult, hideVia: Bool = false, closeMediaInput: Bool = false, silentPosting: Bool? = nil, scheduleTime: Int32? = nil, resetTextInputState: Bool = true, postpone: Bool = false) {
+@@
+-        let sendMessage: (Int32?, Bool) -> Void = { [weak self] scheduleTime, silentPosting in
++        let sendMessage: (Int32?, Bool?) -> Void = { [weak self] scheduleTime, silentPosting in
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/AccountContext.swift
+@@
+     public func requestCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
++        exteralessConfirmOutgoingCall(context: self, peerId: peerId, isVideo: isVideo, confirmed: { [weak self] in
++            self?.exteralessRequestConfirmedCall(peerId: peerId, isVideo: isVideo, completion: completion)
++        })
++    }
++
++    private func exteralessRequestConfirmedCall(peerId: EnginePeer.Id, isVideo: Bool, completion: @escaping () -> Void) {
+         guard let callResult = self.sharedContext.callManager?.requestCall(context: self, peerId: peerId, isVideo: isVideo, endCurrentIfAny: false) else {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoData.swift
+@@
+ import Foundation
++import ExteralessCore
+@@ func peerInfoHeaderButtons(peer: EnginePeer?, cachedData: EngineCachedPeerData?, isOpenedFromChat: Bool, isExpanded: Bool, videoCallsEnabled: Bool, isSecretChat: Bool, isContact: Bool, threadInfo: EngineMessageHistoryThread.Info?) -> [PeerInfoHeaderButtonKey] {
+-    return result
++    if isOpenedFromChat {
++        if ClientSettings.shared.bool("chats.hideCallButton") {
++            result.removeAll { $0 == .call || $0 == .videoCall }
++        }
++        if case let .channel(channel) = peer, case .broadcast = channel.info,
++           ClientSettings.shared.bool("chats.hideChannelSearchButton") {
++            result.removeAll { $0 == .search }
++        }
++    }
++    return result
+ }
+ 
+ func peerInfoCanEdit(peer: EnginePeer?, chatLocation: ChatLocation, threadData: MessageHistoryThreadData?, cachedData: EngineCachedPeerData?, isContact: Bool?) -> Bool {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@
+-        if let starStatus = data.starStatus {
++        if let starStatus = data.starStatus, ChatMenuPolicy.enabled("showAddToFavorites") {
+@@
+-        if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage) || diceEmoji != nil {
++        if !messageText.isEmpty || richMessageMarkdown != nil || (resourceAvailable && isImage && ChatMenuPolicy.enabled("showCopyPhoto")) || diceEmoji != nil {
+@@
+-        if let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, !channel.isMonoForum, !(message.media.first is TelegramMediaAction), !isReplyThreadHead, !isMigrated {
++        if ChatMenuPolicy.enabled("showCopyLink"), let message = messages.first, message.id.namespace == Namespaces.Message.Cloud, let channel = message.peers[message.id.peerId] as? TelegramChannel, !channel.isMonoForum, !(message.media.first is TelegramMediaAction), !isReplyThreadHead, !isMigrated {
+@@
+-        if data.messageActions.options.contains(.report) {
++        if data.messageActions.options.contains(.report) && ChatMenuPolicy.enabled("showReport") {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                if canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty {
++                if ChatMenuPolicy.enabled("showReactions"), canAddMessageReactions(message: EngineMessage(topMessage)), let allowedReactions = allowedReactions, !topReactions.isEmpty {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift
+@@
+     func handleOpenURL(_ url: URL) {
++        let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true)
++            ? (URL(string: ChatLinkPolicy.removingTracking(from: url.absoluteString)) ?? url) : url
+         guard self.openUrlInProgress != url else {
+@@
+     private func openUrl(url: URL) {
++        let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true)
++            ? (URL(string: ChatLinkPolicy.removingTracking(from: url.absoluteString)) ?? url) : url
+@@
+     private func openUrlWhenReady(accountId: AccountRecordId? = nil, url: URL, external: Bool = false) {
++        let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true)
++            ? (URL(string: ChatLinkPolicy.removingTracking(from: url.absoluteString)) ?? url) : url
+*** Update File: telegram-ios/submodules/TelegramUI/Components/ShareExtensionContext/Sources/ShareExtensionContext.swift
+@@
+ import UIKit
++import TextFormat
+@@
+                         let sentItems: ([EnginePeer.Id], [EnginePeer.Id: Int64], [EnginePeer.Id: StarsAmount], [PreparedShareItemContent], ShareControllerAccountContext, Bool, String) -> Signal<ShareControllerExternalStatus, NoError> = { peerIds, threadIds, requireStars, contents, account, silently, additionalText in
++                            let contents = contents.map { item -> PreparedShareItemContent in
++                                if case let .text(text) = item { return .text(exteralessCleanIncomingLinkText(text)) }
++                                return item
++                            }
++                            let additionalText = exteralessCleanIncomingLinkText(additionalText)
+*** Update File: telegram-ios/Telegram/Share/ShareRootController.swift
+@@
+                 try ChatFeatures.migrateSettings(in: ClientSettings.shared)
++                let exteralessDirectory = URL(fileURLWithPath: rootPath, isDirectory: true).appendingPathComponent("exteraless", isDirectory: true)
++                try? ChatTrackingRulesStore.shared.configure(overrideURL: exteralessDirectory.appendingPathComponent("adguard_url_tracking.txt"), bundledURL: Bundle.main.url(forResource: "adguard_url_tracking", withExtension: "txt"))
+*** End Patch

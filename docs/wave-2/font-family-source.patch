@@ -1,0 +1,87 @@
+diff --git a/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift b/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
+--- a/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
+@@ -236,6 +236,7 @@
+             androidSymbols: ["IconPacksConfig.editingPackId"]
+         )
+     ] + headerDefinitions + AppearanceAdditionalFeatures.definitions + AppearanceAdditionalFeatures.settingsSectionDefinitions
++        + CoreAppearanceFontFamilyPolicy.definitions
+ 
+     private static let headerDefinitions: [ClientSettingDefinition] = [
+         ClientSettingDefinition(key: "appearance.titleText", title: "Chat-list title", section: "Appearance · Header", defaultValue: .integer(0), options: [
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@ -14,12 +14,13 @@
+ }
+ 
+ private enum ExteralessClientWorkError: Error, Sendable {
+-    case settings, privateSettings, changedRoot, retiredContext
++    case settings, fontFamilies, privateSettings, changedRoot, retiredContext
+     case clientAPI(ClientAPIError)
+ 
+     var message: String {
+         switch self {
+         case .settings: return "Client settings could not be prepared. The saved file has been preserved. Repair storage or free space, then retry."
++        case .fontFamilies: return "The bundled interface fonts could not be loaded."
+         case .privateSettings: return "Private account settings could not be loaded. Unlock the device, then retry."
+         case .changedRoot: return "The application's settings container changed. Restart with the original provisioned container."
+         case .retiredContext: return "The account context changed before the operation completed."
+@@ -67,6 +68,9 @@
+             var failure = ExteralessClientWorkError.settings
+             do {
+                 if let preparedInput = self.preparedInput, preparedInput != input { throw ExteralessClientWorkError.changedRoot }
++                failure = .fontFamilies
++                try ExteralessFontFamily.prepare()
++                failure = .settings
+                 if let configuration = self.configuration {
+                     if reload {
+                         try ClientSettings.shared.reload()
+diff --git a/telegram-ios/Telegram/Share/ShareRootController.swift b/telegram-ios/Telegram/Share/ShareRootController.swift
+--- a/telegram-ios/Telegram/Share/ShareRootController.swift
++++ b/telegram-ios/Telegram/Share/ShareRootController.swift
+@@ -1,6 +1,7 @@
+ import UIKit
+ import PasscodeCore
+ import ExteralessCore
++import Display
+ import TelegramUI
+ import BuildConfig
+ import ShareExtensionContext
+@@ -46,9 +47,11 @@
+             
+             let rootPath = appGroupUrl.path + "/telegram-data"
+             do {
++                try ExteralessFontFamily.prepare()
+                 try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+                 try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
+-                    + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions)
++                    + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions
++                    + CoreAppearanceFontFamilyPolicy.definitions)
+                 try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+                 let exteralessDirectory = URL(fileURLWithPath: rootPath, isDirectory: true).appendingPathComponent("exteraless", isDirectory: true)
+                 try ChatTrackingRulesStore.shared.configure(overrideURL: exteralessDirectory.appendingPathComponent("adguard_url_tracking.txt"), bundledURL: Bundle.main.url(forResource: "adguard_url_tracking", withExtension: "txt"))
+diff --git a/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift b/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift
+--- a/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift
++++ b/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift
+@@ -1,6 +1,7 @@
+ import UIKit
+ import PasscodeCore
+ import ExteralessCore
++import Display
+ import TelegramCore
+ import UserNotifications
+ import UserNotificationsUI
+@@ -37,9 +38,11 @@
+             
+             let rootPath = appGroupUrl.path + "/telegram-data"
+             do {
++                try ExteralessFontFamily.prepare()
+                 try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+                 try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
+-                    + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions)
++                    + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions
++                    + CoreAppearanceFontFamilyPolicy.definitions)
+                 try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+                 try ExteralessAccountRetentionEnvironment.shared.configure(ExteralessRetentionProcessConfiguration(
+                     role: .shareExtension, snapshot: ClientSettings.shared.readSnapshot(), durabilityRootURL: appGroupUrl))

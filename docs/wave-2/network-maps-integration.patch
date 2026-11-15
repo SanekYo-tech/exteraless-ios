@@ -1,0 +1,31 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+     private var tools: ExteralessToolsIntegration?
++    private var network: ExteralessNetworkIntegration?
++    private var maps: ExteralessMapIntegration?
+@@
+-                    + AIFeatures.definitions + ToolsFeatures.definitions)
++                    + AIFeatures.definitions + ToolsFeatures.definitions
++                    + NewNetworkFeatures.definitions + MapFeatures.definitions)
+@@
+                 registered = true
+             }
++            // Shared settings/schema are ready; start before login/account networks.
++            if network == nil { network = ExteralessNetworkIntegration() }
++            if maps == nil { maps = ExteralessMapIntegration() }
+             try exteralessPrivacyExtrasConfigure(rootPath: rootPath, durabilityRootURL: storageContainer)
+@@
+         tools?.update(context: context)
++        network?.update(context: context)
++        maps?.update(context: context)
+@@
+         tools?.clearContext()
++        network?.clearContext()
++        maps?.clearContext()
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+@@
+             let validated = try definition.validatedValue(value)
++            try NewNetworkFeatures.validate(validated, for: key)
+             let settings = self.settings
+*** End Patch

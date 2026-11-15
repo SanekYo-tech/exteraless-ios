@@ -1,0 +1,14 @@
+*** Begin Patch
+*** Update File: docs/wave-2/tools-parity.json
+@@
+-    {
+-      "id": "etgbackup.ChatSwipeAction",
+-      "ios": {"setting_key": null, "existing_equivalent": "Native per-peer reveal read/pin/archive/mute/delete actions and separate folder-pager gesture.", "adaptation": "Original int -1 selects folders when filters exist, archive otherwise; 0/1/2/3/4/5 are pin/read/archive/mute/delete/folders. A native global primary-action/folder-gesture adapter is not installed. Exact eligible-reveal insertion boundary is handed to Chat/Root; the raw mainconfig field remains reported/ignored rather than bypassing admitted public writes.", "implementation_callsites": []},
+-      "implementation": {"status": "partial", "ported": false, "evidence": [
+-        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1774},
+-        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/SwipeGestureSettingsView.java", "line": 30},
+-        {"kind": "source", "path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "symbol": "revealOptions / eligible peer reveal options"},
+-        {"kind": "source", "path": "docs/wave-2/tools-owner-completion.md"}
+-      ]}
+-    },
+*** End Patch

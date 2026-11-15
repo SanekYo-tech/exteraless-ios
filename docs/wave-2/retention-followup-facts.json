@@ -1,0 +1,51 @@
+{
+  "date": "2026-11-15",
+  "state": "FROZEN",
+  "scope": ["PFR01-owner", "PFR04-owner", "PFR05"],
+  "review": "docs/wave-2/reviews/privacy-retention-followup.md",
+  "report": "docs/wave-2/retention-review-remediation.md",
+  "contract": "docs/wave-2/retention-process-scope-contract.md",
+  "source_manifest": "docs/wave-2/retention-followup-freeze.sha256",
+  "manifest_encoding": "UTF-8 without BOM, LF line endings",
+  "frozen_owned_source_files": 25,
+  "previous_review_and_frozen_receipts_modified": false,
+  "checks": {
+    "postbox_import_check": "exit-0",
+    "scoped_diff_check": "exit-0",
+    "native_source_files": 21,
+    "owner_constructor_sites": 7,
+    "owner_constructor_overloads": 4
+  },
+  "fixtures": {
+    "path": "telegram-ios/submodules/TelegramCore/Tests/RetentionReviewRemediationTests.swift",
+    "new_methods": 6,
+    "total_methods": 17,
+    "media_bytes": 4,
+    "wait_budget_seconds": 25,
+    "required_process_timeout_seconds": 30,
+    "settings_failure": "Injected post-commit error snapshot at native owner boundary",
+    "native_executed": false,
+    "live_accounts_or_network_used": false
+  },
+  "verification": {
+    "swift_typechecked": false,
+    "native_linked": false,
+    "frames_recorded": false,
+    "power_loss_tested": false,
+    "full_followup_closed": false
+  },
+  "remaining": [
+    {
+      "owner": "App/common bootstrap",
+      "path": "telegram-ios/submodules/TelegramCore/Sources/Account/AccountManager.swift",
+      "patch": "docs/wave-2/retention-followup-coding-hunk.patch",
+      "hunks": 1,
+      "effect": "Register retained local-file coding in the existing once-only startup block"
+    },
+    {
+      "owner": "App",
+      "effect": "Consume typed readiness/failure and revocable tokens at actual Account/standalone factories; own bounded retry/reset UI and startup disposal",
+      "contract": "docs/wave-2/retention-process-scope-contract.md"
+    }
+  ]
+}

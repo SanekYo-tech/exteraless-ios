@@ -1,0 +1,149 @@
+--- a/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
+@@ -6,6 +6,7 @@
+     public static let resourcesChangedNotification = Notification.Name("Exteraless.Appearance.ResourcesChanged")
+ 
+     public static let definitions: [ClientSettingDefinition] = [
++        AppearanceMonetPolicy.definition,
+         ClientSettingDefinition(
+             key: "appearance.hideStoriesFromHeader", title: "Hide chat-list stories", section: "Appearance · Chat List",
+             defaultValue: .bool(true), explanation: "Hides the header story strip and its expansion space. Stories remain available from profiles.", androidSymbols: ["NaConfig.hideStoriesFromHeader", "DialogsActivity.updateStoriesVisibility"]
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessAppearanceIntegration.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessAppearanceIntegration.swift
+@@ -60,6 +60,7 @@
+                 controller.push(ExteralessIconPacksController(context: context, mode: .editor))
+             })
+         ])
++        ExteralessSettingsUI.registerActions(exteralessMonetSettingsActions())
+         self.observation = ClientSettings.shared.observe { [weak self] keys in
+             var keys = keys
+             // ClientSettings delivers on the mutating thread. A native preference
+@@ -78,6 +79,7 @@
+         if self.context === context { return }
+         self.clearContext()
+         self.context = context
++        ExteralessMonetThemeActions.shared.attach(context: context)
+         self.rootApplication.attach(context)
+         ExteralessAppearanceEntry.setMainMenu(context: context) { context, controller in
+             exteralessPresentMainMenu(context: context, from: controller)
+@@ -124,6 +126,7 @@
+     }
+ 
+     public func clearContext() {
++        ExteralessMonetThemeActions.shared.detach()
+         self.rootApplication.clear()
+         ExteralessAppearanceEntry.setMainMenu(context: nil, handler: nil)
+         if let context, let root = context.sharedContext.mainWindow?.viewController as? TelegramRootController,
+--- a/telegram-ios/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
++++ b/telegram-ios/submodules/TelegramPresentationData/Sources/MakePresentationTheme.swift
+@@ -20,6 +20,9 @@
+ }
+ 
+ public func customizePresentationTheme(_ theme: PresentationTheme, editing: Bool, title: String? = nil, accentColor: UIColor?, outgoingAccentColor: UIColor?, backgroundColors: [UInt32], bubbleColors: [UInt32], animateBubbleColors: Bool?, wallpaper: TelegramWallpaper? = nil, baseColor: PresentationThemeBaseColor? = nil) -> PresentationTheme {
++    if let monet = exteralessCustomizeMonetPresentationTheme(theme, title: title, accentColor: accentColor, outgoingAccentColor: outgoingAccentColor, backgroundColors: backgroundColors, bubbleColors: bubbleColors, animateBubbleColors: animateBubbleColors, wallpaper: wallpaper, baseColor: baseColor) {
++        return monet
++    }
+     if accentColor == nil && bubbleColors.isEmpty && backgroundColors.isEmpty && wallpaper == nil {
+         return theme
+     }
+--- a/telegram-ios/submodules/TelegramPresentationData/Sources/PresentationThemeCoder.swift
++++ b/telegram-ios/submodules/TelegramPresentationData/Sources/PresentationThemeCoder.swift
+@@ -405,7 +405,7 @@
+     decoder.reference = themeReference
+     decoder.resolvedWallpaper = resolvedWallpaper
+     if let value = try? decoder.unbox(topLevel.data, as: PresentationTheme.self) {
+-        return value
++        return exteralessMonetAppearanceTheme(value)
+     }
+     return nil
+ }
+--- a/telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessAppearanceUpdates.swift
++++ b/telegram-ios/submodules/TelegramPresentationData/Sources/ExteralessAppearanceUpdates.swift
+@@ -37,12 +37,13 @@
+ /// completed value; they never rerun the file-backed theme/decode signal. Queued
+ /// deliveries and disposal use the same main-queue combineLatest subscription,
+ /// rather than detached tasks that can publish a cancelled account/theme later.
+-public func exteralessAppearancePresentationData(native: Signal<PresentationData, NoError>, updates: Signal<Void, NoError>, dateTimeFormat: @escaping () -> PresentationDateTimeFormat, hideDividers: @escaping () -> Bool = { ClientSettings.shared.integer("appearance.dividerStyle", default: 1) == 0 }) -> Signal<PresentationData, NoError> {
++public func exteralessAppearancePresentationData(native: Signal<PresentationData, NoError>, updates: Signal<Void, NoError>, dateTimeFormat: @escaping () -> PresentationDateTimeFormat, hideDividers: @escaping () -> Bool = { ClientSettings.shared.integer("appearance.dividerStyle", default: 1) == 0 }, monetStyle: @escaping () -> AppearanceMonetStyle? = { nil }) -> Signal<PresentationData, NoError> {
++    let monetReplay = ExteralessMonetThemeReplay()
+     return combineLatest(queue: .mainQueue(), native, updates)
+     |> map { data, _ -> PresentationData in
+         // A fresh theme identity/cache invalidates existing native equality gates.
+         // Palettes are immutable values here; no file/resource decoder is invoked.
+-        let source = data.theme
++        let source = monetReplay.theme(source: data.theme, style: monetStyle())
+         let hidden = hideDividers()
+         let list = hidden ? source.list.withUpdated(itemBlocksSeparatorColor: .clear, itemPlainSeparatorColor: .clear) : source.list
+         let menu = hidden ? source.contextMenu.withUpdated(itemSeparatorColor: .clear, sectionSeparatorColor: .clear) : source.contextMenu
+--- a/telegram-ios/submodules/TelegramPresentationData/BUILD
++++ b/telegram-ios/submodules/TelegramPresentationData/BUILD
+@@ -34,10 +34,17 @@
+     name = "ExteralessAppearancePresentationTestsLib",
+     testonly = True,
+     module_name = "ExteralessAppearancePresentationTests",
+-    srcs = ["Tests/AppearancePresentationRevisionTests.swift"],
++    srcs = [
++        "Tests/AppearancePresentationRevisionTests.swift",
++        "Tests/AppearanceMonetPresentationTests.swift",
++    ],
+     copts = ["-swift-version", "6"],
+     deps = [
+         ":TelegramPresentationData",
++        "//third-party/exteraless:ExteralessCore",
++        "//submodules/Display:Display",
++        "//submodules/TelegramCore:TelegramCore",
++        "//submodules/TelegramUIPreferences:TelegramUIPreferences",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+     ],
+ )
+@@ -52,3 +59,13 @@
+     deps = [":ExteralessAppearancePresentationTestsLib"],
+     visibility = ["//visibility:public"],
+ )
++
++filegroup(
++    name = "ExteralessMonetNotices",
++    srcs = [
++        "Sources/MonetColorUtilities/ExteralessMonet-NOTICE.txt",
++        "Sources/MonetColorUtilities/MaterialColorUtilities-LICENSE.txt",
++        "Sources/MonetColorUtilities/exteraGram-LICENSE.txt",
++    ],
++    visibility = ["//visibility:public"],
++)
+--- a/telegram-ios/submodules/TelegramUI/BUILD
++++ b/telegram-ios/submodules/TelegramUI/BUILD
+@@ -12,7 +12,7 @@
+     srcs = glob([
+         "Sounds/**/*",
+         "Resources/**/*",
+-    ], exclude = ["Sounds/**/.*", "Resources/**/.*", "Resources/Exteraless/Links/*.txt"]),
++    ], exclude = ["Sounds/**/.*", "Resources/**/.*", "Resources/Exteraless/Links/*.txt"]) + ["//submodules/TelegramPresentationData:ExteralessMonetNotices"],
+     visibility = ["//visibility:public"],
+ )
+ 
+--- a/telegram-ios/Tests/Exteraless/native-tests.json
++++ b/telegram-ios/Tests/Exteraless/native-tests.json
+@@ -76,2 +76,3 @@
+     "submodules/TelegramPresentationData/Tests/AppearancePresentationRevisionTests.swift": "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
++    "submodules/TelegramPresentationData/Tests/AppearanceMonetPresentationTests.swift": "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
+     "submodules/TelegramStringFormatting/Tests/AppearancePresenceTests.swift": "//submodules/TelegramStringFormatting:ExteralessAppearancePresenceTests",
+--- a/telegram-ios/Telegram/Share/ShareRootController.swift
++++ b/telegram-ios/Telegram/Share/ShareRootController.swift
+@@ -50,6 +50,7 @@
+                 try ExteralessFontFamily.prepare()
+                 try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+                 try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
++                    + AppearanceMonetPolicy.definitions
+                     + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions
+                     + CoreAppearanceFontFamilyPolicy.definitions)
+                 try ChatFeatures.migrateSettings(in: ClientSettings.shared)
+--- a/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift
++++ b/telegram-ios/Telegram/NotificationContent/NotificationViewController.swift
+@@ -41,6 +41,7 @@
+                 try ExteralessFontFamily.prepare()
+                 try ClientSettings.shared.configure(storageURL: URL(fileURLWithPath: rootPath).appendingPathComponent("exteraless/client-settings.json"), durabilityRootURL: appGroupUrl)
+                 try ClientSettings.shared.register(PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
++                    + AppearanceMonetPolicy.definitions
+                     + ChatFeatures.definitions + RetentionFeatures.definitions + ClientAPIFeatures.definitions
+                     + CoreAppearanceFontFamilyPolicy.definitions)
+                 try ChatFeatures.migrateSettings(in: ClientSettings.shared)

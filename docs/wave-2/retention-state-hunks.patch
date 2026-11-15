@@ -1,0 +1,54 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Account/Account.swift
+@@
+     private var automaticCacheEvictionContext: AutomaticCacheEvictionContext?
++    private let exteralessRetentionAccount: ExteralessRetentionAccount
+@@
+         self.networkArguments = networkArguments
+         self.peerId = peerId
++        self.exteralessRetentionAccount = ExteralessRetentionAccount(postbox: postbox, accountPeerId: peerId)
+@@
+         if !supplementary {
+             let mediaBox = postbox.mediaBox
+-            let _ = (accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings])
+-            |> take(1)).start(next: { [weak mediaBox] sharedData in
++            self.managedOperationsDisposable.add((combineLatest(self.exteralessRetentionAccount.ready,
++                accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings]))
++            |> take(1)).start(next: { [weak mediaBox] _, sharedData in
+                 guard let mediaBox = mediaBox else {
+                     return
+                 }
+                 let settings: CacheStorageSettings = sharedData.entries[SharedDataKeys.cacheStorageSettings]?.get(CacheStorageSettings.self) ?? CacheStorageSettings.defaultSettings
+                 mediaBox.setMaxStoreTimes(general: settings.defaultCacheStorageTimeout, shortLived: 60 * 60, gigabytesLimit: settings.defaultCacheStorageLimitGigabytes)
+-            })
++            }))
+         }
+@@
+-        self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
++        self.managedOperationsDisposable.add((self.exteralessRetentionAccount.ready |> deliverOnMainQueue).start(next: { [weak self] _ in
++            self?.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
++        }))
+@@
+     deinit {
+         self.managedContactsDisposable.dispose()
++        self.exteralessRetentionAccount.dispose()
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+@@
+             case let .DeleteMessagesWithGlobalIds(ids):
++                exteralessRetainBeforeDelete(transaction: transaction, mediaBox: mediaBox, ids: transaction.messageIdsForGlobalIds(ids))
+                 var resourceIds: [MediaResourceId] = []
+@@
+-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                    let _ = mediaBox.removeCachedResources(exteralessRetentionUnownedResources(transaction: transaction, mediaBox: mediaBox, ids: Array(Set(resourceIds))), force: true).start()
+@@
+             case let .DeleteMessages(ids):
++                exteralessRetainBeforeDelete(transaction: transaction, mediaBox: mediaBox, ids: ids)
+                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in
+@@
+             case let .UpdateMinAvailableMessage(id):
++                exteralessRetainBeforeRangeDeletion(transaction: transaction, mediaBox: mediaBox, peerId: id.peerId, namespace: id.namespace, maxId: id.id)
+                 if let message = transaction.getMessage(id) {
+@@
+-                    let _ = mediaBox.removeCachedResources(Array(Set(resourceIds)), force: true).start()
++                    let _ = mediaBox.removeCachedResources(exteralessRetentionUnownedResources(transaction: transaction, mediaBox: mediaBox, ids: Array(Set(resourceIds))), force: true).start()
+*** End Patch

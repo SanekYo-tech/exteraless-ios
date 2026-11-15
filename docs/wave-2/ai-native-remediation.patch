@@ -1,0 +1,678 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/AccountContext/Sources/ExteralessAIHooks.swift
+@@
+-    func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>?
++    func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?, capability: ExteralessAIProcessingCapability) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>?
++    func transcribe(context: AccountContext, messageId: EngineMessage.Id, file: TelegramMediaFile, lease: AINativeOperationLease?) -> Signal<Bool, ExteralessAITranscriptionError>?
+@@
+-    public static func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?, fallback: @escaping () -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError> {
+-        deferred(context: context, cancelled: .generic, choose: { $0.compose(context: context, text: text, mode: mode, styles: styles, sourceLanguage: sourceLanguage) }, fallback: fallback)
++    public static func compose(context: AccountContext, text: ComposedRichMessage, mode: TelegramComposeAIMessageMode, styles: [TelegramComposeAIMessageMode.CloudStyle], sourceLanguage: String?, capability: ExteralessAIProcessingCapability, fallback: @escaping () -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError>) -> Signal<TelegramAIComposeMessageResult, TelegramAIComposeMessageError> {
++        deferred(context: context, cancelled: .generic, choose: { adapter in
++            guard capability.allowsExternalProcessing else { return nil }
++            return adapter.compose(context: context, text: text, mode: mode, styles: styles, sourceLanguage: sourceLanguage, capability: capability)
++        }, fallback: fallback)
+     }
++    public static func usesSelectedTranscription(isPremium: Bool) -> Bool {
++        AINativeSpeechPolicy.usesSelectedProvider(AITranscriptionProvider(rawValue: ClientSettings.shared.integer("ai.transcribeProvider")) ?? .auto, isPremium: isPremium)
++    }
++    public static func transcribe(context: AccountContext, messageId: EngineMessage.Id, file: TelegramMediaFile) -> Signal<Bool, ExteralessAITranscriptionError> {
++        deferred(context: context, cancelled: .cancelled, choose: { $0.transcribe(context: context, messageId: messageId, file: file, lease: nil) }, fallback: { .fail(.nativeFailed) })
++    }
++    /// Copy/share/insert at a stock surface recheck the real source immediately
++    /// before delivery. Nil copyResult and cached UI flags are not capabilities.
++    public static func withCopyCapability(context: AccountContext, capability: ExteralessAIProcessingCapability, perform: @escaping @MainActor () -> Void) {
++        let owner = storage.capture()
++        Task { @MainActor in
++            guard capability.allowsCopy, storage.valid(owner) else { return }
++            if let adapter = owner.adapter, !adapter.handles(context: context) { return }
++            let lease = AINativeOperationLease()
++            defer { lease.cancel() }
++            guard let scope = await context.engine.messages.resolveExteralessAIScope(capability: capability, lease: lease).get(), scope.allowsCopy else { return }
++            let valid = await context.engine.messages.validateExteralessAIScope(scope).get()
++            guard valid, !Task.isCancelled, storage.valid(owner) else { return }
++            if let adapter = owner.adapter, !adapter.handles(context: context) { return }
++            perform()
++        }
++    }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+-                    return self.exteralessAISpeakSelection(text.string)
++                    return self.exteralessAISpeakSelection(message: message, canCopy: canCopy, text: text.string)
+@@
+             switch action {
+             case .copy:
+-                storeAttributedTextInPasteboard(text)
++                ExteralessAIHooks.withCopyCapability(context: self.context, capability: MainActor.assumeIsolated { self.exteralessAISelectionCapability(message: message, canCopy: canCopy) }) { storeAttributedTextInPasteboard(text) }
+@@
+-                    let shareController = self.context.sharedContext.makeShareScreen(context: self.context, params: ShareControllerParams(subject: .text(text.string), externalShare: true, immediateExternalShare: false, updatedPresentationData: self.updatedPresentationData))
+-                    self.chatDisplayNode.dismissInput()
+-                    self.present(shareController, in: .window(.root))
++                    ExteralessAIHooks.withCopyCapability(context: self.context, capability: MainActor.assumeIsolated { self.exteralessAISelectionCapability(message: message, canCopy: canCopy) }) {
++                        let shareController = self.context.sharedContext.makeShareScreen(context: self.context, params: ShareControllerParams(subject: .text(text.string), externalShare: true, immediateExternalShare: false, updatedPresentationData: self.updatedPresentationData))
++                        self.chatDisplayNode.dismissInput()
++                        self.present(shareController, in: .window(.root))
++                    }
+@@
+                             self.push(await TextProcessingScreen(
+                                 context: self.context,
++                                capability: self.exteralessAISelectionCapability(message: message, canCopy: canCopy),
+                                 mode: .translate(fromLanguage: language, applyResult: nil),
+*** Update File: telegram-ios/submodules/TelegramUI/Components/TextProcessingScreen/Sources/TextProcessingScreen.swift
+@@
+     let styles: [TextProcessingScreen.Style]
+     let inputText: ComposedRichMessage
++    let capability: ExteralessAIProcessingCapability
+@@
+         styles: [TextProcessingScreen.Style],
+         inputText: ComposedRichMessage,
++        capability: ExteralessAIProcessingCapability,
+@@
+         self.previewIconFile = previewIconFile
+         self.inputText = inputText
++        self.capability = capability
+@@
+     static func ==(lhs: TextProcessingContentComponent, rhs: TextProcessingContentComponent) -> Bool {
++        if lhs.capability != rhs.capability { return false }
+@@
+                     externalState: self.translateState,
+                     inputText: component.inputText,
++                    capability: component.capability,
+@@
+                     externalState: self.stylizeState,
+                     inputText: inputText,
++                    capability: component.capability,
+@@
+                     externalState: self.fixState,
+                     inputText: component.inputText,
++                    capability: component.capability,
+@@
+     let initialStyles: [TextProcessingScreen.Style]
+     let inputText: ComposedRichMessage
++    let capability: ExteralessAIProcessingCapability
+@@
+         initialStyles: [TextProcessingScreen.Style],
+         inputText: ComposedRichMessage,
++        capability: ExteralessAIProcessingCapability,
+@@
+         self.initialStyles = initialStyles
+         self.inputText = inputText
++        self.capability = capability
+@@
+     static func ==(lhs: TextProcessingSheetComponent, rhs: TextProcessingSheetComponent) -> Bool {
+-        return true
++        return lhs.capability == rhs.capability
+@@
+                         styles: self.styles,
+                         inputText: component.inputText,
++                        capability: component.capability,
+@@
+     public init(
+         context: AccountContext,
++        capability: ExteralessAIProcessingCapability = .userInput,
+         theme: PresentationTheme? = nil,
+@@
+                 initialStyles: styles,
+                 inputText: inputText,
++                capability: capability,
+@@
+-                copyCurrentResult: copyResult,
++                copyCurrentResult: capability.allowsCopy ? copyResult.map { copy in
++                    { value in
++                        ExteralessAIHooks.withCopyCapability(context: context, capability: capability) { copy(value) }
++                    }
++                } : nil,
+*** Update File: telegram-ios/submodules/TelegramUI/Components/TextProcessingScreen/Sources/TextProcessingTranslateContentComponent.swift
+@@
+     let inputText: ComposedRichMessage
++    let capability: ExteralessAIProcessingCapability
+@@
+         inputText: ComposedRichMessage,
++        capability: ExteralessAIProcessingCapability,
+@@
+         self.inputText = inputText
++        self.capability = capability
+@@
+     static func ==(lhs: TextProcessingTranslateContentComponent, rhs: TextProcessingTranslateContentComponent) -> Bool {
++        if lhs.capability != rhs.capability { return false }
+@@
+                         sourceLanguage: component.externalState.sourceLanguage,
++                        capability: component.capability,
+@@
+                     component: AnyComponent(TextProcessingTextAreaComponent(
+                         context: component.context,
++                        capability: component.capability,
+@@
+                 component: AnyComponent(TextProcessingTextAreaComponent(
+                     context: component.context,
++                    capability: component.capability,
+*** Update File: telegram-ios/submodules/TelegramUI/Components/TextProcessingScreen/Sources/TextProcessingTextAreaComponent.swift
+@@
+     let context: AccountContext
++    let capability: ExteralessAIProcessingCapability
+@@
+         context: AccountContext,
++        capability: ExteralessAIProcessingCapability,
+@@
+         self.context = context
++        self.capability = capability
+@@
+     static func ==(lhs: TextProcessingTextAreaComponent, rhs: TextProcessingTextAreaComponent) -> Bool {
++        if lhs.capability != rhs.capability { return false }
+@@
+                         switch action {
+                         case .copy:
+-                            storeAttributedTextInPasteboard(text)
++                            ExteralessAIHooks.withCopyCapability(context: component.context, capability: component.capability) { storeAttributedTextInPasteboard(text) }
+                         case .share:
+-                            let shareController = component.context.sharedContext.makeShareScreen(context: component.context, params: ShareControllerParams(subject: .text(text.string)))
+-                            component.present(shareController, nil)
++                            ExteralessAIHooks.withCopyCapability(context: component.context, capability: component.capability) {
++                                let shareController = component.context.sharedContext.makeShareScreen(context: component.context, params: ShareControllerParams(subject: .text(text.string)))
++                                component.present(shareController, nil)
++                            }
+@@
+-                    textSelectionNode.enableLookup = true
++                    textSelectionNode.enableLookup = component.capability.allowsCopy
+@@
+                 textSelectionNode.frame = textComponentView.frame
++                textSelectionNode.enableCopy = component.capability.allowsCopy
++                textSelectionNode.enableShare = component.capability.allowsCopy
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
+@@
+-    if previousMessage.text == message.text {
++    if exteralessAITranslationSourceUnchanged(previous: previousMessage, updated: message) {
+@@
+                 updatedAttributes.append(translation)
+             }
+         }
++    } else {
++        // A rich-only edit has the same empty plain text/entities. Neither a
++        // previously stored translation nor summary belongs to the new page.
++        updatedAttributes.removeAll { $0 is TranslationMessageAttribute || $0 is SummarizationMessageAttribute }
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@
+-                    let aiPolicy = AITranslationPolicy()
+-                    let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
+-                    let aiManualVisible = aiManual?.visible == true
+-                    let translateToLanguage = aiManualVisible ? aiManual?.language : (aiPolicy.autoEnabled ? item.associatedData.translateToLanguage : nil)
+-                    var isSummarized = false
+-                    if item.controllerInteraction.summarizedMessageIds.contains(item.message.id) {
+-                        isSummarized = true
+-                    }
+-                    
+-                    if let subject = item.associatedData.subject, case .messageOptions = subject {
+-                    } else if !item.message.text.isEmpty && (incoming || aiManualVisible) {
+-                        if translateToLanguage != nil || isSummarized {
+-                            isTranslating = true
+-                        }
+-                        if isTranslating {
+-                            if isSummarized, let attribute = item.message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLanguage) {
+-                                rawText = summary.text
+-                                messageEntities = summary.entities
+-                                if translateToLanguage != nil, let originalSummary = attribute.summary, aiPolicy.keepsOriginal(manual: aiManualVisible, automatic: item.associatedData.translateToLanguage != nil), !originalSummary.text.isEmpty {
+-                                    let prefix = originalSummary.text + AITranslationPolicy.separator
+-                                    rawText = prefix + summary.text
+-                                    let offset = prefix.utf16.count
+-                                    messageEntities = originalSummary.entities + summary.entities.map { MessageTextEntity(range: ($0.range.lowerBound + offset) ..< ($0.range.upperBound + offset), type: $0.type) }
+-                                }
+-                                isTranslating = false
+-                                isSummaryApplied = true
+-                            } else if let attribute = item.message.attributes.first(where: { $0 is TranslationMessageAttribute }) as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
+-                                rawText = attribute.text
+-                                messageEntities = attribute.entities
+-                                if aiPolicy.keepsOriginal(manual: aiManualVisible, automatic: item.associatedData.translateToLanguage != nil) {
+-                                    let prefix = item.message.text + AITranslationPolicy.separator
+-                                    let offset = prefix.utf16.count
+-                                    rawText = prefix + attribute.text
+-                                    messageEntities = (item.message.textEntitiesAttribute?.entities ?? []) + attribute.entities.map { MessageTextEntity(range: ($0.range.lowerBound + offset) ..< ($0.range.upperBound + offset), type: $0.type) }
+-                                }
+-                                if !isSummarized {
+-                                    isTranslating = false
+-                                }
+-                            }
+-                        }
+-                    }
++                    if let subject = item.associatedData.subject, case .messageOptions = subject {
++                    } else if item.attributes.updatingMedia == nil && !item.message.text.isEmpty {
++                        let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: item.controllerInteraction.summarizedMessageIds.contains(item.message.id))
++                        rawText = display.text
++                        messageEntities = display.entities
++                        isTranslating = display.isTranslating
++                        isSummaryApplied = display.isSummary
++                    }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
+@@
+-            guard let strongSelf = self, let item = strongSelf.item, let poll = strongSelf.poll, let solution = poll.results.solution else {
++            guard let strongSelf = self, let item = strongSelf.item, strongSelf.poll != nil else {
+                 return
+             }
++            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage)
++            guard let solution = display.pollSolution else { return }
+             item.controllerInteraction.displayPollSolution(solution, strongSelf.solutionButtonNode)
+@@
+-                var isTranslating = false
+-                let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
+-                let aiLanguage = aiManual?.visible == true ? aiManual?.language : (AITranslationPolicy().autoEnabled ? item.associatedData.translateToLanguage : nil)
+-                if let poll, let translateToLanguage = aiLanguage, !poll.text.isEmpty && (incoming || aiManual?.visible == true) {
+-                    isTranslating = true
+-                    for attribute in item.message.attributes {
+-                        if let attribute = attribute as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
+-                            pollTitleText = attribute.text
+-                            pollTitleEntities = attribute.entities
+-                            pollOptions = attribute.additional
+-                            isTranslating = false
+-                            break
+-                        }
+-                    }
+-                }
++                let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage)
++                let isTranslating = display.isTranslating
++                if let title = display.pollTitle {
++                    pollTitleText = title.text
++                    pollTitleEntities = title.entities
++                    pollOptions = display.pollOptions
++                }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode/Sources/ChatMessageRichDataBubbleContentNode.swift
+@@
+-        let isIncoming = item.message.effectivelyIncoming(item.context.account.peerId)
+-        let aiPolicy = AITranslationPolicy()
+-        let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
+-        var canDisplayTranslation = isIncoming || aiManual?.visible == true
++        var canDisplayTranslation = true
+@@
+-        let aiLanguage = aiManual?.visible == true ? aiManual?.language : (aiPolicy.autoEnabled ? item.associatedData.translateToLanguage : nil)
+-        if canDisplayTranslation, let translateToLanguage = aiLanguage {
+-            if let translation = item.message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLanguage }) as? TranslationMessageAttribute, let instantPage = translation.instantPage {
+-                let instantPage = ExteralessAIHooks.renderedPage(original: attribute.instantPage, translated: instantPage, includeOriginal: aiPolicy.keepsOriginal(manual: aiManual?.visible == true, automatic: item.associatedData.translateToLanguage != nil))
++        let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: item.controllerInteraction.summarizedMessageIds.contains(item.message.id), enabled: canDisplayTranslation)
++        if let summaryPage = display.richSummaryPage(make: { text, entities in
++            TelegramCore.instantPage(from: chatInputContent(from: chatInputStateStringWithAppliedEntities(text, entities: entities)))
++        }), let summary = item.message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute {
++            return ResolvedRichDataContent(instantPage: summaryPage, originalAttribute: attribute, key: .translated(language: "summary:" + (display.selection.language ?? "original"), attribute: ObjectIdentifier(summary), page: ObjectIdentifier(summaryPage)), isTranslated: display.selection.language != nil, isTranslating: false)
++        }
++        if let translateToLanguage = display.selection.language {
++            if let translation = display.translation, translation.instantPage != nil, let instantPage = display.page {
+@@
+             key: .original(attribute: ObjectIdentifier(attribute), page: ObjectIdentifier(instantPage)),
+             isTranslated: false,
+-            isTranslating: false
++            isTranslating: display.isTranslating
+         )
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@
+-    private func toggleSummarization() {
++    private let aiSummaryOperations = AINativeOperationRegistry<EngineMessage.Id>()
++
++    private func toggleSummarization() {
+@@
+         if item.controllerInteraction.summarizedMessageIds.contains(item.message.id) {
++            self.aiSummaryOperations.cancel(item.message.id)
+             item.controllerInteraction.summarizedMessageIds.remove(item.message.id)
+@@
+-            let translateToLanguage = item.associatedData.translateToLanguage
++            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(item.message), accountId: item.context.account.id.int64, accountPeerId: item.context.account.peerId, automaticLanguage: item.associatedData.translateToLanguage, isSummarized: true)
++            let translateToLanguage = display.selection.language
+@@
+             if requestSummary {
+-                let _ = (ExteralessAIHooks.summarize(context: item.context, messageId: item.message.id, toLanguage: translateToLanguage, fallback: {
++                let generation = self.aiSummaryOperations.begin(item.message.id)
++                let disposable = MetaDisposable()
++                self.aiSummaryOperations.bind(item.message.id, generation: generation, cancel: { disposable.dispose() })
++                disposable.set((ExteralessAIHooks.summarize(context: item.context, messageId: item.message.id, toLanguage: translateToLanguage, fallback: {
+                     item.context.engine.messages.summarizeMessage(messageId: item.message.id, translateToLang: translateToLanguage)
+                 })
+-                |> deliverOnMainQueue).start(error: { error in
++                |> deliverOnMainQueue).start(error: { [weak self] error in
++                    guard let self, self.aiSummaryOperations.finish(item.message.id, generation: generation) else { return }
+@@
+                         parentController.present(controller, in: .window(.root))
+                     }
+-                })
++                }, completed: { [weak self] in
++                    guard let self, self.aiSummaryOperations.finish(item.message.id, generation: generation) else { return }
++                    let _ = item.controllerInteraction.requestMessageUpdate(item.message.id, false, nil)
++                }))
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@
+         let message = messages[0]
++        let aiDisplay = ExteralessAIMessageDisplay.resolve(message: EngineMessage(message), accountId: context.account.id.int64, accountPeerId: context.account.peerId, automaticLanguage: chatPresentationInterfaceState.translationState.flatMap { $0.isEnabled ? $0.toLang : nil }, isSummarized: controllerInteraction.summarizedMessageIds.contains(message.id))
++        if !aiDisplay.text.isEmpty { messageText = aiDisplay.text }
+         var richMessageMarkdown: String?
+         var richMessageInstantPage: InstantPage?
+-        var activeTranslateToLang: String?
+-        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
+-            activeTranslateToLang = translationState.toLang
+-        }
+-        if let richTextAttribute = message.attributes.first(where: { $0 is RichTextMessageAttribute }) as? RichTextMessageAttribute {
+-            let instantPage: InstantPage
+-            if let activeTranslateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == activeTranslateToLang }) as? TranslationMessageAttribute, let translatedInstantPage = translation.instantPage {
+-                instantPage = translatedInstantPage
+-            } else {
+-                instantPage = richTextAttribute.instantPage
+-            }
++        if let instantPage = aiDisplay.page {
+@@
+                                 let copyTextWithEntities = {
++                                    ExteralessAIHooks.withCopyCapability(context: context, capability: .message(EngineMessage(message), canCopy: !isCopyProtected)) {
+                                     if let richMessageInstantPage {
+@@
+-                                        var translateToLang: String?
+-                                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
+-                                            translateToLang = translationState.toLang
+-                                        }
+-                                        if controllerInteraction.summarizedMessageIds.contains(message.id), let attribute = message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLang) {
+-                                            storeMessageTextInPasteboard(summary.text, entities: summary.entities)
+-                                        } else if let translateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
+-                                            storeMessageTextInPasteboard(translation.text, entities: translation.entities)
+-                                        } else {
+-                                            storeMessageTextInPasteboard(messageText, entities: messageEntities)
+-                                        }
++                                        storeMessageTextInPasteboard(aiDisplay.text.isEmpty ? messageText : aiDisplay.text, entities: aiDisplay.text.isEmpty ? messageEntities : aiDisplay.entities)
+@@
+                                     Queue.mainQueue().after(0.2, {
+                                         let content: UndoOverlayContent = .copy(text: chatPresentationInterfaceState.strings.Conversation_MessageCopied)
+                                         controllerInteraction.displayUndo(content)
+                                     })
++                                    }
+                                 }
+@@
+-                        controllerInteraction.performTextSelectionAction(message, !isCopyProtected, NSAttributedString(string: messageText), messageEntities, .translate)
++                        controllerInteraction.performTextSelectionAction(message, !isCopyProtected, NSAttributedString(string: aiDisplay.text.isEmpty ? messageText : aiDisplay.text), aiDisplay.text.isEmpty ? messageEntities : aiDisplay.entities, .translate)
+@@
+-                        var text = messageText
+-                        
+-                        var translateToLang: String?
+-                        if let translationState = chatPresentationInterfaceState.translationState, translationState.isEnabled {
+-                            translateToLang = translationState.toLang
+-                        }
+-                        if controllerInteraction.summarizedMessageIds.contains(message.id), let attribute = message.attributes.first(where: { $0 is SummarizationMessageAttribute }) as? SummarizationMessageAttribute, let summary = attribute.summaryForLang(translateToLang) {
+-                            text = summary.text
+-                        } else if let translateToLang, let translation = message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLang }) as? TranslationMessageAttribute, !translation.text.isEmpty {
+-                            text = translation.text
+-                        }
++                        let text = aiDisplay.text.isEmpty ? messageText : aiDisplay.text
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+@@
+-        if !context.isPremium, case .inProgress = self.audioTranscriptionState {
++        let usesSelectedProvider = ExteralessAIHooks.usesSelectedTranscription(isPremium: arguments.associatedData.isPremium)
++        if case .inProgress = self.audioTranscriptionState, self.transcribeDisposable != nil {
++            self.aiTranscriptionGeneration = UUID()
++            self.transcribeDisposable?.dispose()
++            self.transcribeDisposable = nil
++            self.audioTranscriptionState = .collapsed
++            self.requestUpdateLayout(true)
++            return
++        }
++        if !usesSelectedProvider && !context.isPremium, case .inProgress = self.audioTranscriptionState {
+@@
+-        if transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
++        if !usesSelectedProvider && transcriptionText == nil && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+@@
+-                if context.sharedContext.immediateExperimentalUISettings.localTranscription {
++                if usesSelectedProvider || !context.sharedContext.immediateExperimentalUISettings.localTranscription {
++                    let generation = UUID()
++                    self.aiTranscriptionGeneration = generation
++                    let disposable = MetaDisposable()
++                    self.transcribeDisposable = disposable
++                    disposable.set((ExteralessAIHooks.transcribe(context: context, messageId: message.id, file: arguments.file) |> deliverOnMainQueue).start(next: { [weak self] stored in
++                        guard let self, self.aiTranscriptionGeneration == generation, self.arguments?.message.id == message.id else { return }
++                        self.audioTranscriptionState = stored ? .expanded : .collapsed
++                        self.requestUpdateLayout(true)
++                        self.updateTranscriptionExpanded?(self.audioTranscriptionState)
++                    }, error: { [weak self] error in
++                        guard let self, self.aiTranscriptionGeneration == generation, self.arguments?.message.id == message.id else { return }
++                        self.transcribeDisposable?.dispose()
++                        self.transcribeDisposable = nil
++                        self.audioTranscriptionState = .collapsed
++                        self.requestUpdateLayout(true)
++                        let controller = UndoOverlayController(presentationData: presentationData, content: .universal(animation: "Transcribe", scale: 0.06, colors: [:], title: nil, text: error.errorDescription ?? "Transcription failed.", customUndoText: nil, timeout: nil), elevatedLayout: false, position: .top, animateInAsReplacement: false, action: { _ in false })
++                        arguments.controllerInteraction.presentControllerInCurrent(controller, nil)
++                    }, completed: { [weak self] in
++                        guard let self, self.aiTranscriptionGeneration == generation else { return }
++                        self.transcribeDisposable?.dispose()
++                        self.transcribeDisposable = nil
++                        if !usesSelectedProvider && !arguments.associatedData.isPremium && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
++                            Queue.mainQueue().after(0.1, { [weak self] in let _ = self?.presentAudioTranscriptionTooltip(finished: true) })
++                        }
++                    }))
++                } else {
+@@
+                     let appLocale = presentationData.strings.baseLanguageCode
++                    let localLease = AINativeOperationLease()
++                    let localScope = Atomic<ExteralessAIScope?>(value: nil)
++                    let localGeneration = UUID()
++                    self.aiTranscriptionGeneration = localGeneration
+                     
+-                    let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: message.id))
+-                    |> mapToSignal { message -> Signal<String?, NoError> in
+-                        guard let message = message else {
++                    let signal: Signal<LocallyTranscribedAudio?, NoError> = context.engine.messages.resolveExteralessAIScope(capability: .init(messageId: message.id, expectedStableVersion: message.stableVersion, allowsExternalProcessing: false, allowsCopy: false), lease: localLease)
++                    |> mapToSignal { scope -> Signal<String?, NoError> in
++                        guard let scope, let message = scope.source else {
+                             return .single(nil)
+                         }
++                        _ = localScope.swap(scope)
+@@
+-                    self.transcribeDisposable = (signal
+-                    |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+-                        guard let strongSelf = self, let arguments = strongSelf.arguments else {
++                    let localOperation = (signal
++                    |> mapToSignal { result -> Signal<Bool, NoError> in
++                        guard let result, let scope = localScope.with({ $0 }), !localLease.isCancelled else { return .single(false) }
++                        return context.engine.messages.storeExteralessAILocalTranscription(scope: scope, expectedResourceId: EngineMediaResource.Id(arguments.file.resource.id), text: result.text, isFinal: result.isFinal)
++                    }
++                    |> deliverOnMainQueue).startStrict(next: { [weak self] stored in
++                        guard let strongSelf = self, strongSelf.aiTranscriptionGeneration == localGeneration else {
+                             return
+                         }
+                         
+-                        if let result = result {
+-                            let _ = arguments.context.engine.messages.storeLocallyTranscribedAudio(messageId: arguments.message.id, text: result.text, isFinal: result.isFinal, error: nil).startStandalone()
+-                        } else {
++                        if !stored {
++                            strongSelf.transcribeDisposable?.dispose()
++                            strongSelf.transcribeDisposable = nil
+                             strongSelf.audioTranscriptionState = .collapsed
+                             strongSelf.requestUpdateLayout(true)
+                         }
+                     }, completed: { [weak self] in
+-                        guard let strongSelf = self else {
++                        guard let strongSelf = self, strongSelf.aiTranscriptionGeneration == localGeneration else {
+                             return
+                         }
+                         strongSelf.transcribeDisposable?.dispose()
+                         strongSelf.transcribeDisposable = nil
+                     })
++                    self.transcribeDisposable = ActionDisposable { localLease.cancel(); localOperation.dispose() }
+@@
+-                } else {
+-                    self.transcribeDisposable = (context.engine.messages.transcribeAudio(messageId: message.id)
+-                    |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+-                        guard let strongSelf = self else {
+-                            return
+-                        }
+-                        strongSelf.transcribeDisposable?.dispose()
+-                        strongSelf.transcribeDisposable = nil
+-                        
+-                        if let arguments = strongSelf.arguments, !arguments.associatedData.isPremium && !arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+-                            Queue.mainQueue().after(0.1, {
+-                                let _ = strongSelf.presentAudioTranscriptionTooltip(finished: true)
+-                            })
+-                        }
+-                    })
+                 }
+@@
+-    private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {
++    private var aiTranscriptionGeneration = UUID()
++
++    private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {
+@@
+                 var displayTranscribe = false
++                let usesSelectedProvider = ExteralessAIHooks.usesSelectedTranscription(isPremium: arguments.associatedData.isPremium)
+@@
+-                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
++                    if usesSelectedProvider || arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+@@
+-                if transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
++                if !usesSelectedProvider, transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+@@
+-                            let aiManual = AIManualTranslations.state(accountId: String(arguments.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: arguments.message.id.peerId.toInt64(), namespace: arguments.message.id.namespace, id: arguments.message.id.id))
+-                            let aiLanguage = aiManual?.visible == true ? aiManual?.language : (AITranslationPolicy().autoEnabled ? arguments.associatedData.translateToLanguage : nil)
+-                            if let translateToLanguage = aiLanguage, !text.isEmpty && (arguments.incoming || aiManual?.visible == true) {
+-                                isTranslating = true
+-                                for attribute in arguments.message.attributes {
+-                                    if let attribute = attribute as? TranslationMessageAttribute, !attribute.text.isEmpty, attribute.toLang == translateToLanguage {
+-                                        textString = NSAttributedString(string: attribute.text, font: textFont, textColor: messageTheme.primaryTextColor)
+-                                        isTranslating = false
+-                                        break
+-                                    }
+-                                }
+-                            }
++                            let display = ExteralessAIMessageDisplay.resolve(message: EngineMessage(arguments.message), accountId: arguments.context.account.id.int64, accountPeerId: arguments.context.account.peerId, automaticLanguage: arguments.associatedData.translateToLanguage)
++                            isTranslating = display.isTranslating
++                            if !display.text.isEmpty { textString = NSAttributedString(string: display.text, font: textFont, textColor: messageTheme.primaryTextColor) }
+*** Update File: telegram-ios/submodules/AccountContext/Sources/AccountContext.swift
+@@
+     func makeTextProcessingScreen(
+         context: AccountContext,
++        capability: ExteralessAIProcessingCapability,
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/SharedAccountContext.swift
+@@
+     public func makeTextProcessingScreen(
+         context: AccountContext,
++        capability: ExteralessAIProcessingCapability,
+@@
+         return await TextProcessingScreen(
+             context: context,
++            capability: capability,
+*** Update File: telegram-ios/submodules/AttachmentUI/Sources/AttachmentController.swift
+@@
+                     let textProcessingScreen = await controller.context.sharedContext.makeTextProcessingScreen(
+                         context: controller.context,
++                        capability: .userInput,
+*** Update File: telegram-ios/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+@@
+                         let translateController = await self.context.sharedContext.makeTextProcessingScreen(
+                             context: self.context,
++                            capability: self.currentMessage.map { .message(EngineMessage($0), canCopy: !$0.isCopyProtected()) } ?? .nativeOnly,
+*** Update File: telegram-ios/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
+@@
+                                     let controller = await strongSelf.context.sharedContext.makeTextProcessingScreen(
+                                         context: strongSelf.context,
++                                        capability: strongSelf.message.map { .message(EngineMessage($0), canCopy: !$0.isCopyProtected() && !strongSelf.peerIsCopyProtected) } ?? .nativeOnly,
+*** Update File: telegram-ios/submodules/InstantPageUI/Sources/InstantPageControllerNode.swift
+@@
+                             let controller = await context.sharedContext.makeTextProcessingScreen(
+                                 context: context,
++                                capability: .userInput,
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/OpenResolvedUrl.swift
+@@
+-                let controller = await context.sharedContext.makeTextProcessingScreen(context: context, theme: nil, mode: .preview(style: style, authorPeer: authorPeer, initialPreview: initialPreview, isAlreadyAdded: isAlreadyAdded, added: {
++                let controller = await context.sharedContext.makeTextProcessingScreen(context: context, capability: .userInput, theme: nil, mode: .preview(style: style, authorPeer: authorPeer, initialPreview: initialPreview, isAlreadyAdded: isAlreadyAdded, added: {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Wallet/WalletTransactionScreen/Sources/WalletTransactionScreen.swift
+@@
+                         let translationController = await component.context.sharedContext.makeTextProcessingScreen(
+                             context: component.context,
++                            capability: .userInput,
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/GiftViewScreen.swift
+@@
+                         let translationController = await self.context.sharedContext.makeTextProcessingScreen(
+                             context: self.context,
++                            capability: {
++                                if case let .message(message) = self.subject { return .message(message, canCopy: canCopy) }
++                                return .init(allowsExternalProcessing: canCopy, allowsCopy: canCopy)
++                            }(),
+*** Update File: telegram-ios/submodules/TelegramUI/Components/LegacyMessageInputPanel/Sources/LegacyMessageInputPanel.swift
+@@
+             self.pushViewController(await self.context.sharedContext.makeTextProcessingScreen(
+                 context: self.context,
++                capability: .init(peerId: self.chatLocation.peerId, allowsExternalProcessing: true, allowsCopy: true),
+*** Update File: telegram-ios/submodules/TelegramUI/Components/RichTextAttachmentScreen/Sources/RichTextAttachmentScreen.swift
+@@
+                                         let textProcessingScreen = await component.context.sharedContext.makeTextProcessingScreen(
+                                             context: component.context,
++                                            capability: .userInput,
+@@
+                                     let textProcessingScreen = await component.context.sharedContext.makeTextProcessingScreen(
+                                         context: component.context,
++                                        capability: .userInput,
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatControllerNode.swift
+@@
+             self.controller?.push(await TextProcessingScreen(
+                 context: self.context,
++                capability: .init(peerId: self.chatLocation.peerId, allowsExternalProcessing: true, allowsCopy: true),
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift
+@@
+                     self.push(await TextProcessingScreen(
+                         context: self.context,
++                        capability: .init(peerId: self.chatLocation.peerId, allowsExternalProcessing: true, allowsCopy: true),
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryItemSetContainerViewSendMessage.swift
+@@
+                 let translateController = await TextProcessingScreen(
+                     context: component.context,
++                    capability: .init(allowsExternalProcessing: !component.slice.item.storyItem.isForwardingDisabled, allowsCopy: !component.slice.item.storyItem.isForwardingDisabled),
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+ # The owner's finite page/window fixtures exercise the shipping orchestration.
++swift_library(
++    name = "ExteralessAINativeTestsLib",
++    testonly = True,
++    srcs = glob(["Tests/AI/*.swift"], allow_empty = False),
++    deps = [
++        ":TelegramUI",
++        "//submodules/TelegramCore:TelegramCore",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessAINativeTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    deps = [":ExteralessAINativeTestsLib"],
++    visibility = ["//visibility:public"],
++)
++
+ swift_library(
+     name = "ExteralessFeedTestsLib",
+*** Update File: telegram-ios/Tests/ComposerHarness/AppContext/HarnessSharedAccountContext+Generated.swift
+@@
+-    public func makeTextProcessingScreen( context: AccountContext, theme: PresentationTheme?, mode: TextProcessingScreenMode, inputText: ComposedRichMessage, copyResult: ((ComposedRichMessage) -> Void)?, translateChat: ((String) -> Void)? ) async -> ViewController {
++    public func makeTextProcessingScreen( context: AccountContext, capability: ExteralessAIProcessingCapability, theme: PresentationTheme?, mode: TextProcessingScreenMode, inputText: ComposedRichMessage, copyResult: ((ComposedRichMessage) -> Void)?, translateChat: ((String) -> Void)? ) async -> ViewController {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIChatPolicyObserver.swift
+@@
+-            guard keys.contains(stateKey) || keys.contains("ai.translatorMode") || keys.contains("ai.telegramUIAutoTranslate") || keys.contains("ai.translationProvider") else { return }
++            guard keys.contains(stateKey) || keys.contains("ai.translatorMode") || keys.contains("ai.telegramUIAutoTranslate") || keys.contains("ai.translationProvider") || keys.contains("ai.transcribeProvider") else { return }
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/Transcription.swift
+@@
+-func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: MessageId) -> Signal<EngineAudioTranscriptionResult, NoError> {
++func _internal_transcribeAudio(postbox: Postbox, network: Network, messageId: MessageId, commitScope: ExteralessAIScope? = nil, expectedResourceId: EngineMediaResource.Id? = nil) -> Signal<EngineAudioTranscriptionResult, NoError> {
+     return postbox.transaction { transaction -> Api.InputPeer? in
++        if let commitScope, !exteralessAIValidateAudioScope(transaction: transaction, scope: commitScope, messageId: messageId, expectedResourceId: expectedResourceId) { return nil }
+@@
+     |> mapToSignal { inputPeer -> Signal<EngineAudioTranscriptionResult, NoError> in
++        if commitScope?.lease.isCancelled == true { return .single(.error) }
+@@
+             return postbox.transaction { transaction -> EngineAudioTranscriptionResult in
++                func commit() -> EngineAudioTranscriptionResult {
+                 let updatedAttribute: AudioTranscriptionMessageAttribute
+@@
+                     var attributes = currentMessage.attributes.filter { !($0 is AudioTranscriptionMessageAttribute) }
++                    if commitScope != nil { attributes.removeAll { $0 is TranslationMessageAttribute } }
+@@
+                 if updatedAttribute.error == nil {
+                     return .success
+                 } else {
+                     return .error
+                 }
++                }
++                if let commitScope {
++                    return exteralessAICommitNativeAudio(transaction: transaction, scope: commitScope, messageId: messageId, expectedResourceId: expectedResourceId, commit: commit)
++                }
++                return commit()
+             }
+*** End Patch

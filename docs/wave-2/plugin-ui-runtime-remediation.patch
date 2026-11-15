@@ -1,0 +1,164 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@ -30,6 +30,7 @@
+     private var nativeServices: PluginNativeServicesBridgeExtension?
+     private var pillServices: PluginPillBridgeExtension?
+     public private(set) var pluginUI: PluginUIBridgeExtension?
++    private var settingsActionAuthority: PluginUISettingsActionAuthority?
+     private var managerPreferences: PluginManagerPreferences?
+     private var managerPreferencesError: String?
+     private var watchdogAlert: UIAlertController?
+@@ -39,7 +40,7 @@
+     private var activeOperations = 0
+     private var settingsMaintenanceID: UUID?
+     private var toolsRecoveryRequired = false
+-    private let settingsSchemaCache = ToolsPluginSchemaCache()
++    private let settingsSchemaCache = PluginUIUnprovenSchemaCache()
+     private var cachedSettingsOwners: [String: (owner: PluginHost.CallbackOwner, account: Int64)] = [:]
+     private var frozenSettingsLocation: ToolsBackupPluginLocation?
+     private var runtimeRecovery: PluginRuntimeRecovery?
+@@ -54,6 +55,7 @@
+ 
+     public func update(context: AccountContext) {
+         guard !terminating, !Bundle.main.bundlePath.hasSuffix(".appex") else { return }
++        settingsActionAuthority?.prepareContextChange(to: context)
+         services.update(context: context)
+         if currentContext !== context {
+             developerServer.stop()
+@@ -63,6 +65,7 @@
+             cachedSettingsOwners.removeAll()
+         }
+         currentContext = context
++        settingsActionAuthority?.update(context: context)
+         configureManagerPreferences()
+         tlServices?.update(context: context)
+         nativeServices?.update(context: context)
+@@ -78,6 +81,7 @@
+     }
+ 
+     public func clearContext() {
++        settingsActionAuthority?.clearContext()
+         clearEarlyStartupMarker()
+         tlTransforms?.updateSubscriptions(active: false)
+         hasAccount = false
+@@ -136,6 +140,11 @@
+                 let callbacks = PluginCallbackDispatcher(host: host, log: { logs.append(pluginId: "host", message: $0) })
+                 self.nativeCallbacks = callbacks
+                 let services = self.services
++                let settingsActions = PluginUISettingsActionAuthority(captureOwner: { callbacks.captureOwner($0) },
++                    accountIndex: { services.accountIndex(recordId: $0) })
++                self.settingsActionAuthority = settingsActions
++                PluginUISettingsActionRegistry.install(settingsActions)
++                if let context = self.currentContext { settingsActions.update(context: context) }
+                 let tl = PluginTLBridgeExtension(
+                     storage: services.serviceStorage,
+                     hasPermission: { callbacks.hasPermission($0, $1) },
+@@ -342,12 +351,17 @@
+     }
+ 
+     public func settings(id: String) async throws -> String {
++        guard let capturedHost = self.host, let context = currentContext,
++              let owner = capturedHost.callbackOwner(id: id),
++              let account = services.accountIndex(recordId: context.account.id.int64) else { throw PluginHostError.pluginNotFound(id) }
+         let host = try await operationHost()
+         defer { activeOperations -= 1 }
+-        guard let context = currentContext, let owner = host.callbackOwner(id: id) else { throw PluginHostError.pluginNotFound(id) }
++        guard host === capturedHost, self.currentContext === context, host.callbackOwner(id: id) == owner else {
++            throw PluginHostError.superseded("Settings read scope expired before admission")
++        }
+         let fileName = try ToolsPluginSchemaCache.settingsFileName(pluginId: id)
+         let json: String
+-        do { json = try await host.settingsJSON(id: id, account: services.selectedAccount()) }
++        do { json = try await host.settingsJSON(id: id, account: account) }
+         catch {
+             if cachedSettingsOwners[fileName]?.owner == owner { invalidateSettingsSchema(id: id) }
+             throw error
+@@ -356,7 +370,9 @@
+             throw PluginHostError.superseded("Settings schema belongs to an expired account/interpreter")
+         }
+         do {
+-            try settingsSchemaCache.record(fileName: fileName, owner: settingsSchemaToken(owner: owner, account: context.account.id.int64), cachedNativeSettingsJSON: Data(json.utf8))
++            // Arbitrary create_settings() has no native immutable-schema proof.
++            // Core receives nil evidence; this cache key grants no backup fields.
++            try settingsSchemaCache.recordDynamic(fileName: fileName, owner: settingsSchemaObservationKey(owner: owner, account: context.account.id.int64), cachedNativeSettingsJSON: Data(json.utf8))
+             cachedSettingsOwners[fileName] = (owner, context.account.id.int64)
+         } catch {
+             invalidateSettingsSchema(id: id)
+@@ -366,16 +382,28 @@
+     }
+ 
+     public func updateSetting(id: String, key: String, jsonValue: String) async throws {
++        let invocation = try PluginUISettingsActionExecution.require(pluginId: id)
++        guard let capturedHost = self.host else { throw PluginHostError.notRunning }
++        invalidateSettingsSchema(id: id)
+         let host = try await operationHost()
+         defer { activeOperations -= 1 }
+-        try await host.updateSetting(id: id, key: key, valueJSON: jsonValue)
++        guard host === capturedHost else { throw PluginHostError.superseded("Settings Host changed before admission") }
++        try await host.updateSetting(id: id, key: key, valueJSON: jsonValue,
++            expectedOwner: invocation.owner, account: invocation.account,
++            shouldExecute: { invocation.isCurrent })
+         changed()
+     }
+ 
+     public func click(id: String, callbackId: String) async throws {
++        let invocation = try PluginUISettingsActionExecution.require(pluginId: id)
++        guard let capturedHost = self.host else { throw PluginHostError.notRunning }
++        invalidateSettingsSchema(id: id)
+         let host = try await operationHost()
+         defer { activeOperations -= 1 }
+-        try await host.clickSetting(id: id, callbackId: callbackId)
++        guard host === capturedHost else { throw PluginHostError.superseded("Settings Host changed before admission") }
++        try await host.clickSetting(id: id, callbackId: callbackId,
++            expectedOwner: invocation.owner, account: invocation.account,
++            shouldExecute: { invocation.isCurrent })
+         changed()
+     }
+ 
+@@ -407,6 +435,8 @@
+     public func terminate() async {
+         guard !terminating else { return }
+         terminating = true
++        settingsActionAuthority?.clearContext()
++        PluginUISettingsActionRegistry.install(nil)
+         recoveryHealthyTask?.cancel()
+         recoveryHealthyTask = nil
+         if let recovery = runtimeRecovery { try? await Task.detached(priority: .utility) { try recovery.markHealthy() }.value }
+@@ -601,10 +631,17 @@
+         do {
+             if let startup { await startup.value }
+             guard !terminating else { throw PluginHostError.notRunning }
+-            frozenSettingsLocation = try liveSettingsLocation()
+-            if let host { lease = try await host.beginSettingsMaintenance(timeout: timeout) }
+-            else {
++            // Pre-drain UI schemas are not evidence about unload's final writes.
++            settingsSchemaCache.clear()
++            cachedSettingsOwners.removeAll()
++            if let host {
++                let acquired = try await host.beginSettingsMaintenance(timeout: timeout)
++                do { frozenSettingsLocation = try liveSettingsLocation() }
++                catch { try await acquired.finish(resume: false); throw error }
++                lease = acquired
++            } else {
+                 guard startup == nil else { throw PluginHostError.runtimeFailure("Runtime initialization did not establish a maintenance owner") }
++                frozenSettingsLocation = try liveSettingsLocation()
+                 lease = nil // Root proves that no Host or worker was ever created.
+             }
+         } catch {
+@@ -662,13 +699,13 @@
+             })
+     }
+ 
+-    private func settingsSchemaToken(owner: PluginHost.CallbackOwner, account: Int64) -> String {
++    private func settingsSchemaObservationKey(owner: PluginHost.CallbackOwner, account: Int64) -> String {
+         return "account:\(account):epoch:\(owner.wireToken)"
+     }
+ 
+     private func liveSettingsLocation() throws -> ToolsBackupPluginLocation {
+         pruneSettingsSchemas()
+-        let owners = cachedSettingsOwners.mapValues { settingsSchemaToken(owner: $0.owner, account: $0.account) }
++        let owners = cachedSettingsOwners.mapValues { settingsSchemaObservationKey(owner: $0.owner, account: $0.account) }
+         return try settingsSchemaCache.location(directory: services.serviceStorage.settingsDirectoryURL(), activeOwners: owners)
+     }
+ 

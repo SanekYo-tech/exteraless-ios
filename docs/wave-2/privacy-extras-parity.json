@@ -1,0 +1,100 @@
+{
+  "notes": [
+    "Source implementation and exact coordinator-hunk receipt only; no Swift/native/visual/APNs execution pass. Every functional record remains partial and ported=false until shared integration and CI.",
+    "Native local state uses Namespaces.CachedItemCollection.exteralessLocalState with exteraless.privacyExtras.* keys only. No collection-wide clear or real account/panic action was run.",
+    "Private hidden-account fields are registered only in the native Keychain-backed private ClientSettings instance; they are not generic plugin/UI settings.",
+    "P-system-contacts is the assigned exact Android AccountManager disposition. It is not an iOS contact-permission or contact-sync toggle."
+  ],
+  "features": [
+    {
+      "id": "neko.ignoreBlocked",
+      "ios": {
+        "setting_key": "privacy.ignoreBlocked",
+        "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFiltering.swift"}],
+        "adaptation": "Megagroup sender/reply history and preview filtering, all-chat notification sender filtering, native account-owned blocked-list snapshot and reaction projection. Does not replace the server block list. Shared render/prefetch/notification hooks are supplied in privacy-extras.md."
+      },
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java", "line": 41609}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/ReactionFilter.java", "line": 25}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/FilteringPolicyTests.swift", "note": "Prepared bounded fixtures, not executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.blockedChannelsData",
+      "ios": {"setting_key": "privacy.blockedChannelsData", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFiltering.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessLocalFiltersController.swift"}], "adaptation": "Account record/user/environment-scoped native peer arrays, reversible local filtering; no cross-account access-hash import and no server block RPC."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 477}, {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.customFilteredUsersData",
+      "ios": {"setting_key": "privacy.customFilteredUsersData", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFiltering.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessLocalFiltersController.swift"}], "adaptation": "Native user identity and local selector/removal UI; actual sender/reaction/notification predicates. Android display/access-hash metadata is resolved through the owning native account instead of being transplanted."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 608}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/FilteringPolicyTests.swift", "note": "Prepared account/namespace isolation tests, not executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.regexFiltersEnabled",
+      "ios": {"setting_key": "privacy.regexFiltersEnabled", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFiltering.swift"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFilteringNotifications.swift"}], "adaptation": "Native bounded NFA and complete original message-input extraction. Outgoing, empty, translated/restricted body, emoji/sticker body and known OAuth exceptions; reverse-rule unknown results never hide. Public native render/download/notification hooks await coordinator insertion."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 259}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/PushListenerController.java", "line": 288}, {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicyRegex.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.regexFiltersData",
+      "ios": {"setting_key": "privacy.regexFiltersData", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessLocalFiltersController.swift"}], "adaptation": "Account-scoped shared rule editor with enabled/reversed/ASCII-case-insensitive/MULTILINE find modes. Bounded Thompson NFA rejects backreferences/lookarounds/inline flags explicitly; not full Java regex syntax parity."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 768}, {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicyRegex.swift"}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/FilteringPolicyTests.swift", "note": "Prepared NFA work/input/compiler-bound fixtures; no execution claim"}]}
+    },
+    {
+      "id": "nagram.regexChatFiltersData",
+      "ios": {"setting_key": "privacy.regexChatFiltersData", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessLocalFiltersController.swift"}], "adaptation": "Per-account/per-packed-peer rule sets run before shared rules, including private chats; native create/edit/remove and persistence."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 221}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 310}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.regexFiltersEnableInChats",
+      "ios": {"setting_key": "privacy.regexFiltersEnableInChats", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}], "adaptation": "Default false. Restricts shared rules only, not private chat-specific rules; secret/private scope is explicit."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 240}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/FilteringPolicyTests.swift", "note": "Prepared private/shared precedence tests, not executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.regexFiltersExcludedDialogs",
+      "ios": {"setting_key": "privacy.regexFiltersExcludedDialogs", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessLocalFiltersController.swift"}], "adaptation": "Reversible per-account/native-peer exclusion of both regex sets. Sender filtering remains independent, matching original call order."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 280}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java", "line": 446}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "neko.ignoreContentRestrictions",
+      "ios": {"setting_key": "privacy.ignoreContentRestrictions", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFiltering.swift"}], "adaptation": "Original true default; skips only local hard restriction notices via supplied PeerUtils/PlatformRestrictionMatching hunks. Sensitive-content consent, membership, noforwards and server content/ban outcomes are not rewritten."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java", "line": 23176}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.zalgoFilter",
+      "ios": {"setting_key": "privacy.zalgoFilter", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessFilteringText.swift"}, {"path": "swift/ExteralessCore/Sources/ExteralessCore/FilteringTextPolicy.swift"}], "adaptation": "Original false default, UTF-16 length 4...2048 and four-consecutive-mark trigger. Deletes all mark ranges in final attributed display strings, preserving spans and original stored text; central text/name renderer hunks supplied."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/MessageHelper.java", "line": 958}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/FilteringPolicyTests.swift", "note": "Prepared threshold/length/astral attributed-span fixture, not executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "nagram.forwardProtectedAsCopy",
+      "ios": {"setting_key": "privacy.forwardProtectedAsCopy", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessProtectedCopies.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessProtectedCopyAction.swift"}], "adaptation": "Native new-message preparation and real recipient/topic/paid-send flow for available text, stickers and cached photo/file data, preserving entities and album groups. Missing media reports the native download prerequisite; erased retention-only data is not invented. Normal server-forward and ban flags remain unchanged. Context-menu hunk pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java", "line": 13476}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/MessageHelper.java", "line": 1348}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "passcodehelper.accountHidden",
+      "ios": {"setting_key": "privacy.accountHidden", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessHiddenAccounts.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessHiddenAccountsController.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessPrivacyExtrasIntegration.swift"}], "adaptation": "Private device-only Keychain store; hidden requires a real per-account code. Full account identity, visible account projection, notification suppression, recovery and opaque native app-unlock continuation. Actual PasscodeUI/account-picker composition hunks pending; not stock passcode equivalence."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/PasscodeHelper.java", "line": 95}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/PasscodeView.java", "line": 1111}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/HiddenAccountPolicyTests.swift", "note": "Prepared fake-identity/lifecycle fixtures; no native user account effects executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "passcodehelper.accountAllowPanic",
+      "ios": {"setting_key": "privacy.accountAllowPanic", "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/HiddenAccountPolicy.swift"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessHiddenAccounts.swift"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessPrivacyExtrasTemporaryFiles.swift"}], "adaptation": "Absent eligibility is true like the original, but no panic exists until explicitly configured. Only a manually entered configured app-lock code can produce the consumed panic authorization. Atomic AccountManager identity check/stock loggedOut transition and bounded native TempBox disposal; no arbitrary path deletion. Ordinary PIN has precedence, biometry/cancel/lifecycle never panic."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/PasscodeHelper.java", "line": 22}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java", "line": 16499}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/HiddenAccountPolicyTests.swift", "note": "Injected effect recorder only; never native logout on a real user account"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "passcodehelper.settingsHidden",
+      "ios": {"setting_key": "privacy.settingsHidden", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessHiddenAccounts.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessPrivacyExtrasIntegration.swift"}], "adaptation": "Private false-default flag hides only the hidden-account action. Current authorized page and capability recovery route remain available. Not a blanket hiding of stock Settings."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/PasscodeHelper.java", "line": 149}, {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessHiddenAccountsController.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "passcodehelper.settingsKey",
+      "ios": {"setting_key": "privacy.settingsKey", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessPrivacyExtras/ExteralessHiddenAccounts.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PrivacyExtras/ExteralessPrivacyExtrasIntegration.swift"}], "adaptation": "Original global settingsHash capability, empty until generated. iOS uses 16 random bytes in entitled device-only Keychain, exact local nasettings URL matching and native ordinary-PIN authorization. Private key omitted from exports/generic plugin settings; URL hunk pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/PasscodeHelper.java", "line": 137}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/SettingsHelper.java", "line": 290}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/HiddenAccountPolicyTests.swift", "note": "Prepared injected-secret redaction/export fixture, not executed"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md"}]}
+    },
+    {
+      "id": "neko.disableSystemAccount",
+      "ios": {
+        "setting_key": null,
+        "existing_equivalent": null,
+        "implementation_callsites": [],
+        "platform_constraints": ["android-account-manager-registration"],
+        "adaptation": "P-system-contacts exact platform disposition: Android AccountManager getAccountsByType/addAccountExplicitly/removeAccount for BuildConfig.APPLICATION_ID has no iOS application-type system-account registration counterpart. Native CNContactStore/contact permission/Telegram sync are different mechanisms and were not changed or claimed as this flag. No fake toggle."
+      },
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoConfig.java", "line": 125, "note": "Default false"}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java", "line": 427, "note": "Android OS AccountManager registration gate"}, {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/ContactsController.java", "line": 447, "note": "Removal of application-type Android OS accounts"}, {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/DeviceContactDataManager.swift", "line": 24, "note": "Read-only evidence: iOS CNContactStore, not Android system-account registration"}, {"kind": "source", "path": "docs/wave-2/privacy-extras.md", "note": "Platform disposition, not an implementation/runtime/visual pass"}]}
+    }
+  ]
+}

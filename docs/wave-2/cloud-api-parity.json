@@ -1,0 +1,292 @@
+{
+  "schema_version": 2,
+  "owner": "cloud-client-api",
+  "packages": ["P-cloud-sync", "P-client-api"],
+  "handoff": "docs/wave-2/cloud-api.md",
+  "legacy_remediation": "docs/wave-2/cloud-legacy-remediation.md",
+  "proof_level": "source and authored bounded fixtures; shared wiring, Swift execution and native frames pending",
+  "application_entry_connected": false,
+  "independent_review_pass_claimed": false,
+  "original_inventory": "docs/parity/remaining-ownership.json",
+  "original_java_kotlin_digest": "8ef4beb977e16fc92583851958c906cfcf2e2f3a0a9c635e35209d3ad0e25cf4",
+  "features": [
+    {
+      "id": "cloudsettingshelper.autoSync",
+      "android": {
+        "default": false,
+        "preference": "nekocloud.auto_sync",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 59},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 290},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudStorageHelper.java", "line": 53}
+        ]
+      },
+      "ios": {
+        "setting_key": "cloud.autoSync",
+        "default": false,
+        "adaptation": "Original 1200 ms change debounce with explicit foreground/account lifetime, deduplicated runs, RPC cancellation and no failure-driven polling. Original bot custom storage transport; immutable versioned native archives and remote-head conflicts.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudAutoSync.swift", "line": 35, "symbol": "CloudAutoSync.setForeground"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudAutoSync.swift", "line": 57, "symbol": "CloudAutoSync.settingsChanged"},
+          {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessCloud/ExteralessCloudTransport.swift", "line": 51, "symbol": "ExteralessCloudTransport.invoke"}
+        ],
+        "pending_bindings": ["C1"],
+        "remaining": ["Native compile and account-lifecycle frame proof", "Unavailable or unaudited legacy preferences are explicitly skipped with original IDs/reasons"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncSession.swift", "line": 67},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 96},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudRemoteTests.swift", "line": 72}
+        ]
+      }
+    },
+    {
+      "id": "cloudsettingshelper.includeApiKeys",
+      "android": {
+        "default": false,
+        "preference": "nekocloud.include_api_keys",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 60},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 300},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/SettingsBackupHelper.java", "line": 132}
+        ]
+      },
+      "ios": {
+        "setting_key": "cloud.includeApiKeys",
+        "default": false,
+        "adaptation": "Direct native Keychain export through a closed service-key whitelist only when enabled; false performs no secure reads. Whole native AI protected strings retain origin/setting/protocol binding; public URL changes cannot rebind or export an unrelated key. Explicit Android incoming-key authorization uses its confirmed snapshot. Add-only restoration preserves existing key and binding; old raw native values remain unbound. Telegram App hash, auth/session keys and private history/prompts are excluded.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudCredentials.swift", "line": 81, "symbol": "CloudCredentials.export"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudArchive.swift", "line": 174, "symbol": "CloudSettingsArchive.restoreMissingCredentials"},
+          {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Cloud/ExteralessCloudArchiveHost.swift", "symbol": "ExteralessCloudArchiveHost.restore"}
+        ],
+        "pending_bindings": ["C1", "C6"],
+        "remaining": ["Apple Keychain and entitled access-group verification", "Original protocol is transport encrypted, not end-to-end encrypted", "Old key-bearing revisions remain until explicitly deleted"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudArchiveTests.swift", "line": 24},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudArchiveTests.swift", "line": 44},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudArchiveTests.swift", "line": 99},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 148}
+        ]
+      }
+    },
+    {
+      "id": "cloudsettingshelper.localSyncedDate",
+      "android": {
+        "default": -1,
+        "preference": "nekocloud.updated_at",
+        "classification": "successful-sync state",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 58},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 313},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java", "line": 375}
+        ]
+      },
+      "ios": {
+        "setting_key": null,
+        "state_key": "CloudLocalState.lastSuccessfulSyncMilliseconds",
+        "default": -1,
+        "adaptation": "Read-only versioned local metadata scoped by Telegram user, local account record and server environment. Updated only after remote readback plus local receipt, or successful public restore/key phase. Failed attempts, cancellation, unchanged-content checks and deletion do not fabricate a date.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncSession.swift", "line": 67, "symbol": "CloudSyncSession.syncNow"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncSession.swift", "line": 136, "symbol": "CloudSyncSession.restore"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CloudSyncState.swift", "symbol": "CloudFileStateStorage"}
+        ],
+        "pending_bindings": ["C1"],
+        "remaining": ["A legacy global updated_at is not attributed to an arbitrary account", "Native persistence and UI proof pending"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 34},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 55},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 185},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/CloudSyncLifecycleTests.swift", "line": 209}
+        ]
+      }
+    },
+    {
+      "id": "nekox.customApi",
+      "android": {
+        "default": 0,
+        "options": [0, 3],
+        "preference": "nekox_config.custom_api",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 40},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 49},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 205}
+        ]
+      },
+      "ios": {
+        "setting_key": "clientAPI.customApi",
+        "test_environment_key": "clientAPI.test.customApi",
+        "default": 0,
+        "adaptation": "Preserves selector 0/3. Launch-frozen configuration affects new authorization flows after restart; every admitted account keeps a durable native ID/hash generation. Turning off retains the saved draft and uses supplied BuildConfig for new flows.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientAPILaunchResolver.swift", "line": 28, "symbol": "ClientAPILaunchResolver.resolve"},
+          {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessClientAPI/ExteralessClientAPIEnvironment.swift", "line": 36, "symbol": "ExteralessClientAPIEnvironment.arguments"}
+        ],
+        "pending_bindings": ["C1", "C2", "C3", "C4", "C5", "C6"],
+        "remaining": ["Actual Account/standaloneStateManager/bootstrap insertions", "Native login UI tuple wiring", "Main/extension pin entitlement verification"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 22},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 54},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 74}
+        ]
+      }
+    },
+    {
+      "id": "nekox.customAppId",
+      "android": {
+        "default": 0,
+        "preference": "nekox_config.custom_app_id",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 46},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java", "line": 293},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/PasskeysController.java", "line": 191}
+        ]
+      },
+      "ios": {
+        "setting_key": "clientAPI.customAppId",
+        "test_environment_key": "clientAPI.test.customAppId",
+        "default": 0,
+        "adaptation": "Positive Int32 validated together with the hash; one injected native factory produces NetworkInitializationArguments for both MTApiEnvironment creation and the account's subsequent auth requests. Existing-account credentials are preserved.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientAPISettings.swift", "line": 67, "symbol": "ClientAPIConfigurationStore.save"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientAPILaunchResolver.swift", "line": 60, "symbol": "ClientAPILaunchResolver.makeEnvironment"},
+          {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessClientAPI/ExteralessClientAPIEnvironment.swift", "symbol": "NetworkInitializationArguments.exteralessReplacingAPITuple"}
+        ],
+        "pending_bindings": ["C1", "C2", "C3", "C4", "C6"],
+        "remaining": ["Resolved arguments must feed the existing real MTApiEnvironment.apiId assignment before MTContext creation", "Actual factory/native compile proof pending"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 39},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 91},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 123}
+        ]
+      }
+    },
+    {
+      "id": "nekox.customAppHash",
+      "android": {
+        "default": "",
+        "preference": "nekox_config.custom_app_hash",
+        "anchors": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 47},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoXConfig.java", "line": 53},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/PasskeysController.java", "line": 192}
+        ]
+      },
+      "ios": {
+        "setting_key": "clientAPI.customAppHash",
+        "test_environment_key": "clientAPI.test.customAppHash",
+        "default": "",
+        "secret": true,
+        "adaptation": "Fresh native Keychain read, opaque tuple factory and redacted reflection/descriptions. Incomplete-save marker prevents old-ID/new-hash admission. A public generation marker makes a missing former pin an explicit failure. Custom Telegram App hashes never enter Cloud or default Tools exports.",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientAPISettings.swift", "symbol": "ClientAPIConfigurationStore.readHash"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientAPIModels.swift", "symbol": "ClientAPICredentials.withAPITuple"},
+          {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessClientAPI/ExteralessClientAPIRequestPolicy.swift", "line": 17, "symbol": "exteralessClientAPIRequestLogMetadata"}
+        ],
+        "pending_bindings": ["C1", "C2", "C3", "C4", "C5", "C6"],
+        "remaining": ["Both Network request builders and TL transformation gates need the native identity exclusion", "Keychain/entitlement/device proof pending", "No real authentication test was performed"]
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 105},
+          {"kind": "test-source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ClientAPITests.swift", "line": 178},
+          {"kind": "test-source", "path": "telegram-ios/submodules/TelegramCore/Tests/ClientAPIRequestMetadataTests.swift", "line": 7}
+        ]
+      }
+    }
+  ],
+  "state_and_alias_receipts": [
+    {"source": "nekocloud.auto_sync", "target": "cloud.autoSync", "consumer": "NewCloudFeatures.migrateAndroidAliases(in:)", "policy": "explicit selected-document migration; destination wins"},
+    {"source": "nekocloud.include_api_keys", "target": "cloud.includeApiKeys", "consumer": "NewCloudFeatures.migrateAndroidAliases(in:)", "policy": "explicit selected-document migration; destination wins"},
+    {"source": "nekocloud.updated_at", "target": "CloudLocalState.lastSuccessfulSyncMilliseconds", "policy": "successful account-scoped state adaptation; never assign the legacy global timestamp to a guessed account"},
+    {"source": "nekox_config.custom_api", "target": "clientAPI.customApi", "consumer": "ClientAPIConfigurationStore.migrateAndroidAliases()", "policy": "explicit selected-document migration; preserve 0/3"},
+    {"source": "nekox_config.custom_app_id", "target": "clientAPI.customAppId", "consumer": "ClientAPIConfigurationStore.migrateAndroidAliases()", "policy": "explicit selected-document migration; destination wins"},
+    {"source": "nekox_config.custom_app_hash", "target": "clientAPI.customAppHash", "consumer": "ClientAPIConfigurationStore.migrateAndroidAliases()", "policy": "native secure migration; no plaintext/cloud export"},
+    {"source": "CloudFeatures", "target": "NewCloudFeatures", "policy": "Swift type alias for the canonical new domain definition provider"},
+    {"source": "NekoXConfig.currentAppId/currentAppHash", "target": "ClientAPILaunchResolver.makeEnvironment", "policy": "native coherent tuple adaptation; no SDK secret-string mirror"},
+    {"source": null, "target": "clientAPI.accountIdentity.<environment>.<recordId>", "policy": "native public ID/mode/generation marker; missing previously owned Keychain pin cannot fall back"},
+    {"source": null, "target": "exteraless.client-api pin.v1/pending.v1", "policy": "native non-synchronizable Keychain pins and interrupted-save drafts; separate production/test namespaces"}
+  ],
+  "requirements": [
+    {"id": "transport", "state": "source-ready", "proof": "CloudBotStorageTransport + ExteralessCloudTransport use original bot custom methods; no Saved Messages substitute or bot token"},
+    {"id": "remote-revisions", "state": "source-ready", "proof": "immutable chunks/manifests, readback, DAG heads and concurrent-fork fixture", "limit": "original server API has no CAS; final-read race preserves both revisions"},
+    {"id": "payload-protection", "state": "source-correct-adaptation", "proof": "original gzip_base64_v1 and MTProto; explicit no-E2E UI; no new device-only decryption key"},
+    {"id": "keys-opt-in", "state": "source-ready", "proof": "closed native Keychain whitelist, zero secure reads when off, add-only restore, per-chunk policy check"},
+    {"id": "success-state", "state": "source-ready", "proof": "account/server-scoped date after verified sync/completed restore only"},
+    {"id": "foreground-lifetime", "state": "source-ready-pending-C1", "proof": "1200 ms debounce, deduplicated runs, no failure polling, context retirement and cancellable RPCs"},
+    {"id": "shared-archive-maintenance", "state": "source-ready-pending-C1", "proof": "actual Tools archive/restorer/beforeSettingsCommit CAS and once-only real lease completion"},
+    {"id": "pre-network-api", "state": "pending-C2-C3-C4", "proof": "native tuple provider is implemented; exact Account/AppDelegate insertions are in handoff"},
+    {"id": "existing-account-policy", "state": "source-ready", "proof": "durable ID/hash generations, launch freeze, in-progress login preservation and missing-pin marker"},
+    {"id": "hash-log-boundary", "state": "pending-C5", "proof": "name/bool-only native metadata helper and real auth-descriptor fixture; shared Network/TL gates still need insertion"},
+    {"id": "native-editor", "state": "source-ready-pending-C1-C6", "proof": "secure draft editor, restart policy, actionable Cloud preview/sync/restore/cancel/error paths"},
+    {"id": "legacy-android-archive-import", "state": "source-ready", "proof": "CloudLegacySettingsArchive + native preview/restore: explicit typed source mappings, original-ID skipped reasons, actual CAS/Tools journal, whole bound AI credentials, original gzip/plain chunks and full-content conflict fingerprint"}
+  ],
+  "legacy_import_projection": {
+    "kind": "import projection only; does not reassign original feature ownership or claim skipped fields ported",
+    "source_index": "swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyCatalog.swift",
+    "source_literal_identity_joins": 511,
+    "scoped_prefix_families": 6,
+    "scalar_rules": 263,
+    "boolean_rules": 228,
+    "named_standalone_credential_aliases": 16,
+    "service_metadata_fields": ["id", "name", "url", "model", "reasoningEffort", "wireProtocol"],
+    "maximum_service_records": 100,
+    "native_credential_api": "AICredentialDestination / AICredentialBinding.read, validated, updated from AICredentials.swift; isolated CloudAICredentialBridge",
+    "protected_value_round_trip": "whole opaque exteraless.ai-credential.v1 string, never decoded/rebound by public metadata",
+    "raw_native_restore": "preserved as unbound until explicit native credential authorization",
+    "unsupported_preferences": "previewed as skipped with source IDs when known, exact source name otherwise, and specific reason",
+    "native_entrypoints": ["CloudSyncSession.previewAndroid", "CloudSyncSession.restoreAndroid", "ExteralessCloudController.confirmAndroidRestore"],
+    "test_sources": ["swift/ExteralessCore/Tests/ExteralessCoreTests/CloudLegacyImportTests.swift", "telegram-ios/submodules/TelegramCore/Tests/CloudLegacyTransportTests.swift"]
+  },
+  "verification": {
+    "authored_core_xctest_methods": 51,
+    "authored_native_xctest_methods": 4,
+    "swift_executed": false,
+    "native_build_executed": false,
+    "visual_frames_recorded": false,
+    "real_network_or_account_tests": false,
+    "postbox_import_check": "passed: python -B build-system/Make/PostboxImportCheck.py",
+    "bounded_source_checks": "UTF-8/whitespace/delimiters, Core/UI import boundaries, token-pattern check and exact receipt ID/path joins",
+    "post_build_fixture_timeout_seconds": 30,
+    "reported_baseline_only": {"commit": "4b3f7064", "ci": "43653040458", "core_tests": 122, "settings_cas_tests": 28, "covers_this_patch": false}
+  },
+  "remaining_platform_constraints": [
+    "Apple SDK/Swift compile and real Keychain behavior have not been verified on this Windows host",
+    "A common already-entitled pin access group and API bootstrap are required in every account-network process, including extensions",
+    "Built-in API credentials must come from the user's BuildConfig/CI configuration; none are invented or shipped here",
+    "Unsigned IPA re-signing must preserve required Keychain entitlements; no publishing or signing automation was added",
+    "Original Telegram bot storage is not assumed available on the Telegram test server",
+    "Native UI acceptance requires recorded, timestamped frame review"
+  ],
+  "scope": {
+    "common_files_modified": false,
+    "tools_archive_journal_lease_modified": false,
+    "core_settings_modified": false,
+    "commit_push_ci_or_publishing_performed": false,
+    "root_origin_or_pat_read": false,
+    "personal_documents_read": false,
+    "external_plugins_executed": false
+  }
+}

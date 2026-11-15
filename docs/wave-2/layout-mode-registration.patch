@@ -1,0 +1,12 @@
+--- a/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift
+@@ -235,7 +235,8 @@ public enum AppearanceFeatures {
+             defaultValue: .string(""), explanation: "Pack opened by Edit Selected Icon Pack. Empty turns editing off.",
+             androidSymbols: ["IconPacksConfig.editingPackId"]
+         )
+-    ] + headerDefinitions + AppearanceAdditionalFeatures.definitions + AppearanceAdditionalFeatures.settingsSectionDefinitions
++    ] + headerDefinitions + AppearanceAdditionalFeatures.definitions + AppearanceAdditionalFeatures.settingsSectionDefinitions
++        + AppearanceLayoutModePolicy.definitions
+ 
+     private static let headerDefinitions: [ClientSettingDefinition] = [
+         ClientSettingDefinition(key: "appearance.titleText", title: "Chat-list title", section: "Appearance · Header", defaultValue: .integer(0), options: [

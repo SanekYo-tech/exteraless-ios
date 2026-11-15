@@ -1,0 +1,55 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@ -351,22 +351,27 @@
+     }
+ 
+     public func settings(id: String) async throws -> String {
++        let read = try PluginUISettingsReadExecution.require(pluginId: id)
+         guard let capturedHost = self.host, let context = currentContext,
+-              let owner = capturedHost.callbackOwner(id: id),
+-              let account = services.accountIndex(recordId: context.account.id.int64) else { throw PluginHostError.pluginNotFound(id) }
++              context.account.id.int64 == read.accountRecordId else { throw PluginHostError.superseded("Settings read account expired") }
++        let owner = read.owner
++        let account = read.account
+         let host = try await operationHost()
+         defer { activeOperations -= 1 }
+-        guard host === capturedHost, self.currentContext === context, host.callbackOwner(id: id) == owner else {
++        guard read.isCurrent, host === capturedHost, self.currentContext === context, host.callbackOwner(id: id) == owner else {
+             throw PluginHostError.superseded("Settings read scope expired before admission")
+         }
+         let fileName = try ToolsPluginSchemaCache.settingsFileName(pluginId: id)
+         let json: String
+-        do { json = try await host.settingsJSON(id: id, account: account) }
++        do {
++            json = try await host.settingsJSON(id: id, account: account, expectedOwner: owner,
++                shouldExecute: { read.isCurrent })
++        }
+         catch {
+             if cachedSettingsOwners[fileName]?.owner == owner { invalidateSettingsSchema(id: id) }
+             throw error
+         }
+-        guard self.host === host, self.currentContext === context, host.callbackOwner(id: id) == owner else {
++        guard read.isCurrent, self.host === host, self.currentContext === context, host.callbackOwner(id: id) == owner else {
+             throw PluginHostError.superseded("Settings schema belongs to an expired account/interpreter")
+         }
+         do {
+diff --git a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
+--- a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
++++ b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
+@@ -140,7 +140,14 @@
+                 journal.record("fixture-enabled", ["enabled": enabled])
+             },
+             remove: { id in try Self.requireOwned(id); try await host.uninstallPlugin(id: id) },
+-            settings: { id in try Self.requireOwned(id); return try await host.settingsJSON(id: id, account: 41) },
++            settings: { id in
++                try Self.requireOwned(id)
++                let read = try PluginUISettingsReadExecution.require(pluginId: id)
++                let json = try await host.settingsJSON(id: id, account: read.account, expectedOwner: read.owner,
++                    shouldExecute: { read.isCurrent })
++                guard read.isCurrent else { throw PluginHostError.superseded("Harness settings page/read expired") }
++                return json
++            },
+             updateSetting: { id, key, value in
+                 try Self.requireOwned(id)
+                 let invocation = try PluginUISettingsActionExecution.require(pluginId: id)

@@ -1,0 +1,124 @@
+diff --git a/telegram-ios/submodules/Display/BUILD b/telegram-ios/submodules/Display/BUILD
+--- a/telegram-ios/submodules/Display/BUILD
++++ b/telegram-ios/submodules/Display/BUILD
+@@ -30,7 +30,7 @@
+     testonly = True,
+     srcs = glob([
+         "Tests/**/*.swift",
+-    ]),
++    ], exclude = ["Tests/ExteralessFontFamilyTests.swift"]),
+     deps = [
+         ":Display",
+     ],
+@@ -55,3 +55,38 @@
+         "//visibility:public",
+     ],
+ )
++
++# Flat, process-main-bundle resources. Registration is explicit in Display;
++# keep the unmodified OFL beside both fonts in every consuming bundle.
++filegroup(
++    name = "ExteralessFontResources",
++    srcs = [
++        "Resources/Fonts/ExteralessRoboto/ExteralessRoboto-Regular.ttf",
++        "Resources/Fonts/ExteralessRoboto/ExteralessRoboto-Italic.ttf",
++        "Resources/Fonts/ExteralessRoboto/ExteralessRoboto-OFL.txt",
++    ],
++    visibility = ["//visibility:public"],
++)
++
++swift_library(
++    name = "ExteralessFontFamilyTestsLib",
++    testonly = True,
++    module_name = "ExteralessFontFamilyTests",
++    srcs = ["Tests/ExteralessFontFamilyTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        ":Display",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessFontFamilyTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    test_host = "//Tests/Exteraless:NativeTestHost",
++    linkopts = ["-framework", "MediaPlayer"],
++    deps = [":ExteralessFontFamilyTestsLib"],
++    visibility = ["//visibility:public"],
++)
+diff --git a/telegram-ios/Telegram/BUILD b/telegram-ios/Telegram/BUILD
+--- a/telegram-ios/Telegram/BUILD
++++ b/telegram-ios/Telegram/BUILD
+@@ -1098,6 +1098,7 @@
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/Display:Display",
+         "//third-party/exteraless:ExteralessCore",
+         "//submodules/TelegramUI",
+         "//submodules/PasscodeCore",
+@@ -1138,6 +1139,7 @@
+         ":disableProvisioningProfilesSetting": None,
+         "//conditions:default": "@build_configuration//provisioning:Share.mobileprovision",
+     }),
++    resources = ["//submodules/Display:ExteralessFontResources"],
+     deps = [":ShareExtensionLib"],
+     frameworks = [
+         ":TelegramUIFramework"
+@@ -1199,6 +1201,7 @@
+         "-warnings-as-errors",
+     ],
+     deps = [
++        "//submodules/Display:Display",
+         "//third-party/exteraless:ExteralessCore",
+         "//submodules/TelegramUI:TelegramUI",
+         "//submodules/PasscodeCore",
+@@ -1247,6 +1250,7 @@
+         ":disableProvisioningProfilesSetting": None,
+         "//conditions:default": "@build_configuration//provisioning:NotificationContent.mobileprovision",
+     }),
++    resources = ["//submodules/Display:ExteralessFontResources"],
+     deps = [":NotificationContentExtensionLib"],
+     frameworks = [
+         ":TelegramUIFramework"
+@@ -1939,6 +1943,7 @@
+     ],
+     resources = [
+         ":LaunchScreen",
++        "//submodules/Display:ExteralessFontResources",
+         # Flat main-bundle resource used by Bundle.main.url(forResource:withExtension:).
+         "//submodules/TelegramUI:ExteralessLinkResources",
+         "//third-party/exteraless:RuntimeResources",
+diff --git a/telegram-ios/Tests/Exteraless/BUILD b/telegram-ios/Tests/Exteraless/BUILD
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@ -28,6 +28,7 @@
+     minimum_os_version = "15.0",
+     infoplists = ["NativeTestHost.plist"],
+     resources = [
++        "//submodules/Display:ExteralessFontResources",
+         "//Telegram:AppStringResources",
+         "//Telegram:GeneratedPresentationStrings/Resources/PresentationStrings.data",
+         "//submodules/TelegramUI:TelegramUIAssets",
+@@ -236,6 +237,7 @@
+         "//submodules/TelegramUI:ExteralessPlayerNativeTests",
+         "//submodules/TelegramUI:ExteralessAppearanceRootTests",
+         "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
++        "//submodules/Display:ExteralessFontFamilyTests",
+         "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
+         "//submodules/TelegramStringFormatting:ExteralessAppearancePresenceTests",
+         "//submodules/TelegramUI/Components/NavigationExpansionTransition:ExteralessGlassTests",
+diff --git a/telegram-ios/Tests/ExteralessHarness/BUILD b/telegram-ios/Tests/ExteralessHarness/BUILD
+--- a/telegram-ios/Tests/ExteralessHarness/BUILD
++++ b/telegram-ios/Tests/ExteralessHarness/BUILD
+@@ -131,6 +131,7 @@
+         "//Telegram:TelegramUIFramework",
+     ],
+     resources = [
++        "//submodules/Display:ExteralessFontResources",
+         ":DomainSourceManifest",
+         "Fixtures/client_ui_fixture.plugin",
+         "//Telegram:AppStringResources",

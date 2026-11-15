@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "original_scope": {
+    "root": "third_party/exteraless-android/TMessagesProj/src/main",
+    "files": [
+      {"path": "kotlin/app/exteraless/appearance/AppearanceConfig.kt", "sha256": "8092bb53568040d010df1ec6fa1f269f666c4cb1b072cc642cce7bfee32ee187", "lines": "81-97"},
+      {"path": "java/org/telegram/ui/ActionBar/Theme.java", "sha256": "c4f78796050fc2b8b834e4b29f9fb1fc7e9bbc9caa14e52d68d4806af8af0ebb", "lines": "5733-5760"},
+      {"path": "java/tw/nekomimi/nekogram/helpers/MonetHelper.java", "sha256": "f00044ccdf553e6ee89290b1563065ceb7c983e2c5465d4fa49532a8cb756bb0", "lines": "141-298,319-399,423-449,451-549,634-681,689-699"}
+    ],
+    "missing_assets": ["monet_light.attheme", "monet_dark.attheme", "monet_amoled.attheme", "monet_light_gram.attheme", "monet_dark_gram.attheme", "monet_amoled_gram.attheme"]
+  },
+  "classic_reference_scope": {
+    "repository": "https://github.com/exteraSquad/exteraGram",
+    "commit": "6f78031aafd7f27e0dfaa31a207715569a6df1a2",
+    "commit_date": "2023-06-02T21:22:39Z",
+    "license": "GPL-2.0-or-later",
+    "license_path": "LICENSE",
+    "license_sha256": "3f0901488e52e36314c701ba4cc0c0086db7377633334c04a7c17cd173077bb0",
+    "files": [
+      {"path": "TMessagesProj/src/main/assets/monet_light.attheme", "bytes": 23411, "git_blob": "11650cf1384ae3f23b51b67e226fb4a23b87ff89", "sha256": "3eeca58882fc503e36917e53554c99badf2afb549fc134cecc323c1eeca459f5"},
+      {"path": "TMessagesProj/src/main/assets/monet_dark.attheme", "bytes": 23424, "git_blob": "d439255e1dd071466de3598b7cd0412070ac2cc2", "sha256": "f8a866697ade7f55a1637abb06aa35f6960d6c308f0972a33260abd871e315d6"}
+    ],
+    "usage": "Selected Classic surface tokens only; not Original *_gram assets. No upstream Telemone or AMOLED asset was present at this pin. Assets are development references, not runtime resources."
+  },
+  "native_math": {
+    "repository": "https://github.com/material-foundation/material-color-utilities",
+    "commit": "194144d75ed7d34f06264a625e086db81a7ab9aa",
+    "license": "Apache-2.0",
+    "license_sha256": "e662e6c2fc7ba7bc613c7e4ddf852d4ad3fcc05faead7cbe16b1dac67b55f426",
+    "destination": "telegram-ios/submodules/TelegramPresentationData/Sources/MonetColorUtilities",
+    "modifications": "None; flattened source paths only.",
+    "files": [
+      {"path": "swift/Sources/MaterialColorUtilities/Hct/Cam16.swift", "sha256": "b25e2a1e0b5b3e02034bc8ebc2cba62d956bbc5e5379146c8b742056e4db9758"},
+      {"path": "swift/Sources/MaterialColorUtilities/Hct/Hct.swift", "sha256": "85298632a01964429ea68a26ab8a91e6216bf81dd5305a860271a43ac33be525"},
+      {"path": "swift/Sources/MaterialColorUtilities/Hct/HctSolver.swift", "sha256": "e7c7a70ec7d7e2ed9b37fec49a732a7d13e1910fc1a4d0de94efa9c37bf726ee"},
+      {"path": "swift/Sources/MaterialColorUtilities/Hct/ViewingConditions.swift", "sha256": "fcd11e7b3951695507083a95c263f7e826fb01ed65b5415bc3b30860c3a8f829"},
+      {"path": "swift/Sources/MaterialColorUtilities/Utils/ColorUtils.swift", "sha256": "6b8791c2ec443edc34f867fcb70e01e208a1a142d753e339da97628f64b3c64a"},
+      {"path": "swift/Sources/MaterialColorUtilities/Utils/MathUtils.swift", "sha256": "3d196b618f964ab99f02db802415bb5461e84b424747dd3b133f5386b70133c1"},
+      {"path": "swift/Sources/MaterialColorUtilities/Blend/Blend.swift", "sha256": "0ba20630128fd800db184dd423e4b47d61428bdd05f7f963a8e0d59f42b6f91b"}
+    ]
+  },
+  "reference_oracle": {
+    "commit": "194144d75ed7d34f06264a625e086db81a7ab9aa",
+    "engine": "Node 24.21.0 --experimental-transform-types",
+    "scratch_changes": "Only relative .js import suffixes changed to .ts for Node; raw source checksums verified before that change.",
+    "files": [
+      {"path": "typescript/hct/cam16.ts", "sha256": "bce01b5133a3cb59c5ebb6925b27c038162209ccb24c685319534103692906d5"},
+      {"path": "typescript/hct/hct.ts", "sha256": "8bfad96bc044dcdb89331bf37405c0186bec50a2caa3782000bdc95a0021abdb"},
+      {"path": "typescript/hct/hct_solver.ts", "sha256": "a6257b360da1438015be8c8282506bef1adf1da3e6d86e920491916469f3508c"},
+      {"path": "typescript/hct/viewing_conditions.ts", "sha256": "95897551c39fd4d1d04db495751b07365cf116a6a5b7261a716da9cc8c673b21"},
+      {"path": "typescript/utils/color_utils.ts", "sha256": "0b2f0655da3bfa74bd56c75f1670679b22518ded0b52b3cbeffe531c036a681b"},
+      {"path": "typescript/utils/math_utils.ts", "sha256": "7b4166ad3555848ce759ef8fb9888f0f663886093016e4d932d393d9c7779573"},
+      {"path": "typescript/blend/blend.ts", "sha256": "a67ba76c8a8b6f409ee723e2eb53636736b857e082f969d45190e0e2915d93b6"}
+    ]
+  },
+  "bounds": {
+    "maximum_download_file_bytes": 32768,
+    "build_time_network_requests": 0,
+    "runtime_network_requests": 0,
+    "maximum_encoded_native_theme_bytes": 262144,
+    "native_palette_system_colors": 65,
+    "maximum_token_utf8_bytes": 192,
+    "maximum_token_recursion_depth": 8
+  }
+}

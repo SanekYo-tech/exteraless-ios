@@ -1,0 +1,333 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+     private var privacy: ExteralessPrivacyIntegration?
++    private var retention: ExteralessRetentionIntegration?
+@@
+                     + PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions + DialogFeatures.definitions
++                    + RetentionFeatures.definitions
+@@
+         if privacy == nil { privacy = ExteralessPrivacyIntegration() }
++        if retention == nil { retention = ExteralessRetentionIntegration() }
+@@
+         privacy?.update(context: context)
++        retention?.update(context: context)
+@@
+         privacy?.clearContext()
++        retention?.clearContext()
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@
+         let messageViewQueue = Queue.mainQueue()
++        let includeRetained: Bool
++        if case .default = self.source {
++            includeRetained = !isScheduledMessages && tag == nil && subject != .pinnedMessages && mode == .bubbles
++        } else { includeRetained = false }
++        let retentionHistoryUpdate = exteralessRetentionHistoryUpdates(context: context, location: chatLocation, source: historyViewUpdate, enabled: includeRetained)
+         let historyViewTransitionDisposable = (combineLatest(queue: messageViewQueue,
+-            historyViewUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
++            retentionHistoryUpdate |> debug_measureTimeToFirstEvent(label: "chatHistoryNode_historyViewUpdate"),
+@@
+-                let (filteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
++                let (baseFilteredEntries, updatedChatHistoryEntriesForViewState) = chatHistoryEntriesForView(
+@@
+                     pinToTopStableId: pinToTopStableId
+                 )
++                let filteredEntries = exteralessRetentionMergeDisplayEntries(baseFilteredEntries, retained: update.5, presentationData: chatPresentationData, groupMessages: mode == .bubbles, reverse: reverse, reverseGroups: reverseGroups, historyAppearsCleared: historyAppearsCleared, pendingRemovedMessages: pendingRemovedMessages)
+                 let lastHeaderId = filteredEntries.last.flatMap { listMessageDateHeaderId(timestamp: $0.index.timestamp) } ?? 0
+@@
+                         case let .MessageEntry(message, _, _, _, _, _):
+                             guard message.adAttribute == nil && message.id.namespace == Namespaces.Message.Cloud else {
+                                 continue
+                             }
++                            if EngineMessage(message).exteralessRetention != nil { continue }
+@@
+                             for (message, _, _, _, _) in messages {
+                                 guard message.adAttribute == nil && message.id.namespace == Namespaces.Message.Cloud else {
+                                     continue
+                                 }
++                                if EngineMessage(message).exteralessRetention != nil { continue }
+@@
+                     switch historyView.filteredEntries[i] {
+                     case let .MessageEntry(message, _, _, _, _, _):
++                        if EngineMessage(message).exteralessRetention != nil { continue }
+                         if let author = message.author as? TelegramUser {
+                             peerIdsWithRefreshStories.append(author.id)
+                         }
+@@
+                     case let .MessageGroupEntry(_, messages, _):
+-                        if let author = messages.first?.0.author as? TelegramUser {
++                        if let author = messages.first(where: { EngineMessage($0.0).exteralessRetention == nil })?.0.author as? TelegramUser {
+                             peerIdsWithRefreshStories.append(author.id)
+                         }
+@@
+                         for (message, _, _, _, _) in messages {
++                            if EngineMessage(message).exteralessRetention != nil { continue }
+                             var hasUnconsumedMention = false
+@@
+-                        if let message = messages.first {
++                        if let message = messages.first(where: { EngineMessage($0.0).exteralessRetention == nil }) {
+                             if message.0.id.namespace == Namespaces.Message.Cloud, self.remainingDynamicAdMessageInterval != nil {
+@@
+             for entry in historyView.filteredEntries {
+                 switch entry {
+                 case let .MessageEntry(message, _, _, _, _, _):
++                    if EngineMessage(message).exteralessRetention != nil { continue }
+                     if let _ = message.inlineBotAttribute {
+@@
+                     for (message, _, _, _, _) in messages {
++                        if EngineMessage(message).exteralessRetention != nil { continue }
+                         if let _ = message.inlineBotAttribute {
+@@
+             func addMediaToPrefetch(_ message: Message, _ media: Media, _ messages: inout [(Message, Media)]) -> Bool {
++                if EngineMessage(message).exteralessRetention != nil { return true }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenMessageContextMenu.swift
+@@
+     func openMessageContextMenu(message: EngineMessage, selectAll: Bool, node: ASDisplayNode, frame: CGRect, anyRecognizer: UIGestureRecognizer?, location: CGPoint?) -> Void {
++        if MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: message) }) { return }
+@@
+-        if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id) {
++        if let messages = self.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(message.id)?.filter({ EngineMessage($0).exteralessRetention == nil }) {
+@@
+-                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager)
+-            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips in
++                ApplicationSpecificNotice.getChatTextSelectionTips(accountManager: self.context.sharedContext.accountManager),
++                self.exteralessRetentionContextItems(message: message)
++            ).startStandalone(next: { [weak self] peer, actions, allowedReactionsAndStars, selectedReactions, topReactions, chatTextSelectionTips, retentionItems in
+@@
+-                    if !aiItems.isEmpty {
++                    if !aiItems.isEmpty || !retentionItems.isEmpty {
+                         let separator: [ContextMenuItem] = items.isEmpty ? [] : [.separator]
+-                        actions.content = .list(items + separator + aiItems)
++                        actions.content = .list(items + separator + aiItems + retentionItems)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenPollContextMenu.swift
+@@
+     func openPollOptionContextMenu(optionId: Data, params: ChatControllerInteraction.LongTapParams) -> Void {
++        if let message = params.message, MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: EngineMessage(message)) }) { return }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenTodoContextMenu.swift
+@@
+     func openTodoItemContextMenu(todoItemId: Int32, params: ChatControllerInteraction.LongTapParams) -> Void {
++        if let message = params.message, MainActor.assumeIsolated({ self.exteralessOpenRetainedContextMenu(message: EngineMessage(message)) }) { return }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+         let controllerInteraction = ChatControllerInteraction(openMessage: { [weak self] message, params in
+             guard let self, self.isNodeLoaded, let message = self.chatDisplayNode.historyNode.messageInCurrentHistoryView(message.id)?._asMessage() else {
+                 return false
+             }
++            if EngineMessage(message).exteralessRetention != nil {
++                MainActor.assumeIsolated { ExteralessRetentionIntegration.open(context: self.context, parent: self, scope: .message(message.id)) }
++                return true
++            }
+@@
+         }, updateMessageReaction: { [weak self] initialMessage, reaction, force, sourceView in
+             guard let strongSelf = self else {
+                 return
+             }
++            if strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(initialMessage.id)?.exteralessRetention != nil { return }
+@@
+-            guard let messages = strongSelf.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(initialMessage.id) else {
++            guard let messages = strongSelf.chatDisplayNode.historyNode.messageGroupInCurrentHistoryView(initialMessage.id)?.filter({ EngineMessage($0).exteralessRetention == nil }) else {
+@@
+         }, canSetupReply: { [weak self] message in
++            if EngineMessage(message).exteralessRetention != nil && !RetentionPolicy.current.replyToDeletedAsQuote { return .none }
+@@
+         }, requestSelectMessagePollOptions: { [weak self] id, opaqueIdentifiers in
+             guard let strongSelf = self, let controllerInteraction = strongSelf.controllerInteraction else {
+                 return
+             }
++            if strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(id)?.exteralessRetention != nil { return }
+@@
+         }, openMessageReplies: { [weak self] messageId, isChannelPost, displayModalProgress in
+             guard let strongSelf = self else {
+                 return
+             }
++            if strongSelf.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?.exteralessRetention != nil { return }
+@@
+         }, requestToggleTodoMessageItem: { [weak self] messageId, itemId, value in
+             guard let self else {
+                 return
+             }
++            if self.chatDisplayNode.historyNode.messageInCurrentHistoryView(messageId)?.exteralessRetention != nil { return }
+@@
+                 let pluginItems = ExteralessPluginMenuEntry.updating(
+-                    items: items |> map { ContextController.Items(content: .list($0)) },
++                    items: items |> map { items in
++                        let retained = MainActor.assumeIsolated { strongSelf.exteralessRetentionChatItems() }
++                        let separator: [ContextMenuItem] = items.isEmpty || retained.isEmpty ? [] : [.separator]
++                        return ContextController.Items(content: .list(items + separator + retained))
++                    },
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
+@@
+         var animationRenderer: MultiAnimationRenderer
++        var retention: ExteralessRetentionMessageAttribute?
+@@
+-            animationRenderer: MultiAnimationRenderer
++            animationRenderer: MultiAnimationRenderer,
++            retention: ExteralessRetentionMessageAttribute? = nil
+@@
+             self.animationRenderer = animationRenderer
++            self.retention = retention
+@@
+-            var updatedDateText = arguments.dateText
+-            if arguments.edited {
+-                if let useEditedTimestamp = arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool, useEditedTimestamp {
+-                } else {
+-                    updatedDateText = "\(arguments.presentationData.strings.Conversation_MessageEditedLabel) \(updatedDateText)"
+-                }
+-            }
+-            if let impressionCount = arguments.impressionCount {
+-                updatedDateText = compactNumericCountString(impressionCount, decimalSeparator: arguments.presentationData.dateTimeFormat.decimalSeparator) + " " + updatedDateText
+-            }
+-            
+             let dateFont = Font.regular(floor(arguments.presentationData.fontSize.baseDisplaySize * 11.0 / 17.0))
+-            let (date, dateApply) = dateLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: updatedDateText, font: dateFont, textColor: dateColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .middle, constrainedSize: arguments.constrainedSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
++            let policy = RetentionPolicy.current
++            let dateString = NSMutableAttributedString(string: "")
++            func appendText(_ text: String, color: UIColor) {
++                dateString.append(NSAttributedString(string: text, font: dateFont, textColor: color))
++            }
++            func appendMark(text: String, symbol: String?, color: UIColor) {
++                if let symbol, let image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: dateFont.pointSize)) {
++                    let mark = NSMutableAttributedString(string: "\u{2003}", font: dateFont, textColor: color)
++                    mark.addAttribute(.attachment, value: image.withTintColor(color, renderingMode: .alwaysOriginal), range: NSRange(location: 0, length: mark.length))
++                    dateString.append(mark)
++                } else { appendText(text, color: color) }
++                appendText(" ", color: dateColor)
++            }
++            if let impressionCount = arguments.impressionCount {
++                appendText(compactNumericCountString(impressionCount, decimalSeparator: arguments.presentationData.dateTimeFormat.decimalSeparator) + " ", color: dateColor)
++            }
++            if arguments.retention?.isDeleted == true {
++                let markColor: UIColor
++                if let argb = policy.deletedColorARGB {
++                    markColor = UIColor(red: CGFloat((argb >> 16) & 255) / 255.0, green: CGFloat((argb >> 8) & 255) / 255.0, blue: CGFloat(argb & 255) / 255.0, alpha: CGFloat((argb >> 24) & 255) / 255.0)
++                } else { markColor = dateColor }
++                appendMark(text: policy.deletedMark.isEmpty ? "deleted" : policy.deletedMark, symbol: policy.useDeletedIcon ? "trash" : nil, color: markColor)
++            }
++            if arguments.edited && (arguments.context.getAppConfigValue("message_primary_edited_date") as? Bool) != true {
++                appendMark(text: policy.editedMark.isEmpty ? arguments.presentationData.strings.Conversation_MessageEditedLabel : policy.editedMark, symbol: policy.useEditedIcon ? "pencil" : nil, color: dateColor)
++            }
++            appendText(arguments.dateText, color: dateColor)
++            let (date, dateApply) = dateLayout(TextNodeLayoutArguments(attributedString: dateString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .middle, constrainedSize: arguments.constrainedSize, alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+@@
+                         let _ = dateApply()
++                        strongSelf.timestampContentNode.accessibilityLabel = arguments.retention?.isDeleted == true ? "Deleted message. " + arguments.dateText : nil
+@@
++public func exteralessRetentionOpacity(messages: [EngineMessage]) -> CGFloat {
++    let allDeleted = messages.allSatisfy { $0.exteralessRetention?.isDeleted == true }
++    return !messages.isEmpty && RetentionPolicy.current.translucent && allDeleted ? 0.75 : 1.0
++}
++
+ public func shouldDisplayInlineDateReactions(message: EngineMessage, isPremium: Bool, forceInline: Bool) -> Bool {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift
+@@
+                     animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                    animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                    animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                    retention: EngineMessage(item.message).exteralessRetention
+@@
+         strongSelf.currentApplyParams = applyInfo
++        strongSelf.mainContainerNode.alpha = exteralessRetentionOpacity(messages: item.content.map { EngineMessage($0.0) })
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+@@
+                 animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                retention: EngineMessage(item.message).exteralessRetention
+@@
+                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
++                    strongSelf.contextSourceNode.contentNode.alpha = exteralessRetentionOpacity(messages: [EngineMessage(item.message)])
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+@@
+                 animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                retention: EngineMessage(item.message).exteralessRetention
+@@
+                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
++                    strongSelf.contextSourceNode.contentNode.alpha = exteralessRetentionOpacity(messages: [EngineMessage(item.message)])
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
+@@
+                     strongSelf.contextSourceNode.contentNode.frame = CGRect(origin: CGPoint(), size: layoutSize)
++                    strongSelf.contextSourceNode.contentNode.alpha = exteralessRetentionOpacity(messages: [EngineMessage(item.message)])
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageFactCheckBubbleContentNode/Sources/ChatMessageFactCheckBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode/Sources/ChatMessageContactBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageRestrictedBubbleContentNode/Sources/ChatMessageRestrictedBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode/Sources/ChatMessageRichDataBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift
+@@
+                         animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(item.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentNode/Sources/ChatMessageAttachedContentNode.swift
+@@
+                                 animationCache: controllerInteraction.presentationContext.animationCache,
+-                                animationRenderer: controllerInteraction.presentationContext.animationRenderer
++                                animationRenderer: controllerInteraction.presentationContext.animationRenderer,
++                                retention: EngineMessage(message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources/ChatMessageInteractiveMediaNode.swift
+@@
+                     animationCache: presentationContext.animationCache,
+-                    animationRenderer: presentationContext.animationRenderer
++                    animationRenderer: presentationContext.animationRenderer,
++                    retention: EngineMessage(message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+@@
+                         animationCache: arguments.controllerInteraction.presentationContext.animationCache,
+-                        animationRenderer: arguments.controllerInteraction.presentationContext.animationRenderer
++                        animationRenderer: arguments.controllerInteraction.presentationContext.animationRenderer,
++                        retention: EngineMessage(arguments.message).exteralessRetention
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift
+@@
+                 animationCache: item.controllerInteraction.presentationContext.animationCache,
+-                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer
++                animationRenderer: item.controllerInteraction.presentationContext.animationRenderer,
++                retention: EngineMessage(item.message).exteralessRetention
+*** End Patch

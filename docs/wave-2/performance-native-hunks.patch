@@ -1,0 +1,359 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Components/MultiAnimationRenderer/BUILD
+@@
+         "//submodules/TelegramUI/Components/AnimationCache:AnimationCache",
++        "//third-party/exteraless:ExteralessCore",
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/SharedAccountContext.swift
+@@
+     public var currentAutomaticMediaDownloadSettings: MediaAutoDownloadSettings
++    private let _nativeAutomaticMediaDownloadSettings = Promise<MediaAutoDownloadSettings>()
+     private let _automaticMediaDownloadSettings = Promise<MediaAutoDownloadSettings>()
+@@
+-    private let energyUsageAutomaticDisposable = MetaDisposable()
++    private var toolsPerformanceEnergy: ExteralessToolsPerformanceEnergy?
++    private let toolsPerformanceForegroundDisposable = MetaDisposable()
+@@
+-        self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
++        self._nativeAutomaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
+@@
+-        self.automaticMediaDownloadSettingsDisposable.set(self._automaticMediaDownloadSettings.get().start(next: { [weak self] next in
+-            if let strongSelf = self {
+-                strongSelf.currentAutomaticMediaDownloadSettings = next
+-                
+-                if automaticEnergyUsageShouldBeOnNow(settings: next) {
+-                    strongSelf.energyUsageSettings = EnergyUsageSettings.powerSavingDefault
+-                } else {
+-                    strongSelf.energyUsageSettings = next.energyUsageSettings
+-                }
+-                strongSelf.energyUsageAutomaticDisposable.set((automaticEnergyUsageShouldBeOn(settings: next)
+-                |> deliverOnMainQueue).start(next: { value in
+-                    if let strongSelf = self {
+-                        if value {
+-                            strongSelf.energyUsageSettings = EnergyUsageSettings.powerSavingDefault
+-                        } else {
+-                            strongSelf.energyUsageSettings = next.energyUsageSettings
+-                        }
+-                    }
+-                }))
+-            }
+-        }))
++        self.toolsPerformanceEnergy = MainActor.assumeIsolated {
++            ExteralessToolsPerformanceEnergy(settings: self.currentAutomaticMediaDownloadSettings,
++                isInForeground: UIApplication.shared.applicationState != .background) { [weak self] effective, _ in
++                guard let self else { return }
++                // Commit the shared getter before download-settings subscribers run.
++                self.energyUsageSettings = effective.energyUsageSettings
++                self._automaticMediaDownloadSettings.set(.single(effective))
++            }
++        }
++        self.automaticMediaDownloadSettingsDisposable.set((self._nativeAutomaticMediaDownloadSettings.get()
++        |> deliverOnMainQueue).start(next: { [weak self] next in
++            guard let self else { return }
++            // The native settings UI edits this unprojected source, not a tier ceiling.
++            self.currentAutomaticMediaDownloadSettings = next
++            MainActor.assumeIsolated { self.toolsPerformanceEnergy?.update(settings: next) }
++        }))
++        self.toolsPerformanceForegroundDisposable.set((applicationBindings.applicationInForeground
++        |> distinctUntilChanged
++        |> deliverOnMainQueue).start(next: { [weak self] inForeground in
++            MainActor.assumeIsolated { self?.toolsPerformanceEnergy?.update(isInForeground: inForeground) }
++        }))
+@@
+         self.automaticMediaDownloadSettingsDisposable.dispose()
++        self.toolsPerformanceForegroundDisposable.dispose()
++        MainActor.assumeIsolated { self.toolsPerformanceEnergy?.dispose() }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Sources/DCTMultiAnimationRendererImpl.swift
+@@
+-                if target.shouldBeAnimating {
++                if target.shouldBeAnimating && target.performanceAllowsAnimation {
+@@
+         if let frameAdvance = frameAdvance, self.loadingFrameTaskId == nil {
++            let isInitialFrame = self.currentFrame == nil
+             let taskId = self.nextLoadingFrameTaskId
+@@
+                         strongSelf.currentFrame = currentFrame.frame
+                         for target in strongSelf.targets.copyItems() {
+                             if let target = target.value {
++                                // Recheck at delivery: another allowed target can
++                                // keep this shared cache item/decode task playing.
++                                guard isInitialFrame || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
+                                 if let image = currentFrame.frame.contentsAsImage {
+@@
+-                                if let blurredRepresentationTarget = target.blurredRepresentationTarget {
++                                if target.performanceAllowsEffects, let blurredRepresentationTarget = target.blurredRepresentationTarget {
+                                     blurredRepresentationTarget.contents = currentFrame.frame.blurredRepresentation(color: target.blurredRepresentationBackgroundColor)?.cgImage
+@@
+-    private var frameSkip: Int
+-    private var displayTimer: Foundation.Timer?
++    private lazy var performanceClock = ToolsPerformanceRenderClock { [weak self] interval in
++        self?.animationTick(frameInterval: interval)
++    }
+@@
+     private(set) var isPlaying: Bool = false {
+         didSet {
+             if self.isPlaying != oldValue {
+-                if self.isPlaying {
+-                    if self.displayTimer == nil {
+-                        final class TimerTarget: NSObject {
+-                            private let f: () -> Void
+-
+-                            init(_ f: @escaping () -> Void) {
+-                                self.f = f
+-                            }
+-
+-                            @objc func timerEvent() {
+-                                self.f()
+-                            }
+-                        }
+-                        let frameInterval = Double(self.frameSkip) / 60.0
+-                        let displayTimer = Foundation.Timer(timeInterval: frameInterval, target: TimerTarget { [weak self] in
+-                            guard let strongSelf = self else {
+-                                return
+-                            }
+-                            strongSelf.animationTick(frameInterval: frameInterval)
+-                        }, selector: #selector(TimerTarget.timerEvent), userInfo: nil, repeats: true)
+-                        self.displayTimer = displayTimer
+-                        RunLoop.main.add(displayTimer, forMode: .common)
+-                    }
+-                } else {
+-                    if let displayTimer = self.displayTimer {
+-                        self.displayTimer = nil
+-                        displayTimer.invalidate()
+-                    }
+-                }
++                self.performanceClock.setPlaying(self.isPlaying)
+             }
+         }
+     }
+@@
+-    public init() {
+-        if !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.processorCount > 2 {
+-            self.frameSkip = 1
+-        } else {
+-            self.frameSkip = 2
+-        }
+-    }
++    public init() {}
+*** Update File: telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Sources/SubcodecMultiAnimationRendererImpl.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-            if let target = target.value, target.shouldBeAnimating {
++            if let target = target.value, target.shouldBeAnimating && target.performanceAllowsAnimation {
+@@
+         var anyAdvanced = false
++        var loopedSlots = Set<Int>()
+         for (slot, context) in self.spriteContexts {
+@@
+             if advanceTimestamp > 0.0 {
+-                context.remainingDuration -= advanceTimestamp
+-                if context.remainingDuration <= 0.0 {
++                let step = ToolsPerformancePolicy.advanceFrames(frameCount: context.metadata.frameCount,
++                    frameIndex: context.currentFrameIndex, remainingDuration: context.remainingDuration,
++                    durations: context.metadata.frameDurations, elapsed: advanceTimestamp)
++                for _ in 0..<step.frames {
+                     surface.advanceSprite(atSlot: Int32(slot))
+-                    context.currentFrameIndex += 1
+-                    if context.currentFrameIndex >= context.metadata.frameCount {
+-                        context.currentFrameIndex = 0
+-                    }
+-                    if context.currentFrameIndex < context.metadata.frameDurations.count {
+-                        context.remainingDuration = context.metadata.frameDurations[context.currentFrameIndex]
+-                    }
+-                    anyAdvanced = true
+                 }
++                context.currentFrameIndex = step.index
++                context.remainingDuration = step.remainingDuration
++                anyAdvanced = anyAdvanced || step.frames > 0
++                if step.didLoop { loopedSlots.insert(slot) }
+             } else {
+@@
+         self.lastDecodedFrame = decodedFrame
+ 
+-        for (_, context) in self.spriteContexts {
++        for (slot, context) in self.spriteContexts {
+@@
+-            let didLoop = context.currentFrameIndex == 0 && context.metadata.frameCount > 1
++            let didLoop = loopedSlots.contains(slot)
+ 
+             for targetRef in context.targets.copyItems() {
+                 if let target = targetRef.value {
++                    guard advanceTimestamp <= 0.0 || target.contents == nil || (target.shouldBeAnimating && target.performanceAllowsAnimation) else { continue }
+                     if let cgImage = cgImage {
+@@
+-    private var frameSkip: Int
+-    private var displayTimer: Foundation.Timer?
++    private lazy var performanceClock = ToolsPerformanceRenderClock { [weak self] interval in
++        self?.animationTick(frameInterval: interval)
++    }
+@@
+     private(set) var isPlaying: Bool = false {
+         didSet {
+             if self.isPlaying != oldValue {
+-                if self.isPlaying {
+-                    if self.displayTimer == nil {
+-                        final class TimerTarget: NSObject {
+-                            private let f: () -> Void
+-                            init(_ f: @escaping () -> Void) {
+-                                self.f = f
+-                            }
+-                            @objc func timerEvent() {
+-                                self.f()
+-                            }
+-                        }
+-                        let frameInterval = Double(self.frameSkip) / 60.0
+-                        let displayTimer = Foundation.Timer(timeInterval: frameInterval, target: TimerTarget { [weak self] in
+-                            guard let strongSelf = self else {
+-                                return
+-                            }
+-                            strongSelf.animationTick(frameInterval: frameInterval)
+-                        }, selector: #selector(TimerTarget.timerEvent), userInfo: nil, repeats: true)
+-                        self.displayTimer = displayTimer
+-                        RunLoop.main.add(displayTimer, forMode: .common)
+-                    }
+-                } else {
+-                    if let displayTimer = self.displayTimer {
+-                        self.displayTimer = nil
+-                        displayTimer.invalidate()
+-                    }
+-                }
++                self.performanceClock.setPlaying(self.isPlaying)
+             }
+         }
+     }
+@@
+-    public init() {
+-        if !ProcessInfo.processInfo.isLowPowerModeEnabled && ProcessInfo.processInfo.processorCount > 2 {
+-            self.frameSkip = 1
+-        } else {
+-            self.frameSkip = 2
+-        }
+-    }
++    public init() {}
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+             if let strongSelf = self, strongSelf.automaticMediaDownloadSettings != downloadSettings {
++                let energyChanged = strongSelf.automaticMediaDownloadSettings.energyUsageSettings != downloadSettings.energyUsageSettings
+                 strongSelf.automaticMediaDownloadSettings = downloadSettings
+                 strongSelf.controllerInteraction?.automaticMediaDownloadSettings = downloadSettings
++                strongSelf.controllerInteraction?.enableFullTranslucency = downloadSettings.energyUsageSettings.fullTranslucency
+                 if strongSelf.isNodeLoaded {
+-                    strongSelf.chatDisplayNode.updateAutomaticMediaDownloadSettings(downloadSettings)
++                    strongSelf.chatDisplayNode.updateAutomaticMediaDownloadSettings(downloadSettings, energyChanged: energyChanged)
+                 }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatControllerNode.swift
+@@
+-    func updateAutomaticMediaDownloadSettings(_ settings: MediaAutoDownloadSettings) {
++    func updateAutomaticMediaDownloadSettings(_ settings: MediaAutoDownloadSettings, energyChanged: Bool = false) {
++        var refreshIds = Set<EngineMessage.Id>()
+         self.historyNode.forEachItemNode { itemNode in
+             if let itemNode = itemNode as? ChatMessageItemView {
+                 itemNode.updateAutomaticMediaDownloadSettings()
++                if energyChanged, let item = itemNode.item { refreshIds.insert(item.message.id) }
+             }
+         }
+         self.historyNode.prefetchManager.updateAutoDownloadSettings(settings)
++        // Rebuild instantiated media items through their existing layout path:
++        // autoplay decisions otherwise remain cached until the next message edit.
++        // Collect first so a synchronous list update cannot mutate the enumeration.
++        for id in refreshIds { self.historyNode.requestMessageUpdate(id) }
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+@@
+     private var didSetUpAnimationNode = false
++    private var appliedEnergyLoop: Bool?
+@@
+     private func updateVisibility() {
+         guard let item = self.item else {
+             return
+         }
++        let energyLoop = self.telegramFile != nil ? item.context.sharedContext.energyUsageSettings.loopStickers : item.context.sharedContext.energyUsageSettings.loopEmoji
++        if self.appliedEnergyLoop != energyLoop {
++            self.appliedEnergyLoop = energyLoop
++            self.didSetUpAnimationNode = false
++        }
+@@
+             if emojiFile.isCustomEmoji {
+-                playbackMode = .loop
++                playbackMode = energyLoop ? .loop : .once
+@@
+-        var canPlayEffects = isPlaying
++        var canPlayEffects = isPlaying && item.context.sharedContext.energyUsageSettings.fullTranslucency
+@@
+                     Queue.mainQueue().after(0.1) {
++                        guard self.item?.context.sharedContext.energyUsageSettings.fullTranslucency == true else { return }
+                         self.playPremiumStickerAnimation()
+@@
+     override public func updateStickerSettings(forceStopAnimations: Bool) {
+         self.forceStopAnimations = forceStopAnimations
+         self.updateVisibility()
+     }
++
++    override public func updateAutomaticMediaDownloadSettings() {
++        self.updateVisibility()
++    }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/PrefetchManager.swift
+@@
+-                        } else if shouldPredownloadMedia(settings: automaticDownloadSettings, peerType: peerType, networkType: networkType, media: .file(telegramFile)) {
++                        } else if automaticDownloadSettings.energyUsageSettings.autoplayVideo && shouldPredownloadMedia(settings: automaticDownloadSettings, peerType: peerType, networkType: networkType, media: .file(telegramFile)) {
+@@
+                 case let .animatedEmojiSticker(media):
++                    guard automaticDownloadSettings.energyUsageSettings.loopEmoji else { continue }
+                     guard let id = media.id else {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/MultiAnimationRenderer/Sources/MultiAnimationRenderer.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
++    private lazy var performanceGate = ToolsPerformanceAnimationGate(kind: self.performanceAnimationKind) { [weak self] in
++        guard let self else { return }
++        for callback in self.updateStateCallbacks.copyItems() { callback() }
++    }
++    public var performanceAnimationKind: ToolsPerformancePolicy.AnimationKind = .emoji {
++        didSet { self.performanceGate.update(kind: self.performanceAnimationKind) }
++    }
++    public var performanceAllowsAnimation: Bool { self.performanceGate.allowsAnimation }
++    public var performanceAllowsEffects: Bool { self.performanceGate.allowsEffects }
++
+     public final var shouldBeAnimating: Bool = false {
+         didSet {
+             if self.shouldBeAnimating != oldValue {
+@@
+         self.id = layer.id
++        self.performanceAnimationKind = layer.performanceAnimationKind
+*** Update File: telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiKeyboardItemLayer.swift
+@@
+         switch content {
+         case let .animation(animationData):
++            if animationData.isReaction {
++                self.performanceAnimationKind = .emoji
++            } else {
++                switch animationData.resource {
++                case let .file(_, file): self.performanceAnimationKind = file.isCustomEmoji ? .emoji : .sticker
++                case .stickerPackThumbnail: self.performanceAnimationKind = .sticker
++                case .resource: self.performanceAnimationKind = .effect
++                }
++            }
+             guard let animationDataResource = animationData.resource._parse() else {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/MessageInlineBlockBackgroundView/Sources/MessageInlineBlockBackgroundView.swift
+@@
+     init(imageUpdated: @escaping () -> Void) {
+         self.imageUpdated = imageUpdated
+         
+         super.init()
++        self.performanceAnimationKind = .effect
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoCoverComponent/Sources/PeerInfoCoverComponent.swift
+@@
+     init(imageUpdated: @escaping (Bool) -> Void) {
+         self.imageUpdated = imageUpdated
+         
+         super.init()
++        self.performanceAnimationKind = .effect
+     }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/BUILD
+@@
+         "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
++        "//third-party/exteraless:ExteralessCore",
+*** End Patch

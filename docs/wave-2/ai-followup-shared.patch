@@ -1,0 +1,38 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift
+@@
+                 var translateToLanguage: (fromLang: String, toLang: String)?
+-                if let translationState, AITranslationPolicy().autoEnabled && (AITranslationPolicy().canAutomaticallyTranslate(isPremium: isPremium) || autoTranslate) && translationState.isEnabled {
+-                    var languageCode = translationState.toLang ?? chatPresentationData.strings.baseLanguageCode
+-                    let rawSuffix = "-raw"
+-                    if languageCode.hasSuffix(rawSuffix) {
+-                        languageCode = String(languageCode.dropLast(rawSuffix.count))
+-                    }
+-                    translateToLanguage = (normalizeTranslationLanguage(translationState.fromLang), normalizeTranslationLanguage(languageCode))
++                if let translationState, let target = AINativeTranslationTarget.resolve(isEnabled: translationState.isEnabled, toLanguage: translationState.toLang, appLanguage: chatPresentationData.strings.baseLanguageCode, isPremium: isPremium, peerAutoTranslate: autoTranslate, policy: AITranslationPolicy()) {
++                    translateToLanguage = (AINativeTranslationTarget.normalize(translationState.fromLang), target)
+                 }
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+         "//submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode",
++        "//submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode",
+         "//submodules/TelegramUI/Components/Chat/ChatMessageTransferBubbleContentNode",
+@@
+     name = "ExteralessAINativeTestsLib",
+     testonly = True,
+     module_name = "ExteralessAINativeTests",
+     srcs = glob(["Tests/AI/*.swift"], allow_empty = False),
+     copts = ["-swift-version", "6"],
+     deps = [
+         ":TelegramUI",
+         "//submodules/TelegramCore:TelegramCore",
+         "//third-party/exteraless:ExteralessCore",
++        "//submodules/AccountContext",
++        "//submodules/ComponentFlow",
++        "//submodules/Postbox:Postbox",
++        "//submodules/SSignalKit/SwiftSignalKit",
++        "//submodules/TelegramUI/Components/AudioTranscriptionButtonComponent",
++        "//submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode",
+     ],
+ )
+*** End Patch

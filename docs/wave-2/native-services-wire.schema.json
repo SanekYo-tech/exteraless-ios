@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:exteraless:ios:native-services:wave-2",
+  "title": "Native-service wire fragment (provider validates per-member arity and UTF-8 byte bounds)",
+  "$ref": "#/$defs/request",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["op", "fqcn", "member", "args"],
+      "additionalProperties": false,
+      "properties": {
+        "op": {"enum": ["call", "member_kind"]},
+        "fqcn": {"const": "exteraless.ios.Runtime"},
+        "member": {"type": "string"},
+        "args": {"type": "array", "maxItems": 8},
+        "kwargs": {"const": {}},
+        "instance": {"type": "null"},
+        "value": {"type": "null"},
+        "pluginId": {"type": "string", "description": "Authoritative C state; never read from a plugin model."},
+        "ownerToken": {"type": "string", "minLength": 1, "maxLength": 128, "description": "Exact immutable C-injected random Host generation UUID."}
+      }
+    },
+    "callback": {
+      "type": "object", "required": ["__handle__"], "additionalProperties": false,
+      "properties": {
+        "__handle__": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "__fqcn__": {"type": ["string", "null"], "maxLength": 512},
+        "__fqcn": {"type": ["string", "null"], "maxLength": 512}
+      }
+    },
+    "queue": {"enum": ["UI", "STAGE_QUEUE", "GLOBAL_QUEUE", "CACHE_CLEAR_QUEUE", "SEARCH_QUEUE", "PHONE_BOOK_QUEUE", "THEME_QUEUE", "EXTERNAL_NETWORK_QUEUE", "PLUGINS_QUEUE"]},
+    "id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "account": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+    "peer": {
+      "type": "object", "required": ["type", "id"], "additionalProperties": false,
+      "properties": {"type": {"enum": ["user", "group", "channel"]}, "id": {"type": "integer", "minimum": 1, "maximum": 72057594037927935}}
+    },
+    "stringList": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+    "logEvent": {
+      "type": "object", "required": ["level", "message", "phase"], "additionalProperties": false,
+      "properties": {
+        "level": {"enum": ["D", "I", "W", "E", "debug", "info", "warn", "warning", "error", "fatal", "critical"]},
+        "message": {"type": "string", "x-maxUTF8Bytes": 65536},
+        "phase": {"type": "string", "minLength": 1, "x-maxUTF8Bytes": 256},
+        "traceback": {"type": ["string", "null"], "x-maxUTF8Bytes": 131072}
+      }
+    },
+    "fileRegistration": {
+      "type": "object", "required": ["extension"], "additionalProperties": false,
+      "properties": {
+        "extension": {"type": "string", "minLength": 1, "maxLength": 64, "description": "Literal final suffix; leading dots/case normalized. No path, glob or compound suffix."},
+        "whitelist": {"$ref": "#/$defs/stringList", "description": "Case-insensitive filename substrings, as FilesControllerJava.passesFilters; NOT place names."},
+        "blacklist": {"$ref": "#/$defs/stringList"},
+        "icon": {"const": false}
+      }
+    },
+    "flagMask": {"type": "integer", "minimum": -2147483648, "maximum": 4294967295},
+    "flagMasks": {"oneOf": [{"$ref": "#/$defs/flagMask"}, {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/flagMask"}}]},
+    "intentFilters": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "schemes": {"$ref": "#/$defs/stringList"}, "hosts": {"$ref": "#/$defs/stringList"},
+        "path_template": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "query_args": {"$ref": "#/$defs/stringList"},
+        "action": {"const": "android.intent.action.VIEW", "description": "Other actions fail admission on URL-only native sites."},
+        "type": {"type": "null", "description": "No Android MIME intent is synthesized by NSURL openers."},
+        "categories": {"const": []}, "whitelist_flags": {"enum": [0, [], [0]]}, "flags": {"enum": [0, [], [0]]},
+        "blacklist_flags": {"$ref": "#/$defs/flagMasks"},
+        "priority": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}
+      }
+    },
+    "intentRegistration": {
+      "type": "object", "required": ["before"], "additionalProperties": false,
+      "properties": {
+        "before": {"type": "boolean"}, "priority": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+        "filters": {"$ref": "#/$defs/intentFilters"}
+      }
+    },
+    "nativeQuery": {
+      "type": "object", "required": ["account"], "additionalProperties": false,
+      "description": "Per-member allowed/required fields are listed in x-operations; extras are rejected by the native reader.",
+      "properties": {
+        "account": {"$ref": "#/$defs/account"}, "peer": {"$ref": "#/$defs/peer"},
+        "id": {"type": "integer", "minimum": 0, "maximum": 72057594037927935},
+        "messageId": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "fileId": {"type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807},
+        "offset": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+        "timeoutMs": {"type": "integer", "minimum": 100, "maximum": 600000},
+        "event": {"enum": [1, 3, 25, 46, 137, 142, 143, 148, 150, 151, 152, 306, "didReceiveNewMessages", "dialogsNeedReload", "contactsDidLoad", "mainUserInfoChanged", "didUpdateConnectionState", "fileLoaded", "fileLoadFailed", "messagePlayingProgressDidChanged", "messagePlayingPlayStateChanged", "messagePlayingDidStart", "messagePlayingDidSeek", "onDownloadingFilesChanged"]}
+      }
+    }
+  },
+  "x-operations": {
+    "postToOwner": {"args": ["callback", "delayMs:integer(0...86400000)", "queue"], "value": "{id:string}", "callback": "run()", "ownerToken": true, "backgroundAdmission": true},
+    "cancelOwnerTask": {"args": ["id"], "value": "boolean", "ownerToken": true},
+    "logEvent": {"args": ["logEvent"], "value": "null"},
+    "fileRegister": {"args": ["fileRegistration", "callback"], "value": "{id:string}", "permission": ["files"], "ownerToken": true, "callback": "__call__(context); successful return ignored, exception falls back"},
+    "fileRemove": {"args": ["id"], "value": "null", "ownerToken": true},
+    "intentRegister": {"args": ["intentRegistration", "callback"], "value": "{id:string}", "permission": ["intents"], "ownerToken": true, "callback": "__call__(context); before actual true cancels, after return ignored"},
+    "intentRemove": {"args": ["id"], "value": "null", "ownerToken": true},
+    "nativeGetUser": {"args": ["{account,id:0=currentUser,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__(partialPeerOrNull,errorOrNull); terminal"},
+    "nativeGetChat": {"args": ["{account,id:positive|peer:group|channel,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__(partialPeerOrNull,errorOrNull); terminal; ambiguous cached namespace requires typed peer"},
+    "nativeObservePeer": {"args": ["{account,peer}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__(partialPeerOrNull,errorOrNull); subscription"},
+    "nativePeerInfo": {"args": ["{account,peer,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__(cachedFullInfoFieldsOrNull,errorOrNull); terminal"},
+    "nativeGetContacts": {"args": ["{account,offset?,limit?,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__({total,offset,peers,nextOffset},errorOrNull); terminal"},
+    "nativeMessageMedia": {"args": ["{account,peer,messageId,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__({files,total,exportAllowed}|null,errorOrNull); terminal"},
+    "nativeResourceStatus": {"args": ["{account,peer,messageId,fileId,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__({file,status,progress,active?},errorOrNull); terminal"},
+    "nativeObserveResource": {"args": ["{account,peer,messageId,fileId}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__({file,status,progress,active?},errorOrNull); subscription"},
+    "nativeDownload": {"args": ["{account,peer,messageId,fileId,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read", "network", "files"], "ownerToken": true, "callback": "__call__({file,path,size},errorOrNull); terminal only on complete MediaBox data"},
+    "nativeNotificationSettings": {"args": ["{account,peer,timeoutMs?}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "ownerToken": true, "callback": "__call__(peerOverridesOrNull,errorOrNull); terminal"},
+    "nativeConnectionState": {"args": ["account"], "value": "waitingForNetwork|connecting|updating|online", "permission": ["messages.read"], "effect": "lock-published native network state; unavailable before first publication"},
+    "nativeServiceState": {"args": ["id"], "value": "{ready:boolean,kind:string,value:any}", "ownerToken": true, "effect": "same-owner, permission-checked last native subscription value; never waits"},
+    "nativeServiceCancel": {"args": ["id"], "value": "boolean", "ownerToken": true},
+    "nativeCachedUser": {"args": ["account", "userId:0=currentUser"], "value": "{ready,kind,value,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedChat": {"args": ["account", "chatId|{type:group|channel,id}"], "value": "{ready,kind,value,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedClientUser": {"args": ["account"], "value": "{ready,kind,value,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedClientUserId": {"args": ["account"], "value": "{ready,kind,value:actualUserId,source}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedUserFull": {"args": ["account", "userId:0=currentUser"], "value": "{ready,kind,value:partialCachedData,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedChatFull": {"args": ["account", "chatId|{type:group|channel,id}"], "value": "{ready,kind,value:partialCachedData,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedContacts": {"args": ["account", "offset? (requires limit)", "limit?:1...512"], "value": "{ready,kind,value:{contacts:[{user_id,partial:true}],total,offset,nextOffset},source?,generation?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedConnection": {"args": ["account"], "value": "{ready,kind,value:networkState,source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedPlayback": {"args": ["account"], "value": "{ready,kind,value:{active,message?,state?,position?,duration?,rate?,progress?},source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "nativeCachedDownloads": {"args": ["account"], "value": "{ready,kind,value:{entries,total,truncated},source?,generation?,revision?}", "permission": ["messages.read"], "ownerToken": true},
+    "notificationSubscribe": {"args": ["{account,event}", "callback"], "value": "{id:string}", "permission": ["messages.read"], "eventPermissions": {"fileLoaded": ["messages.read", "files"], "fileLoadFailed": ["messages.read", "files"]}, "ownerToken": true, "callback": "__call__(sourceNotificationId,actualAccountSlot,sourceEventArguments); shapes in native-services.md Phase 2"},
+    "notificationUnsubscribe": {"args": ["id"], "value": "boolean", "ownerToken": true},
+    "notificationSupported": {"args": ["account"], "value": "[{id:sourceId,name:sourceName}]", "effect": "actual attached publishers only; messages/file terminal events additionally require installed publisherSites; no reset/stopService or VideoPlayer-object emulation"}
+  }
+}

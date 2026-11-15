@@ -1,0 +1,15 @@
+--- a/telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift
+@@ -74,3 +74,4 @@
+ public final class TelegramRootController: NavigationController, TelegramRootControllerInterface {
+     private let context: AccountContext
++    private var exteralessLayoutModeBinding: ExteralessAppearanceLayoutModeBinding?
+     
+@@ -111,5 +112,6 @@ public init(context: AccountContext) {
+         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
+         
+-        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))
++        super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme), contentLayoutRole: .applicationRoot)
++        self.exteralessLayoutModeBinding = ExteralessAppearanceLayoutModeBinding(root: self)
+         self.exteralessFeedPresentationObserver = NotificationCenter.default.addObserver(forName: ExteralessFeedEntry.presentationChanged, object: nil, queue: .main) { [weak self] _ in
+             guard let self else { return }

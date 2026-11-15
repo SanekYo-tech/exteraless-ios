@@ -1,0 +1,70 @@
+diff --git a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
+--- a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
++++ b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift
+@@ -14,6 +14,7 @@
+     let host: PluginHost
+     private let binding: NativeBridgeBinding
+     private let callbacks: PluginCallbackDispatcher
++    private var settingsAuthority: PluginUISettingsActionAuthority?
+     private let journal: ClientHarnessJournal
+     private weak var context: ClientHarnessAccountContext?
+     private var scopeActive = true
+@@ -47,6 +48,11 @@
+         let callbacks = self.callbacks
+         let gate = PluginUICallbackGate()
+         let recordId = context.account.id.int64
++        let settingsAuthority = PluginUISettingsActionAuthority(captureOwner: { callbacks.captureOwner($0) },
++            accountIndex: { $0 == recordId ? 41 : nil })
++        self.settingsAuthority = settingsAuthority
++        settingsAuthority.update(context: context)
++        PluginUISettingsActionRegistry.install(settingsAuthority)
+         self.ui = PluginUIBridgeExtension(
+             captureOwner: { callbacks.captureOwner($0) },
+             callback: { owner, handle, method, json in
+@@ -61,13 +67,15 @@
+                 let admitted = callbacks.release(owner, handles)
+                 journal.record("ui-release-admission", ["accepted": admitted, "count": handles.count])
+                 if !admitted { journal.reject("UI release rejected") }
++                return admitted
+             },
+             hasPermission: { callbacks.hasPermission($0, $1) },
+             accountIndex: { $0 == recordId ? 41 : nil },
+             settingsController: { [weak self] context, id, title, path in
+                 guard let self else { return nil }
+                 return exteralessPluginSettingsController(context: context, actions: self.actions(), pluginId: id,
+-                    title: title, pagePath: path, scopeIsCurrent: self.captureScope(id))
++                    title: title, pagePath: path,
++                    actionScope: self.settingsAuthority?.capture(context: context, pluginId: id), scopeIsCurrent: self.captureScope(id))
+             })
+         gate.bind(self.ui)
+         self.observedUI = ClientHarnessObservedUI(provider: self.ui, host: self.host, journal: journal)
+@@ -133,8 +141,18 @@
+             },
+             remove: { id in try Self.requireOwned(id); try await host.uninstallPlugin(id: id) },
+             settings: { id in try Self.requireOwned(id); return try await host.settingsJSON(id: id, account: 41) },
+-            updateSetting: { id, key, value in try Self.requireOwned(id); try await host.updateSetting(id: id, key: key, valueJSON: value) },
+-            click: { id, callback in try Self.requireOwned(id); try await host.clickSetting(id: id, callbackId: callback) },
++            updateSetting: { id, key, value in
++                try Self.requireOwned(id)
++                let invocation = try PluginUISettingsActionExecution.require(pluginId: id)
++                try await host.updateSetting(id: id, key: key, valueJSON: value,
++                    expectedOwner: invocation.owner, account: invocation.account, shouldExecute: { invocation.isCurrent })
++            },
++            click: { id, callback in
++                try Self.requireOwned(id)
++                let invocation = try PluginUISettingsActionExecution.require(pluginId: id)
++                try await host.clickSetting(id: id, callbackId: callback,
++                    expectedOwner: invocation.owner, account: invocation.account, shouldExecute: { invocation.isCurrent })
++            },
+             logs: { self.services.serviceLogs.entries.map { $0.message } },
+             settingsScope: { [weak self] id in self?.captureScope(id) ?? { false } })
+     }
+@@ -172,6 +190,8 @@
+ 
+     func stop() async throws {
+         guard !self.stopped else { return }
++        self.settingsAuthority?.clearContext()
++        PluginUISettingsActionRegistry.install(nil)
+         self.scopeActive = false
+         self.ui.clearContext()
+         await self.host.stop()

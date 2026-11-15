@@ -1,0 +1,47 @@
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift b/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+@@ -837,6 +837,13 @@
++    var canBeginPictureInPicture: Bool {
++        guard let controller = self.pictureInPictureController else { return false }
++        return controller.isPictureInPicturePossible
++            && !controller.isPictureInPictureActive
++            && !controller.isPictureInPictureSuspended
++    }
++
+     func beginPictureInPicture() {
+         guard let pictureInPictureController = self.pictureInPictureController else {
+             return
+         }
+         if pictureInPictureController.isPictureInPicturePossible {
+             pictureInPictureController.startPictureInPicture()
+@@ -2991,4 +2998,20 @@
+     override func maybePerformActionForSwipeDownDismiss() -> Bool {
++        if #available(iOS 15.0, *), let item = self.item,
++           let content = self.nativePictureInPictureContent as? NativePictureInPictureContentImpl,
++           self.isCentral == true,
++           self.context.currentAppConfiguration.with({ $0 }).data?["ios_killswitch_disable_swipe_pip"] == nil,
++           PlayerVideoGesturePolicy.entersPictureInPicture(
++               enabled: ClientSettings.shared.bool("chats.swipeToPip"),
++               downward: true,
++               supported: self.hasPictureInPicture && content.canBeginPictureInPicture,
++               isViewOnce: item.isSecret,
++               isAnimated: ((item.content as? NativeVideoContent)?.fileReference.media.isAnimated ?? false) || self.isLivePhoto
++           ) {
++            self.context.engine.accountData.addAppLogEvent(type: "swipe_down_pip")
++            content.beginPictureInPicture()
++            return true
++        }
++
+         self.context.engine.accountData.addAppLogEvent(type: "swipe_down_close")
+         return false
+     }
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@ -36,4 +36,5 @@
+                     + PrivacyFeatures.definitions + AIFeatures.definitions + ToolsFeatures.definitions)
++                try ClientSettings.shared.register(PlayerFeatures.galleryDefinitions)
+                 registered = true
+             }
+             lastError = nil

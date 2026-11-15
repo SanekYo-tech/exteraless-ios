@@ -1,0 +1,106 @@
+name: Native dependency candidates
+
+# Coordinator-owned manual component gate. A successful expected-rejection probe
+# records an ABI constraint; it does not admit Pillow/lxml into the Telegram app.
+on:
+  workflow_dispatch:
+    inputs:
+      execute_probes:
+        description: Run bounded real iOS simulator imports after compiling
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-dependencies-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+          sparse-checkout: |
+            python/runtime
+            tools/runtime
+            tools/ci
+            tools/compat
+            telegram-ios/build-system/Make
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Test native packaging and admission
+        run: python -B -m unittest discover -s tools/runtime/tests -p test_native_dependencies.py -v
+
+      - name: Cache verified source archives and wheels
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: build/native-dependency-cache/downloads
+          key: native-dependency-downloads-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/new-native-dependency-lock.json') }}
+
+      - name: Restore compiled native candidates
+        id: native-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: build/native-component
+          key: native-dependency-build-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('python/runtime/*lock.json', 'tools/runtime/*.py', 'tools/runtime/native_dependency_probe.c', 'telegram-ios/build-system/Make/RuntimePackaging.py') }}
+
+      - name: Build unsigned native framework inputs
+        run: |
+          python -B tools/runtime/build_native_dependencies.py --phase build \
+            --cache build/native-dependency-cache --output build/native-component
+
+      # Save before the probe creates a separately signed simulator copy.
+      - name: Save verified native build cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: build/native-component
+          key: native-dependency-build-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('python/runtime/*lock.json', 'tools/runtime/*.py', 'tools/runtime/native_dependency_probe.c', 'telegram-ios/build-system/Make/RuntimePackaging.py') }}
+
+      - name: Upload build-only candidate inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-dependencies-build-only-${{ github.run_number }}
+          path: |
+            build/native-component/native-candidates.tar.gz
+            build/native-component/build-manifest.json
+          if-no-files-found: error
+
+      - name: Execute real native imports and OWN_GIL checks
+        if: inputs.execute_probes
+        run: |
+          python -B tools/runtime/build_native_dependencies.py --phase probe \
+            --cache build/native-dependency-cache --output build/native-component \
+            --simulator-device 'iPhone 17'
+
+      - name: Upload native execution evidence
+        if: inputs.execute_probes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-dependencies-evidence-${{ github.run_number }}
+          path: |
+            build/native-component/native-execution.json
+            build/native-component/*-ios.json
+            build/native-component/candidates/native-inputs.json
+            build/native-component/native-candidates.tar.gz
+          if-no-files-found: error
+
+      - name: Upload component diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-dependencies-diagnostics-${{ github.run_number }}
+          path: |
+            build/native-component/*.log
+            build/native-component/*.json
+          if-no-files-found: ignore

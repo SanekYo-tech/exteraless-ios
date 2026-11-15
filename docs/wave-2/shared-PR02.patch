@@ -1,0 +1,70 @@
+diff --git a/telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift b/telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
+--- a/telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
++++ b/telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
+@@ -1402,14 +1402,14 @@
+                 return transformed.start(next: { subscriber.putNext($0) },
+                     error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+             }
+-            if let error = exteralessPrivacyRequestError(network: self, description: data.0) {
++            let requestPayload = data.1.makeData()
++            if let error = exteralessPrivacyRequestError(network: self, description: data.0, body: requestPayload) {
+                 subscriber.putError(error)
+                 return EmptyDisposable
+             }
+             exteralessPrivacyWillSubmit(network: self, description: data.0)
+             let hasPluginRequestSubscribers = !exteralessClientAPIRequestContainsIdentity(data.0)
+                 && (PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest))
+-            let requestPayload = data.1.makeData()
+             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: true) : nil
+             let request = NetworkEngineRequest(
+                 payload: requestPayload,
+@@ -1477,14 +1477,14 @@
+                 return transformed.start(next: { subscriber.putNext($0) },
+                     error: { subscriber.putError($0) }, completed: { subscriber.putCompletion() })
+             }
+-            if let error = exteralessPrivacyRequestError(network: self, description: data.0) {
++            let requestPayload = data.1.makeData()
++            if let error = exteralessPrivacyRequestError(network: self, description: data.0, body: requestPayload) {
+                 subscriber.putError(error)
+                 return EmptyDisposable
+             }
+             exteralessPrivacyWillSubmit(network: self, description: data.0)
+             let hasPluginRequestSubscribers = !exteralessClientAPIRequestContainsIdentity(data.0)
+                 && (PluginHookRouter.hasSubscribers(.preRequest) || PluginHookRouter.hasSubscribers(.postRequest))
+-            let requestPayload = data.1.makeData()
+             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: false) : nil
+             let request = NetworkEngineRequest(
+                 payload: requestPayload,
+diff --git a/telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift b/telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
+--- a/telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
++++ b/telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
+@@ -279,7 +279,7 @@
+                 return nil
+             }
+             // FINAL params, after the async prefix and immediately before admission.
+-            if let error = exteralessPrivacyRequestError(network: network, description: description) {
++            if let error = exteralessPrivacyRequestError(network: network, description: description, body: body) {
+                 refused = error
+                 return nil
+             }
+diff --git a/telegram-ios/submodules/TelegramCore/BUILD b/telegram-ios/submodules/TelegramCore/BUILD
+--- a/telegram-ios/submodules/TelegramCore/BUILD
++++ b/telegram-ios/submodules/TelegramCore/BUILD
+@@ -92,13 +92,17 @@
+     name = "ExteralessPrivacyTestsLib",
+     testonly = True,
+     srcs = [
++        "Tests/ExteralessPrivacyAdmissionTests.swift",
++        "Tests/ExteralessPrivacyHistoryLifetimeTests.swift",
+         "Tests/ExteralessPrivacySignalTests.swift",
+         "Tests/ExteralessProxyNameTests.swift",
+     ],
+     deps = [
+         ":TelegramCore",
++        "//third-party/exteraless:ExteralessCore",
++        "//submodules/MtProtoKit:MtProtoKit",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/TelegramApi:TelegramApi",
+         "//submodules/Postbox:Postbox",
+     ],
+ )

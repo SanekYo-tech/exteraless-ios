@@ -1,0 +1,6 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Account/AccountManager.swift
+@@
+     declareEncodable(LocalFileMediaResource.self, f: { LocalFileMediaResource(decoder: $0) })
++    registerExteralessRetentionResourceCoding()
+*** End Patch

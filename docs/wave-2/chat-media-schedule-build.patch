@@ -1,0 +1,23 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+     name = "ExteralessChatMediaTestsLib",
+     testonly = True,
+     module_name = "ExteralessChatMediaTests",
+     srcs = glob([
+         "Tests/ChatMedia/*.swift",
+         "Tests/Chats/*.swift",
+     ], allow_empty = False),
+     copts = ["-swift-version", "6"],
+     deps = [
+         ":TelegramUI",
+         "//submodules/AccountContext:AccountContext",
++        "//submodules/ChatSendMessageActionUI:ChatSendMessageActionUI",
++        "//submodules/MediaPickerUI:MediaPickerUI",
++        "//submodules/TelegramUI/Components/ChatScheduleTimeController",
+         "//submodules/Display:Display",
+*** Update File: telegram-ios/Tests/Exteraless/native-tests.json
+@@
+     "submodules/TelegramUI/Tests/Chats/ChatSoundProducerTests.swift": "//submodules/TelegramUI:ExteralessChatMediaTests",
++    "submodules/TelegramUI/Tests/Chats/ChatMediaScheduleProducerTests.swift": "//submodules/TelegramUI:ExteralessChatMediaTests",
+*** End Patch

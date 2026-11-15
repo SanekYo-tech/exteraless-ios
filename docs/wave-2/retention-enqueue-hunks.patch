@@ -1,0 +1,14 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+@@
+         return account.postbox.transaction { transaction -> ([MessageId?], [MessageId]) in
+             let messages = exteralessPrivacyOutgoingMessages(transaction: transaction, account: account, peerId: peerId, messages: messages)
++            let rewrite = exteralessRewriteDeletedReplies(transaction: transaction, accountPeerId: account.peerId, messages: messages)
++            guard case let .success(messages) = rewrite else {
++                if case let .failure(error) = rewrite {
++                    ExteralessRetentionAccount.get(mediaBox: account.postbox.mediaBox)?.report(error)
++                }
++                return (Array<MessageId?>(repeating: nil, count: messages.count), [])
++            }
+             var resultIds = Array<MessageId?>(repeating: nil, count: messages.count)
+*** End Patch

@@ -1,0 +1,51 @@
+{
+  "owner": "chat",
+  "kind": "source-receipts-not-runtime-verification",
+  "feature_records": 137,
+  "module_records": 4,
+  "inventory_features_retained": 567,
+  "packages": [
+    {
+      "id": "P-message-actions",
+      "count": 46,
+      "feature_ids": [
+        "nagram.ActionBarButtonCopy", "nagram.ActionBarButtonEdit", "nagram.ActionBarButtonForward", "nagram.ActionBarButtonReply", "nagram.ActionBarButtonSelectBetween",
+        "nagram.chatMenuItemBoostGroup", "nagram.chatMenuItemDeleteOwnMessages", "nagram.chatMenuItemGoToMessage", "nagram.chatMenuItemHideTitle", "nagram.chatMenuItemLinkedChat", "nagram.chatMenuItemToBeginning",
+        "nagram.defaultDeleteMenReportSpam", "nagram.defaultDeleteMenu", "nagram.defaultDeleteMenuBanUsers", "nagram.defaultDeleteMenuDeleteAll", "nagram.defaultDeleteMenuDoActionsInCommonGroups",
+        "nagram.deleteChatForBothSides", "nagram.groupedMessageMenu",
+        "nagram.mediaViewerMenuItemCopyFrame", "nagram.mediaViewerMenuItemCopyPhoto", "nagram.mediaViewerMenuItemForward", "nagram.mediaViewerMenuItemNoQuoteForward", "nagram.mediaViewerMenuItemScanQRCode", "nagram.mediaViewerMenuItemSetProfilePhoto",
+        "nagram.shortcutsAdministrators", "nagram.shortcutsMembers", "nagram.shortcutsPermissions", "nagram.shortcutsRecentActions", "nagram.shortcutsStatistics",
+        "nagram.showAddToBookmark", "nagram.showAddToFavorites", "nagram.showAddToStickers", "nagram.showCopyAsSticker", "nagram.showCopyFrame", "nagram.showCopyLink", "nagram.showCopyPhoto", "nagram.showNoQuoteForward", "nagram.showReactions", "nagram.showRepeatAsCopy", "nagram.showReplyInPrivate", "nagram.showSetReminder",
+        "neko.showAdminActions", "neko.showChangePermissions", "neko.showDeleteDownloadedFile", "neko.showReport", "neko.showShareMessages"
+      ]
+    },
+    {
+      "id": "P-composer-policy",
+      "count": 19,
+      "feature_ids": [
+        "chats.hideMoneyButton", "chats.keepAttachButton", "nagram.combineMessage", "nagram.defaultScheduledTime", "nagram.disableMarkdown", "nagram.enablePanguOnSending", "nagram.fixLinkPreview", "nagram.hideBotButtonInInputField", "nagram.leftBottomButton", "nagram.markdownParser", "nagram.showQuickReplyInBotCommands", "nagram.showSendAsUnderMessageHint", "nagram.showTextCreateMention", "nagram.typeMessageHintUseGroupName", "neko.askBeforeCall", "neko.confirmAVMessage", "neko.disableLinkPreviewByDefault", "neko.sendCommentAfterForward", "neko.useChatAttachMediaMenu"
+      ]
+    },
+    {
+      "id": "P-message-presentation",
+      "count": 10,
+      "feature_ids": [
+        "chats.hideCallButton", "chats.hideChannelSearchButton", "chats.removeMessageTail", "chats.replyBackground", "chats.replyColors", "chats.replyEmoji", "chats.unreadCapsule", "nagram.hideShareButtonInChannel", "nagram.showTimeHint", "neko.showSpoilersDirectly"
+      ]
+    }
+  ],
+  "reconciliation": [
+    {
+      "id": "media-browser-aliases",
+      "count": 13,
+      "feature_ids": ["chats.hdrPhotos", "chats.translateInSheet", "chats.unmuteWithVolumeButtons", "nagram.defaultHlsVideoQuality", "nagram.disableChannelMuteButton", "nagram.disableInAppBrowserGestures", "nagram.disablePreviewVideoSoundShortcut", "nagram.hideReactions", "nagram.messageColoredBackground", "nagram.sendMp4DocumentAsVideo", "nagram.showSmallGIF", "neko.autoPauseVideo", "neko.takeGIFasVideo"]
+    },
+    {
+      "id": "restored-playback",
+      "count": 6,
+      "feature_ids": ["chats.doubleTapSeekDuration", "chats.pauseOnMinimizeRound", "chats.pauseOnMinimizeVoice", "chats.preferOriginalQuality", "nagram.dontAutoPlayNextVoice", "neko.disableProximityEvents"]
+    }
+  ],
+  "unowned_assigned_ids": [],
+  "ported_or_verified_claims": 0
+}

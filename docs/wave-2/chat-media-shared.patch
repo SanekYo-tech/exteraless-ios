@@ -1,0 +1,67 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift
+@@
+     private func presentMessageTranslation(context: AccountContext, from presenter: ViewController, message: EngineMessage, automaticLanguage: String?, isSummarized: Bool) {
+         guard owns(context) else { return }
++        if exteralessPresentMessageTranslationSheet(context: context, from: presenter, message: message, automaticLanguage: automaticLanguage, isSummarized: isSummarized) { return }
+         let access = ExteralessAIResultAccess(integration: self, context: context, capability: .message(message, canCopy: true))
+*** Update File: swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift
+@@
+-        let definitions = Dictionary(uniqueKeysWithValues: snapshot.definitions.map { ($0.key, $0) })
++        let originalChatPreferences = sections["nkmrcfg"] ?? [:]
++        if sections["nkmrcfg"] != nil {
++            sections["nkmrcfg"] = ChatLegacyPreferenceMigration.apply(to: originalChatPreferences)
++        }
++        let definitions = Dictionary(uniqueKeysWithValues: snapshot.definitions.map { ($0.key, $0) })
+@@
+                 if section == "nkmrcfg", key == "TranslatorModeWithOriginalMigrated" { continue }
++                if section == "nkmrcfg", ["DisableChannelMuteButton", "HideReactions", "MessageColoredBackground"].contains(key) { continue }
+@@
+-                    report(section, key, ids, .mapped, native: [rule.key], detail: detail)
++                    if id == "nagram.defaultHlsVideoQuality", originalChatPreferences["DefaultHlsVideoQuality"] == .integer(1) {
++                        report(section, key, ids, .mapped, native: [rule.key, "chats.preferOriginalQuality"], detail: "Legacy value 1 becomes Prefer highest video quality; the streaming selector resets to Auto.")
++                    } else {
++                        report(section, key, ids, .mapped, native: [rule.key], detail: detail)
++                    }
+@@
+-        if let value = ai["services"] {
++        let chatAliases: [(String, [String])] = [
++            ("DisableChannelMuteButton", ["chats.bottomButton"]),
++            ("HideReactions", ["chats.hideReactionsInChannels", "chats.hideReactionsInGroups", "chats.hideReactionsInPrivate"]),
++            ("MessageColoredBackground", ["chats.replyBackground"])
++        ]
++        for (source, targets) in chatAliases {
++            guard let value = originalChatPreferences[source] else { continue }
++            guard case .bool = value else {
++                report("nkmrcfg", source, CloudLegacyCatalog.ids(section: "nkmrcfg", key: source), .skipped, reason: .incompatibleType)
++                continue
++            }
++            let native = targets.filter { patch[$0] != nil }
++            report("nkmrcfg", source, CloudLegacyCatalog.ids(section: "nkmrcfg", key: source), native.isEmpty ? .skipped : .mapped,
++                native: native, reason: native.isEmpty ? .unsupportedSetting : nil,
++                detail: native.isEmpty ? "Inactive legacy alias; no native override was synthesized." : "Source-defined ChatsConfig migration; the canonical controls receive the imported value.")
++        }
++
++        if let value = ai["services"] {
+*** Update File: swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift
+@@
+         func add(_ id: String, _ key: String, _ conversion: Conversion) { rules[id] = Rule(key: key, conversion: conversion) }
++        booleans("chats", "chats", "hdrPhotos translateInSheet")
++        booleans("nagram", "chats", "disableInAppBrowserGestures sendMp4DocumentAsVideo showSmallGIF")
++        booleans("neko", "chats", "autoPauseVideo takeGIFasVideo")
++        add("chats.bottomButton", "chats.bottomButton", .options([0: 0, 1: 1, 2: 2]))
++        // Source value 1 is projected to preferOriginalQuality before this conversion.
++        add("nagram.defaultHlsVideoQuality", "chats.defaultHlsVideoQuality", .options([0: 0, 2: 2, 3: 3, 4: 4, 5: 5]))
+*** Update File: docs/wave-2/ai-parity.json
+@@
+-    "fragment_feature_count": 80,
++    "fragment_feature_count": 79,
+@@
+-    "feature_status_counts": {"implemented": 55, "partial": 25},
++    "feature_status_counts": {"implemented": 55, "partial": 24},
+@@
+-    "excluded_other_owner_features": ["chats.translateInSheet"],
++    "excluded_other_owner_features": ["chats.translateInSheet", "nagram.showTextTranslate"],
+@@
+-    {"id":"nagram.showTextTranslate","ios":{"setting_key":"chats.showTextTranslate","implementation_callsites":[{"path":"swift/ExteralessCore/Sources/ExteralessCore/AITranslationPolicy.swift","line":23},{"path":"telegram-ios/submodules/TextSelectionNode/Sources/TextSelectionNode.swift","line":795}],"adaptation":"The actual AI/selected-text menu consumer uses ChatFormattingPolicy.translationActionEnabled(in:), sharing the canonical chats.showTextTranslate key. No separate ai.showTextTranslate definition. Legacy migration is owned by ChatFeatures.migrateSettings; App root publication is pending the App owner's return."},"implementation":{"status":"partial","ported":false,"evidence":[{"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/AITranslationPolicy.swift","line":23},{"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/ChatPolicy.swift","line":40},{"kind":"source","path":"telegram-ios/submodules/TextSelectionNode/Sources/TextSelectionNode.swift","line":795},{"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/ChatFeatures.swift","line":186}],"remaining":["App owner must publish migrateSettings after definitions and before domains/accounts/extensions","Native menu/runtime and recorded-frame verification"]}},
+*** End Patch

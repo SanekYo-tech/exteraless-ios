@@ -1,0 +1,94 @@
+diff --git a/tools/compat/sdk_config_manifest.py b/tools/compat/sdk_config_manifest.py
+--- a/tools/compat/sdk_config_manifest.py
++++ b/tools/compat/sdk_config_manifest.py
+@@ -27,6 +27,7 @@
+          "TranslationFormality", "TabIconsMode", "IconPackType", "ProxyDisableCondition")
+ HELPERS = {
+     "AppearanceFeatures.swift": {}, "AppearanceAdditionalFeatures.swift": {},
++    "CoreAppearanceFontFamilyPolicy.swift": {},
+     "ToolsFeatures.swift": {}, "ToolsNativeModePolicy.swift": {}, "FeedFeatures.swift": {},
+     "ChatFeatures.swift": {"toggle": ("chats.", "bool")},
+     "StickerFeatures.swift": {"toggle": ("chats.", "bool")},
+@@ -47,6 +48,8 @@
+ MANAGER_FIELDS = {"PluginsDevMode": "developerMode", "PluginsSafeMode": "safeMode", "PluginsCompactView": "compactView",
+                   "PinnedPlugins": "pinned", "PluginsEngine": "engineEnabled"}
+ NATIVE_REGISTRATIONS = {
++    "CoreAppearanceFontFamilyPolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
++        ("CoreAppearanceFontFamilyPolicy.definitions",)),
+     "AppearanceAdditionalFeatures.swift": ("swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
+         ("AppearanceAdditionalFeatures.definitions", "AppearanceAdditionalFeatures.settingsSectionDefinitions")),
+     "ToolsNativeModePolicy.swift": ("swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift",
+@@ -56,6 +59,7 @@
+         ("settings.store.register(AINativeVisibilityPolicy.definitions)",)),
+ }
+ REGISTERED_MEMBERS = {
++    "CoreAppearanceFontFamilyPolicy.swift": ("definitions",),
+     "AppearanceAdditionalFeatures.swift": ("definitions", "settingsSectionDefinitions"),
+     "ToolsNativeModePolicy.swift": ("videoBitrateDefinition", "voiceEnhancementDefinition", "groupAudioBitrateDefinition", "rpcErrorsDefinition"),
+     "AINativePolicyVisibility.swift": ("definitions",),
+diff --git a/docs/wave-2/sdk-config-binding-dispositions.json b/docs/wave-2/sdk-config-binding-dispositions.json
+--- a/docs/wave-2/sdk-config-binding-dispositions.json
++++ b/docs/wave-2/sdk-config-binding-dispositions.json
+@@ -3,11 +3,6 @@
+     "status": "blocked",
+     "reason": "Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting.",
+     "evidence": [{"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift","note":"super.init(mode: .automaticMasterDetail)"},{"kind":"source","path":"docs/wave-2/appearance-parity.json","note":"neko.tabletMode: setting_key null and forced layout override explicitly not implemented"}]
+-  },
+-  "neko.typeface": {
+-    "status": "blocked",
+-    "reason": "Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean.",
+-    "evidence": [{"kind":"source","path":"docs/wave-2/appearance-parity.json","note":"neko.typeface: exact family-selection parity explicitly absent"},{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/TypefaceHelper.java","line":353}]
+   },
+   "chats.cameraType": {
+     "status": "unsupported",
+diff --git a/tools/compat/tests/test_sdk_config_binding.py b/tools/compat/tests/test_sdk_config_binding.py
+--- a/tools/compat/tests/test_sdk_config_binding.py
++++ b/tools/compat/tests/test_sdk_config_binding.py
+@@ -46,6 +46,7 @@
+             self.definitions = {"compat.exteraconfig." + key: value for key, value in DEFAULTS.items()}
+             self.definitions.update({"appearance.disableVibration": False, "appearance.actionBarDecoration": 0,
+                 "appearance.chatDecoration": 0, "identity.idDcType": 1, "identity.showOnlineStatus": False})
++            self.definitions.update({"appearance.useSystemFonts": True})
+             self.definitions.update({"tools.uploadBoost": False, "appearance.hideAllTab": False,
+                 "appearance.hideAiEditor": False, "appearance.hideMessageSummary": False, "appearance.useSystemIconShape": False,
+                 "tools.videoMessageCameraFacing": 0, "tools.enhancedVideoBitrate": False, "tools.voiceEnhancement": False,
+@@ -232,8 +233,14 @@
+                 assert item.defaultValue == default
+                 (item.setConfigBool if type(changed) is bool else item.setConfigInt)(changed)
+                 assert json.loads(global_file.read_text(encoding="utf-8"))[key] == changed
+-            for getter in (extera.getTabletMode, extera.getUseSystemFonts):
+-                raises(UnsupportedSurfaceError, getter, "setting_key=null")
++            raises(UnsupportedSurfaceError, extera.getTabletMode, "setting_key=null")
++            assert extera.getUseSystemFonts() is True and neko.typeface.defaultValue is True
++            extera.setUseSystemFonts(False)
++            assert neko.typeface.Bool() is False
++            assert json.loads(global_file.read_text(encoding="utf-8"))["appearance.useSystemFonts"] is False
++            raises(TypeError, lambda: extera.setUseSystemFonts(1), "expected one")
++            neko.typeface.setConfigBool(True)
++            assert extera.getUseSystemFonts() is True
+             crash = jclass("app.exteraless.general.GeneralConfig").crashReports
+             host.definitions["tools.crashReports"] = False
+             crash.setConfigBool(True)
+diff --git a/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift b/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift
+--- a/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacyRules.swift
+@@ -60,6 +60,7 @@
+         booleans("general", "privacy", "botPrivacyAlwaysAsk botPrivacyEnabled contentCapture")
+         booleans("general", "tools", "crashReports")
+         func add(_ id: String, _ key: String, _ conversion: Conversion) { rules[id] = Rule(key: key, conversion: conversion) }
++        add("neko.typeface", CoreAppearanceFontFamilyPolicy.key, .boolean)
+         booleans("chats", "chats", "hdrPhotos translateInSheet")
+         booleans("nagram", "chats", "disableInAppBrowserGestures sendMp4DocumentAsVideo showSmallGIF")
+         booleans("neko", "chats", "autoPauseVideo takeGIFasVideo")
+diff --git a/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift b/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift
+--- a/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/CloudLegacySettingsArchive.swift
+@@ -258,7 +258,7 @@
+     }
+ 
+     private static func excludedField(_ id: String) -> CloudLegacySkipReason {
+-        if id.hasPrefix("glyph.") || id == "icons.useSystemIconShape" || id.contains("pushService") || ["neko.disableSystemAccount", "neko.cachePath", "neko.customSavePath", "neko.typeface", "nagram.notificationIcon"].contains(id) { return .androidSystem }
++        if id.hasPrefix("glyph.") || id == "icons.useSystemIconShape" || id.contains("pushService") || ["neko.disableSystemAccount", "neko.cachePath", "neko.customSavePath", "nagram.notificationIcon"].contains(id) { return .androidSystem }
+         if id.hasPrefix("icons.") { return .requiresNativeResources }
+         if ["ai.roles", "ai.history"].contains(id) || id.contains("Prompt") || id.hasSuffix("Data") || id.hasPrefix("localnamehelper.") { return .privateContent }
+         if id == "dialog.customForumTabsEnable" { return .deviceOrAccountState }

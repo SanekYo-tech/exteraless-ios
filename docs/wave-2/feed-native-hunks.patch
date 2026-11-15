@@ -1,0 +1,155 @@
+*** Begin Patch
+*** Add File: telegram-ios/submodules/AccountContext/Sources/ExteralessFeedEntry.swift
++import Display
++import Foundation
++import SwiftSignalKit
++
++/// TelegramUI supplies these factories. ChatListUI consumes only AccountContext.
++public enum ExteralessFeedEntry {
++    public static let presentationChanged = Notification.Name("Exteraless.FeedPresentationChanged")
++    private final class Storage: @unchecked Sendable {
++        let lock = NSLock()
++        var factory: (@MainActor (AccountContext) -> ViewController?)?
++        var badge: (@MainActor (AccountContext) -> Signal<(count: Int, isPartial: Bool), NoError>)?
++        var tabVisible: (@MainActor () -> Bool)?
++    }
++    private static let storage = Storage()
++
++    public static func install(factory: @escaping @MainActor (AccountContext) -> ViewController?, unreadBadge: @escaping @MainActor (AccountContext) -> Signal<(count: Int, isPartial: Bool), NoError>, isTabVisible: @escaping @MainActor () -> Bool) {
++        storage.lock.lock()
++        storage.factory = factory
++        storage.badge = unreadBadge
++        storage.tabVisible = isTabVisible
++        storage.lock.unlock()
++    }
++
++    public static var isAvailable: Bool {
++        storage.lock.lock()
++        defer { storage.lock.unlock() }
++        return storage.factory != nil
++    }
++
++    public static var isTabVisible: Bool {
++        precondition(Thread.isMainThread)
++        storage.lock.lock()
++        let handler = storage.tabVisible
++        storage.lock.unlock()
++        return MainActor.assumeIsolated { handler?() ?? false }
++    }
++
++    public static func makeController(context: AccountContext) -> ViewController? {
++        precondition(Thread.isMainThread)
++        storage.lock.lock()
++        let factory = storage.factory
++        storage.lock.unlock()
++        return MainActor.assumeIsolated { factory?(context) }
++    }
++
++    public static func unreadBadge(context: AccountContext) -> Signal<(count: Int, isPartial: Bool), NoError> {
++        precondition(Thread.isMainThread)
++        storage.lock.lock()
++        let handler = storage.badge
++        storage.lock.unlock()
++        return MainActor.assumeIsolated { handler?(context) ?? .single((0, true)) }
++    }
++}
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+ import Foundation
++import SwiftSignalKit
+ import UIKit
+@@
+     private var chats: ExteralessChatIntegration?
++    private var feed: ExteralessFeedIntegration?
+@@
+-                try ClientSettings.shared.register(AppearanceFeatures.definitions + ChatFeatures.definitions
++                try ClientSettings.shared.register(AppearanceFeatures.definitions + ChatFeatures.definitions + FeedFeatures.definitions
+@@
+         ExteralessSettingsEntry.setControllerFactory { context in
+             exteralessSettingsController(context: context)
+         }
++        ExteralessFeedEntry.install(factory: { [weak self] context in
++            self?.feed?.makeController(context: context)
++        }, unreadBadge: { [weak self] context in
++            self?.feed?.unreadBadge(context: context) ?? .single((0, true))
++        }, isTabVisible: { [weak self] in
++            self?.feed?.isTabVisible ?? false
++        })
+@@
+         if chats == nil { chats = ExteralessChatIntegration() }
++        if feed == nil { feed = ExteralessFeedIntegration() }
+@@
+-        appearance?.update(context: context)
++        feed?.update(context: context)
++        appearance?.update(context: context)
+@@
+         chats?.clearContext()
++        feed?.clearContext()
+*** Update File: telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift
+@@
+             var items: [ContextMenuItem] = []
++            if ExteralessFeedEntry.isAvailable {
++                items.append(.action(ContextMenuActionItem(text: "Channel feed", icon: { theme in
++                    UIImage(systemName: "rectangle.stack")?.withTintColor(theme.contextMenu.primaryColor, renderingMode: .alwaysOriginal)
++                }, action: { [weak self] _, finish in
++                    finish(.dismissWithoutContent)
++                    guard let self, let feed = ExteralessFeedEntry.makeController(context: self.context) else { return }
++                    self.push(feed)
++                })))
++            }
+             items.append(.action(ContextMenuActionItem(text: hasFolders ? strongSelf.presentationData.strings.ChatList_EditFolders : strongSelf.presentationData.strings.ChatList_AddFolder, icon: { theme in
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift
+@@
+     public var newsController: NewsScreen?
++    private var exteralessFeedTab: ViewController?
++    private let exteralessFeedBadgeDisposable = MetaDisposable()
++    private var exteralessFeedPresentationObserver: NSObjectProtocol?
++    private var exteralessLastShowCallsTab = false
++    private var exteralessLastShowNewsTab = false
+@@
+         super.init(mode: .automaticMasterDetail, theme: NavigationControllerTheme(presentationTheme: self.presentationData.theme))
++        self.exteralessFeedPresentationObserver = NotificationCenter.default.addObserver(forName: ExteralessFeedEntry.presentationChanged, object: nil, queue: .main) { [weak self] _ in
++            guard let self else { return }
++            self.updateRootControllers(showCallsTab: self.exteralessLastShowCallsTab, showNewsTab: self.exteralessLastShowNewsTab)
++        }
+@@
+         self.storyUploadEventsDisposable?.dispose()
++        self.exteralessFeedBadgeDisposable.dispose()
++        if let observer = self.exteralessFeedPresentationObserver { NotificationCenter.default.removeObserver(observer) }
+@@
+     public func addRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
++        self.exteralessLastShowCallsTab = showCallsTab
++        self.exteralessLastShowNewsTab = showNewsTab
+@@
+         controllers.append(accountSettingsController)
++        controllers = exteralessReplaceContactsWithFeed(controllers, contacts: contactsController, feed: self.exteralessFeedTabController(), enabled: ExteralessFeedEntry.isTabVisible)
+         controllers = exteralessFilterRootTabs(controllers, contactsController: contactsController)
+@@
+     public func updateRootControllers(showCallsTab: Bool, showNewsTab: Bool) {
++        self.exteralessLastShowCallsTab = showCallsTab
++        self.exteralessLastShowNewsTab = showNewsTab
+@@
+         controllers.append(self.accountSettingsController!)
++        controllers = exteralessReplaceContactsWithFeed(controllers, contacts: self.contactsController!, feed: self.exteralessFeedTabController(), enabled: ExteralessFeedEntry.isTabVisible)
+         controllers = exteralessFilterRootTabs(controllers, contactsController: self.contactsController)
+@@
+-    public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
++    func exteralessFeedTabController() -> ViewController? {
++        if let feed = self.exteralessFeedTab { return feed }
++        guard ExteralessFeedEntry.isTabVisible, let feed = ExteralessFeedEntry.makeController(context: self.context) else { return nil }
++        self.exteralessFeedTab = feed
++        self.exteralessFeedBadgeDisposable.set((ExteralessFeedEntry.unreadBadge(context: self.context) |> deliverOnMainQueue).start(next: { [weak feed] badge in
++            feed?.tabBarItem.badgeValue = badge.count > 0 ? String(badge.count) + (badge.isPartial ? "+" : "") : (badge.isPartial ? "…" : nil)
++        }))
++        return feed
++    }
++
++    public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance/ExteralessTabNavigation.swift
+@@
+     } else if !controllers.contains(where: { $0 === contacts }) {
+         controllers.insert(contacts, at: 0)
+     }
++    controllers = exteralessReplaceContactsWithFeed(controllers, contacts: contacts, feed: root.exteralessFeedTabController(), enabled: ExteralessFeedEntry.isTabVisible)
+     if let settings = root.accountSettingsController {
+*** End Patch

@@ -1,0 +1,135 @@
+{
+  "features": [
+    {
+      "id": "appearance.showFeedTab",
+      "ios": {
+        "setting_key": "appearance.showFeedTab",
+        "implementation_callsites": [
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedIntegration.swift","line":40},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift","line":257}
+        ],
+        "adaptation": "Original false default; coordinator-installed AccountContext factory and retained Contacts-slot replacement. Current native compile and recorded frames remain pending; FPP remediation evidence is separate from previous Core CI."
+      },
+      "implementation": {"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedIntegration.swift","line":89},
+        {"kind":"source","path":"docs/feed-remediation.md","line":1}
+      ]}
+    },
+    {
+      "id": "appearance.showFeedUnreadCounter",
+      "ios": {
+        "setting_key": "appearance.showFeedUnreadCounter",
+        "implementation_callsites": [
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedScreen.swift","line":359},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift","line":303}
+        ],
+        "adaptation": "Original true default; native per-account counters and partial badge. Visible receipt admission now uses actual account/window-scoped overlay rectangles and native keyboard/Duo geometry; obscured tall albums cannot qualify by shrinking the viewport. Native tests/frames pending."
+      },
+      "implementation": {"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedScreen.swift","line":578},
+        {"kind":"source","path":"telegram-ios/submodules/AccountContext/Sources/ExteralessContentOcclusions.swift","line":1},
+        {"kind":"source","path":"docs/wave-2/feed-occlusion.md","line":1}
+      ]}
+    },
+    {
+      "id":"chats.wideFeedPosts",
+      "ios": {
+        "setting_key":"chats.wideFeedPosts",
+        "implementation_callsites":[{"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedScreen.swift","line":81}],
+        "adaptation":"Native edge-to-edge/inset rows host full message items. A timeline-owned semantic dependency/token cache retains unchanged ID intersections; compatible cells use native updateNode for peer/reply changes and preserve node-local state. Native compile, quote/poll state execution and frames pending."
+      },
+      "implementation":{"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedScreen.swift","line":493},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedMessageCell.swift","line":147}
+      ]}
+    },
+    {
+      "id":"feed.includeArchived",
+      "ios": {
+        "setting_key":"chats.includeArchived",
+        "implementation_callsites":[
+          {"path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":15},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedTimeline.swift","line":127}
+        ],
+        "adaptation":"Per-account false default. Full paginated root/archive enumeration, fresh native group policy, and one applyPublic CAS for the four account maps; partial/gap remains explicit."
+      },
+      "implementation":{"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/ExteralessFeedChannels.swift","line":57},
+        {"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":51}
+      ]}
+    },
+    {
+      "id":"feed.addNewChannels",
+      "ios": {
+        "setting_key":"chats.addNewChannels",
+        "implementation_callsites":[
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessFeedController.swift","line":94},
+          {"path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":35}
+        ],
+        "adaptation":"Original true default. Disabling snapshots complete account membership and commits known/add-new/exclusion/archive dependencies atomically; stale concurrent snapshots fail CAS."
+      },
+      "implementation":{"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/ChatFeedPolicy.swift","line":22},
+        {"kind":"source","path":"swift/ExteralessCore/Tests/ExteralessCoreTests/FeedRemediationTests.swift","line":92}
+      ]}
+    },
+    {
+      "id":"feed.excludedChannels",
+      "ios": {
+        "setting_key":"chats.excludedChannels",
+        "implementation_callsites":[
+          {"path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":15},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedActions.swift","line":383}
+        ],
+        "adaptation":"Lossless account-keyed sets, complete-list bulk actions and avatar exclude/undo. Atomic compound mutation; fresh export checks revalidate current inclusion and group after async delivery."
+      },
+      "implementation":{"status":"partial","ported":false,"evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedActions.swift","line":219},
+        {"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":51}
+      ]}
+    },
+    {
+      "id":"feed.knownChannels",
+      "ios": {
+        "setting_key":"chats.knownChannels",
+        "implementation_callsites":[
+          {"path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":15},
+          {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessFeedController.swift","line":94}
+        ],
+        "adaptation":"Original account-local state stays in ChatFeatures. Known-set snapshot, explicit inclusion and add-new flag share one atomic public CAS, with no duplicate definition."
+      },
+      "implementation":{"status":"partial","ported":false,"evidence":[{"kind":"source","path":"swift/ExteralessCore/Sources/ExteralessCore/FeedSettingsStore.swift","line":35}]}
+    }
+  ],
+  "modules": {
+    "feed": {"implementation": {
+      "status":"partial", "ported":false,
+      "note":"FU-01/02/03 source changes are applied and frozen. All incomplete-source frontiers retain the 616-message budget; semantic projection and compatible native-node lifetime are preserved. The same export permit reaches Photos/files/activity/native enqueue and all four direct Gallery Save calls with retained references, final item/player generation and success receipts. Granted Feed/Footer calls explicitly use the guarded makeShareController factory. Exhaustive Save callsites are recorded; CMC selection/Double accessors are preserved. CoreFeed8 and its freeze remain unchanged; Native36 is frozen for coordinator compilation/tests/frames, still pending. Evidence remains partial.",
+      "evidence":[
+        {"kind":"source","path":"telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/ExteralessFeedMessageProjection.swift","line":247},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/ExteralessFeedMessageProjection.swift","line":162},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/ExteralessFeedVisibleMetadata.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedScreen.swift","line":140},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed/ExteralessFeedTimeline.swift","line":193},
+        {"kind":"source","path":"telegram-ios/submodules/AccountContext/Sources/ExteralessContentExportPermit.swift","line":11},
+        {"kind":"source","path":"telegram-ios/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift","line":154},
+        {"kind":"source","path":"telegram-ios/submodules/ShareController/Sources/ShareController.swift","line":86},
+        {"kind":"source","path":"telegram-ios/submodules/ShareController/Sources/ShareController.swift","line":153},
+        {"kind":"source","path":"telegram-ios/submodules/ShareController/Sources/ShareControllerNode.swift","line":34},
+        {"kind":"source","path":"telegram-ios/submodules/SaveToCameraRoll/Sources/SaveToCameraRoll.swift","line":268},
+        {"kind":"source","path":"telegram-ios/submodules/GalleryUI/Sources/ExteralessGallerySaveLifetime.swift","line":9},
+        {"kind":"source","path":"swift/ExteralessCore/Tests/ExteralessCoreTests/FeedRemediationTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedRemediationNativeTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedFollowupTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedExportPermitTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedActivityExportTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedTerminalExportTests.swift","line":1},
+        {"kind":"source","path":"telegram-ios/submodules/TelegramUI/Tests/FeedTests/FeedGalleryDirectSaveTests.swift","line":1},
+        {"kind":"source","path":"docs/feed-remediation.md","line":1},
+        {"kind":"source","path":"docs/wave-2/feed-core-frozen.sha256","line":1},
+        {"kind":"source","path":"docs/wave-2/feed-fu-native-frozen.sha256","line":1},
+        {"kind":"source","path":"docs/wave-2/feed-save-callsites.md","line":1}
+      ]
+    }}
+  }
+}

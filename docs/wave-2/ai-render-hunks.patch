@@ -1,0 +1,76 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                if canTranslate {
++                if canTranslate && AITranslationPolicy().showMessageTranslate {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                    let translateToLanguage = item.associatedData.translateToLanguage
++                    let aiPolicy = AITranslationPolicy()
++                    let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
++                    let aiManualVisible = aiManual?.visible == true
++                    let translateToLanguage = aiManualVisible ? aiManual?.language : (aiPolicy.autoEnabled ? item.associatedData.translateToLanguage : nil)
+@@
+-                    } else if !item.message.text.isEmpty && incoming {
++                    } else if !item.message.text.isEmpty && (incoming || aiManualVisible) {
+@@
+                                 rawText = summary.text
+                                 messageEntities = summary.entities
++                                if translateToLanguage != nil, let originalSummary = attribute.summary, aiPolicy.keepsOriginal(manual: aiManualVisible, automatic: item.associatedData.translateToLanguage != nil), !originalSummary.text.isEmpty {
++                                    let prefix = originalSummary.text + AITranslationPolicy.separator
++                                    rawText = prefix + summary.text
++                                    let offset = prefix.utf16.count
++                                    messageEntities = originalSummary.entities + summary.entities.map { MessageTextEntity(range: ($0.range.lowerBound + offset) ..< ($0.range.upperBound + offset), type: $0.type) }
++                                }
+                                 isTranslating = false
+@@
+                                 rawText = attribute.text
+                                 messageEntities = attribute.entities
++                                if aiPolicy.keepsOriginal(manual: aiManualVisible, automatic: item.associatedData.translateToLanguage != nil) {
++                                    let prefix = item.message.text + AITranslationPolicy.separator
++                                    let offset = prefix.utf16.count
++                                    rawText = prefix + attribute.text
++                                    messageEntities = (item.message.textEntitiesAttribute?.entities ?? []) + attribute.entities.map { MessageTextEntity(range: ($0.range.lowerBound + offset) ..< ($0.range.upperBound + offset), type: $0.type) }
++                                }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                if let poll, let translateToLanguage = item.associatedData.translateToLanguage, !poll.text.isEmpty && incoming {
++                let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
++                let aiLanguage = aiManual?.visible == true ? aiManual?.language : (AITranslationPolicy().autoEnabled ? item.associatedData.translateToLanguage : nil)
++                if let poll, let translateToLanguage = aiLanguage, !poll.text.isEmpty && (incoming || aiManual?.visible == true) {
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageRichDataBubbleContentNode/Sources/ChatMessageRichDataBubbleContentNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+         let isIncoming = item.message.effectivelyIncoming(item.context.account.peerId)
+-        var canDisplayTranslation = isIncoming
++        let aiPolicy = AITranslationPolicy()
++        let aiManual = AIManualTranslations.state(accountId: String(item.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: item.message.id.peerId.toInt64(), namespace: item.message.id.namespace, id: item.message.id.id))
++        var canDisplayTranslation = isIncoming || aiManual?.visible == true
+@@
+-        if canDisplayTranslation, let translateToLanguage = item.associatedData.translateToLanguage {
++        let aiLanguage = aiManual?.visible == true ? aiManual?.language : (aiPolicy.autoEnabled ? item.associatedData.translateToLanguage : nil)
++        if canDisplayTranslation, let translateToLanguage = aiLanguage {
+             if let translation = item.message.attributes.first(where: { ($0 as? TranslationMessageAttribute)?.toLang == translateToLanguage }) as? TranslationMessageAttribute, let instantPage = translation.instantPage {
++                let instantPage = ExteralessAIHooks.renderedPage(original: attribute.instantPage, translated: instantPage, includeOriginal: aiPolicy.keepsOriginal(manual: aiManual?.visible == true, automatic: item.associatedData.translateToLanguage != nil))
+                 return ResolvedRichDataContent(
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-                            if let translateToLanguage = arguments.associatedData.translateToLanguage, !text.isEmpty && arguments.incoming {
++                            let aiManual = AIManualTranslations.state(accountId: String(arguments.context.account.id.int64), messageKey: AIManualTranslations.messageKey(peerId: arguments.message.id.peerId.toInt64(), namespace: arguments.message.id.namespace, id: arguments.message.id.id))
++                            let aiLanguage = aiManual?.visible == true ? aiManual?.language : (AITranslationPolicy().autoEnabled ? arguments.associatedData.translateToLanguage : nil)
++                            if let translateToLanguage = aiLanguage, !text.isEmpty && (arguments.incoming || aiManual?.visible == true) {
+*** End Patch

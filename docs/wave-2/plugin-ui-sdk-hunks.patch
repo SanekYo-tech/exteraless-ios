@@ -1,0 +1,299 @@
+diff --git a/python/exteraless_runtime/_ui.py b/python/exteraless_runtime/_ui.py
+--- a/python/exteraless_runtime/_ui.py
++++ b/python/exteraless_runtime/_ui.py
+@@ -128,7 +128,36 @@
+         names = {0: "visible", 4: "invisible", 8: "gone"}
+         if type(value) is not int or value not in names: raise ValueError("visibility must be VISIBLE=0, INVISIBLE=4 or GONE=8")
+         self._set(visibility=names[value])
+-    def setPadding(self, left, top, right, bottom): raise UnsupportedSurfaceError("Android pixel padding has no implicit UIKit layout")
++    def setPadding(self, left, top, right, bottom):
++        self._set(padding=[left, top, right, bottom])  # Native logical points.
++    def setLayoutParams(self, value):
++        if isinstance(value, LayoutParams): value = value.to_model()
++        if not isinstance(value, dict): raise UnsupportedSurfaceError("Use portable layout parameters")
++        self._set(layout=copy.deepcopy(value))
++    def setTypeface(self, face):
++        if not isinstance(face, (str, dict)): raise UnsupportedSurfaceError("Use a native font name or font descriptor")
++        self._set(font=copy.deepcopy(face))
++    def setTextSize(self, size):
++        font = self.model.get("font", {"name": "system"})
++        if isinstance(font, str): font = {"name": font}
++        self._set(font=dict(font, size=size))
++
++
++class LayoutParams(Object):
++    MATCH_PARENT, WRAP_CONTENT = -1, -2
++    def __init__(self, width=-1, height=-2, weight=0):
++        self.width, self.height, self.weight = width, height, weight
++        self.margins = [0, 0, 0, 0]
++    def setMargins(self, left, top, right, bottom): self.margins = [left, top, right, bottom]
++    def to_model(self):
++        return {"width": self.width, "height": self.height, "weight": self.weight, "margins": list(self.margins)}
++
++
++class ImageView(Widget):
++    kind = "image"
++    def setImageResource(self, name):
++        if not isinstance(name, str): raise UnsupportedSurfaceError("ImageView requires a named UIKit/bundle image")
++        self._set(image=name)
+ 
+ 
+ class TextView(Widget): kind = "text"
+@@ -140,8 +169,10 @@
+     VERTICAL, HORIZONTAL = 1, 0
+     def setOrientation(self, value): self._set(type="column" if value == 1 else "row")
+     def addView(self, view, *layout):
+-        if layout: raise UnsupportedSurfaceError("Android LayoutParams need an explicit iOS widget layout")
+         if not isinstance(view, Widget): raise TypeError("addView requires a ported widget")
++        if len(layout) == 1: view.setLayoutParams(layout[0])
++        elif len(layout) == 2: view.setLayoutParams(LayoutParams(*layout))
++        elif layout: raise UnsupportedSurfaceError("Use LayoutParams or width/height in native logical points")
+         self.children.append(view)
+         if self.changed: self.bind(self.changed); self.changed()
+ 
+@@ -216,55 +247,84 @@
+ 
+     class Builder(Object):
+         def __init__(self, context=None, style=0, resources_provider=None):
+-            if resources_provider is not None or not isinstance(style, int):
++            if resources_provider is not None or type(style) is not int:
+                 raise UnsupportedSurfaceError("Android resources providers are not UIKit resources")
+             styles = {0: "message", 2: "loading", 3: "spinner"}
+             if style not in styles: raise ValueError("unsupported alert style")
+-            self.model = {"style": styles[style], "cancelable": True, "buttons": []}
+-            self.listeners = {}
+-            self.view = None
+-
+-        def setTitle(self, value): self.model["title"] = str(value); return self
+-        def setMessage(self, value): self.model["message"] = str(value); return self
++            self.model = {"style": styles[style], "cancelable": style == 0, "buttons": []}
++            self.listeners, self.view, self._view_height, self._native_dialog = {}, None, -2, None
++
++        def _set(self, **changes):
++            if self._native_dialog is not None:
++                self._native_dialog.update(**changes)
++                self.model = copy.deepcopy(self._native_dialog.model)
++            else:
++                self.model.update(copy.deepcopy(changes))
++            return self
++        def _listen(self, name, listener, method):
++            self.listeners[name] = (listener, method)
++            return self
++        def _view_model(self):
++            value = self.view.to_model()
++            if self._view_height != -2:
++                value["layout"] = dict(value.get("layout", {}), height=self._view_height)
++            return value
++        def setTitle(self, value): return self._set(title=str(value))
++        def setMessage(self, value): return self._set(message=str(value))
+         def setView(self, value, height=-2):
+             if not isinstance(value, Widget): raise UnsupportedSurfaceError("set_view requires a ported widget DTO")
+-            self.view = value
+-            self.model["view"] = value.to_model()
++            candidate = value.to_model()
++            if height != -2: candidate["layout"] = dict(candidate.get("layout", {}), height=height)
++            self._set(view=candidate)
++            if self.view is not None: self.view.bind(None)
++            self.view, self._view_height = value, height
++            self.view.bind(lambda: self._set(view=self._view_model()))
+             return self
+         def setItems(self, items, *args):
+-            if len(args) != 1: raise UnsupportedSurfaceError("Android item icon resources have no implicit iOS mapping")
+-            self.model["items"] = list(map(str, items))
+-            self.listeners["item"] = (args[0], "onClick")
+-            return self
++            items = list(map(str, items))
++            if len(args) == 1:
++                rows, listener = items, args[0]
++            elif len(args) == 2:
++                icons, listener = list(args[0]), args[1]
++                if len(icons) != len(items): raise ValueError("item/icon counts differ")
++                rows = [{"text": text, "icon": icon_value(icon)} for text, icon in zip(items, icons)]
++            else: raise TypeError("setItems expects items, optional named icons, and a listener")
++            self._set(items=rows)
++            return self._listen("item", listener, "onClick")
+         def _button(self, name, which, text, listener):
+-            self.model["buttons"] = [item for item in self.model["buttons"] if item["which"] != which]
+-            self.model["buttons"].append({"which": which, "text": str(text)})
+-            self.listeners[name] = (listener, "onClick")
+-            return self
++            current = self._native_dialog.model if self._native_dialog is not None else self.model
++            buttons = [copy.deepcopy(item) for item in current["buttons"] if item["which"] != which]
++            buttons.append({"which": which, "text": str(text)})
++            self._set(buttons=buttons)
++            return self._listen(name, listener, "onClick")
+         def setPositiveButton(self, text, listener): return self._button("positive", -1, text, listener)
+         def setNegativeButton(self, text, listener): return self._button("negative", -2, text, listener)
+         def setNeutralButton(self, text, listener): return self._button("neutral", -3, text, listener)
+-        def setOnDismissListener(self, value): self.listeners["dismiss"] = (value, "onDismiss"); return self
+-        def setOnCancelListener(self, value): self.listeners["cancel"] = (value, "onCancel"); return self
+-        def setOnBackButtonListener(self, value): self.listeners["back"] = (value, "onClick"); return self
+-        def setDimEnabled(self, value): self.model["dimEnabled"] = bool(value); return self
++        def setOnDismissListener(self, value): return self._listen("dismiss", value, "onDismiss")
++        def setOnCancelListener(self, value): return self._listen("cancel", value, "onCancel")
++        def setOnBackButtonListener(self, value): return self._listen("back", value, "onClick")
++        def setDimEnabled(self, value): return self._set(dimEnabled=bool(value))
+         def setBlurredBackground(self, value, blur_behind=True):
+-            self.model.update(blurredBackground=bool(value), blurBehind=bool(blur_behind))
+-            return self
+-        def setMessageTextViewClickable(self, value): self.model["messageClickable"] = bool(value); return self
++            return self._set(blurredBackground=bool(value), blurBehind=bool(blur_behind))
++        def setMessageTextViewClickable(self, value): return self._set(messageClickable=bool(value))
+         def create(self):
++            if self._native_dialog is not None: return self._native_dialog
+             dialog = NativeDialog(platform, "alert", self.model, {})
+-            def handler(listener, method, event_name):
++            self._native_dialog = dialog
++            def handler(event_name):
+                 def receive(event):
+                     if not isinstance(event, dict): raise TypeError("UI callback must contain an event object")
+                     if self.view is not None: self.view.accept_values(event.get("values", {}))
++                    listener, method = self.listeners.get(event_name, (None, "onClick"))
+                     args = (dialog, event.get("which", -1)) if method == "onClick" else (dialog,)
+                     return _listener(listener, method, *args)
+                 return receive
+-            dialog.callbacks = {name: handler(listener, method, name) for name, (listener, method) in self.listeners.items()}
+-            if self.view is not None:
+-                self.view.bind(lambda: dialog.update(view=self.view.to_model()))
+-                dialog.callbacks["change"] = lambda event: self.view.accept_values({event["key"]: event["value"]})
++            # Stable wrappers let live listener/model edits reuse the same native
++            # lease. Native uiUpdate intentionally cannot introduce new C handles.
++            dialog.callbacks = {name: handler(name) for name in ("positive", "negative", "neutral", "item", "dismiss", "cancel", "back")}
++            def changed(event):
++                if self.view is not None: self.view.accept_values({event["key"]: event["value"]})
++            dialog.callbacks["change"] = changed
+             return dialog
+         def show(self): return self.create().show()
+ 
+@@ -286,13 +346,14 @@
+             dialog.model.pop("style", None)
+             return dialog
+         def setCustomView(self, view): return self.setView(view)
+-        def selectedPos(self, position): self.model["selectedIndex"] = int(position); return self
++        def selectedPos(self, position): return self._set(selectedIndex=int(position))
+     class BottomSheet:
+         Builder = BottomSheetBuilder
+     register_class("org.telegram.ui.ActionBar.BottomSheet$Builder", BottomSheetBuilder)
+     register_class("org.telegram.ui.ActionBar.BottomSheet", BottomSheet)
+     for fqcn, cls in {"android.widget.TextView": TextView, "android.widget.EditText": EditText,
+-                      "android.widget.LinearLayout": LinearLayout, "android.content.ClipData": ClipData,
++                      "android.widget.LinearLayout": LinearLayout, "android.widget.ImageView": ImageView,
++                      "android.widget.LinearLayout$LayoutParams": LayoutParams, "android.content.ClipData": ClipData,
+                       "android.content.Intent": Intent}.items():
+         register_class(fqcn, cls)
+ 
+@@ -306,14 +367,12 @@
+         if builder._dialog is None: raise RuntimeStateError("create/show the dialog before coloring its button")
+         button = builder._dialog.getButton(int(which))
+         if button is None: raise LookupError(which)
+-        button._set(destructive=True)
++        button._set(destructive=True, color=None)
+         return builder
+     alert.AlertDialogBuilder.make_button_red = red_button
+     def blurred_background(builder, blur, blur_behind_if_possible=True):
+         platform.check_worker()
+         builder._builder.setBlurredBackground(blur, blur_behind_if_possible)
+-        if builder._dialog is not None:
+-            builder._dialog.update(blurredBackground=bool(blur), blurBehind=bool(blur_behind_if_possible))
+         return builder
+     alert.AlertDialogBuilder.set_blurred_background = blurred_background
+     android.get_context = lambda: context
+@@ -360,23 +419,17 @@
+     platform.present = lambda kind, model, callbacks=None: Presentation(platform, kind, model, callbacks or {}).show()
+ 
+     def show_settings(title=None):
+-        rows = json.loads(platform.loader.get_settings_json(platform.plugin_id))
+-        changed = lambda event: platform.loader.notify_setting_changed(platform.plugin_id, event["key"], json.dumps(event["value"]))
+-        callbacks = {"change": changed}
+         def prepare(items):
+             for row in items:
+-                row.pop("integral", None)  # Derived from the native slider min/max/step.
++                row.pop("integral", None)
++                row.pop("backup_exportable", None)
++                secret = row.pop("is_secret", False) or row.get("sensitive", False)
++                row.pop("sensitive", None)
++                if secret and row.get("type") in ("input", "edittext", "edit_text"):
++                    row["secure"] = True
+                 alias = row.pop("link_alias", None)
+                 if alias is not None: row["id"] = alias
+-                if row.get("icon") is not None:
+-                    row["icon"] = icon_value(row["icon"])
+-                for name in ("callback_id", "long_callback_id"):
+-                    callback_id = row.get(name)
+-                    if callback_id:
+-                        if name == "callback_id" and row.get("type") in ("switch", "input", "edittext", "slider", "selector"):
+-                            callbacks[callback_id] = changed
+-                        else:
+-                            callbacks[callback_id] = lambda event, ident=callback_id: platform.loader.dispatch_setting_click(platform.plugin_id, ident)
++                if row.get("icon") is not None: row["icon"] = icon_value(row["icon"])
+                 if row.get("type") == "custom":
+                     item = platform.loader.plugins[platform.plugin_id].custom_views[row["view_id"]]
+                     view = platform.loader._build_custom_view(item, context)
+@@ -385,8 +438,19 @@
+                     row.clear()
+                     row.update(view.to_model(), **retained)
+                 prepare(row.get("sub_page", []))
+-        prepare(rows)
+-        return platform.present("settings", {"title": title or platform.plugin_id, "rows": rows}, callbacks)
++        def read_rows():
++            rows = json.loads(platform.loader.get_settings_json(platform.plugin_id))
++            prepare(rows)
++            return rows
++        def changed(event):
++            platform.loader.notify_setting_changed(platform.plugin_id, event["key"], json.dumps(event["value"]))
++        def action(event):
++            platform.loader.dispatch_setting_click(platform.plugin_id, event["callbackId"])
++        def refresh(event):
++            presentation.update(rows=read_rows())
++        presentation = Presentation(platform, "settings", {"title": title or platform.plugin_id, "rows": read_rows()},
++                                    {"change": changed, "action": action, "longAction": action, "refresh": refresh})
++        return presentation.show()
+ 
+     platform.show_settings = show_settings
+     platform.share = lambda text=None, files=None, title=None: platform.present(
+@@ -398,7 +462,26 @@
+         def getParentActivity(self): return context
+         def getCurrentAccount(self): return int(self.descriptor["account"])
+         def presentFragment(self, page):
+-            return platform.call("uiNavigate", page.to_model() if hasattr(page, "to_model") else page)
++            value = page.to_model() if hasattr(page, "to_model") else page
++            if not isinstance(value, dict): raise TypeError("presentFragment requires a portable route/page")
++            if value.get("sourceId", self.descriptor["id"]) != self.descriptor["id"]:
++                raise RuntimeStateError("navigation source cannot be retargeted")
++            return platform.call("uiNavigate", dict(value, sourceId=self.descriptor["id"]))
++
++    from ._codec import Snapshot
++    class MenuMessageSnapshot(Snapshot):
++        _methods = frozenset(("getId", "getDialogId", "isOutOwner", "isPhoto", "isVideo", "isVoice", "isMusic",
++                              "isDocument", "isSticker", "isRoundVideo", "isGif", "isAnimatedSticker"))
++        def __getattr__(self, name):
++            value = super().__getattr__(name)
++            return (lambda: value) if name in self._methods else value
++    def menu_context(event):
++        result = Snapshot(event)
++        if isinstance(result.get("fragment"), dict): result["fragment"] = Fragment(result["fragment"])
++        result["context"] = context
++        if isinstance(result.get("message"), dict): result["message"] = MenuMessageSnapshot(result["message"])
++        return result
++    platform.menu_context = menu_context
+ 
+     def active_fragment():
+         descriptor = platform.call("uiActiveFragment")
+diff --git a/python/exteraless_runtime/_registrations.py b/python/exteraless_runtime/_registrations.py
+--- a/python/exteraless_runtime/_registrations.py
++++ b/python/exteraless_runtime/_registrations.py
+@@ -77,7 +77,13 @@
+             value = getattr(menu_item_data, name)
+             if value is not None:
+                 model[name] = value
+-        ident = registry.add("menu", model, menu_item_data.on_click)
++        callback = menu_item_data.on_click
++        if not callable(callback): raise TypeError("menu on_click must be callable")
++        def native_click(event):
++            with platform.loader.client_utils.hook_scope(int(event["account"])):
++                callback(platform.menu_context(event))
++            return None
++        ident = registry.add("menu", model, native_click)
+         instance._exteraless_state("_exteraless_menu_callbacks", dict)[ident] = menu_item_data.on_click
+         return ident
+ 

@@ -1,0 +1,60 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+@@
+         var isAIButtonVisible = false
+         var attachmentPillHeight: CGFloat = 40.0
++        let aiEditorVisible = self.isAIEnabled && ExteralessAIHooks.aiEditorVisible
+         let inputHasNonWhitespaceText = !(self.richTextInputNode?.inputContentIsEmptyWhitespaceTrimmed ?? true)
+-        if self.isAIEnabled, inputHasNonWhitespaceText, let node = self.richTextInputNode {
++        if aiEditorVisible, inputHasNonWhitespaceText, let node = self.richTextInputNode {
+@@
+         // AI button in the TOP 40x40 slot of the capsule (fades in with the 3-line rule).
+-        if self.isAIEnabled {
++        if aiEditorVisible {
+@@
+     @objc private func aiButtonPressed() {
++        guard ExteralessAIHooks.aiEditorVisible else { return }
+         self.interfaceInteraction?.openAICompose()
+*** Update File: telegram-ios/submodules/InstantPageUI/Sources/InstantPageLayout.swift
+@@
+-public func instantPageLayoutForWebPage(_ webPage: TelegramMediaWebpage, instantPage: InstantPage?, userLocation: MediaResourceUserLocation, boundingWidth: CGFloat, sideInset: CGFloat, safeInset: CGFloat, strings: PresentationStrings, theme: InstantPageTheme, dateTimeFormat: PresentationDateTimeFormat, webEmbedHeights: [Int : CGFloat] = [:], cachedMessageSyntaxHighlight: CachedMessageSyntaxHighlight? = nil, addFeedback: Bool = true, fitToWidth: Bool = false) -> InstantPageLayout {
++/// V1 viewers enumerate concrete embed/details items to restore state and route
++/// callbacks. Empty placeholders preserve those ordinals while the summary has
++/// no painted text, media, hit area or height. Anchors still resolve to its boundary.
++func instantPageHiddenAISummaryPlaceholders(_ source: [InstantPageItem], origin: CGPoint, width: CGFloat) -> [InstantPageItem] {
++    let frame = CGRect(origin: origin, size: CGSize(width: width, height: 0.0))
++    var result: [InstantPageItem] = []
++    for item in source {
++        if let details = item as? InstantPageDetailsItem {
++            result.append(InstantPageDetailsItem(frame: frame, titleItems: [], titleHeight: 0.0, items: instantPageHiddenAISummaryPlaceholders(details.items, origin: .zero, width: width), safeInset: details.safeInset, rtl: details.rtl, initiallyExpanded: details.initiallyExpanded, index: details.index))
++        } else if item is InstantPageWebEmbedItem {
++            result.append(InstantPageWebEmbedItem(frame: frame, url: nil, html: nil, enableScrolling: false))
++        } else if let image = item as? InstantPageImageItem, case .webpage = image.media.media {
++            // A covered embed is represented by an image item in the original
++            // layout but consumes the same embed ordinal in both IV viewers.
++            result.append(InstantPageWebEmbedItem(frame: frame, url: nil, html: nil, enableScrolling: false))
++        } else if let anchor = item as? InstantPageAnchorItem {
++            result.append(InstantPageAnchorItem(frame: frame, anchor: anchor.anchor))
++        } else if let text = item as? InstantPageTextItem {
++            for anchor in text.anchors.keys.sorted() { result.append(InstantPageAnchorItem(frame: frame, anchor: anchor)) }
++        } else if let table = item as? InstantPageTableItem {
++            for anchor in table.anchors.keys.sorted() { result.append(InstantPageAnchorItem(frame: frame, anchor: anchor)) }
++        }
++    }
++    return result
++}
++
++public func instantPageLayoutForWebPage(_ webPage: TelegramMediaWebpage, instantPage: InstantPage?, userLocation: MediaResourceUserLocation, boundingWidth: CGFloat, sideInset: CGFloat, safeInset: CGFloat, strings: PresentationStrings, theme: InstantPageTheme, dateTimeFormat: PresentationDateTimeFormat, webEmbedHeights: [Int : CGFloat] = [:], cachedMessageSyntaxHighlight: CachedMessageSyntaxHighlight? = nil, addFeedback: Bool = true, fitToWidth: Bool = false) -> InstantPageLayout {
+@@
+     var previousBlock: InstantPageBlock?
++    let hideAISummary = ExteralessAIVisibility.instantViewSummaryHidden
+     for i in 0 ..< pageBlocks.count {
+         let block = pageBlocks[i]
+         let blockLayout = layoutInstantPageBlock(webpage: webPage, userLocation: userLocation, rtl: rtl, block: block, boundingWidth: boundingWidth, horizontalInset: sideInset + safeInset, safeInset: safeInset, isCover: false, previousItems: items, fillToSize: nil, media: media, mediaIndexCounter: &mediaIndexCounter, embedIndexCounter: &embedIndexCounter, detailsIndexCounter: &detailsIndexCounter, theme: theme, strings: strings, dateTimeFormat: dateTimeFormat, webEmbedHeights: webEmbedHeights, cachedMessageSyntaxHighlight: cachedMessageSyntaxHighlight, excludeCaptions: false, isLast: i == pageBlocks.count - 1, fitToWidth: fitToWidth)
++        if ExteralessAIVisibility.shouldHideInstantViewBlock(block, hideSummary: hideAISummary) {
++            // Run the real layout to advance its media/embed/details counters,
++            // then project an empty item set with the original state ordinals.
++            items.append(contentsOf: instantPageHiddenAISummaryPlaceholders(blockLayout.items, origin: CGPoint(x: 0.0, y: contentSize.height), width: boundingWidth))
++            continue
++        }
+*** End Patch

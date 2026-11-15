@@ -1,0 +1,286 @@
+*** Begin Patch
+*** Update File: telegram-ios/third-party/mtproto-engine/crates/mtproto-engine/src/resolver.rs
+@@
+ use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
++use std::sync::atomic::{AtomicBool, Ordering};
++
++#[cfg(target_os = "ios")]
++unsafe extern "C" {
++    fn MTAppNetworkResolve(host: *const std::ffi::c_char, port: u16, output: *mut u8, capacity: usize,
++        cancelled: extern "C" fn(*const std::ffi::c_void) -> bool, context: *const std::ffi::c_void) -> i32;
++    fn MTAppNetworkResolverEpoch() -> u64;
++    fn MTAppNetworkResolverCacheLifetime(host: *const std::ffi::c_char, port: u16) -> f64;
++}
++
++pub(super) fn policy_epoch() -> u64 {
++    #[cfg(target_os = "ios")]
++    { unsafe { MTAppNetworkResolverEpoch() } }
++    #[cfg(not(target_os = "ios"))]
++    { 0 }
++}
++
++pub(super) fn cache_lifetime(host: &str, port: u16, fallback: f64) -> f64 {
++    #[cfg(target_os = "ios")]
++    if let Ok(host) = std::ffi::CString::new(host) {
++        let ttl = unsafe { MTAppNetworkResolverCacheLifetime(host.as_ptr(), port) };
++        if ttl.is_finite() && ttl >= 0.0 { return ttl.min(fallback); }
++    }
++    #[cfg(not(target_os = "ios"))]
++    let _ = (host, port);
++    fallback
++}
++
++#[cfg(target_os = "ios")]
++extern "C" fn lookup_cancelled(context: *const std::ffi::c_void) -> bool {
++    !context.is_null() && unsafe { &*context.cast::<AtomicBool>() }.load(Ordering::Acquire)
++}
+@@
+ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
++    resolve_blocking_cancellable(host, port, &AtomicBool::new(false))
++}
++
++pub fn resolve_blocking_cancellable(host: &str, port: u16, cancelled: &AtomicBool) -> Vec<SocketAddr> {
++    if cancelled.load(Ordering::Acquire) { return Vec::new(); }
+     if let Some(address) = parse_literal(host, port) {
+         return vec![address];
+     }
++    #[cfg(target_os = "ios")]
++    if let Ok(name) = std::ffi::CString::new(host) {
++        let mut output = [0u8; 2048];
++        let count = unsafe { MTAppNetworkResolve(name.as_ptr(), port, output.as_mut_ptr(), output.len(), lookup_cancelled, (cancelled as *const AtomicBool).cast()) };
++        if count < 0 { return Vec::new(); }
++        if count > 0 {
++            let Ok(text) = std::str::from_utf8(&output[..(count as usize).min(output.len())]) else { return Vec::new(); };
++            return text.lines().filter_map(|text| {
++                if let Some((ip, scope)) = text.rsplit_once('%') {
++                    return Some(SocketAddr::V6(std::net::SocketAddrV6::new(ip.parse().ok()?, port, 0, scope.parse().ok()?)));
++                }
++                text.parse::<IpAddr>().ok().map(|ip| SocketAddr::new(ip, port))
++            }).take(16).collect();
++        }
++    }
+     let mut addresses: Vec<SocketAddr> = (host, port).to_socket_addrs().map(|iter| iter.collect()).unwrap_or_default();
+*** Update File: telegram-ios/third-party/mtproto-engine/crates/mtproto-engine/src/worker.rs
+@@
+-use crate::resolver::resolve_blocking;
++use crate::resolver::{policy_epoch, resolve_blocking_cancellable};
+@@
+-    Resolved { host: String, port: u16, addresses: Vec<std::net::SocketAddr> },
++    Resolved { host: String, port: u16, addresses: Vec<std::net::SocketAddr>, epoch: u64, lookup_id: u64 },
+@@
++struct PendingLookup {
++    waiting: Vec<SessionHandle>,
++    started_at: f64,
++    epoch: u64,
++    id: u64,
++    cancelled: Arc<AtomicBool>,
++}
++
+ struct ThreadResolver {
+     sender: Sender<Command>,
+     waker: Arc<Waker>,
+-    in_flight: HashMap<(String, u16), (Vec<SessionHandle>, f64)>,
++    in_flight: HashMap<(String, u16), PendingLookup>,
++    next_lookup_id: u64,
+ }
++
++impl ThreadResolver {
++    fn forget(&mut self, session: SessionHandle) {
++        self.in_flight.retain(|_, pending| {
++            pending.waiting.retain(|value| *value != session);
++            if pending.waiting.is_empty() { pending.cancelled.store(true, Ordering::Release); false } else { true }
++        });
++    }
++    fn cancel_all(&mut self) {
++        for pending in self.in_flight.values() { pending.cancelled.store(true, Ordering::Release); }
++        self.in_flight.clear();
++    }
++}
++
++impl Drop for ThreadResolver {
++    fn drop(&mut self) { self.cancel_all(); }
++}
+@@
+         let key = (host.to_string(), port);
+         let now = clock::monotonic_seconds();
+-        if let Some((waiting, started_at)) = self.in_flight.get_mut(&key) {
+-            if !waiting.contains(&session) {
+-                waiting.push(session);
++        let epoch = policy_epoch();
++        if let Some(pending) = self.in_flight.get_mut(&key) {
++            if !pending.waiting.contains(&session) {
++                pending.waiting.push(session);
+             }
+-            if now - *started_at < crate::session_runtime::RESOLVE_WAIT {
++            if pending.epoch == epoch && now - pending.started_at < crate::session_runtime::RESOLVE_WAIT {
+                 return Resolution::Pending;
+             }
+-            *started_at = now;
+         }
++        let mut waiting = vec![session];
++        if let Some(previous) = self.in_flight.remove(&key) {
++            previous.cancelled.store(true, Ordering::Release);
++            waiting = previous.waiting;
++        }
++        if self.in_flight.len() >= 128 { return Resolution::Resolved(Vec::new()); }
++        self.next_lookup_id = self.next_lookup_id.wrapping_add(1);
++        let lookup_id = self.next_lookup_id;
++        let cancelled = Arc::new(AtomicBool::new(false));
++        let lookup_cancelled = cancelled.clone();
+         let sender = self.sender.clone();
+@@
+-            let addresses = resolve_blocking(&lookup_host, port);
+-            let _ = sender.send(Command::Resolved { host: lookup_host, port, addresses });
++            let addresses = resolve_blocking_cancellable(&lookup_host, port, &lookup_cancelled);
++            let _ = sender.send(Command::Resolved { host: lookup_host, port, addresses, epoch, lookup_id });
+@@
+-        self.in_flight.entry((host, port)).or_insert_with(|| (vec![session], now));
++        self.in_flight.insert((host, port), PendingLookup { waiting, started_at: now, epoch, id: lookup_id, cancelled });
+@@
+-            resolver: ThreadResolver { sender, waker, in_flight: HashMap::new() },
++            resolver: ThreadResolver { sender, waker, in_flight: HashMap::new(), next_lookup_id: 0 },
+@@
+                 Command::Destroy(handle) => {
++                    self.resolver.forget(handle);
+@@
+                 Command::ResetConnections => {
++                    self.resolver.cancel_all();
+@@
+-                Command::Resolved { host, port, addresses } => {
++                Command::Resolved { host, port, addresses, epoch, lookup_id } => {
++                    let key = (host.clone(), port);
++                    if epoch != policy_epoch() || !self.resolver.in_flight.get(&key).is_some_and(|pending| pending.epoch == epoch && pending.id == lookup_id) { continue; }
+                     let waiting = self
+                         .resolver
+                         .in_flight
+                         .remove(&(host.clone(), port))
+-                        .map(|(waiting, _)| waiting)
++                        .map(|pending| pending.waiting)
+*** Update File: telegram-ios/third-party/mtproto-engine/crates/mtproto-engine/src/session_runtime.rs
+@@
+     dns: HashMap<(String, u16), (Vec<SocketAddr>, f64)>,
++    // A TTL=0 reply may satisfy its current connection once without becoming a cache hit.
++    dns_fresh: std::collections::HashSet<(String, u16)>,
++    resolver_epoch: u64,
+@@
+             dns: HashMap::new(),
++            dns_fresh: std::collections::HashSet::new(),
++            resolver_epoch: crate::resolver::policy_epoch(),
+@@
+     pub fn reset_connection(&mut self, now: Now, registry: &Registry) {
++        self.sync_resolver_epoch();
+@@
+     fn pick_address_at(&mut self, cursor: usize, resolver: &mut dyn Resolve, now: Now) -> Pick {
++        self.sync_resolver_epoch();
+@@
+                 let key = format!("{host}:{port}");
+                 let failures = self.failures;
++                let fresh = self.dns_fresh.remove(&(host.clone(), port));
+                 let cached = self.resolved.as_ref().filter(|cached| {
+                     cached.key == key
+                         && !cached.addresses.is_empty()
+-                        && now.mono < cached.expires_at
++                        && (fresh || now.mono < cached.expires_at)
+@@
+-                                expires_at: now.mono + DNS_TTL,
++                                expires_at: now.mono + crate::resolver::cache_lifetime(&host, port, DNS_TTL),
+@@
++    fn sync_resolver_epoch(&mut self) {
++        let epoch = crate::resolver::policy_epoch();
++        if self.resolver_epoch != epoch {
++            self.resolver_epoch = epoch;
++            self.dns.clear();
++            self.dns_fresh.clear();
++            self.resolved = None;
++            self.answered_address = None;
++            self.awaiting_resolution = None;
++        }
++    }
++
+     /// A host's addresses from this session's cache, or from the resolver.
+     pub(super) fn resolve_cached(&mut self, host: &str, port: u16, resolver: &mut dyn Resolve, now: Now) -> Resolution {
++        self.sync_resolver_epoch();
+         let key = (host.to_string(), port);
++        let fresh = self.dns_fresh.remove(&key);
+         if let Some((addresses, expires_at)) = self.dns.get(&key)
+-            && now.mono < *expires_at
++            && (fresh || now.mono < *expires_at)
+@@
+-            let lifetime = if addresses.is_empty() { RESOLVE_RETRY_MIN } else { DNS_TTL };
++            let lifetime = if addresses.is_empty() { RESOLVE_RETRY_MIN } else { crate::resolver::cache_lifetime(host, port, DNS_TTL) };
+@@
+     pub fn on_resolved(&mut self, host: &str, port: u16, addresses: Vec<SocketAddr>, now: Now) {
+-        let lifetime = if addresses.is_empty() { RESOLVE_RETRY_MIN } else { DNS_TTL };
++        self.sync_resolver_epoch();
++        let lifetime = if addresses.is_empty() { RESOLVE_RETRY_MIN } else { crate::resolver::cache_lifetime(host, port, DNS_TTL) };
++        self.dns_fresh.insert((host.to_string(), port));
+@@
+-                Some(ResolvedHost { key, addresses, expires_at: now.mono + DNS_TTL, failures_at: self.failures });
++                Some(ResolvedHost { key, addresses, expires_at: now.mono + lifetime, failures_at: self.failures });
+*** Update File: telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustNetworkSession.swift
+@@
+-        return rustEngineAddressOrder(isIpv6: isIpv6, preferredIndex: preferredIndex, allowIpv6: allowIpv6).map { schemes[$0] }
++        let preference = MTAppNetworkResolver.addressFamilyPreference()
++        if preference >= 0 {
++            let first = schemes.filter { $0.address.isIpv6() == (preference == 1) }
++            let fallback = schemes.filter { $0.address.isIpv6() != (preference == 1) }
++            return first + fallback
++        }
++        return rustEngineAddressOrder(isIpv6: isIpv6, preferredIndex: preferredIndex, allowIpv6: allowIpv6).map { schemes[$0] }
+*** Update File: telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustEngineRuntime.swift
+@@
+     private var wakeObserver: NSObjectProtocol?
++    private var appResolverObserver: NSObjectProtocol?
+@@
+     private func start() {
++        appResolverObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
++            guard let self else { return }
++            self.networkQueue.async {
++                if let engine = self.engine { mt_engine_reset_connections(engine) }
++            }
++        }
+*** Update File: telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustStreamHost.swift
+@@
+ import MTProtoEngineFFI
++import TelegramCore
+@@
+     private var paused = Set<UInt64>()
++    private var appConnectors: [UInt64: ExteralessTLSConnectToken] = [:]
++    private var appConnectorGenerations: [UInt64: UUID] = [:]
+@@
+             let queue = self.queue
++            #if os(iOS)
++            if #available(iOS 15.0, *) {
++                let generation = UUID()
++                self.appConnectorGenerations[stream] = generation
++                self.appConnectors[stream]?.cancel()
++                self.appConnectors[stream] = ExteralessResolverTLSConnector.connect(host: host, port: port, serverName: serverName, alpn: alpn, queue: queue, ready: { [weak self] connection in
++                    guard let self, self.appConnectorGenerations[stream] == generation else { nw_connection_cancel(connection); return }
++                    self.appConnectors.removeValue(forKey: stream)
++                    self.appConnectorGenerations.removeValue(forKey: stream)
++                    self.connections[stream] = connection
++                    nw_connection_set_state_changed_handler(connection) { [weak self] state, error in
++                        self?.stateChanged(stream: stream, connection: connection, state: state, error: error)
++                    }
++                    self.stateChanged(stream: stream, connection: connection, state: nw_connection_state_ready, error: nil)
++                }, failed: { [weak self] in
++                    guard let self, self.appConnectorGenerations[stream] == generation else { return }
++                    self.appConnectors.removeValue(forKey: stream)
++                    self.appConnectorGenerations.removeValue(forKey: stream)
++                    self.report(stream: stream, error: "resolver or connection failed")
++                })
++                return
++            }
++            #endif
+             let configureTcp: nw_parameters_configure_protocol_block_t = { options in
+@@
+-                    sec_protocol_options_set_verify_block(security, { _, _, complete in
+-                        complete(true)
+-                    }, queue)
++                    // Use the system's normal certificate-chain and hostname trust.
+@@
+     func close(stream: UInt64) {
+         self.queue.async {
++            self.appConnectors.removeValue(forKey: stream)?.cancel()
++            self.appConnectorGenerations.removeValue(forKey: stream)
+*** End Patch

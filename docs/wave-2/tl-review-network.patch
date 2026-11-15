@@ -1,0 +1,71 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
+@@
+-    guard !exteralessClientAPIRequestContainsIdentity(data.0), tlRequestTransformsEnabled() else { return nil }
+-    return tlTransformedRequestEvents(network: network, data: data, info: [], usesAdditionalInfo: false, tag: tag,
+-        automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError)
++    guard let events = tlTransformedRequestEvents(network: network, data: data, info: [], usesAdditionalInfo: false, tag: tag,
++        automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError) else { return nil }
++    return events
+@@
+-    guard !exteralessClientAPIRequestContainsIdentity(data.0), tlRequestTransformsEnabled() else { return nil }
+     return tlTransformedRequestEvents(network: network, data: data, info: info, usesAdditionalInfo: true, tag: tag,
+@@
+-                                         automaticFloodWait: Bool, onFloodWaitError: ((String) -> Void)?) -> Signal<NetworkRequestResult<T>, MTRpcError> {
++                                         automaticFloodWait: Bool, onFloodWaitError: ((String) -> Void)?) -> Signal<NetworkRequestResult<T>, MTRpcError>? {
++    let permitsPluginEvents = !exteralessClientAPIRequestContainsIdentity(data.0) && tlRequestTransformsEnabled()
++    let submission: PluginTLSubmissionOrder.Ticket
++    switch PluginTLSubmissionOrder.shared.reserveIfNeeded(accountRecordId: network.accountRecordId, transformsEnabled: permitsPluginEvents) {
++    case .bypass: return nil
++    case .full:
++        let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_TL_PREFIX_QUEUE_FULL")
++        return .fail(error)
++    case let .reserved(ticket): submission = ticket
++    }
+     let service = network.requestService
+     return Signal { [weak network, service] subscriber in
+         guard let network else {
++            PluginTLSubmissionOrder.shared.cancel(submission)
+@@
+-        guard let submission = PluginTLSubmissionOrder.shared.reserve(accountRecordId: network.accountRecordId) else {
+-            let error: MTRpcError = MTRpcError(errorCode: -1, errorDescription: "EXTERALESS_TL_PREFIX_QUEUE_FULL")
+-            subscriber.putError(error)
+-            return EmptyDisposable
+-        }
+         let operation = TLNetworkRequestOperation(network: network, service: service, data: data, info: info, usesAdditionalInfo: usesAdditionalInfo,
+             tag: tag, automaticFloodWait: automaticFloodWait, onFloodWaitError: onFloodWaitError,
+-            submission: submission,
++            submission: submission, permitsPluginEvents: permitsPluginEvents,
+@@
+     private let transformPre: Bool
+     private let transformPost: Bool
++    private let permitsPluginEvents: Bool
+@@
+-         onFloodWaitError: ((String) -> Void)?, submission: PluginTLSubmissionOrder.Ticket,
++         onFloodWaitError: ((String) -> Void)?, submission: PluginTLSubmissionOrder.Ticket, permitsPluginEvents: Bool,
+@@
+-        self.transformPre = PluginHookRouter.hasSubscribers(.preRequest) && PluginTLTransformRouter.hasSubscribers(.preRequest)
+-        self.transformPost = PluginHookRouter.hasSubscribers(.postRequest) && PluginTLTransformRouter.hasSubscribers(.postRequest)
++        self.permitsPluginEvents = permitsPluginEvents
++        self.transformPre = permitsPluginEvents && PluginHookRouter.hasSubscribers(.preRequest) && PluginTLTransformRouter.hasSubscribers(.preRequest)
++        self.transformPost = permitsPluginEvents && PluginHookRouter.hasSubscribers(.postRequest) && PluginTLTransformRouter.hasSubscribers(.postRequest)
+@@
+         let body = self.data.1.makeData()
++        if exteralessClientAPIRequestContainsIdentity(self.data.0) {
++            // C5 private identity requests may queue behind A but never reach a
++            // plugin decoder, transformer or observational payload.
++            self.submit(description: self.data.0, body: body, observePre: false, allowPostTransform: false)
++            return
++        }
+         do {
+@@
+-            if observePre, PluginHookRouter.hasSubscribers(.preRequest) {
++            if self.permitsPluginEvents, observePre, PluginHookRouter.hasSubscribers(.preRequest) {
+@@
+-            let payload = try self.payload(kind: .postRequest, value: value, canCancel: !ExteralessTLTransformCodec.hasContinuity(value), metadata: metadata, normalize: { json in
++            let payload = try self.payload(kind: .postRequest, value: value, canCancel: ExteralessTLTransformCodec.canCancelResponse(value), metadata: metadata, normalize: { json in
+@@
+     private func observePost(bytes: Data?, info: NetworkEngineResponseInfo, error: MTRpcError?) {
+-        guard PluginHookRouter.hasSubscribers(.postRequest) else { return }
++        guard self.permitsPluginEvents, PluginHookRouter.hasSubscribers(.postRequest) else { return }
+*** End Patch

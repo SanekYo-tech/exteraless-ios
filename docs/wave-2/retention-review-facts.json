@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-15",
+  "state": "FROZEN",
+  "scope": ["PR05-native-contract", "PR06-retention", "PR07", "PR08", "PR09", "PR10", "PR11", "PR14-native-contract"],
+  "review": "docs/wave-2/reviews/privacy-retention.md",
+  "report": "docs/wave-2/retention-review-remediation.md",
+  "process_contract": "docs/wave-2/retention-process-scope-contract.md",
+  "source_manifest": "docs/wave-2/retention-review-freeze.sha256",
+  "manifest_encoding": "UTF-8 without BOM, LF line endings",
+  "frozen_owned_source_files": 23,
+  "old_reports_modified": false,
+  "old_h1_h9_patches_reapplied": false,
+  "core_retention_policy_changed": false,
+  "checks": {
+    "postbox_import_check": "exit-0",
+    "scoped_diff_check": "exit-0",
+    "balanced_swift_files": 31,
+    "date_status_parameter_calls": 16,
+    "retention_owner_constructor_calls": 6,
+    "feed_and_offline_smoke_render_graph": "source-checked"
+  },
+  "fixtures": {
+    "path": "telegram-ios/submodules/TelegramCore/Tests/RetentionReviewRemediationTests.swift",
+    "methods": 11,
+    "media_bytes": 4,
+    "wait_budget_seconds": 25,
+    "required_process_timeout_seconds": 30,
+    "native_executed": false,
+    "live_accounts_or_network_used": false,
+    "separate_ios_processes_executed": false,
+    "power_loss_tested": false
+  },
+  "verification": {
+    "swift_typechecked": false,
+    "native_linked": false,
+    "frames_recorded": false,
+    "ported_claim": false,
+    "external_core_gate": "User-reported missing Chat dependency; not modified by retention"
+  },
+  "remaining_hunks": [
+    {
+      "owner": "hdo",
+      "path": "telegram-ios/submodules/TelegramCore/BUILD",
+      "patch": "docs/wave-2/retention-review-tests-hdo.patch",
+      "hunks": 1,
+      "effect": "Include RetentionReviewRemediationTests.swift in ExteralessNativeCoreTestsLib"
+    }
+  ]
+}

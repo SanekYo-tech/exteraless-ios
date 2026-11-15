@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "owner": "P-stickers-emoji",
+  "phase": "source-integration-2",
+  "checks": [
+    {"command":"python -B docs/wave-2/tests/test_stickers_contract.py -v","passed":5,"failed":0,"elapsed_seconds":0.133},
+    {"command":"python -B docs/wave-2/tests/test_stickers_integration.py -v","passed":7,"failed":0,"elapsed_seconds":0.030},
+    {"command":"python -B build-system/Make/PostboxImportCheck.py","working_directory":"telegram-ios","exit_code":0},
+    {"command":"git diff --check -- <touched source paths>","exit_code":0}
+  ],
+  "applied_original_hunks": 9,
+  "remaining_owner_hunks": {"common":12,"chat_nodes":6,"build_test_sources":2},
+  "tools_favorites": {
+    "backend":"TelegramCore/Sources/ExteralessTools/ToolsLocalFavoriteStickers.swift",
+    "picker_read":"exteralessLocalFavoriteStickerItems(engine:)",
+    "menu_state":"exteralessLocalFavoriteStickers(engine:)",
+    "menu_write":"exteralessSetLocalFavoriteSticker(engine:file:saved:)",
+    "additional_storage_keys":0,
+    "native_cloud_limit_override":false,
+    "local_limit_source":"ToolsFavoriteStickerArchive.maximumPerAccount"
+  },
+  "new_native_tests": {
+    "path":"telegram-ios/Tests/Exteraless/StickerFavoritesIntegrationTests.swift",
+    "methods":3,
+    "local_fixture_items":350,
+    "creates_account_or_network":false,
+    "executed":false
+  },
+  "swift_compile_run":false,
+  "device_frames_recorded":false,
+  "ci_commit_push":false,
+  "ported":false
+}

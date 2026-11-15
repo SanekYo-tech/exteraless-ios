@@ -1,0 +1,148 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+     private var tools: ExteralessToolsIntegration?
++    private var stickers: ExteralessStickerIntegration?
+@@
++                try ClientSettings.shared.register(StickerFeatures.definitions)
+                 registered = true
+@@
+         if tools == nil { tools = ExteralessToolsIntegration() }
++        if stickers == nil { stickers = ExteralessStickerIntegration() }
+@@
+         tools?.update(context: context)
++        stickers?.update(context: context)
+@@
+         tools?.clearContext()
++        stickers?.clearContext()
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/SynchronizeRecentlyUsedMediaOperations.swift
+@@
+ func addRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
+     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
++        exteralessRememberRecentSticker(transaction: transaction, file: fileReference.media)
+@@
+ func _internal_removeRecentlyUsedSticker(transaction: Transaction, fileReference: FileMediaReference) {
+     if let resource = fileReference.media.resource as? CloudDocumentMediaResource {
++        exteralessRemoveRecentSticker(transaction: transaction, id: fileReference.media.fileId)
+@@
+ func _internal_clearRecentlyUsedStickers(transaction: Transaction) {
++    exteralessRemoveRecentSticker(transaction: transaction, id: nil)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ChatController.swift
+@@
+     let choosingStickerActivityPromise = ValuePromise<Bool>(false)
+     var choosingStickerActivityDisposable: Disposable?
++    private var exteralessStickerObserver: ExteralessStickerChatObserver?
+@@
+-            self.choosingStickerActivityDisposable = (self.choosingStickerActivityPromise.get()
++            self.choosingStickerActivityDisposable = (combineLatest(self.choosingStickerActivityPromise.get()
+             |> mapToSignal { value -> Signal<Bool, NoError> in
+                 if value {
+                     return .single(true)
+                 } else {
+                     return .single(false) |> delay(2.0, queue: Queue.mainQueue())
+                 }
+-            }
++            }, exteralessStickerPolicy())
++            |> map { value, policy in value && !policy.hideChoosingActivity }
++            |> distinctUntilChanged
+             |> deliverOnMainQueue).startStrict(next: { [weak self] value in
+@@
+         MainActor.assumeIsolated { self.exteralessAIObserveSettings() }
++        MainActor.assumeIsolated { self.exteralessStickerObserver = ExteralessStickerChatObserver(controller: self) }
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/AccountViewTracker.swift
+@@
+ import MtProtoKit
++import ExteralessCore
+@@
+     public func featuredStickerPacks() -> Signal<[FeaturedStickerPackItem], NoError> {
++        return exteralessStickerPolicy() |> mapToSignal { [weak self] policy -> Signal<[FeaturedStickerPackItem], NoError> in
++            guard let self else { return .single([]) }
++            if policy.hideTrending {
++                self.queue.async {
++                    if StickerPolicy().hideTrending {
++                        self.featuredStickerPacksContext?.disposable.set(nil)
++                        self.featuredStickerPacksContext?.timestamp = nil
++                    }
++                }
++                return .single([])
++            }
++            return self.exteralessNativeFeaturedStickerPacks()
++        }
++    }
++
++    private func exteralessNativeFeaturedStickerPacks() -> Signal<[FeaturedStickerPackItem], NoError> {
+         return Signal { subscriber in
+@@
+     public func featuredEmojiPacks() -> Signal<[FeaturedStickerPackItem], NoError> {
++        return exteralessStickerPolicy() |> mapToSignal { [weak self] policy -> Signal<[FeaturedStickerPackItem], NoError> in
++            guard let self else { return .single([]) }
++            if policy.hideTrending {
++                self.queue.async {
++                    if StickerPolicy().hideTrending {
++                        self.featuredEmojiPacksContext?.disposable.set(nil)
++                        self.featuredEmojiPacksContext?.timestamp = nil
++                    }
++                }
++                return .single([])
++            }
++            return self.exteralessNativeFeaturedEmojiPacks()
++        }
++    }
++
++    private func exteralessNativeFeaturedEmojiPacks() -> Signal<[FeaturedStickerPackItem], NoError> {
+         return Signal { subscriber in
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift
+@@
+ import BundleIconComponent
++import ExteralessCore
+@@
+     @objc private func stickerTapGesture(_ gestureRecognizer: UITapGestureRecognizer) {
+-        guard let stickerItem = self.stickerItem else {
++        guard !StickerPolicy().disableGreetingSend, let stickerItem = self.stickerItem else {
+             return
+         }
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+@@
+ import ChatMessageSuggestedPostInfoNode
++import Emoji
++import ExteralessCore
+@@
+-                let attributedText = NSAttributedString(string: item.message.text, font: item.presentationData.messageEmojiFont, textColor: .black)
++                let attributedText = ExteralessEmojiRendering.shared.attributedText(NSAttributedString(string: item.message.text, font: item.presentationData.messageEmojiFont, textColor: .black), accountId: item.context.account.id.int64)
+@@
+             let innerImageInset: CGFloat = 10.0
++            if !isEmoji, telegramFile != nil, StickerPolicy().size != 14 {
++                let available = params.width - params.leftInset - params.rightInset - layoutConstants.bubble.edgeInset * 2.0 - avatarInset - layoutConstants.bubble.contentInsets.left * 2.0 - deliveryFailedInset - innerImageInset * 2.0 - (needsShareButton ? 32.0 : 0.0)
++                let originalSide = max(imageSize.width, imageSize.height)
++                if originalSide > 0 {
++                    let side = CGFloat(StickerPolicy().stickerSide(stock: Double(originalSide), available: Double(max(1.0, available)), isTablet: params.width >= 600.0))
++                    imageSize = CGSize(width: imageSize.width * side / originalSide, height: imageSize.height * side / originalSide)
++                }
++            }
+             let innerImageSize = CGSize(width: imageSize.width + innerImageInset * 2.0, height: imageSize.height + innerImageInset * 2.0)
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+@@
+ import Emoji
++import ExteralessCore
+@@
+-                let attributedText = stringWithAppliedEntities(item.message.text, entities: item.message.textEntitiesAttribute?.entities ?? [], baseColor: textColor, linkColor: textColor, baseFont: font, linkFont: font, boldFont: font, italicFont: font, boldItalicFont: font, fixedFont: font, blockQuoteFont: font, message: item.message, adjustQuoteFontSize: true)
++                let attributedText = ExteralessEmojiRendering.shared.attributedText(stringWithAppliedEntities(item.message.text, entities: item.message.textEntitiesAttribute?.entities ?? [], baseColor: textColor, linkColor: textColor, baseFont: font, linkFont: font, boldFont: font, italicFont: font, boldItalicFont: font, fixedFont: font, blockQuoteFont: font, message: item.message, adjustQuoteFontSize: true), accountId: item.context.account.id.int64)
+@@
+-            var innerImageSize = imageSize
++            if (telegramFile != nil || emojiFile != nil || telegramDice != nil), StickerPolicy().size != 14 {
++                let available = params.width - params.leftInset - params.rightInset - layoutConstants.bubble.edgeInset * 2.0 - avatarInset - layoutConstants.bubble.contentInsets.left * 2.0 - deliveryFailedInset - imageInset * 2.0 - abs(imageHorizontalOffset) - (needsShareButton ? 32.0 : 0.0)
++                let originalSide = max(imageSize.width, imageSize.height)
++                if originalSide > 0 {
++                    let side = CGFloat(StickerPolicy().stickerSide(stock: Double(originalSide), available: Double(max(1.0, available)), isTablet: params.width >= 600.0))
++                    imageSize = CGSize(width: imageSize.width * side / originalSide, height: imageSize.height * side / originalSide)
++                }
++            }
++            var innerImageSize = imageSize
+             imageSize = CGSize(width: imageSize.width + imageInset * 2.0, height: imageSize.height + imageInset * 2.0)
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@
+                 let (textLayout, textApply) = textLayout(InteractiveTextNodeLayoutArguments(
+-                    attributedString: attributedText,
++                    attributedString: ExteralessEmojiRendering.shared.attributedText(attributedText, accountId: item.context.account.id.int64),
+                     backgroundColor: nil,
+*** End Patch

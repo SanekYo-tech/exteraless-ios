@@ -1,0 +1,10 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Components/MultiAnimationRenderer/BUILD
+@@
+         "//submodules/TelegramUI/Components/AnimationCache:AnimationCache",
++        "//third-party/exteraless:ExteralessCore",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/BUILD
+@@
+         "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
++        "//third-party/exteraless:ExteralessCore",
+*** End Patch

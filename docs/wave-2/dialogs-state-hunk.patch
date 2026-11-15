@@ -1,0 +1,9 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift
+@@
+             case let .UpdatePinnedItemIds(groupId, pinnedOperation):
++                if exteralessReplayDialogPinUpdate(transaction: transaction, accountPeerId: accountPeerId, groupId: groupId, operation: pinnedOperation, enabled: exteralessDialogPolicy().unlimitedPinnedDialogs) {
++                    break
++                }
+                 switch pinnedOperation {
+*** End Patch

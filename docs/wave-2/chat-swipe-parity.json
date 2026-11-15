@@ -1,0 +1,34 @@
+{
+  "owner": "chat",
+  "proof_level": "source implementation; shared-owner integration and native/frame execution pending",
+  "features": [
+    {
+      "id": "etgbackup.ChatSwipeAction",
+      "ios": {
+        "setting_key": "chats.chatSwipeAction",
+        "implementation_callsites": [
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/CoreChatSwipePolicy.swift", "symbol": "ChatSwipePolicy.resolvedAction / primaryAction / gestureOwner"},
+          {"path": "swift/ExteralessCore/Sources/ExteralessCore/ChatSwipeFeatures.swift", "symbol": "ChatSwipeFeatures.definitions"},
+          {"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "symbol": "exteralessChatSwipeRevealOptions"},
+          {"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "symbol": "ChatListItemNode.setRevealOptions / canBeginReveal"},
+          {"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "symbol": "exteralessChatSwipeAllowsPager"}
+        ],
+        "adaptation": "Exact -1 auto, 0 pin, 1 read, 2 archive, 3 mute, 4 delete, 5 folders semantics. Auto selects folders with native filter pages, archive otherwise; folders without filters resolves to archive. The primary trailing full-swipe option is selected only from native-eligible options after existing gates; unavailable choices retain the native fallback. All buttons and native handlers/confirmations remain. Folder paging owns center gestures, edge reveals stay native, horizontal child content wins. Registration, base/pager hooks and the exact typed mainconfig.ChatSwipeAction Cloud conversion are supplied as owner patches in chat-swipe-parity.md. No broad mainconfig import or direct Postbox toggle was added."
+      },
+      "implementation": {
+        "status": "partial",
+        "ported": false,
+        "evidence": [
+          {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1774},
+          {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/SwipeGestureSettingsView.java", "line": 30},
+          {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ChatSwipePolicyTests.swift"},
+          {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ChatSwipeLegacyImportTests.swift"},
+          {"kind": "source", "path": "telegram-ios/submodules/ChatListUI/Tests/ChatSwipeNativeTests.swift"},
+          {"kind": "source", "path": "docs/wave-2/chat-swipe-shared.patch"},
+          {"kind": "source", "path": "docs/wave-2/chat-swipe-cloud.patch"}
+        ],
+        "remaining": ["Apply the supplied coordinator/Cloud/BUILD hunks as one cohort", "Run bounded Swift/native tests and typecheck", "Record and evaluate native gesture frames"]
+      }
+    }
+  ]
+}

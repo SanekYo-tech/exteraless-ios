@@ -1,0 +1,27 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+ # The owner's finite page/window fixtures exercise the shipping orchestration.
++swift_library(
++    name = "ExteralessAINativeTestsLib",
++    testonly = True,
++    srcs = glob(["Tests/AI/*.swift"], allow_empty = False),
++    deps = [
++        ":TelegramUI",
++        "//submodules/TelegramCore:TelegramCore",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessAINativeTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    deps = [":ExteralessAINativeTestsLib"],
++    visibility = ["//visibility:public"],
++)
++
+ swift_library(
+     name = "ExteralessFeedTestsLib",
+*** End Patch

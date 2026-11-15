@@ -1,0 +1,21 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@
+-        return AppearanceFeatures.definitions + ChatFeatures.definitions + FeedFeatures.definitions
++        return AppearanceFeatures.definitions + ChatFeatures.definitions + ChatSwipeFeatures.definitions + FeedFeatures.definitions
+*** Update File: telegram-ios/submodules/ItemListUI/Sources/Items/ItemListEditableItem.swift
+@@
+-    private func canBeginReveal(at point: CGPoint, direction: CGFloat) -> Bool {
++    open func canBeginReveal(at point: CGPoint, direction: CGFloat) -> Bool {
+*** Update File: telegram-ios/submodules/ChatListUI/Sources/ChatListControllerNode.swift
+@@
+-        let panRecognizer = InteractiveTransitionGestureRecognizer(target: self, action: #selector(self.panGesture(_:)), allowedDirections: { [weak self] _ in
++        let panRecognizer = InteractiveTransitionGestureRecognizer(target: self, action: #selector(self.panGesture(_:)), allowedDirections: { [weak self] point in
+@@
+             if !self.currentItemNode.isNavigationInAFinalState {
+                 return []
+             }
++            guard exteralessChatSwipeAllowsPager(at: point, in: self.view, hasFilters: self.availableFilters.contains(where: { $0.filter != nil })) else {
++                return []
++            }
+*** End Patch

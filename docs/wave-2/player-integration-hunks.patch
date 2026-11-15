@@ -1,0 +1,44 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@ -15,6 +15,7 @@
+     private var foregroundObserver: NSObjectProtocol?
+     private var appearance: ExteralessAppearanceIntegration?
+     private var chats: ExteralessChatIntegration?
++    private var player: ExteralessPlayerIntegration?
+     private var privacy: ExteralessPrivacyIntegration?
+     private var ai: ExteralessAIIntegration?
+     private var tools: ExteralessToolsIntegration?
+@@ -33,7 +34,7 @@
+             }
+             if !registered {
+-                try ClientSettings.shared.register(AppearanceFeatures.definitions + ChatFeatures.definitions
++                try ClientSettings.shared.register(AppearanceFeatures.definitions + ChatFeatures.definitions + PlayerFeatures.definitions
+                     + PrivacyFeatures.definitions + AIFeatures.definitions + ToolsFeatures.definitions)
+                 registered = true
+             }
+             lastError = nil
+@@ -61,12 +62,14 @@
+         // Construct them only after the application's shared file was selected.
+         if appearance == nil { appearance = ExteralessAppearanceIntegration() }
+         if chats == nil { chats = ExteralessChatIntegration() }
++        if player == nil { player = ExteralessPlayerIntegration() }
+         if privacy == nil { privacy = ExteralessPrivacyIntegration() }
+         if ai == nil { ai = ExteralessAIIntegration() }
+         if tools == nil { tools = ExteralessToolsIntegration() }
+         appearance?.update(context: context)
+         chats?.update(context: context)
++        player?.update(context: context)
+         privacy?.update(context: context)
+         ai?.update(context: context)
+         ExteralessAIHooks.install(ai?.nativeAdapter)
+         tools?.update(context: context)
+@@ -76,7 +79,8 @@
+         currentContext = nil
+         ExteralessAIHooks.install(nil)
+         appearance?.clearContext()
+         chats?.clearContext()
++        player?.clearContext()
+         privacy?.clearContext()
+         ai?.clearContext()
+         tools?.clearContext()

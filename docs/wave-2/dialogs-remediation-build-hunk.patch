@@ -1,0 +1,7 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/BUILD
+@@
+         "Tests/ExteralessAINativeTests.swift",
++        "Tests/ExteralessDialogReviewTests.swift",
+         "Tests/ExteralessOutgoingChatTextTests.swift",
+*** End Patch

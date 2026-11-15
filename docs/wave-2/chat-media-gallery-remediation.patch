@@ -1,0 +1,94 @@
+--- a/telegram-ios/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+@@ -113,6 +113,13 @@
+ 
+ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScrollViewDelegate {
+     private var inheritedExportPermit: ExteralessContentExportPermit?
++    private let exteralessActionLifetime = ExteralessGalleryActionLifetime()
++    private var exteralessActionPeerProtected = false
++
++    override func didExitHierarchy() {
++        super.didExitHierarchy()
++        self.exteralessActionLifetime.invalidate()
++    }
+ 
+     private var exportPermit: ExteralessContentExportPermit? {
+         if self.inheritedExportPermit == nil { self.inheritedExportPermit = self.controllerInteraction?.controller()?.exteralessExportPermit }
+@@ -890,6 +897,12 @@
+     }
+     
+     func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
++        let previousMedia = self.currentMessage.flatMap { selectedMediaForMessage(message: $0, mediaSubject: self.mediaSubject) }
++        let selectedMedia = selectedMediaForMessage(message: message, mediaSubject: mediaSubject)
++        if self.currentMessage?.stableId != message.stableId || self.currentMessage?.stableVersion != message.stableVersion || self.currentMessage?.id != message.id || self.mediaSubject != mediaSubject || self.exteralessActionPeerProtected != peerIsCopyProtected || previousMedia.flatMap({ old in selectedMedia.map { old.isEqual(to: $0) } }) != true {
++            self.exteralessActionLifetime.invalidate()
++        }
++        self.exteralessActionPeerProtected = peerIsCopyProtected
+         self.currentMessage = message
+         self.mediaSubject = mediaSubject
+         
+@@ -1185,6 +1198,7 @@
+     }
+     
+     func setWebPage(_ webPage: TelegramMediaWebpage, media: EngineRawMedia) {
++        self.exteralessActionLifetime.invalidate()
+         self.currentWebPageAndMedia = (webPage, media)
+     }
+     
+@@ -1779,20 +1793,51 @@
+     
+     @objc func actionButtonPressed() {
+         guard self.exportAllowed(.presentation) else { return }
+-        if let message = self.currentMessage, let interaction = self.controllerInteraction,
+-           self.buttonsState?.displayActionButton == true,
+-           MainActor.assumeIsolated({ ExteralessGalleryMessageActions.present?(ExteralessGalleryMessageActionRequest(context: self.context, message: EngineMessage(message), timestamp: Double(self.shareMediaParameters?()?.startAtTimestamp ?? 0), interaction: interaction, isCurrent: { [weak self] in self?.currentMessage?.id == message.id && self?.view.window != nil && self?.exportAllowed(.presentation) == true }, nativeShare: { [weak self] in self?.exteralessNativeSharePressed() }, setDisposable: { [weak self] in self?.messageContextDisposable.set($0) }, setInteracting: { [weak self] in self?.interacting?($0) })) ?? false }) {
+-            return
++        if let message = self.currentMessage, let interaction = self.controllerInteraction, self.buttonsState?.displayActionButton == true {
++            let generation = self.exteralessActionLifetime.generation
++            let subject = self.mediaSubject
++            let item = interaction.currentItemNode()
++            let playerIdentity = (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity
++            let selection = ExteralessGalleryMediaSelection(message: EngineMessage(message), subject: subject, itemGeneration: generation)
++            let current: () -> Bool = { [weak self, weak item] in
++                guard let self, let item else { return false }
++                return self.exteralessActionLifetime.generation == generation && self.currentMessage?.id == message.id && self.currentMessage?.stableId == message.stableId && self.currentMessage?.stableVersion == message.stableVersion && self.mediaSubject == subject && interaction.currentItemNode() === item && (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlayerIdentity == playerIdentity && self.view.window != nil && self.exportAllowed(.presentation)
++            }
++            let request = ExteralessGalleryMessageActionRequest(context: self.context, message: EngineMessage(message), selection: selection, itemGeneration: generation, playbackSample: { [weak item] in
++                guard current() else { return nil }
++                return (item as? UniversalVideoGalleryItemNode)?.exteralessImageActionPlaybackSample
++            }, exportPermit: self.exportPermit, itemValidity: self.exteralessActionLifetime.validity(of: generation), interaction: interaction, isCurrent: current, nativeShare: { [weak self] permit, prepare in
++                guard current() else { return }
++                self?.exteralessNativeSharePressed(selection: selection, providedPermit: permit, prepareShare: prepare)
++            }, setDisposable: { [weak self] in self?.messageContextDisposable.set($0) }, setInteracting: { [weak self] in self?.interacting?($0) })
++            if MainActor.assumeIsolated({ ExteralessGalleryMessageActions.present?(request) ?? false }) { return }
+         }
+         self.exteralessNativeSharePressed()
+     }
+ 
+-    private func exteralessNativeSharePressed(providedPermit: ExteralessContentExportPermit? = nil, prepareShare: ((ViewController) -> Bool)? = nil) {
++    private func exteralessNativeSharePressed(selection: ExteralessGalleryMediaSelection? = nil, providedPermit: ExteralessContentExportPermit? = nil, prepareShare: ((ViewController) -> Bool)? = nil) {
++        // CMC never replaces a nonnil FU-02 permit. Ordinary native calls retain
++        // their existing group/share semantics; the CMC action names one medium.
+         let inheritedPermit = self.exportPermit
+         if let inheritedPermit, let providedPermit, inheritedPermit !== providedPermit { return }
+         let permit = providedPermit ?? inheritedPermit
+         let accountId = self.context.account.id.int64
+         guard self.exportAllowed(.exportPreparation), permit?.allows(accountId: accountId, operation: .exportPreparation) ?? true else { return }
++        if let selection {
++            guard let permit, let id = self.currentMessage?.id, let prepareShare,
++                  permit.allows(accountId: accountId, messageIds: [id], operation: .exportPreparation) else { return }
++            let generation = selection.itemGeneration
++            let _ = (permit.guardSignal(accountId: accountId, messageIds: [id], operation: .exportPreparation, {
++                self.context.engine.data.get(TelegramEngine.EngineData.Item.Messages.Message(id: id))
++            }) |> deliverOnMainQueue).startStandalone(next: { [weak self] current in
++                guard let self, let current, self.exteralessActionLifetime.generation == generation,
++                      let reference = selection.reference(in: current), permit.allows(accountId: accountId, messageIds: [id], operation: .exportPreparation) else { return }
++                let controller = self.context.sharedContext.makeShareScreen(context: self.context, params: ShareControllerParams(subject: .media(reference, self.shareMediaParameters?()), preferredAction: .saveToCameraRoll, dismissed: { [weak self] _ in self?.interacting?(false) }))
++                self.interacting?(true)
++                self.presentRootShare(controller, permit: permit, prepareShare: prepareShare)
++            })
++            return
++        }
+         self.interacting?(true)
+         
+         if let currentMessage = self.currentMessage {

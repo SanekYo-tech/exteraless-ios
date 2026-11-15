@@ -1,0 +1,51 @@
+# HISTORICAL REFERENCE — applied by coordinator; do not reapply to the frozen cohort.
+# Current verification checks source postimages, including the Runtime callback.
+# Native six-test / Apple execution remains pending; this patch is not run evidence.
+
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift
+@@
+     var description: String {
+-        return apiFunctionDescription(of: self.desc)
++        let context = MTRequestLogContext.context(payload: nil, methodName: self.desc.name)
++        if context.containsCredentials { return context.metadataDescription(nil) }
++        return apiFunctionDescription(of: self.desc)
+@@
+     var description: String {
+-        return apiShortFunctionDescription(of: self.desc)
++        let context = MTRequestLogContext.context(payload: nil, methodName: self.desc.name)
++        if context.containsCredentials { return context.metadataDescription(nil) }
++        return apiShortFunctionDescription(of: self.desc)
+@@
+             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: true) : nil
+             let request = NetworkEngineRequest(
+                 payload: requestPayload,
+                 metadata: WrappedRequestMetadata(metadata: exteralessClientAPIRequestLogMetadata(data.0), tag: tag),
+                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
++                logContext: .context(payload: requestPayload, methodName: data.0.name),
+@@
+             let pluginHookMetadata = hasPluginRequestSubscribers ? pluginObserveRequestSubmission(accountRecordId: accountRecordId, datacenterId: datacenterId, description: data.0, payload: requestPayload, automaticFloodWait: automaticFloodWait, usesAdditionalInfo: false) : nil
+             let request = NetworkEngineRequest(
+                 payload: requestPayload,
+                 metadata: WrappedRequestMetadata(metadata: exteralessClientAPIRequestLogMetadata(data.0), tag: tag),
+                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(data.0)),
++                logContext: .context(payload: requestPayload, methodName: data.0.name),
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/TLNetworkRequest.swift
+@@
+             let request = NetworkEngineRequest(payload: body,
+                 metadata: WrappedRequestMetadata(metadata: exteralessClientAPIRequestLogMetadata(description), tag: self.tag),
+                 shortMetadata: WrappedRequestShortMetadata(shortMetadata: WrappedShortFunctionDescription(description)),
++                logContext: MTRequestLogContext.context(payload: body, methodName: description.name)
++                    .merging(.context(payload: self.data.1.makeData(), methodName: self.data.0.name)),
+*** Update File: telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustEngineRuntime.swift
+@@
+ private func rustEngineLogCallback(context: UnsafeMutableRawPointer?, level: Int32, message: MTString) {
+     if level > 1 && !MTLogEnabled() {
+         return
+     }
+-    let text = rustEngineString(message)
++    // Frozen Rust emits raw query-error traces before structured callbacks.
++    // This free-form channel has no trusted per-request classification. Do not
++    // parse or regex-mask it; structured events log the canonical method/code.
++    let text = RustRequestLog.nativeEngineMessage(level: level)
+*** End Patch

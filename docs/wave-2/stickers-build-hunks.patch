@@ -1,0 +1,72 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/Emoji/BUILD
+@@
+     name = "Emoji",
+     module_name = "Emoji",
++    deps = ["//third-party/exteraless:ExteralessCore"],
+*** Update File: telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
++        "//submodules/Emoji:Emoji",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/ChatEntityKeyboardInputNode/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/StickerPickerScreen/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
++        "//submodules/Emoji:Emoji",
+         "//submodules/AsyncDisplayKit",
+*** Update File: telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/BUILD
+@@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+         "//submodules/TelegramUI/Components/EmojiStatusSelectionComponent:EmojiStatusSelectionComponent",
++        "//submodules/TelegramUI/Components/Settings/QuickReactionSetupController:QuickReactionSetupController",
+*** Update File: swift/ExteralessCore/BUILD.bazel
+@@
+ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++
++exports_files(["Tests/ExteralessCoreTests/EmojiFontFixture.swift"], visibility = ["//visibility:public"])
+*** Update File: telegram-ios/Tests/Exteraless/BUILD
+@@
+-test_suite(
++swift_library(
++    name = "StickerEmojiRenderingTestsLib",
++    testonly = True,
++    module_name = "ExteralessStickerEmojiRenderingTests",
++    srcs = [
++        "StickerEmojiRenderingTests.swift",
++        "@exteraless//swift/ExteralessCore:Tests/ExteralessCoreTests/EmojiFontFixture.swift",
++    ],
++    deps = ["//submodules/Emoji:Emoji", "//third-party/exteraless:ExteralessCore"],
++    copts = ["-swift-version", "6"],
++)
++
++ios_unit_test(
++    name = "StickerEmojiRenderingTests",
++    minimum_os_version = "15.0",
++    runner = ":Runner",
++    deps = [":StickerEmojiRenderingTestsLib"],
++)
++
++test_suite(
+     name = "IntegrationTests",
+*** End Patch

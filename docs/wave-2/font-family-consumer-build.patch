@@ -1,0 +1,58 @@
+diff --git a/telegram-ios/Tests/Exteraless/BUILD b/telegram-ios/Tests/Exteraless/BUILD
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@ -215,6 +215,35 @@
+     test_host = ":NativeTestHost",
+     linkopts = ["-framework", "MediaPlayer"],
+     deps = [":RuntimeRecoveryContinuationTestsLib"],
++)
++
++swift_library(
++    name = "FontFamilyConsumerTestsLib",
++    testonly = True,
++    module_name = "FontFamilyConsumerTests",
++    srcs = ["FontFamilyConsumerTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        "//third-party/exteraless:ExteralessCore",
++        "//submodules/AsyncDisplayKit:AsyncDisplayKit",
++        "//submodules/Display:Display",
++        "//submodules/ChatListUI:ChatListUI",
++        "//submodules/ListSectionHeaderNode:ListSectionHeaderNode",
++        "//submodules/LottieSettings:LottieSettings",
++        "//submodules/TelegramCore:TelegramCore",
++        "//submodules/TelegramPresentationData:TelegramPresentationData",
++        "//submodules/TelegramUI/Components/Chat/ChatMessageContactBubbleContentNode:ChatMessageContactBubbleContentNode",
++    ],
++)
++
++ios_unit_test(
++    name = "FontFamilyConsumerTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = ":Runner",
++    test_host = ":NativeTestHost",
++    linkopts = ["-framework", "MediaPlayer"],
++    deps = [":FontFamilyConsumerTestsLib"],
+ )
+ 
+ test_suite(
+@@ -239,6 +268,7 @@
+         "//submodules/TelegramUI:ExteralessAppearanceRootTests",
+         "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
+         "//submodules/Display:ExteralessFontFamilyTests",
++        ":FontFamilyConsumerTests",
+         "//submodules/Display:ExteralessLayoutModeTests",
+         "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",
+         "//submodules/TelegramStringFormatting:ExteralessAppearancePresenceTests",
+diff --git a/telegram-ios/Tests/Exteraless/native-tests.json b/telegram-ios/Tests/Exteraless/native-tests.json
+--- a/telegram-ios/Tests/Exteraless/native-tests.json
++++ b/telegram-ios/Tests/Exteraless/native-tests.json
+@@ -78,6 +78,7 @@
+     "submodules/TelegramUI/Tests/Appearance/AppearanceRootTabsTests.swift": "//submodules/TelegramUI:ExteralessAppearanceRootTests",
+     "submodules/AvatarNode/Tests/AppearanceAvatarRenderingTests.swift": "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
+     "submodules/Display/Tests/ExteralessFontFamilyTests.swift": "//submodules/Display:ExteralessFontFamilyTests",
++    "Tests/Exteraless/FontFamilyConsumerTests.swift": "//Tests/Exteraless:FontFamilyConsumerTests",
+     "submodules/Display/Tests/AppearanceLayoutModeTests.swift": "//submodules/Display:ExteralessLayoutModeTests",
+     "submodules/AvatarNode/Tests/AvatarImageTransitionResetTests.swift": "//submodules/AvatarNode:ExteralessAppearanceAvatarTests",
+     "submodules/TelegramPresentationData/Tests/AppearancePresentationRevisionTests.swift": "//submodules/TelegramPresentationData:ExteralessAppearancePresentationTests",

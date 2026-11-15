@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "owner": "P-network-resolver(3)+P-maps(3)",
+  "source_inventory": "docs/parity/client-features.json",
+  "source_roots_read": [
+    "third_party/exteraless-android/TMessagesProj/src/main/java",
+    "third_party/exteraless-android/TMessagesProj/src/main/kotlin"
+  ],
+  "notes": [
+    "Six exact original IDs. Source implementation is not a native build, runtime, visual or independent-review pass.",
+    "Permitted MtProtoKit, Rust and physical map UI integration is applied to actual source. Only reserved Network.swift and root/editor wiring remains as exact owner hunks.",
+    "App-scoped DNS only: no NetworkExtension entitlement or device-wide resolver claim. Rust stream-host normal TLS trust is applied; original SNI/ALPN and WEB carrier routing are preserved.",
+    "MapKit and OSM are native adaptations; Google GMS absence does not make the whole maps family unsupported. WGS84 remains the message and native MapKit contract.",
+    "No CI, commit, push, account networking, permission prompts, external provider requests or external plugins were executed. Coordinator confirms Xcode 27.1 / xcode-27 app runner already used for IPA23; 26.6 Foundation-only tooling is not an app blocker. Apple execution/frames for these changes remain pending.",
+    "Invalid custom DoH retains an established last-valid configuration; at first startup without a valid configuration DNS/public TXT fallback is explicitly blocked. Missing secret state is not treated as an intentionally empty provider list."
+  ],
+  "handoff": "docs/wave-2/network-maps.md",
+  "unapplied_integration_hunks": [
+    "docs/wave-2/network-maps-integration.patch",
+    "docs/wave-2/network-maps-network-hunk.patch"
+  ],
+  "binding_status": {
+    "mtprotokit_transport_discovery_backup": "applied-to-source",
+    "rust_resolver_workers_cache_tls_streams": "applied-to-source",
+    "map_cloud_secret_article_and_external_navigation": "applied-to-source",
+    "network_factory_and_backup_signal": "reserved-Network-owner-hunk",
+    "root_definitions_prelogin_start_editor": "reserved-root-owner-hunk"
+  },
+  "integration_instructions": "docs/wave-2/network-maps-integration.md",
+  "native_source_pins": "docs/wave-2/network-maps-native-pins.json",
+  "source_hash_contract": "tools/compat/feature_inventory.py _read/_sha: sha256 of raw bytes, byte count len(raw), text UTF-8-SIG; hunk text normalization is not a source-file hash",
+  "additional_native_integrations": {
+    "pill11_passive_rtt": {
+      "status": "applied-to-source-native-execution-pending",
+      "source": "existing matched native ping RTT; FFI event 17 value1 in seconds",
+      "consumers": [
+        "telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustNetworkSession.swift:handleEngineEvent/exteralessPillPassivePingSnapshot",
+        "telegram-ios/submodules/TelegramCore/Sources/Network/RecordingNetworkEngine.swift:exteralessPillPassivePingSnapshot",
+        "telegram-ios/submodules/TelegramCore/Sources/Network/SwitchingNetworkEngine.swift:exteralessPillPassivePingSnapshot"
+      ],
+      "handoff": "docs/wave-2/network-maps-passive-rtt.md",
+      "native_tests_prepared": 7,
+      "new_rpc_or_c_abi": false,
+      "kit_disposition": "checked Kit public/session source has no retained passive RTT; separate active proxy probe is not a substitute"
+    }
+  },
+  "native_api": {
+    "definitions": ["NewNetworkFeatures.definitions", "MapFeatures.definitions"],
+    "additional_native_only_secret": "maps.yandexAPIKey",
+    "validation": "NewNetworkFeatures.validate(_:for:)",
+    "integrations": ["ExteralessNetworkIntegration.init/update(context:)/clearContext", "ExteralessMapIntegration.init/update(context:)/clearContext"],
+    "network": ["NetworkResolver.lookup/resolve/update/rejectConfiguration/invalidate/state/remainingTTL", "ExteralessNetworkResolverRuntime.start/register(context:)/clearCachedState", "ExteralessNetworkBackupDNS.backupSignal", "ExteralessResolverTLSConnector.connect", "MTAppNetworkResolve", "MTAppNetworkResolverEpoch", "MTAppNetworkResolverCacheLifetime"],
+    "maps": ["MapPolicy.preview(for:)", "MapPolicy.googleCoordinate", "MapCoordinatePolicy.googleDisplay", "MapResourceCache.load/clear", "MapPolicyRuntime.invalidate", "MapProviderURL", "MapProviderHTTP.fetch"]
+  },
+  "features": [
+    {
+      "id": "neko.dnsType",
+      "android_evidence": {
+        "default": 0,
+        "ids": {"0":"Telegram", "1":"NagramX", "2":"System", "3":"Custom DoH"},
+        "consumers": ["java/tw/nekomimi/nekogram/NekoConfig.java:54-57,147", "java/org/telegram/tgnet/ConnectionsManager.java:992-1017,1308-1380", "java/tw/nekomimi/nekogram/utils/DnsFactory.kt:60-205"]
+      },
+      "ios": {
+        "setting_key": "network.dnsType",
+        "implementation_callsites": [
+          {"path":"swift/ExteralessCore/Sources/ExteralessCore/NetworkResolver.swift", "symbol":"lookup/startProviders/startNative"},
+          {"path":"telegram-ios/submodules/TelegramCore/Sources/ExteralessNetwork/ExteralessResolverTcpConnectionInterface.swift", "symbol":"connect/startNext/connected"},
+          {"path":"telegram-ios/submodules/TelegramCore/Sources/ExteralessNetwork/ExteralessNetworkBackupDNS.swift", "symbol":"backupSignal/source"},
+          {"path":"telegram-ios/submodules/MtProtoKit/Sources/MTTcpConnection.m", "symbol":"start/interfaceResolvesHostnames"},
+          {"path":"telegram-ios/third-party/mtproto-engine/crates/mtproto-engine/src/resolver.rs", "symbol":"resolve_blocking_cancellable"},
+          {"path":"telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustStreamHost.swift", "symbol":"open/ExteralessResolverTLSConnector.connect"}
+        ],
+        "adaptation": "Original numeric IDs retained. Telegram default uses native iOS DNS because stock iOS removed the dead fronted Google endpoint. Actual MtProtoKit and Rust resolver/stream-host consumers are now applied, including DNS-SD fallback, TTL/error cache, cancellation, response validation and epochs. Only reserved Network factory/backup signal and root start wiring remains. No whole-app runtime pass is claimed.",
+        "scope": "app MTProto and backup discovery; not global device DNS, unrelated HTTP, WebKit, VoIP or notification extensions"
+      },
+      "implementation": {"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/NetworkResolverWireTests.swift"}, {"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/NetworkResolverLifecycleTests.swift"}, {"kind":"source", "path":"docs/wave-2/network-maps-network-hunk.patch", "note":"Only reserved Network/root insertions remain"}]}
+    },
+    {
+      "id": "neko.customDoH",
+      "android_evidence": {"default":"", "consumers":["java/tw/nekomimi/nekogram/NekoConfig.java:148", "java/tw/nekomimi/nekogram/utils/DnsFactory.kt:69-86,129-174,254-290", "java/org/telegram/tgnet/ConnectionsManager.java:1636-1687"]},
+      "ios": {
+        "setting_key":"network.customDoH",
+        "implementation_callsites":[{"path":"swift/ExteralessCore/Sources/ExteralessCore/NetworkResolverPolicy.swift", "symbol":"NetworkDoHEndpoint/NetworkResolverConfiguration.customEndpoints"}, {"path":"swift/ExteralessCore/Sources/ExteralessCore/NetworkResolverHTTP.swift", "symbol":"NetworkDoHRequest/NetworkDNSJSON/NetworkResolverURLSessionTransport"}, {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Network/ExteralessNetworkIntegration.swift", "symbol":"ExteralessNetworkStatusController.render"}],
+        "adaptation":"Comma-separated HTTPS URLs retain user path/query; original provider URLs pinned. Wire POST, RFC8484 template GET and known DNS-JSON GET have actual native/Rust consumers. Explicit empty list uses original providers; malformed/missing custom configuration never silently chooses them. Startup failure blocks DNS/public TXT, while later invalid writes retain a prior valid policy with diagnostics. Keychain-backed; no trust override, redirects or URL/header logs.",
+        "scope":"app resolver; endpoint bootstrap uses native URLSession DNS"
+      },
+      "implementation":{"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/NetworkResolverHTTPTests.swift", "note":"Prepared per-session URLProtocol fixtures, not executed"}, {"kind":"source", "path":"docs/wave-2/network-maps-integration.patch", "note":"Editor validation/schema/runtime hunks pending"}]}
+    },
+    {
+      "id":"neko.useIPv6",
+      "android_evidence":{"default":false, "consumers":["java/tw/nekomimi/nekogram/NekoConfig.java:86", "java/org/telegram/tgnet/ConnectionsManager.java:1197-1275", "java/tw/nekomimi/nekogram/utils/DnsFactory.kt:347-423"]},
+      "ios":{
+        "setting_key":"network.useIPv6",
+        "implementation_callsites":[{"path":"swift/ExteralessCore/Sources/ExteralessCore/NetworkResolverPolicy.swift", "symbol":"NetworkResolverRoute.ordered/prefersIPv6"}, {"path":"telegram-ios/submodules/TelegramCore/Sources/ExteralessNetwork/ExteralessNetworkResolverRuntime.swift", "symbol":"pathMonitor.pathUpdateHandler/reloadOnQueue"}, {"path":"telegram-ios/submodules/TelegramCore/Sources/ExteralessNetwork/ExteralessResolverTcpConnectionInterface.swift", "symbol":"startNext/connected"}, {"path":"telegram-ios/submodules/TelegramCore/Sources/ExteralessNetwork/ExteralessResolverTLSConnector.swift", "symbol":"Dial.next"}, {"path":"telegram-ios/submodules/MtProtoKit/Sources/MTContext.m", "symbol":"chooseTransportSchemeForConnectionToDatacenterId"}, {"path":"telegram-ios/submodules/MTProtoRustEngine/Sources/MTProtoRustEngine/RustNetworkSession.swift", "symbol":"loadSchemes"}],
+        "adaptation":"NWPath supplies route capabilities. Real 250ms max-two-connection races retain the winner and cancel losers. IPv6-only paths work with preference off; opposite-family/native DNS64 fallback preserved. Applied DC scheme selection/discovery, Rust address order and bounded cache epoch/TTL/cancellation. Native TTL reads are off the reactor; expiry is carried with the result."
+      },
+      "implementation":{"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"telegram-ios/submodules/TelegramCore/Tests/ExteralessResolverConnectionTests.swift", "note":"Prepared no-network fake-socket test"}, {"kind":"source", "path":"telegram-ios/third-party/mtproto-engine/crates/mtproto-engine/src/session_runtime.rs", "note":"Applied cache/epoch source and two prepared scripted Rust tests"}]}
+    },
+    {
+      "id":"neko.mapPreviewProvider",
+      "android_evidence":{"default":0, "ids":{"0":"Telegram", "1":"Yandex", "2":"Nobody"}, "consumers":["java/org/telegram/messenger/AndroidUtilities.java:2897-2941", "java/org/telegram/ui/Cells/ChatMessageCell.java:9778-9835", "java/org/telegram/ui/ArticleViewer.java:13124-13126", "java/tw/nekomimi/nekogram/settings/NekoGeneralSettingsActivity.java:144-148"]},
+      "ios":{
+        "setting_key":"maps.mapPreviewProvider",
+        "implementation_callsites":[{"path":"telegram-ios/submodules/LocationResources/Sources/MapResources.swift", "symbol":"chatMapSnapshotData"}, {"path":"telegram-ios/submodules/LocationResources/Sources/ExteralessMapSnapshots.swift", "symbol":"exteralessMapSnapshotData/ExteralessMapSnapshotOperation"}, {"path":"swift/ExteralessCore/Sources/ExteralessCore/MapPolicy.swift", "symbol":"MapPolicy.preview(for:)/MapProviderURL.yandexPreview"}, {"path":"telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift", "symbol":"MapSnapshotMediaResource cloud/secret scope"}, {"path":"telegram-ios/submodules/InstantPageUI/Sources/InstantPageImageNode.swift", "symbol":"MapSnapshotMediaResource instantPage scope"}],
+        "adaptation":"0 native MapKit, 1 Yandex static URL/schema with optional Keychain credential, 2 labelled local placeholder. Applied physical cloud/secret/article scopes, checked image HTTP, cancellable snapshots, account cache and live settings-epoch updates. Secret/profile/contact scope stays native; failures display Apple fallback or unavailable, not false Yandex success."
+      },
+      "implementation":{"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/MapPolicyTests.swift"}, {"kind":"source", "path":"docs/wave-2/network-maps-integration.md", "note":"Map scopes applied; root registration and frame checks pending"}]}
+    },
+    {
+      "id":"neko.useOSMDroidMap",
+      "android_evidence":{"default":false, "consumers":["java/org/telegram/messenger/ApplicationLoader.java:129-142", "java/org/telegram/messenger/OSMDroidMapsProvider.java:154-161", "java/app/exteraless/settings/OpenExteraGeneralActivity.java:517-529"]},
+      "ios":{
+        "setting_key":"maps.useOSMDroidMap",
+        "implementation_callsites":[{"path":"telegram-ios/submodules/LocationUI/Sources/LocationMapNode.swift", "symbol":"didLoad/mapMode/rendererFor/updateLayout"}, {"path":"telegram-ios/submodules/LocationUI/Sources/ExteralessLocationMapProvider.swift", "symbol":"apply/ExteralessOSMTileOverlay.loadTile/invalidate"}, {"path":"telegram-ios/submodules/OpenInExternalAppUI/Sources/ExteralessMapNavigation.swift", "symbol":"exteralessOpenStreetMapOption"}, {"path":"telegram-ios/submodules/OpenInExternalAppUI/Sources/OpenInOptions.swift", "symbol":"allOpenInOptions/availableOpenInOptions"}],
+        "adaptation":"Applied OSM MKTileOverlay retains picker/pins/camera/live locations. Visible standard tiles, bounded requests/cache/cancellation and attribution. Apple satellite/hybrid/failure fallback is labelled. Physical OSM web navigation option now calls the helper; no third-party SDK or offline-region promise."
+      },
+      "implementation":{"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"telegram-ios/submodules/LocationUI/Sources/ExteralessLocationMapProvider.swift"}, {"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/MapPolicyTests.swift"}, {"kind":"source", "path":"docs/wave-2/network-maps.md", "note":"Composition/build and recorded-frame acceptance pending"}]}
+    },
+    {
+      "id":"neko.mapDriftingFixForGoogleMaps",
+      "android_evidence":{"default":true, "consumers":["java/tw/nekomimi/nekogram/NekoConfig.java:308-309", "java/org/telegram/messenger/GoogleMapsProvider.java:593-598", "java/tw/nekomimi/nekogram/location/NekoLocationSource.java:48-60", "java/org/telegram/ui/LocationActivity.java:2523-2524", "java/tw/nekomimi/nekogram/location/GeodeticTransform.java:20-55"]},
+      "ios":{
+        "setting_key":"maps.mapDriftingFixForGoogleMaps",
+        "implementation_callsites":[{"path":"swift/ExteralessCore/Sources/ExteralessCore/MapPolicy.swift", "symbol":"MapCoordinatePolicy.googleDisplay/MapPolicy.googleCoordinate"}, {"path":"telegram-ios/submodules/OpenInExternalAppUI/Sources/ExteralessMapNavigation.swift", "symbol":"exteralessGoogleMapCoordinate"}, {"path":"telegram-ios/submodules/OpenInExternalAppUI/Sources/OpenInOptions.swift", "symbol":"googleMaps action"}],
+        "adaptation":"Exact source Krasovsky constants/China bounds for WGS84 to GCJ-02, with datum-tag double-transform prevention. Native MapKit accepts WGS84 and handles its own regional rendering; only the Google Maps external-navigation action consumes the correction, preserving the original OSM-disable precedence. Telegram media, OSM, Yandex and Apple points are never mutated. No BD-09/extra transforms or permission prompts."
+      },
+      "implementation":{"status":"partial", "ported":false, "evidence":[{"kind":"source", "path":"swift/ExteralessCore/Tests/ExteralessCoreTests/MapPolicyTests.swift", "note":"Prepared known Beijing/Shanghai/London coordinates and idempotence fixtures"}, {"kind":"source", "path":"telegram-ios/submodules/OpenInExternalAppUI/Sources/OpenInOptions.swift", "note":"Google action consumer applied"}]}
+    }
+  ],
+  "verification": {
+    "swift_core_tests":"prepared-not-executed",
+    "native_fake_socket_tests":"prepared-not-executed",
+    "passive_rtt_native_tests":"3-FFI-event-and-4-real-wrapper-cases-prepared-not-executed",
+    "rust_local_tests":"2-scripted-app_resolver-cases-prepared-not-executed",
+    "native_compile":"coordinator-xcode-27-Xcode27.1-pending-for-this-change",
+    "visual_frames":"mac-device-pending",
+    "source_fixture_check":"11 checks covered: full run 0.025s had 10 pass and one concurrently changed root-hunk anchor; root-only rebase and targeted rerun passed 0.002s; not native execution",
+    "diff_check":"outer permitted source files and nested Rust worktree passed; line-ending notices only",
+    "independent_review":"not-claimed"
+  }
+}

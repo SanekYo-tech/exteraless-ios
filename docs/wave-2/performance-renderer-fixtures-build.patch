@@ -1,0 +1,82 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/BUILD
+@@
+ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+@@
+     visibility = [
+         "//visibility:public",
+     ],
+ )
++
++swift_library(
++    name = "ExteralessDCTTimingTestsLib",
++    testonly = True,
++    module_name = "ExteralessDCTTimingTests",
++    srcs = ["Tests/ToolsDCTRendererTimingTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        ":DCTMultiAnimationRendererImpl",
++        "//submodules/TelegramUI/Components/DCTAnimationCacheImpl:DCTAnimationCacheImpl",
++        "//submodules/TelegramUI/Components/AnimationCache:AnimationCache",
++        "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
++        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessDCTTimingTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    test_host = "//Tests/Exteraless:NativeTestHost",
++    deps = [":ExteralessDCTTimingTestsLib"],
++    visibility = ["//visibility:public"],
++)
+*** Update File: telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/BUILD
+@@
+ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+@@
+     visibility = [
+         "//visibility:public",
+     ],
+ )
++
++swift_library(
++    name = "ExteralessSubcodecTimingTestsLib",
++    testonly = True,
++    module_name = "ExteralessSubcodecTimingTests",
++    srcs = ["Tests/ToolsSubcodecRendererTimingTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        ":SubcodecMultiAnimationRendererImpl",
++        "//submodules/TelegramUI/Components/SubcodecAnimationCacheImpl:SubcodecAnimationCacheImpl",
++        "//submodules/TelegramUI/Components/MultiAnimationRenderer:MultiAnimationRenderer",
++        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
++        "//third-party/subcodec:SubcodecObjC",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessSubcodecTimingTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    test_host = "//Tests/Exteraless:NativeTestHost",
++    deps = [":ExteralessSubcodecTimingTestsLib"],
++    visibility = ["//visibility:public"],
++)
+*** Update File: telegram-ios/Tests/Exteraless/BUILD
+@@
+         "//submodules/Display:ExteralessLayoutModeTests",
++        "//submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl:ExteralessDCTTimingTests",
++        "//submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl:ExteralessSubcodecTimingTests",
+*** Update File: telegram-ios/Tests/Exteraless/native-tests.json
+@@
+   "required_sources": {
++    "submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Tests/ToolsDCTRendererTimingTests.swift": "//submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl:ExteralessDCTTimingTests",
++    "submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Tests/ToolsSubcodecRendererTimingTests.swift": "//submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl:ExteralessSubcodecTimingTests",
+*** End Patch

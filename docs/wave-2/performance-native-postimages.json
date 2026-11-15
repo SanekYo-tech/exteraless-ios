@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "status": "authorized native hunks applied; source evidence only",
+  "date": "2026-11-15",
+  "source_artifact": "docs/wave-2/performance-native-hunks.patch",
+  "applied_files": 10,
+  "applied_hunks": 36,
+  "preservation_check": "Reversing only the authorized hunks restores each exact preimage SHA-256. All source outside those hunks, including existing PFR and CMC bodies, is preserved.",
+  "native_postimages": [
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/SharedAccountContext.swift",
+      "sha256": "4d6a22ae9d3e72eba29c3b025309d508b2b0d9debb6caaa4685cb48ce76dffa8",
+      "preimage_sha256": "d75f38eb2565677ea42fac96c3a9140f0378f9e5b0d9c600fda53f83c9081a10"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Sources/DCTMultiAnimationRendererImpl.swift",
+      "sha256": "51ec5574a96b0329e756ad3af90f87e6673fcb4b49970f07101056021083cefa",
+      "preimage_sha256": "60e4564a28a1f6291b683845180bf3f0f017581922ff4db9b64b467d5062b084"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Sources/SubcodecMultiAnimationRendererImpl.swift",
+      "sha256": "7d5482af7c1d97bfaf5ba231d404a1d844998158bf704d4640e7bbe5df2044b1",
+      "preimage_sha256": "4e91e4b051d0524940c6520079fabce3e578bb1788d59ef2bb4fd538499b1dee"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatControllerNode.swift",
+      "sha256": "4eaa64d2d491fea038bda9dfdb2b3cf383d4feb04105bc2a7d57953d25007382",
+      "preimage_sha256": "f4649c1f14e5b516d3c96c678b3adc7e30bfc549786455a90dce2878f83daec2"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift",
+      "sha256": "6d40c8e6a560971819a6bef5efb396d7e7c4a5ee2478366a07e314f2bc412405",
+      "preimage_sha256": "8a03e6db39d8fea17a0cd7f73b65a72ca0ee18ad1380ed7e0e9d069197551a7d"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/PrefetchManager.swift",
+      "sha256": "b5847f7910928d9ce80681fd5ee41de3c7c5ba481407c3c3ef11cd92497102f5",
+      "preimage_sha256": "39b2ead30476571b9e6aa7cf0346d49a10657b6298ef1881bca05bb0364627a7"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/MultiAnimationRenderer/Sources/MultiAnimationRenderer.swift",
+      "sha256": "4b49b8e9d0911d467a31bfd182ca360e64cd1f6bf5b94762b92de2d3014d7706",
+      "preimage_sha256": "d4ff240bfb64f944788c0165b73548e2a6b4e137c1c7842ba2a9a0f85eecda3c"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/EntityKeyboard/Sources/EmojiKeyboardItemLayer.swift",
+      "sha256": "19fcd9bb271d70f118fde8e6668d11b635c838cc57254c7fe76f30b8382829df",
+      "preimage_sha256": "b13b9daa7da785359e623f3beef9c456137e5c1ae06be5bc58dc3d0df24ca1e6"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/MessageInlineBlockBackgroundView/Sources/MessageInlineBlockBackgroundView.swift",
+      "sha256": "2d278ab541696a4d624bfd32d20fdfe5084f11180ed69283b6b5be986b8855fd",
+      "preimage_sha256": "83be7675da009954e289c8fd4d1468fb49a44426abbf3240160099b6e76dfb83"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoCoverComponent/Sources/PeerInfoCoverComponent.swift",
+      "sha256": "d91b6846885fa154dee906091a454c6b59932962608431c1a2ee26939c092841",
+      "preimage_sha256": "465391fa87997d69627966788d95c03e56badd904b50b3cda63a92bd4e1e2a51"
+    }
+  ],
+  "core_registration_group": {
+    "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift",
+    "sha256": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
+    "change": "public static let definitions: [ClientSettingDefinition] = [definition]"
+  },
+  "frozen_core_tests": {
+    "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsPerformancePolicyTests.swift",
+    "sha256": "cb24284049116a67f5b5e1ffa1d55cf03ff15ff2ea2438616f937dbcf8bbae98",
+    "methods": 12,
+    "modified": false,
+    "executed_here": false
+  },
+  "deferred_patches": [
+    {"path": "docs/wave-2/performance-build-hunks.patch", "scope": "two BUILD dependency edges", "applied": false},
+    {"path": "docs/wave-2/performance-chat-controller-hunk.patch", "scope": "ChatController energy publication callback only; CMC scheduler owner", "applied": false},
+    {"path": "docs/wave-2/performance-registration-hunk.patch", "scope": "Root definitions group plus exact SDK HELPERS/registration parser join", "applied": false},
+    {"path": "docs/wave-2/performance-receipt-hunk.patch", "scope": "nagram.performanceClass receipt activation", "applied": false}
+  ],
+  "deferred_preimage_sha256_before_parallel_owner_updates": {
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473",
+    "tools/compat/sdk_config_manifest.py": "fd421b4f2c25baeb3141f193e88ab7baff83ec589a8eb092cc2e0d294b511802",
+    "docs/wave-2/tools-parity.json": "6201f70c22d0a4d6218676bd15342978ffc6bb1cff0699a83ea50c49948b8b09"
+  },
+  "remaining_preimage_sha256_at_final_dry_run": {
+    "telegram-ios/submodules/TelegramUI/Components/MultiAnimationRenderer/BUILD": "c28dd8599026ac9ad648d48a264dff89b5ed322234e9a406294e1eb221534a75",
+    "telegram-ios/submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/BUILD": "fe7f508f8cf6c39d4ffcae8b1ed7ffbbebd43f61aeda5f3b5c7480c67d72a293",
+    "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift": "d2f09a6e8788fde8bd3ca5e65680ff4ea8ed98e970b5ebe68cd550ee54887d64",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "7843878a9066a899f40bfacc2049436667df98d4fb6afe44ea8cd92870f996e5",
+    "tools/compat/sdk_config_manifest.py": "fc11a020092ab4acf0d88c7d66b890d04d13191757447feade30ac97d75e93ff",
+    "docs/wave-2/tools-parity.json": "6201f70c22d0a4d6218676bd15342978ffc6bb1cff0699a83ea50c49948b8b09"
+  },
+  "parallel_owner_changes": "Root/SDK gained font-family, layout and ChatSwipe work during this apply. This agent did not edit those sources. All four remaining patches dry-apply on the fresh sources and preserve those additions; performance registration is still absent.",
+  "sdk_source_probe": {
+    "staged_group": "ToolsPerformancePolicy.definitions",
+    "consumed_fixture_group": "ToolsPerformancePolicy.definitions",
+    "native_key": "tools.performanceClass",
+    "native_type": "int",
+    "symbol": "NaConfig.performanceClass",
+    "rejects": ["Root without the group", "old inline scalar array in Root", "empty group", "appended unreviewed group expression"],
+    "manifest_written": false,
+    "sdk_source_written": false,
+    "native_fixture_compiled": false
+  },
+  "native_compile_or_runtime_verified": false,
+  "source_checks": {"native_postimage_hashes": "10/10 match", "out_of_hunk_preservation": "pass", "source_delimiters": "pass", "scoped_diff_check": "pass", "remaining_patch_dry_run": "4 patches / 6 files pass", "postbox_import_check_exit": 0},
+  "commit_or_ci_dispatch": false
+}

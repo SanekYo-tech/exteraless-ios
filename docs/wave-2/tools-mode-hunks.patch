@@ -1,0 +1,107 @@
+*** Begin Patch
+*** Update File: swift/ExteralessCore/Sources/ExteralessCore/ToolsFeatures.swift
+@@
+               explanation: "Screen brightness and flash opacity during front-camera recording.", androidSymbols: ["ChatsConfig.flashIntensity"])
+-    ]
++    ] + [ToolsNativeModePolicy.videoBitrateDefinition,
++         ToolsNativeModePolicy.voiceEnhancementDefinition,
++         ToolsNativeModePolicy.groupAudioBitrateDefinition,
++         ToolsNativeModePolicy.rpcErrorsDefinition]
+*** Update File: telegram-ios/submodules/TelegramUI/Components/MediaEditor/Sources/MediaEditorValues.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-    if useVP9 {
++    if !image && !isSticker && !isAvatar && values.qualityPreset != .videoMessage {
++        videoBitrate = ToolsNativeModePolicy.videoBitrateKbps(native: videoBitrate, width: width, height: height,
++            enabled: ClientSettings.shared.bool("tools.enhancedVideoBitrate"))
++    }
++    if useVP9 {
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ManagedAudioRecorder.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+-    private func setupAudioUnit() {
++    private func setupAudioUnit(allowVoiceProcessing: Bool = true) {
+         guard self.audioUnit.with({ $0 }) == nil else {
+             return
+         }
++        let voiceProcessing = allowVoiceProcessing && ClientSettings.shared.bool("tools.voiceEnhancement")
+         var desc = AudioComponentDescription()
+         desc.componentType = kAudioUnitType_Output
+-        desc.componentSubType = kAudioUnitSubType_RemoteIO
++        desc.componentSubType = voiceProcessing ? kAudioUnitSubType_VoiceProcessingIO : kAudioUnitSubType_RemoteIO
+@@
+         guard let inputComponent = AudioComponentFindNext(nil, &desc) else {
++            if voiceProcessing { self.setupAudioUnit(allowVoiceProcessing: false) }
+             return
+         }
+@@
+         guard let audioUnit = maybeAudioUnit else {
++            if voiceProcessing { self.setupAudioUnit(allowVoiceProcessing: false) }
+             return
+         }
++        func failSetup() {
++            AudioComponentInstanceDispose(audioUnit)
++            if voiceProcessing {
++                Logger.shared.log("ManagedAudioRecorder", "Voice processing unavailable; using the native input unit")
++                self.setupAudioUnit(allowVoiceProcessing: false)
++            }
++        }
++        if voiceProcessing {
++            var enabled: UInt32 = 1
++            var bypass: UInt32 = 0
++            guard AudioUnitSetProperty(audioUnit, kAUVoiceIOProperty_BypassVoiceProcessing, kAudioUnitScope_Global, 0, &bypass, 4) == noErr,
++                  AudioUnitSetProperty(audioUnit, kAUVoiceIOProperty_VoiceProcessingEnableAGC, kAudioUnitScope_Global, 0, &enabled, 4) == noErr else {
++                failSetup()
++                return
++            }
++        }
+@@
+         guard AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, 4) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+@@
+         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &audioStreamDescription, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+@@
+         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &audioStreamDescription, UInt32(MemoryLayout<AudioStreamBasicDescription>.size)) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+@@
+         guard AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &callbackStruct, UInt32(MemoryLayout<AURenderCallbackStruct>.size)) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+@@
+         guard AudioUnitSetProperty(audioUnit, kAudioUnitProperty_ShouldAllocateBuffer, kAudioUnitScope_Output, 0, &zero, 4) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+@@
+         guard AudioUnitInitialize(audioUnit) == noErr else {
+-            AudioComponentInstanceDispose(audioUnit)
++            failSetup()
+*** Update File: telegram-ios/submodules/TelegramCallsUI/Sources/PresentationGroupCall.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+                     if let data = appConfiguration.data, let value = data["voice_chat_send_bitrate"] as? Double {
+                         outgoingAudioBitrateKbit = Int32(value)
+                     }
++                    outgoingAudioBitrateKbit = ToolsNativeModePolicy.groupAudioBitrate(
++                        preferred: ClientSettings.shared.integer("tools.groupAudioBitrate"), native: outgoingAudioBitrateKbit)
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/Network/NetworkEngine.swift
+@@
+ import Foundation
++import ExteralessCore
+@@
+     public func completed(_ result: Result<NetworkEngineResponse, NetworkEngineRequestFailure>) {
+         let result = self.classifiedCompletion(result)
++        if case let .failure(failure) = result, ClientSettings.shared.bool("tools.showRPCError") {
++            ToolsRPCFailureBuffer.shared.record(method: self.logContext.containsCredentials ? nil : self.shortMetadata.functionName,
++                code: failure.error.errorCode)
++        }
+*** End Patch

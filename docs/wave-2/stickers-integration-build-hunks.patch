@@ -1,0 +1,16 @@
+*** Begin Patch
+*** Update File: telegram-ios/Tests/Exteraless/BUILD
+@@
+     name = "StickerEmojiRenderingTestsLib",
+     testonly = True,
+     module_name = "ExteralessStickerEmojiRenderingTests",
+     srcs = [
+         "StickerEmojiRenderingTests.swift",
++        "StickerFavoritesIntegrationTests.swift",
+         "@exteraless//swift/ExteralessCore:Tests/ExteralessCoreTests/EmojiFontFixture.swift",
+@@
+     deps = [
+         "//submodules/Emoji:Emoji",
++        "//submodules/TelegramCore:TelegramCore",
+         "//third-party/exteraless:ExteralessCore",
+*** End Patch

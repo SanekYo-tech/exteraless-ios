@@ -1,0 +1,20 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@ -57,5 +57,6 @@
+             + PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions + DialogFeatures.definitions
+             + AIFeatures.definitions + ToolsFeatures.definitions + NewNetworkFeatures.definitions + MapFeatures.definitions
+             + StickerFeatures.definitions + IdentityFeatures.definitions + RetentionFeatures.definitions
+             + NewCloudFeatures.definitions + ClientAPIFeatures.definitions
++            + ExteraConfigCompatibility.definitions
+     }
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+@@ -147,4 +147,5 @@
+         for definition in snapshot.definitions where definition.section != "AI state"
+-            && !ClientAPIFeatures.requiresNativeEditor(definition.key) {
++            && !ClientAPIFeatures.requiresNativeEditor(definition.key)
++            && !ExteraConfigCompatibility.keys.contains(definition.key) {
+             append(self.settingRow(definition, snapshot: snapshot), section: definition.section)
+         }

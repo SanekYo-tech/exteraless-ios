@@ -1,0 +1,42 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift
+@@
+ func exteralessMaintainPrivacyObservations(transaction: Transaction) {
+     let policy = PrivacyPolicy.current
+     if policy.saveLocalLastSeen { let _ = loadPrivacyObservations(transaction: transaction) }
+     if policy.saveReadDate { let _ = loadPrivacyObservations(transaction: transaction, readDates: true) }
+ }
++
++// Explicit archive import uses the same admission epoch as Clear privacy observations.
++// The source adapter receives models/commit capability, never these private cache keys.
++func exteralessPrivacyImportWork(postbox: Postbox) -> PrivacyObservationWork {
++    return ExteralessPrivacyObservationEpochs.shared.epoch(for: postbox).makeWork()
++}
++
++func exteralessPrivacyImportSnapshot(transaction: Transaction, accountPeerId: PeerId) throws -> (activity: PrivacyObservations, readDates: PrivacyObservations) {
++    guard let state = transaction.getState() as? AuthorizedAccountState, state.peerId == accountPeerId else {
++        throw ExteralessRetentionError.unavailable
++    }
++    func load(_ id: ItemCacheEntryId) throws -> PrivacyObservations {
++        guard let entry = transaction.retrieveItemCacheEntry(id: id) else { return PrivacyObservations() }
++        guard let value = entry.get(PrivacyObservations.self), value.lastSeen.count <= PrivacyObservations.maximumActivityRecords,
++              value.reads.count <= PrivacyObservations.maximumReadRecords else { throw ExteralessRetentionError.invalidArchive }
++        return value
++    }
++    return (try load(privacyObservationsId), try load(privacyReadDatesId))
++}
++
++// Encode before any archive writes. Invoke the returned closure in the same transaction.
++func exteralessPrivacyPrepareImportCommit(activity: PrivacyObservations, readDates: PrivacyObservations) throws -> (Transaction) -> Void {
++    guard activity.lastSeen.count <= PrivacyObservations.maximumActivityRecords,
++          readDates.reads.count <= PrivacyObservations.maximumReadRecords,
++          let activityEntry = CodableEntry(activity), let readsEntry = CodableEntry(readDates),
++          activityEntry.data.count <= 8 * 1024 * 1024, readsEntry.data.count <= 16 * 1024 * 1024 else {
++        throw ExteralessRetentionError.limitExceeded
++    }
++    return { transaction in
++        transaction.putItemCacheEntry(id: privacyObservationsId, entry: activityEntry)
++        transaction.putItemCacheEntry(id: privacyReadDatesId, entry: readsEntry)
++    }
++}
+*** End Patch

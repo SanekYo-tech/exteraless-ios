@@ -1,0 +1,62 @@
+--- a/telegram-ios/submodules/TelegramUI/Components/SwitchComponent/BUILD
++++ b/telegram-ios/submodules/TelegramUI/Components/SwitchComponent/BUILD
+@@ -1,3 +1,4 @@
+ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
++load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+ 
+ swift_library(
+@@ -12,3 +13,4 @@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
+@@ -20,4 +22,28 @@
+     visibility = [
+         "//visibility:public",
+     ],
+ )
++
++swift_library(
++    name = "ExteralessAppearanceSwitchTestsLib",
++    testonly = True,
++    module_name = "ExteralessAppearanceSwitchTests",
++    srcs = ["Tests/AppearanceSwitchTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        ":SwitchComponent",
++        "//submodules/ComponentFlow:ComponentFlow",
++        "//third-party/exteraless:ExteralessCore",
++    ],
++)
++
++ios_unit_test(
++    name = "ExteralessAppearanceSwitchTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = "//Tests/Exteraless:Runner",
++    test_host = "//Tests/Exteraless:NativeTestHost",
++    linkopts = ["-framework", "MediaPlayer"],
++    deps = [":ExteralessAppearanceSwitchTestsLib"],
++    visibility = ["//visibility:public"],
++)
+--- a/telegram-ios/submodules/TelegramUI/Components/SliderComponent/BUILD
++++ b/telegram-ios/submodules/TelegramUI/Components/SliderComponent/BUILD
+@@ -12,3 +12,4 @@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+--- a/telegram-ios/submodules/TelegramUI/Components/NavigationBarComponent/BUILD
++++ b/telegram-ios/submodules/TelegramUI/Components/NavigationBarComponent/BUILD
+@@ -14,3 +14,4 @@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",
+--- a/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListFilterTabContainerNode/BUILD
++++ b/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListFilterTabContainerNode/BUILD
+@@ -12,3 +12,4 @@
+     deps = [
++        "//third-party/exteraless:ExteralessCore",
+         "//submodules/AsyncDisplayKit",
+         "//submodules/Display",

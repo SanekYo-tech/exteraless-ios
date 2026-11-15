@@ -13,5 +13,6 @@ scalar boundaries remain legal Telegram UTF-16 coordinates.
 The original failing assertion stays. A new bounded regression covers both halves
 of two supplementary scalars, a zero-length invalid caret, encoded/original span
 validation, complete emoji selection and a combining-mark span round-trip.
-The correction still needs its next Swift/Mac run; it is not a result for the
-remaining Darwin storage failures from that component snapshot.
+The corrected Swift cohort passed Linux CI **43729818971 / 230cb7c0**, including
+the new regression. Its Apple execution remains pending; this result does not
+cover the remaining Darwin storage failures from the earlier component snapshot.

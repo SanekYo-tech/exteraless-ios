@@ -1,0 +1,7 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramCore/BUILD
+@@
+         "Tests/RetentionNativeIntegrationTests.swift",
++        "Tests/RetentionReviewRemediationTests.swift",
+     ],
+*** End Patch

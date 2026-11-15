@@ -1,0 +1,374 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@ -22,6 +22,8 @@
+     private var registration: PluginHookRegistration?
+     private var startup: Task<Void, Never>?
+     private var startupError: String?
++    private var startupContinuation: PluginRuntimeStartupContinuation?
++    private var startupScope = UUID()
+     private var hasAccount = false
+     private weak var currentContext: AccountContext?
+     private var nativeCallbacks: PluginCallbackDispatcher?
+@@ -58,6 +60,7 @@
+         settingsActionAuthority?.prepareContextChange(to: context)
+         services.update(context: context)
+         if currentContext !== context {
++            startupScope = UUID()
+             developerServer.stop()
+             watchdogAlert?.dismiss(animated: false)
+             watchdogAlert = nil
+@@ -81,6 +84,7 @@
+     }
+ 
+     public func clearContext() {
++        startupScope = UUID()
+         settingsActionAuthority?.clearContext()
+         clearEarlyStartupMarker()
+         tlTransforms?.updateSubscriptions(active: false)
+@@ -113,12 +117,27 @@
+             changed()
+             return
+         }
++        if let continuation = startupContinuation {
++            guard continuation.canContinue else { return }
++            let scope = startupScope
++            status = "Continuing Python runtime startup"
++            changed()
++            startup = Task { @MainActor [weak self] in
++                guard let self else { return }
++                defer { self.startup = nil }
++                do { try await self.continueColdStartup(continuation, scope: scope) }
++                catch { self.publishStartupFailure(error) }
++            }
++            return
++        }
++        guard host == nil, startupError == nil else { return }
++        let scope = startupScope
+         status = "Starting Python runtime"
+         changed()
+         startup = Task { @MainActor [weak self] in
+-            guard let self, !self.terminating else { return }
+-            guard self.currentContext != nil else {
+-                self.startup = nil
++            guard let self else { return }
++            defer { self.startup = nil }
++            guard !self.terminating, self.currentContext != nil, self.startupScope == scope else {
+                 self.status = "Waiting for an account"
+                 self.changed()
+                 return
+@@ -229,57 +248,89 @@
+                     }
+                     return true
+                 }
+-                // Journal recovery is data-only under a real lease on this fresh
+-                // Host. A failure must block Python/plugin startup.
+-                let settingsDirectory = try services.serviceStorage.settingsDirectoryURL()
+-                try await ExteralessToolsHostMaintenance.recoverBeforeStart(host: host, settingsDirectory: settingsDirectory)
+-                guard !self.terminating else { throw PluginHostError.notRunning }
+-                var safeMode = preferences.safeMode
+-                if let recovery = self.runtimeRecovery, let manager = self.managerPreferences {
+-                    let known = Set(host.pluginList().map { $0.id })
+-                    let automatic = try await Task.detached(priority: .utility) {
+-                        let attributed = PluginRuntimeRecovery.attributedPlugin(marker: root.appendingPathComponent(".watchdog"), knownPlugins: known)
+-                        return try recovery.beginStart(safeMode: preferences.safeMode, hasAttributedPluginMarker: attributed != nil)
++                let continuation = PluginRuntimeStartupContinuation(host: host)
++                self.startupContinuation = continuation
++                try await self.continueColdStartup(continuation, scope: scope)
++            } catch {
++                self.publishStartupFailure(error)
++            }
++        }
++    }
++
++    private func continueColdStartup(_ continuation: PluginRuntimeStartupContinuation, scope: UUID) async throws {
++        let host = continuation.host
++        try await continuation.run(isCurrent: { [weak self] in
++            guard let self else { return false }
++            return self.startupContinuation === continuation && self.host === host
++                && self.startupScope == scope && self.hasAccount && self.currentContext != nil
++                && !self.terminating && self.settingsMaintenanceID == nil && !self.toolsRecoveryRequired
++        }, policy: { [weak self] in
++            guard let preferences = self?.managerPreferences?.snapshot else {
++                throw PluginHostError.runtimeFailure("Manager preferences unavailable")
++            }
++            return .init(engineEnabled: preferences.engineEnabled, safeMode: preferences.safeMode)
++        }, recoverBeforeStart: { [services = self.services] in
++            let directory = try services.serviceStorage.settingsDirectoryURL()
++            try await ExteralessToolsHostMaintenance.recoverBeforeStart(host: host, settingsDirectory: directory)
++        }, prepare: { [weak self] policy in
++            guard let self else { throw PluginHostError.notRunning }
++            try self.requireColdStartupScope(continuation, scope: scope)
++            if let recovery = self.runtimeRecovery, let manager = self.managerPreferences {
++                let root = try self.services.serviceStorage.rootDirectory()
++                let known = Set(host.pluginList().map { $0.id })
++                let automatic = try await Task.detached(priority: .utility) {
++                    let attributed = PluginRuntimeRecovery.attributedPlugin(marker: root.appendingPathComponent(".watchdog"), knownPlugins: known)
++                    return try recovery.beginStart(safeMode: policy.safeMode, hasAttributedPluginMarker: attributed != nil)
++                }.value
++                try self.requireColdStartupScope(continuation, scope: scope)
++                if automatic {
++                    try await Task.detached(priority: .utility) {
++                        try manager.apply(.safeMode(true))
++                        try recovery.confirmAutomaticSafeMode()
+                     }.value
+-                    if automatic {
+-                        try await Task.detached(priority: .utility) {
+-                            try manager.apply(.safeMode(true))
+-                            try recovery.confirmAutomaticSafeMode()
+-                        }.value
+-                        safeMode = true
+-                    }
+-                    if !safeMode {
+-                        self.recoveryHealthyTask = Task { @MainActor [weak self] in
+-                            do {
+-                                try await Task.sleep(nanoseconds: 15_000_000_000)
+-                                try Task.checkCancellation()
+-                                try await Task.detached(priority: .utility) { try recovery.markHealthy() }.value
+-                                self?.changed()
+-                            } catch {}
+-                        }
+-                    }
+                 }
+-                let enabledBeforeStart = Set(host.pluginList().filter { $0.enabled }.map { $0.id })
+-                try await host.start(safeMode: safeMode)
+-                guard !self.terminating else { throw PluginHostError.notRunning }
+-                for plugin in host.pluginList() where enabledBeforeStart.contains(plugin.id) && !plugin.enabled && plugin.loadError == "plugin crashed the app" {
+-                    do { try self.runtimeRecovery?.recordDisabledPlugin(plugin.id) }
+-                    catch { logs.append(pluginId: "host", level: .error, message: "Startup notice persistence: \(error)") }
++            }
++        }, complete: { [weak self] started in
++            guard let self else { return }
++            for pluginId in started.disabledPluginIds {
++                do { try self.runtimeRecovery?.recordDisabledPlugin(pluginId) }
++                catch { self.services.serviceLogs.append(pluginId: "host", level: .error, message: "Startup notice persistence: \(error)") }
++            }
++            if !started.safeMode, let recovery = self.runtimeRecovery {
++                self.recoveryHealthyTask = Task { @MainActor [weak self] in
++                    do {
++                        try await Task.sleep(nanoseconds: 15_000_000_000)
++                        try Task.checkCancellation()
++                        try await Task.detached(priority: .utility) { try recovery.markHealthy() }.value
++                        self?.changed()
++                    } catch {}
+                 }
+-                self.updateDeveloperServer()
+-                self.installHooks()
+-                self.status = safeMode ? "Safe mode · plugins not loaded" : "Python runtime ready"
+-                self.refreshSubscriptions()
+-                host.events.emitAppEvent("app_start")
+-                self.changed()
+-            } catch {
+-                self.clearEarlyStartupMarker()
+-                self.startupError = String(describing: error)
+-                self.status = "Runtime error: \(error)"
+-                self.services.serviceLogs.append(pluginId: "host", level: .error, message: self.status)
+-                self.changed()
+-            }
+-        }
++            }
++            self.updateDeveloperServer()
++            self.installHooks()
++            self.status = started.safeMode ? "Safe mode · plugins not loaded" : "Python runtime ready"
++            self.refreshSubscriptions()
++            host.events.emitAppEvent("app_start")
++        })
++        startupError = nil
++        updateRuntimeStatus()
++        changed()
++    }
++
++    private func requireColdStartupScope(_ continuation: PluginRuntimeStartupContinuation, scope: UUID) throws {
++        guard startupContinuation === continuation, host === continuation.host,
++              startupScope == scope, hasAccount, currentContext != nil, !terminating else {
++            throw PluginHostError.superseded("Startup account retired")
++        }
++    }
++
++    private func publishStartupFailure(_ error: Error) {
++        clearEarlyStartupMarker()
++        startupError = String(describing: error)
++        if startupContinuation?.phase == .recoveryBlocked { toolsRecoveryRequired = true }
++        status = hasAccount ? "Runtime error: \(error)" : "Waiting for an account"
++        services.serviceLogs.append(pluginId: "host", level: .error, message: "Runtime error: \(error)")
++        changed()
+     }
+ 
+     private func ready() async throws -> PluginHost {
+@@ -435,6 +486,8 @@
+     public func terminate() async {
+         guard !terminating else { return }
+         terminating = true
++        startupScope = UUID()
++        startupContinuation?.retire()
+         settingsActionAuthority?.clearContext()
+         PluginUISettingsActionRegistry.install(nil)
+         recoveryHealthyTask?.cancel()
+@@ -623,9 +676,11 @@
+         // Reserve before the first await, including the no-Host case. Enabling
+         // the engine while Tools owns files cannot create a worker behind it.
+         let id = UUID()
++        let scope = startupScope
+         settingsMaintenanceID = id
+         developerServer.stop()
+         let lease: PluginSettingsMaintenanceLease?
++        var coldMaintenance: (PluginRuntimeStartupContinuation, PluginRuntimeStartupContinuation.Maintenance)?
+         do {
+             if let startup { await startup.value }
+             guard !terminating else { throw PluginHostError.notRunning }
+@@ -637,6 +692,10 @@
+                 do { frozenSettingsLocation = try liveSettingsLocation() }
+                 catch { try await acquired.finish(resume: false); throw error }
+                 lease = acquired
++                if let continuation = startupContinuation, continuation.host === host,
++                   let receipt = continuation.captureMaintenance() {
++                    coldMaintenance = (continuation, receipt)
++                }
+             } else {
+                 guard startup == nil else { throw PluginHostError.runtimeFailure("Runtime initialization did not establish a maintenance owner") }
+                 frozenSettingsLocation = try liveSettingsLocation()
+@@ -651,6 +710,7 @@
+             throw error
+         }
+         let completion = PluginRuntimeMaintenanceCompletion()
++        let cold = coldMaintenance
+         return ExteralessToolsMaintenanceLease { [weak self] outcome in
+             let recovered: Bool
+             switch outcome {
+@@ -659,29 +719,57 @@
+             }
+             try await completion.finish(recovered: recovered) {
+                 guard let self else { try await lease?.finish(resume: false); return }
+-                try await self.finishManagerMaintenance(id: id, lease: lease, recovered: recovered)
+-            }
+-        }
+-    }
+-
+-    private func finishManagerMaintenance(id: UUID, lease: PluginSettingsMaintenanceLease?, recovered: Bool) async throws {
++                try await self.finishManagerMaintenance(id: id, lease: lease, recovered: recovered, cold: cold, scope: scope)
++            }
++        }
++    }
++
++    private func finishManagerMaintenance(id: UUID, lease: PluginSettingsMaintenanceLease?, recovered: Bool,
++        cold: (PluginRuntimeStartupContinuation, PluginRuntimeStartupContinuation.Maintenance)?, scope: UUID) async throws {
+         guard settingsMaintenanceID == id else { throw PluginHostError.superseded("Settings maintenance owner changed") }
+         defer {
+-            settingsMaintenanceID = nil
+-            frozenSettingsLocation = nil
++            if settingsMaintenanceID == id {
++                settingsMaintenanceID = nil
++                frozenSettingsLocation = nil
++            }
+             updateDeveloperServer()
+             refreshSubscriptions()
+             changed()
+         }
+         do {
+-            try await lease?.finish(resume: recovered && pluginExecutionRequested && !terminating)
++            if let cold {
++                guard startupContinuation === cold.0, host === cold.0.host else {
++                    try await lease?.finish(resume: false)
++                    throw PluginHostError.superseded("Cold-start Host changed during maintenance")
++                }
++            }
++            // Reopening a never-started Host is data-only, including master-off
++            // and safe mode. The continuation checks current execution policy.
++            let resume = recovered && !terminating && (cold != nil
++                || (pluginExecutionRequested && hasAccount && startupScope == scope))
++            try await lease?.finish(resume: resume)
++            guard settingsMaintenanceID == id else { throw PluginHostError.superseded("Settings maintenance owner changed") }
+             toolsRecoveryRequired = !recovered
+-            updateRuntimeStatus()
++            if let cold, !terminating {
++                try cold.0.acknowledgeMaintenance(cold.1, recovered: recovered)
++                if recovered { startupError = nil }
++            }
+         } catch {
+             toolsRecoveryRequired = true
+             status = "Settings recovery required: \(error)"
+             throw error
+         }
++        // Release this root's file-maintenance gate before scheduling startup.
++        // A later maintenance owner must survive the await and this defer.
++        settingsMaintenanceID = nil
++        frozenSettingsLocation = nil
++        if recovered, cold != nil, !terminating, hasAccount, startupScope == scope {
++            start()
++            if let startup { await startup.value }
++        }
++        // A startup error is distinct from an unresolved journal. Its actual
++        // result was published by the startup Task; never recreate Tools debt.
++        updateRuntimeStatus()
+     }
+ 
+     /// Root Tools bindings read only schemas already returned to the native
+@@ -734,7 +822,9 @@
+         developerServer.stop()
+         if let startup { await startup.value }
+         guard !terminating else { throw PluginHostError.notRunning }
+-        if let startupError { throw PluginHostError.runtimeFailure("Runtime initialization failed; restart the application: \(startupError)") }
++        if let startupError, startupContinuation?.canContinue != true {
++            throw PluginHostError.runtimeFailure("Runtime initialization failed; restart the application: \(startupError)")
++        }
+         let old = store.snapshot
+         var engine = old.engineEnabled
+         var safe = old.safeMode
+@@ -744,7 +834,7 @@
+         default: throw PluginHostError.runtimeFailure("Expected a runtime-mode change")
+         }
+         do {
+-            if host == nil {
++            if host == nil || (startupContinuation?.canContinue == true && startupContinuation?.hasAttemptedStart == false) {
+                 try await Task.detached(priority: .utility) { try store.apply(change) }.value
+                 if engine {
+                     start()
+@@ -784,7 +874,9 @@
+     private func updateRuntimeStatus() {
+         guard let preferences = managerPreferences?.snapshot else { status = managerPreferencesError ?? "Manager preferences unavailable"; return }
+         if terminating { status = "Python runtime stopped" }
++        else if !hasAccount || currentContext == nil { status = "Waiting for an account" }
+         else if toolsRecoveryRequired { status = "Settings recovery required · plugin execution suspended" }
++        else if let startupError, host?.isRunning != true { status = "Runtime error: \(startupError)" }
+         else if !preferences.engineEnabled { status = "Plugin engine disabled" }
+         else if preferences.safeMode { status = "Safe mode · plugin execution suspended" }
+         else if host?.isRunning == true { status = "Python runtime ready" }
+diff --git a/telegram-ios/Tests/Exteraless/BUILD b/telegram-ios/Tests/Exteraless/BUILD
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@ -193,11 +193,35 @@
+     deps = [":PluginPillContractsTestsLib"],
+ )
+ 
++swift_library(
++    name = "RuntimeRecoveryContinuationTestsLib",
++    testonly = True,
++    module_name = "ExteralessRuntimeRecoveryContinuationTests",
++    srcs = ["RuntimeRecoveryContinuationTests.swift"],
++    copts = ["-swift-version", "6"],
++    deps = [
++        "//submodules/TelegramUI:TelegramUI",
++        "//third-party/exteraless:ExteralessCore",
++        "//third-party/exteraless:PluginHost",
++    ],
++)
++
++ios_unit_test(
++    name = "RuntimeRecoveryContinuationTests",
++    timeout = "short",
++    minimum_os_version = "15.0",
++    runner = ":Runner",
++    test_host = ":NativeTestHost",
++    linkopts = ["-framework", "MediaPlayer"],
++    deps = [":RuntimeRecoveryContinuationTestsLib"],
++)
++
+ test_suite(
+     name = "IntegrationTests",
+     tests = [
+         ":NativeUIContractsTests",
+         ":NativeTLContractsTests",
++        ":RuntimeRecoveryContinuationTests",
+         ":IdentityPresentationTests",
+         ":DialogNativePreferenceTests",
+         ":StickerEmojiRenderingTests",
