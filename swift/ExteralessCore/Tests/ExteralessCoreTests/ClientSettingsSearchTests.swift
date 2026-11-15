@@ -15,9 +15,10 @@ final class ClientSettingsSearchTests: XCTestCase {
     func testLocalizedLabelsExplanationsAndOriginalNamesAreSearchable() throws {
         var index = ClientSettingsSearchIndex()
         try index.refresh(definitions: [definition()], secretKeys: [], actions: [], localize: { key, fallback in
-            key.hasSuffix(".Title") ? "Café аватары" : fallback
+            key == "Setting.appearance.avatarCorners.Title" ? "Café аватары" : fallback
         })
         XCTAssertEqual(index.search("CAFE аватары").first?.route, .setting("appearance.avatarCorners"))
+        XCTAssertEqual(index.search("Search Exteraless").first?.route, .search)
         XCTAssertEqual(index.search("profile pictures").first?.route, .setting("appearance.avatarCorners"))
         XCTAssertEqual(index.search("avatarCornersPreviewRow").first?.route, .setting("appearance.avatarCorners"))
         XCTAssertTrue(index.search("profile absentword").isEmpty)
