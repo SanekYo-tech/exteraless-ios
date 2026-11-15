@@ -27,6 +27,9 @@ final class ClientSettingsSearchClosureTests: XCTestCase {
             let a = definition()
             let other = ClientSettingDefinition(key: "search.unrelated", title: "Unrelated", section: "Fixture", defaultValue: .bool(false))
             try store.register([a, other])
+            // Registration alone keeps a cold store fileless. Seed a real public
+            // override before comparing persisted bytes across schema-only ABA.
+            try store.setPublic(.integer(30), for: a.key)
             var index = ClientSettingsSearchIndex()
             try refresh(&index, from: store)
             let unrelated = try index.resolve(.canonical(.setting(other.key))).ticket
