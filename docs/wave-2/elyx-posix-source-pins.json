@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-posix-report-20261116-2df0648b",
+  "branch": "ci/elyx-load-preflight-posix-20261116-c18be733",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -27,11 +27,11 @@
     {
       "path": ".github/workflows/compat-tests.yml",
       "origin": "workflow",
-      "raw_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
-      "raw_bytes": 9687,
-      "canonical_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
-      "canonical_bytes": 9687,
-      "git_blob": "67c2d7ca3cc1b28625a56405388eacd886b98f09"
+      "raw_sha256": "eada0a09c1780e633f8e7389c423702672904fa472a29950911ad0040ff4a384",
+      "raw_bytes": 8113,
+      "canonical_sha256": "eada0a09c1780e633f8e7389c423702672904fa472a29950911ad0040ff4a384",
+      "canonical_bytes": 8113,
+      "git_blob": "967d038e75e1677b5ee1c4b59c1408c52e25d53d"
     },
     {
       "path": "python/bridge/__init__.py",
@@ -75,20 +75,20 @@
     {
       "path": "python/exteraless_runtime/_archives.py",
       "origin": "working-tree",
-      "raw_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
-      "raw_bytes": 67917,
-      "canonical_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
-      "canonical_bytes": 67917,
-      "git_blob": "e040597787c369e598a96f60027dda9dbce081a6"
+      "raw_sha256": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "raw_bytes": 69918,
+      "canonical_sha256": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "canonical_bytes": 69918,
+      "git_blob": "d6a703af7d8631e9aaa50de7edf675f82a921312"
     },
     {
       "path": "python/exteraless_runtime/_audit_paths.py",
       "origin": "working-tree",
-      "raw_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
-      "raw_bytes": 19972,
-      "canonical_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
-      "canonical_bytes": 19972,
-      "git_blob": "0256fd519439ab2857554b166ae58df5c6974ce1"
+      "raw_sha256": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "raw_bytes": 19990,
+      "canonical_sha256": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "canonical_bytes": 19990,
+      "git_blob": "2760ebf7ec57f1a463ea4bc4f21434e4c7c49df2"
     },
     {
       "path": "python/exteraless_runtime/_callbacks.py",
@@ -1408,13 +1408,22 @@
       "git_blob": "6625824e0f900ecec2e8bbea45528115f3694355"
     },
     {
+      "path": "tools/compat/tests/test_ios_elyx_platform.py",
+      "origin": "working-tree",
+      "raw_sha256": "27500bfa24b106ae4bc742a3adc2bfa2a39c7a881c0b5d6ef5e26b09df46e96d",
+      "raw_bytes": 7628,
+      "canonical_sha256": "27500bfa24b106ae4bc742a3adc2bfa2a39c7a881c0b5d6ef5e26b09df46e96d",
+      "canonical_bytes": 7628,
+      "git_blob": "d52606d9fa810cc16568327a9184d6a171359b16"
+    },
+    {
       "path": "tools/compat/tests/test_ios_elyx_source_authority.py",
       "origin": "working-tree",
-      "raw_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
-      "raw_bytes": 13677,
-      "canonical_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
-      "canonical_bytes": 13677,
-      "git_blob": "9b7665d5dd94a00113f0020ac24123c1ed4e6127"
+      "raw_sha256": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "raw_bytes": 20496,
+      "canonical_sha256": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "canonical_bytes": 20496,
+      "git_blob": "058a2336652e119b39974e82188a4324fea35f2f"
     },
     {
       "path": "tools/compat/tests/test_ios_runtime.py",
@@ -1480,5 +1489,43 @@
     "reason": "Native XCTest ran all 53 cases successfully in run 43770534123; serial Swift 6.4 emitted only empty Swift Testing XML, so derive explicitly labeled JUnit from complete native XCTest case events",
     "expected_cases": 53,
     "native_commands_unchanged": true
+  },
+  "python_preflight_followup": {
+    "parent_verification_commit": "0ad00c3ef8e856d3a95cd33d43a059c4bc0c648f",
+    "captured_utc": "2026-11-15T23:24:45.221473+00:00",
+    "focus": "python-only NFD-02 load preflight and Darwin-family selectors",
+    "changed_source_paths": [
+      "python/exteraless_runtime/_archives.py",
+      "python/exteraless_runtime/_audit_paths.py",
+      "tools/compat/tests/test_ios_elyx_source_authority.py",
+      "tools/compat/tests/test_ios_elyx_platform.py"
+    ],
+    "handoff_receipt_sha256": {
+      "docs/wave-2/elyx-nfd02-inputs.json": "3d81fa189e30fa98d90c7abc9551b2709e2af8d6a5da8bf2c20b9cea47d342fe",
+      "docs/wave-2/elyx-archive-p2-inputs.json": "2bc190ed5a1b4854f038fdd86ee938d10584ef2f6271632eedab1aecd2640cc6"
+    },
+    "handoff_raw_sha256": {
+      "python/exteraless_runtime/_archives.py": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "python/exteraless_runtime/_audit_paths.py": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "tools/compat/tests/test_ios_elyx_source_authority.py": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "tools/compat/tests/test_ios_elyx_platform.py": "27500bfa24b106ae4bc742a3adc2bfa2a39c7a881c0b5d6ef5e26b09df46e96d"
+    },
+    "native_host_or_provider_sources_refreshed": false,
+    "owned_modules": [
+      "test_ios_elyx_archives.py",
+      "test_ios_elyx_p1.py",
+      "test_ios_elyx_source_authority.py",
+      "test_ios_runtime.py",
+      "test_ios_elyx_platform.py"
+    ],
+    "approximate_test_count": 50,
+    "actual_discovery_is_authoritative": true,
+    "bounds_seconds": {
+      "pytest": 120,
+      "child": 20,
+      "collection": 30
+    },
+    "authority_scope": "explicit FD-backed contract recorder, not production registry authorization",
+    "platform_scope": "selection witnesses plus actual Linux POSIX; no iOS execution acceptance"
   }
 }

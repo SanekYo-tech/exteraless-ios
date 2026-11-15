@@ -1,4 +1,4 @@
-name: Elyx bounded POSIX Host followup
+name: Elyx load preflight and platform POSIX
 
 on:
   workflow_dispatch:
@@ -12,13 +12,16 @@ env:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
 jobs:
-  swift-host-posix:
-    name: Ready PluginHost POSIX component (180s build, 30s tests)
+  python-posix:
+    name: Archive load preflight + platform selectors (Python 3.12)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
     env:
-      SWIFT_ROOT: /home/runner/swift-6.4.2
-      EVIDENCE: ${{ github.workspace }}/build/elyx-posix/swift
+      EVIDENCE: ${{ github.workspace }}/build/elyx-load-preflight/python
+      PYTHONPATH: ${{ github.workspace }}/python/vendor
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_DEFAULT_TIMEOUT: "15"
+      PIP_RETRIES: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -31,135 +34,105 @@ jobs:
             tools/compat/tests
             swift/PluginHost
             swift/ExteralessCore
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
       - name: Verify immutable source pins
         run: |
           set -euo pipefail
           mkdir -p "$EVIDENCE"
           cp docs/wave-2/elyx-posix-source-pins.json "$EVIDENCE/"
           git rev-parse HEAD | tee "$EVIDENCE/cohort-sha.txt"
-          python3 -c 'import json; p=json.load(open("docs/wave-2/elyx-posix-source-pins.json")); print("\n".join("{}  {}".format(f["canonical_sha256"], f["path"]) for f in p["files"]))' > "$EVIDENCE/sources.sha256"
+          python -c 'import json; p=json.load(open("docs/wave-2/elyx-posix-source-pins.json")); print("\n".join("{}  {}".format(f["canonical_sha256"], f["path"]) for f in p["files"]))' > "$EVIDENCE/sources.sha256"
           sha256sum --check "$EVIDENCE/sources.sha256" > "$EVIDENCE/source-check.log"
+          python -c 'import os,sys; assert os.name == "posix" and sys.version_info[:2] == (3,12); assert os.open in os.supports_dir_fd; print(sys.version)' | tee "$EVIDENCE/python-version.log"
           uname -a | tee "$EVIDENCE/platform.log"
-      - name: Install Swift build dependencies
-        timeout-minutes: 6
-        env:
-          DEBIAN_FRONTEND: noninteractive
+      - name: Install pinned fixture and C build tools
         run: |
           set -euo pipefail
-          sudo apt-get update -qq 2>&1 | tee "$EVIDENCE/apt-update.log"
-          sudo apt-get install -y -qq binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 \
-            libgcc-13-dev libncurses-dev libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev \
-            libz3-dev pkg-config tzdata unzip zip zlib1g-dev 2>&1 | tee "$EVIDENCE/apt-install.log"
-      - name: Restore existing Swift 6.4.2 toolchain cache
-        id: swift-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+          timeout --signal=KILL 120s python -m pip install pytest==8.3.5 setuptools==77.0.3 2>&1 | tee "$EVIDENCE/tool-install.log"
+          python -m pip freeze > "$EVIDENCE/test-tools.txt"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
-          path: ${{ env.SWIFT_ROOT }}
-          key: swift-6.4.2-ubuntu24.04-x86_64
-      - name: Install the existing compat-gate Swift release on cache miss
-        if: steps.swift-cache.outputs.cache-hit != 'true'
+          path: ${{ runner.temp }}/python-wheel-cache
+          key: python-pure-dependencies-${{ hashFiles('python/runtime/dependency-lock.json') }}
+      - name: Stage checksum-locked pure dependencies
         run: |
           set -euo pipefail
-          mkdir -p "$SWIFT_ROOT"
-          tarball="swift-6.4.2-RELEASE-ubuntu24.04.tar.gz"
-          url="https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-RELEASE/${tarball}"
-          curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 300 -o "${SWIFT_ROOT}/${tarball}" "$url"
-          sha256sum "${SWIFT_ROOT}/${tarball}" > "$EVIDENCE/swift-download.sha256"
-          tar -xzf "${SWIFT_ROOT}/${tarball}" -C "$SWIFT_ROOT" --strip-components=1
-          rm -f "${SWIFT_ROOT}/${tarball}"
-          test -x "${SWIFT_ROOT}/usr/bin/swift"
-      - name: Record toolchain identity
+          timeout --signal=KILL 180s python -B tools/runtime/vendor_dependencies.py \
+            --cache "$RUNNER_TEMP/python-wheel-cache" \
+            --output "$GITHUB_WORKSPACE/python/vendor" \
+            --report "$EVIDENCE/python-dependencies.json" 2>&1 | tee "$EVIDENCE/vendor.log"
+          python -c 'import yaml; assert yaml.__version__ == "6.0.3" and not yaml.__with_libyaml__; print(yaml.__file__)' | tee "$EVIDENCE/yaml-provider.log"
+      - name: Fresh build of inherited C bridge
+        working-directory: python/bridge
         run: |
           set -euo pipefail
-          echo "${SWIFT_ROOT}/usr/bin" >> "$GITHUB_PATH"
-          "${SWIFT_ROOT}/usr/bin/swift" --version | tee "$EVIDENCE/swift-version.log"
-          sha256sum "${SWIFT_ROOT}/usr/bin/swift-frontend" > "$EVIDENCE/swift-frontend.sha256"
-      - name: Compile complete ready Host sources and test binary
-        working-directory: swift/PluginHost
+          timeout --signal=KILL 120s python -B setup.py build_ext --inplace --force 2>&1 | tee "$EVIDENCE/c-build.log"
+          sha256sum _exteraless_bridge*.so > "$EVIDENCE/c-extension.sha256"
+      - name: Discover and run exactly five owned modules
         run: |
           set -euo pipefail
-          timeout --signal=KILL 180s swift build --build-tests --jobs 2 2>&1 | tee "$EVIDENCE/swift-build.log"
-      - name: Execute only ready component tests on real POSIX
-        working-directory: swift/PluginHost
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 30s swift test --skip-build --jobs 2 \
-            --filter '(PluginArchive|PluginTrust|PluginSettingsPage|PluginResourcePath|PluginSendHook|PluginElyxDeveloper)' \
-            --xunit-output "$EVIDENCE/host.xml" 2>&1 | tee "$EVIDENCE/swift-test.log"
-      - name: Record Host counts and require POSIX descriptor execution
+          modules=(
+            tools/compat/tests/test_ios_elyx_archives.py
+            tools/compat/tests/test_ios_elyx_p1.py
+            tools/compat/tests/test_ios_elyx_source_authority.py
+            tools/compat/tests/test_ios_runtime.py
+            tools/compat/tests/test_ios_elyx_platform.py
+          )
+          timeout --signal=KILL 30s python -B -m pytest --rootdir "$GITHUB_WORKSPACE" --collect-only -q --no-header --color=no \
+            "${modules[@]}" 2>&1 | tee "$EVIDENCE/collection.log"
+          timeout --signal=KILL 120s python -B -m pytest --rootdir "$GITHUB_WORKSPACE" -q -s --color=no \
+            "${modules[@]}" --basetemp "$RUNNER_TEMP/elyx-load-preflight-owned" \
+            --junitxml "$EVIDENCE/archive.xml" 2>&1 | tee "$EVIDENCE/pytest.log"
+      - name: Verify all discovered cases and zero POSIX skips
         if: always()
         run: |
-          python3 -B - <<'PY'
-          import collections, hashlib, json, os, pathlib, re, xml.etree.ElementTree as ET
+          python -B - <<'PY'
+          import collections, json, os, pathlib, re, xml.etree.ElementTree as ET
           root = pathlib.Path(os.environ["EVIDENCE"])
           root.mkdir(parents=True, exist_ok=True)
-          log = root / "swift-test.log"
-          if not log.exists():
-              (root / "counts.json").write_text('{"error":"Host test command did not produce an XCTest log"}\n')
-              raise SystemExit("Missing Host XCTest log; inspect bounded compiler/test logs")
-          raw = log.read_bytes()
-          text = re.sub(r"\x1b\[[0-9;]*m", "", raw.decode("utf-8", "replace"))
-          suites = ("PluginArchiveDescriptorTests", "PluginArchiveHostTests", "PluginElyxDeveloperTests",
-                    "PluginResourcePathTests", "PluginSendHookPriorityTests", "PluginSettingsPageLeaseTests",
-                    "PluginTrustHostTests", "PluginTrustLevelTests")
-          expected = set()
-          for suite in suites:
-              source = pathlib.Path("swift/PluginHost/Tests/PluginHostTests", suite + ".swift").read_text()
-              expected.update(suite + "." + name for name in re.findall(r"func (test\w+)\(", source)
-                              if name != "testUnsupportedPlatformDoesNotFallBackToPathRecursivePurge")
-          starts = re.findall(r"^Test Case '([A-Za-z0-9_]+\.test[A-Za-z0-9_]+)' started at .+$", text, re.M)
-          finished = re.findall(r"^Test Case '([A-Za-z0-9_]+\.test[A-Za-z0-9_]+)' (passed|failed|skipped) \(([0-9.]+) seconds\)$", text, re.M)
-          summary = re.search(r"^Test Suite 'Selected tests' (passed|failed) at [^\n]+\n\s*Executed (\d+) tests, with (\d+) failures \((\d+) unexpected\) in ([0-9.]+) \([0-9.]+\) seconds", text, re.M)
-          cases = [{"class": name.split(".", 1)[0], "name": name.split(".", 1)[1], "status": status, "seconds": seconds}
-                   for name, status, seconds in finished]
-          counts = {"tests": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
-                    "failures": sum(c["status"] == "failed" for c in cases), "errors": 0,
-                    "skipped": sum(c["status"] == "skipped" for c in cases), "cases": cases,
-                    "provenance": "Native serial XCTest stdout; empty Swift Testing XML is not an XCTest result",
-                    "log_sha256": hashlib.sha256(raw).hexdigest(), "cohort_sha": os.environ["GITHUB_SHA"]}
-          issues = []
-          if len(expected) != 53:
-              issues.append("Frozen ready test inventory is not 53 cases")
-          if collections.Counter(starts) != collections.Counter({name: 1 for name in expected}):
-              issues.append("XCTest start events differ from the exact frozen 53-case inventory")
-          if collections.Counter(name for name, _, _ in finished) != collections.Counter({name: 1 for name in expected}):
-              issues.append("XCTest finish events differ from the exact frozen 53-case inventory")
-          if summary is None:
-              issues.append("Missing complete Selected tests XCTest summary")
-          elif int(summary[2]) != counts["tests"] or int(summary[3]) != counts["failures"] or summary[1] != "passed":
-              issues.append("XCTest suite summary does not confirm a complete passing cohort")
-          counts["report_errors"] = issues
-          counts["seconds"] = summary[5] if summary else None
-          # Swift 6.4 serial XCTest reports case events to stdout. Its separate
-          # Swift Testing XML has zero cases for this XCTest-only target. Preserve
-          # the native log and explicitly identify this lossless JUnit projection.
-          document = ET.Element("testsuites")
-          suite = ET.SubElement(document, "testsuite", name="Selected PluginHost XCTest cases",
-                                tests=str(counts["tests"]), failures=str(counts["failures"]), errors="0",
-                                skipped=str(counts["skipped"]), time=counts["seconds"] or "0")
-          properties = ET.SubElement(suite, "properties")
-          ET.SubElement(properties, "property", name="source", value="swift-test.log native XCTest case events")
-          ET.SubElement(properties, "property", name="source_sha256", value=counts["log_sha256"])
-          ET.SubElement(properties, "property", name="cohort_sha", value=counts["cohort_sha"])
-          for case in cases:
-              item = ET.SubElement(suite, "testcase", classname=case["class"], name=case["name"], time=case["seconds"])
-              if case["status"] == "failed":
-                  ET.SubElement(item, "failure", message="Native XCTest failure; see retained swift-test.log")
-              elif case["status"] == "skipped":
-                  ET.SubElement(item, "skipped")
-          if issues:
-              ET.SubElement(suite, "system-err").text = "\n".join(issues)
-          ET.ElementTree(document).write(root / "host-xctest.xml", encoding="utf-8", xml_declaration=True)
+          report = root / "archive.xml"
+          collection = root / "collection.log"
+          if not report.exists() or not collection.exists():
+              (root / "counts.json").write_text('{"error":"Missing pytest collection or JUnit; inspect build/test logs"}\n')
+              raise SystemExit("Missing owned pytest evidence")
+          discovered = re.findall(r"^(tools/compat/tests/[^:\r\n]+\.py::[^\r\n]+)$", collection.read_text(), re.M)
+          document = ET.parse(report)
+          cases = list(document.iter("testcase"))
+          nodes = ["tools/compat/tests/" + c.get("classname", "").rsplit(".", 1)[-1] + ".py::" + c.get("name", "") for c in cases]
+          counts = {"tests": len(cases), "discovered": len(discovered),
+                    "failures": sum(c.find("failure") is not None for c in cases),
+                    "errors": sum(c.find("error") is not None for c in cases),
+                    "skipped": sum(c.find("skipped") is not None for c in cases)}
+          counts["passed"] = counts["tests"] - counts["failures"] - counts["errors"] - counts["skipped"]
+          counts["seconds"] = sum(float(s.get("time", "0")) for s in document.iter("testsuite"))
+          counts["module_counts"] = dict(collections.Counter(n.split("::", 1)[0] for n in nodes))
+          counts["cases"] = [{"nodeid": n, "seconds": c.get("time")} for n, c in zip(nodes, cases)]
+          counts["failure_details"] = [{"nodeid": n, "kind": tag, "message": detail.get("message"), "text": detail.text}
+                                       for n, c in zip(nodes, cases) for tag in ("failure", "error")
+                                       if (detail := c.find(tag)) is not None]
+          counts["handoff_approximation"] = 50
+          counts["discovery_differs_from_approximation"] = len(discovered) != 50
+          (root / "collected-nodeids.json").write_text(json.dumps(discovered, indent=2) + "\n")
           (root / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
-          print(json.dumps({k:v for k,v in counts.items() if k != "cases"}))
-          assert not issues, issues
-          assert "PluginArchiveDescriptorTests.testRawOSPathUsesDescriptorAnchorIncludingDarwinRootAlias" in expected
-          assert counts["passed"] == counts["tests"] == 53 and counts["skipped"] == 0, counts
+          print(json.dumps({k:v for k,v in counts.items() if k not in ("cases", "failure_details")}))
+          modules = {"test_ios_elyx_archives", "test_ios_elyx_p1", "test_ios_elyx_source_authority", "test_ios_runtime", "test_ios_elyx_platform"}
+          assert {n.split("::", 1)[0] for n in discovered} == {"tools/compat/tests/" + m + ".py" for m in modules}
+          assert collections.Counter(nodes) == collections.Counter(discovered), "Executed JUnit cases differ from actual discovery"
+          assert len(discovered) == len(set(discovered)) and discovered, "Missing or duplicate discovered cases"
+          required = {"test_elyx_p1[fd_extract_swap]", "test_elyx_p1[fd_cleanup_swap]", "test_elyx_p1[fd_replacements]",
+                      "test_elyx_p1[raw_os_paths]", "test_elyx_p1[two_owners]", "test_source_authority[namespace_replace]",
+                      "test_source_authority[verified_sdk]", "test_source_authority[load_policy_requires]",
+                      "test_source_authority[load_policy_python]", "test_source_authority[load_policy_dependencies]",
+                      "test_platform_family[posix_fd]", "test_ios_elyx_archive[symlink_cache]"}
+          assert required <= {c.get("name") for c in cases}, "Required policy/POSIX witnesses missing"
+          assert counts["passed"] == counts["tests"] and counts["skipped"] == 0, "Owned cohort has failures, errors or skips"
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: elyx-posix-swift-${{ github.run_id }}
+          name: elyx-load-preflight-python-${{ github.run_id }}
           path: ${{ env.EVIDENCE }}/
           if-no-files-found: error
           retention-days: 14

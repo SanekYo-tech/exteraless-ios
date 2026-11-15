@@ -167,7 +167,7 @@ def _lexical(path):
             return None
         path = os.path.normcase(os.path.abspath(path))
         # Match the native OS-root aliases without resolving any untrusted leaf.
-        if sys.platform == "darwin":
+        if sys.platform in ("darwin", "ios"):
             for name in ("var", "tmp", "etc"):
                 prefix = "/" + name
                 if _within(path, prefix):
@@ -183,7 +183,7 @@ def _descriptor_path(fd):
     if type(fd) is not int or fd < 0:
         return None
     try:
-        if sys.platform == "darwin":
+        if sys.platform in ("darwin", "ios"):
             import fcntl
             return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0])
         if sys.platform.startswith("linux"):
