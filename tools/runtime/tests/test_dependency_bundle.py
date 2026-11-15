@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import stat
 import sys
+import tarfile
 import zipfile
 
 import pytest
@@ -50,6 +51,27 @@ def make_wheel(directory, package, *, extra=(), pure=True, tag="py3-none-any"):
     return path, package
 
 
+def make_source(directory, package, *, extra=()):
+    package = copy.deepcopy(package)
+    prefix = package['name'] + '-' + package['version']
+    source_dir = vendor.SOURCE_PROJECTIONS[package['name']][1]
+    metadata = ('Metadata-Version: 2.4\nName: ' + package['name'] + '\nVersion: ' + package['version'] +
+                '\nRequires-Python: ' + package['requires_python'] + '\n\nSource fixture\n').encode()
+    entries = [('PKG-INFO', metadata), ('LICENSE', b'fixture license')]
+    entries.extend((source_dir + '/' + root + '/__init__.py', b'raise AssertionError("source package must not execute")\n')
+                   for root in package['import_roots'])
+    entries.extend(extra)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / package['filename']
+    with tarfile.open(path, 'w:gz') as archive:
+        for name, data in entries:
+            info = tarfile.TarInfo(prefix + '/' + name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    package.update(size=path.stat().st_size, sha256=vendor.digest(path))
+    return path, package
+
+
 @pytest.fixture
 def packaging_spec():
     return copy.deepcopy(vendor.read_lock()["packages"][0])
@@ -59,7 +81,8 @@ def packaging_spec():
 def tiny_bundle(tmp_path):
     lock = copy.deepcopy(vendor.read_lock())
     cache = tmp_path / "cache"
-    lock["packages"] = [make_wheel(cache, package)[1] for package in lock["packages"]]
+    lock["packages"] = [(make_source if package.get('artifact_kind') == 'sdist-python' else make_wheel)(cache, package)[1]
+                        for package in lock["packages"]]
     lock_path = tmp_path / "dependency-lock.json"
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     return cache, lock_path
@@ -68,8 +91,10 @@ def tiny_bundle(tmp_path):
 def test_lock_is_small_universal_and_dependency_closed():
     lock = vendor.read_lock()
     assert {package["name"] for package in lock["packages"]} == set(vendor.IMPORT_ROOTS)
-    assert sum(package["size"] for package in lock["packages"]) == 676466
-    assert all(package["filename"].endswith("-py3-none-any.whl") for package in lock["packages"])
+    assert sum(package["size"] for package in lock["packages"]) < vendor.MAX_DOWNLOAD_BYTES
+    assert {p['name'] for p in lock['packages'] if p.get('artifact_kind') == 'sdist-python'} == {'pyyaml', 'debugpy'}
+    assert all(package["filename"].endswith("-py3-none-any.whl") for package in lock["packages"]
+               if package.get('artifact_kind', 'wheel') == 'wheel')
     assert list(vendor._base_requirements(lock["packages"][1])) == [
         ("charset-normalizer", "<4,>=2"), ("idna", "<4,>=2.5"),
         ("urllib3", "<3,>=1.26"), ("certifi", ">=2023.5.7")]
@@ -194,7 +219,7 @@ def test_offline_bundle_preserves_metadata_and_never_executes_modules(tmp_path, 
     imported = {name: sys.modules.get(name) for roots in vendor.IMPORT_ROOTS.values() for name in roots}
     manifest = vendor.vendor(cache, output, lock_path=lock, offline=True)
     assert manifest["bundle_sha256"] == vendor.bundle_hash(vendor.digest(lock), manifest["files"])
-    assert len(manifest["packages"]) == 8
+    assert len(manifest["packages"]) == 12
     found = {vendor.canonical_name(dist.metadata["Name"]): dist.version
              for dist in importlib.metadata.distributions(path=[str(output)])}
     assert found == {entry["name"]: entry["version"] for entry in manifest["packages"]}
@@ -208,8 +233,9 @@ def test_offline_bundle_preserves_metadata_and_never_executes_modules(tmp_path, 
 def test_invalid_wheel_never_publishes_partial_output(tmp_path, tiny_bundle):
     cache, lock_path = tiny_bundle
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    package = lock["packages"][-1]
-    _, lock["packages"][-1] = make_wheel(cache, package, extra=[("typing_extensions.so", b"bad")])
+    index = next(i for i, p in enumerate(lock['packages']) if p['name'] == 'typing-extensions')
+    package = lock["packages"][index]
+    _, lock["packages"][index] = make_wheel(cache, package, extra=[("typing_extensions.so", b"bad")])
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     output = tmp_path / "vendor"
     with pytest.raises(ValueError, match="binary"):
@@ -231,7 +257,7 @@ def test_runtime_provider_reads_distinfo_and_adds_only_vendor_after_sdk(tmp_path
     assert sys.path.index(str(output)) == sys.path.index(sdk) + 1
     assert sys.path.count(str(output)) == 1
     assert provider.is_provided("typing_extensions") and not provider.is_provided("os")
-    assert len(provider.installed_packages()) == 8
+    assert len(provider.installed_packages()) == 12
     provider.remove_requirements("fixture_plugin")
     assert (output / "requests-2.34.2.dist-info/METADATA").is_file()
     (output / "os.py").write_text('raise AssertionError("stdlib shadow")\n')
@@ -241,3 +267,26 @@ def test_runtime_provider_reads_distinfo_and_adds_only_vendor_after_sdk(tmp_path
     (output / "requests-2.34.2.dist-info/METADATA").write_text("Name: requests\nVersion: 99\n")
     with pytest.raises(_dependencies.UnsupportedSurfaceError, match="checksum mismatch"):
         _dependencies.create_provider(python_root)
+
+
+def test_source_projection_is_sealed_after_excluding_native_build_inputs(tmp_path):
+    package = next(p for p in vendor.read_lock()['packages'] if p['name'] == 'debugpy')
+    archive, package = make_source(tmp_path / 'cache', package, extra=[
+        ('src/debugpy/accelerator.c', b'/* build only */'),
+        ('src/debugpy/accelerator.so', b'\x7fELFnative'),
+        ('src/debugpy/config.json', b'{"real_data":true}'),
+    ])
+    files = {}
+    result = vendor.extract_source_package(archive, package, tmp_path / 'out', files)
+    assert 'debugpy/config.json' in files
+    assert not any(name.endswith(('.so', '.c')) for name in files)
+    assert (tmp_path / 'out' / result['dist_info'] / 'METADATA').is_file()
+    record = (tmp_path / 'out' / result['dist_info'] / 'RECORD').read_text()
+    assert 'debugpy/config.json,sha256=' in record and 'accelerator' not in record
+
+
+def test_source_projection_refuses_disguised_native_data(tmp_path):
+    package = next(p for p in vendor.read_lock()['packages'] if p['name'] == 'pyyaml')
+    archive, package = make_source(tmp_path / 'cache', package, extra=[('lib/yaml/data.dat', b'\x7fELFnative')])
+    with pytest.raises(ValueError, match='Native binary content'):
+        vendor.extract_source_package(archive, package, tmp_path / 'out', {})

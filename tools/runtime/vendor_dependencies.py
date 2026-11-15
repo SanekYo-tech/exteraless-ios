@@ -1,4 +1,4 @@
-"""Stage eight checksum-pinned pure-Python wheels without pip or importing them.
+"""Stage checksum-pinned Python packages without pip or importing them.
 
 The builder uses only the standard library. It validates the fixed lock's numeric
 version constraints and optional-extra-only markers, then compares wheel metadata
@@ -7,8 +7,11 @@ iOS adapter, not by a build-time dependency resolver.
 """
 
 import argparse
+import base64
+import csv
 from email.parser import BytesParser
 import hashlib
+import io
 import json
 import operator
 import os
@@ -17,6 +20,7 @@ import re
 import shutil
 import stat
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.parse
@@ -32,6 +36,12 @@ IMPORT_ROOTS = {
     "packaging": ["packaging"], "requests": ["requests"], "urllib3": ["urllib3"],
     "idna": ["idna"], "certifi": ["certifi"], "charset-normalizer": ["charset_normalizer"],
     "cachetools": ["cachetools"], "typing-extensions": ["typing_extensions"],
+    "beautifulsoup4": ["bs4"], "soupsieve": ["soupsieve"],
+    "pyyaml": ["yaml", "_yaml"], "debugpy": ["debugpy"],
+}
+SOURCE_PROJECTIONS = {
+    "pyyaml": ("pyyaml-pure", "lib"),
+    "debugpy": ("debugpy-python", "src"),
 }
 CHUNK = 64 * 1024
 MAX_LOCK_BYTES = 256 * 1024
@@ -39,12 +49,13 @@ MAX_WHEEL_BYTES = 2 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
 MAX_FILE_BYTES = 8 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 32 * 1024 * 1024
-MAX_ENTRIES = 2000
+MAX_ENTRIES = 10000
 MAX_METADATA_BYTES = 256 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 _BINARY_SUFFIX = re.compile(r"\.(?:so|pyd|dll|dylib|exe|a|o|obj|lib|wasm|class|jar|dex|pyc|pyo|fwork)(?:\.|$)", re.I)
 _NATIVE_MAGIC = {b"\x7fELF", b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf",
-                 b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
+                  b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"}
+_SOURCE_ONLY_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".pyx", ".pxd", ".pxi"}
 
 
 def canonical_name(name):
@@ -149,7 +160,7 @@ def validate_lock(lock):
         raise ValueError("Unsupported dependency lock schema/Python target")
     packages = lock.get("packages")
     if not isinstance(packages, list) or len(packages) != len(IMPORT_ROOTS):
-        raise ValueError("Dependency lock must contain the eight agreed packages")
+        raise ValueError("Dependency lock must contain the agreed package set")
     by_name = {}
     for package in packages:
         if not isinstance(package, dict):
@@ -159,9 +170,15 @@ def validate_lock(lock):
             raise ValueError(f"Unexpected or duplicate locked package: {name!r}")
         version = package.get("version")
         _numeric_version(version)
-        expected_file = f"{name.replace('-', '_')}-{version}-py3-none-any.whl"
+        source = package.get("artifact_kind") == "sdist-python"
+        if package.get("artifact_kind", "wheel") not in ("wheel", "sdist-python"):
+            raise ValueError(f"{name}: unsupported artifact kind")
+        if source and (name not in SOURCE_PROJECTIONS or package.get("projection") != SOURCE_PROJECTIONS[name][0]):
+            raise ValueError(f"{name}: unsupported source projection")
+        expected_file = (f"{name}-{version}.tar.gz" if source else
+                         f"{name.replace('-', '_')}-{version}-py3-none-any.whl")
         if package.get("filename") != expected_file:
-            raise ValueError(f"{name}: only the exact universal py3-none-any wheel is accepted")
+            raise ValueError(f"{name}: expected the locked universal wheel or reviewed source archive")
         if not isinstance(package.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", package["sha256"]):
             raise ValueError(f"{name}: missing/invalid SHA-256")
         size = package.get("size")
@@ -274,6 +291,16 @@ def _metadata(archive, name):
     return BytesParser().parsebytes(archive.read(info))
 
 
+def _validate_metadata(metadata, package, filename):
+    if (canonical_name(metadata["Name"] or "") != package["name"]
+            or metadata["Version"] != package["version"]
+            or metadata["Requires-Python"] != package["requires_python"]
+            or {_requirement_identity(raw, package["provides_extra"]) for raw in metadata.get_all("Requires-Dist", [])}
+            != {_requirement_identity(raw, package["provides_extra"]) for raw in package["requires_dist"]}
+            or sorted(metadata.get_all("Provides-Extra", [])) != sorted(package["provides_extra"])):
+        raise ValueError(f"{filename}: package METADATA disagrees with the PyPI lock")
+
+
 def extract_wheel(path, package, output, files):
     """Extract data only into a private staging directory; never import a wheel."""
     verify_wheel(path, package)
@@ -302,13 +329,7 @@ def extract_wheel(path, package, output, files):
             regular.append((info, relative))
         metadata = _metadata(archive, dist_info + "/METADATA")
         wheel = _metadata(archive, dist_info + "/WHEEL")
-        if (canonical_name(metadata["Name"] or "") != package["name"]
-                or metadata["Version"] != package["version"]
-                or metadata["Requires-Python"] != package["requires_python"]
-                or {_requirement_identity(raw, package["provides_extra"]) for raw in metadata.get_all("Requires-Dist", [])}
-                != {_requirement_identity(raw, package["provides_extra"]) for raw in package["requires_dist"]}
-                or sorted(metadata.get_all("Provides-Extra", [])) != sorted(package["provides_extra"])):
-            raise ValueError(f"{filename}: wheel METADATA disagrees with the PyPI lock")
+        _validate_metadata(metadata, package, filename)
         if (wheel["Root-Is-Purelib"] != "true" or wheel.get_all("Tag") != ["py3-none-any"]
                 or wheel["Wheel-Version"] != "1.0"):
             raise ValueError(f"{filename}: native or unsupported WHEEL metadata")
@@ -333,6 +354,105 @@ def extract_wheel(path, package, output, files):
             if size != info.file_size:
                 raise ValueError(f"ZIP file size mismatch: {relative}")
             files[relative.as_posix()] = {"size": size, "sha256": sha256.hexdigest()}
+    return dict(package, dist_info=dist_info)
+
+
+def extract_source_package(path, package, output, files):
+    """Install the upstream Python implementation from a reviewed sdist layout.
+
+    PyYAML's lib/ is its documented --without-libyaml implementation. debugpy's
+    src/ contains its Python debugger; compiled accelerators/PID-attach helpers
+    are excluded BEFORE sealing. No setup.py, compiler, pip or wheel code runs.
+    The generated .dist-info records exactly the installed source projection.
+    """
+    verify_wheel(path, package)
+    name, version = package['name'], package['version']
+    projection, source_dir = SOURCE_PROJECTIONS[name]
+    if package.get('projection') != projection:
+        raise ValueError('Source projection does not match the lock')
+    prefix = name + '-' + version
+    dist_info = name.replace('-', '_') + '-' + version + '.dist-info'
+    own_files = {}
+    output = Path(output)
+
+    def store(relative, source, size):
+        key = relative.as_posix()
+        if key.casefold() in {item.casefold() for item in files}:
+            raise ValueError('Duplicate/case-colliding source package path: ' + key)
+        if size > MAX_FILE_BYTES or sum(item['size'] for item in files.values()) + size > MAX_EXTRACTED_BYTES:
+            raise ValueError('Source package exceeds extraction size limit')
+        target = output.joinpath(*relative.parts)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        sha, count = hashlib.sha256(), 0
+        with target.open('xb') as destination:
+            while block := source.read(CHUNK):
+                if count == 0 and (block[:4] in _NATIVE_MAGIC or block[:2] == b'MZ'):
+                    raise ValueError('Native binary content refused: ' + key)
+                count += len(block)
+                if count > size:
+                    raise ValueError('Source package expansion limit exceeded')
+                destination.write(block)
+                sha.update(block)
+        if count != size:
+            raise ValueError('Source package file size mismatch')
+        files[key] = own_files[key] = {'size': size, 'sha256': sha.hexdigest()}
+
+    with tarfile.open(path, 'r:gz') as archive:
+        members = archive.getmembers()
+        if len(members) > MAX_ENTRIES:
+            raise ValueError('Source package has too many entries')
+        seen, selected, metadata_bytes = set(), [], None
+        for member in members:
+            # Reuse the path validator, with regular-file metadata only. Reject
+            # links explicitly before creating any projected output files.
+            if not (member.isdir() or member.isfile()):
+                raise ValueError('Source package contains a link or special file')
+            info = zipfile.ZipInfo(member.name)
+            info.orig_filename = member.name
+            relative = PurePosixPath(member.name)
+            if (relative.is_absolute() or '..' in relative.parts or '\\' in member.name
+                    or not relative.parts or relative.parts[0] != prefix):
+                raise ValueError('Unsafe source package path: ' + member.name)
+            if member.isdir():
+                continue
+            if member.name.casefold() in seen:
+                raise ValueError('Duplicate/case-colliding source archive path')
+            seen.add(member.name.casefold())
+            local = PurePosixPath(*relative.parts[1:])
+            if local.as_posix() == 'PKG-INFO':
+                if member.size > MAX_METADATA_BYTES:
+                    raise ValueError('Source package metadata is too large')
+                metadata_bytes = archive.extractfile(member).read()
+                continue
+            if len(local.parts) >= 3 and local.parts[0] == source_dir and local.parts[1] in package['import_roots']:
+                projected = PurePosixPath(*local.parts[1:])
+                if (projected.suffix.lower() in _SOURCE_ONLY_SUFFIXES or _BINARY_SUFFIX.search(str(projected))
+                        or '__pycache__' in projected.parts):
+                    continue
+                safe_member(zipfile.ZipInfo(projected.as_posix()))
+                selected.append((member, projected))
+            elif len(local.parts) == 1 and local.name.startswith(('LICENSE', 'NOTICE')):
+                selected.append((member, PurePosixPath(dist_info, 'licenses', local.name)))
+        if metadata_bytes is None:
+            raise ValueError('Source package is missing PKG-INFO')
+        _validate_metadata(BytesParser().parsebytes(metadata_bytes), package, str(path))
+        for root in package['import_roots']:
+            if not any(str(relative) == root + '/__init__.py' for _, relative in selected):
+                raise ValueError('Source package is missing import root: ' + root)
+        for member, relative in selected:
+            with archive.extractfile(member) as stream:
+                store(relative, stream, member.size)
+        wheel = b'Wheel-Version: 1.0\nGenerator: exteraless-source-projection-v1\nRoot-Is-Purelib: true\nTag: py3-none-any\n'
+        for leaf, data in (('METADATA', metadata_bytes), ('WHEEL', wheel), ('INSTALLER', b'exteraless-vendor\n')):
+            store(PurePosixPath(dist_info, leaf), io.BytesIO(data), len(data))
+        records = io.StringIO(newline='')
+        writer = csv.writer(records, lineterminator='\n')
+        for relative, record in sorted(own_files.items()):
+            sha = base64.urlsafe_b64encode(bytes.fromhex(record['sha256'])).rstrip(b'=').decode('ascii')
+            writer.writerow((relative, 'sha256=' + sha, record['size']))
+        writer.writerow((dist_info + '/RECORD', '', ''))
+        data = records.getvalue().encode('utf-8')
+        store(PurePosixPath(dist_info, 'RECORD'), io.BytesIO(data), len(data))
     return dict(package, dist_info=dist_info)
 
 
@@ -381,7 +501,8 @@ def vendor(cache, output, *, lock_path=LOCK_PATH, offline=False):
         files, packages = {}, []
         for package in lock["packages"]:
             wheel = download(package, cache, offline=offline)
-            packages.append(extract_wheel(wheel, package, stage, files))
+            extract = extract_source_package if package.get('artifact_kind') == 'sdist-python' else extract_wheel
+            packages.append(extract(wheel, package, stage, files))
         manifest = {
             "schema": 1, "generator": GENERATOR, "python": lock["python"],
             "lock_sha256": lock_sha256, "bundle_sha256": bundle_hash(lock_sha256, files),
@@ -413,7 +534,7 @@ def main():
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(dict(report, output=str(args.output.resolve()),
                                          wheel_code_executed=False), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"Verified {len(report['packages'])} pure-Python wheels: {report['download_bytes']} download bytes, "
+    print(f"Verified {len(report['packages'])} pinned Python packages: {report['download_bytes']} download bytes, "
           f"{report['installed_bytes']} installed bytes; output={args.output}; sha256={report['bundle_sha256']}")
 
 
