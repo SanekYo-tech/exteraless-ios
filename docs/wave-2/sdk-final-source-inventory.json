@@ -28,12 +28,12 @@
   },
   "sdk_source_sha256": {
     "python/exteraless_runtime/_config.py": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
-    "python/exteraless_runtime/_config_manifest.py": "e07ab6008635478254b19e3b1cca5d8ab3e858bdd365f29f8c27fb81e9a92e30",
+    "python/exteraless_runtime/_config_manifest.py": "3e0b56a5a75a634b383b04c579c08ac982dee9012e24daa11d0320c0144b699c",
     "python/exteraless_runtime/_controllers.py": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
     "python/exteraless_runtime/_notifications.py": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
     "python/exteraless_runtime/_scheduling.py": "d5f4dd1b8598e38b0ab26850c4583621cfcf47b41b11940993b02abc8d3861a6",
-    "tools/compat/sdk_config_manifest.py": "da3c3af0bc9483331bf3ad781c4b3fea343605b1a3a0345cb0ae73a793455dce",
-    "tools/compat/tests/test_sdk_config_binding.py": "442c12f6578559b6cc79a48addbf25de99c0d8d044538c0b64bcf7595d5cc78a",
+    "tools/compat/sdk_config_manifest.py": "12fc4ddffbd3b892f9582a09d415721c437e9da06640c610a11235a94f3ed297",
+    "tools/compat/tests/test_sdk_config_binding.py": "34b2e868d7e75563095d3c8d494c185251e6a09ae715e3af112b1252ce561eef",
     "tools/compat/tests/test_sdk_config_manifest.py": "dddf22b99603c708c2b972e4f8c248d1e07cd346b944c21db657db0761e4711a",
     "tools/compat/tests/test_sdk_adapter_wave2.py": "b241f52305612b600f061909b527cdea969624cf0464040d217e9598b6ed1116",
     "tools/runtime/check_swift_plugin_embedding.py": "76ec0ffb815560d4813e07b8ce7ecb42cd4c958c1722766428503f7df706129a",
@@ -144,6 +144,14 @@
     "generation_check": "passed",
     "current_snapshot_native_executed": false,
     "previous_native_gate": "43738810843 / 136c946f; independent PASS in runtime-native-acceptance.md"
+  },
+  "general_scalar_readers": {
+    "handoff": "docs/wave-2/sdk-general-scalar-readers.md",
+    "methods": ["GeneralConfig.contentCapture()", "GeneralConfig.crashReports()"],
+    "strict_service_recorder_tests_each_python": 30,
+    "original_failure_reproduced": true,
+    "native_execution_claimed": false,
+    "exteraconfig_308_catalog_changed": false
   },
   "remaining_config_ids": []
 }

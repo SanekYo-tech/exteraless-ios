@@ -464,6 +464,13 @@ def build():
         for method in config["methods"]:
             if not method.public: continue
             body = config["clean"][method.body:method.end].strip().removeprefix("return ").rstrip(";")
+            if name == "GeneralConfig" and method.name in ("contentCapture", "crashReports"):
+                # These exact wrappers only ensure Android's shared cache is
+                # loaded before reading their field. Native Root owns loading;
+                # the getter still reads the actual registered native setting.
+                loader_getter = r"loadConfig\s*\(\s*false\s*\)\s*;?\s*return\s+" + re.escape(method.name) + r"\s*\.\s*Bool\s*\(\s*\)"
+                if re.fullmatch(loader_getter, body):
+                    body = method.name + ".Bool()"
             match = re.fullmatch(r"(\w+)\.(Bool|Int|Float|Long|String)\(\)", body)
             if not method.arity and match and match[1] in cls["fields"]:
                 cls["scalar"][method.name] = cls["fields"][match[1]]

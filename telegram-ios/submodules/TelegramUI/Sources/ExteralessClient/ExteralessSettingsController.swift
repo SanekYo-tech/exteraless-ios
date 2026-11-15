@@ -184,6 +184,10 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
             if !definition.isSecret {
                 status = clientSettingsText("Secret.MigrationPending", "Secure storage migration needs to complete.")
                 row.enabled = false
+            } else if snapshot.values[key] == nil {
+                status = snapshot.storedKeys.contains(key)
+                    ? clientSettingsText("Secret.StoredUnavailable", "Stored value unavailable")
+                    : clientSettingsText("Secret.Unavailable", "Secure storage unavailable")
             } else {
                 status = snapshot.storedKeys.contains(key)
                     ? clientSettingsText("Secret.Stored", "Stored securely") : clientSettingsText("Secret.Empty", "Not set")

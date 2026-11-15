@@ -249,6 +249,21 @@ def worker(case, root):
                 raises(UnsupportedSurfaceError, lambda: migrated.setConfigBool(value), "migration-only")
                 assert crash.Bool() is True, "a legacy migration flag changed the live collection control"
             raises(UnsupportedSurfaceError, migrated.Bool, "migration-only")
+        elif case == "general_scalars":
+            general = jclass("app.exteraless.general.GeneralConfig")
+            for field, key in (("contentCapture", "privacy.contentCapture"), ("crashReports", "tools.crashReports")):
+                host.definitions[key] = False
+                item = getattr(general, field)
+                assert item() is False
+                item.setConfigBool(True)
+                assert item() is True and item.Bool() is True
+                assert json.loads(global_file.read_text(encoding="utf-8"))[key] is True
+                host.permissions.remove("settings")
+                raises(PermissionError, item, "settings")
+                host.permissions.add("settings")
+                del host.definitions[key]
+                raises(UnsupportedSurfaceError, item, "not registered")
+            raises(UnsupportedSurfaceError, general.loadConfig, "loadConfig")
         elif case == "font_layout":
             neko = jclass("tw.nekomimi.nekogram.NekoConfig")
             font, layout = neko.typeface, neko.tabletMode
@@ -357,6 +372,6 @@ else:
         run("native_writer", tmp_path)
         run("native_reader", tmp_path)
 
-    @pytest.mark.parametrize("case", ("metadata_batch", "manager", "domain_cohort", "font_layout", "portable_scalars"))
+    @pytest.mark.parametrize("case", ("metadata_batch", "manager", "domain_cohort", "general_scalars", "font_layout", "portable_scalars"))
     def test_config_native_bindings(case, tmp_path):
         run(case, tmp_path)
