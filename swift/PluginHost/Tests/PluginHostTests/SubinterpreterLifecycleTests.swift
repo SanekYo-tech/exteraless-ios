@@ -259,12 +259,14 @@ final class SubinterpreterLifecycleTests: XCTestCase {
         XCTAssertEqual(engine.snapshot.live, 0)
         XCTAssertEqual(engine.snapshot.destroyed, 1)
 
-        // Even stale metadata carrying loaded=true cannot republish a plugin.
-        let stale = try await withDispatchTimeout(2) {
+        // A terminal Host no longer admits even disabled installs. Stale caller
+        // metadata cannot create a file/model or republish a loaded interpreter.
+        await expectLifecycleNotRunning {
             try await host.installPlugin(
                 sourceURL: source, metadata: Plugin(id: "staleMetadata", enabled: false, loaded: true))
         }
-        XCTAssertFalse(stale.loaded)
+        XCTAssertFalse(host.pluginList().contains { $0.id == "staleMetadata" })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("plugins/staleMetadata.plugin").path))
         host.updatePluginFlags(id: "staleMetadata", hasSettings: true)
         XCTAssertFalse(host.pluginList().contains { $0.loaded })
         XCTAssertTrue(host.events.subscribers.isIdle)
