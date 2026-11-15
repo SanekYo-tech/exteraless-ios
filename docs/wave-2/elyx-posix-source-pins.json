@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-posix-host-20261116-0ba564e7",
+  "branch": "ci/elyx-posix-host-final-20261116-63eac409",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -647,11 +647,11 @@
     {
       "path": "swift/PluginHost/Sources/PluginHost/BridgeServices.swift",
       "origin": "working-tree",
-      "raw_sha256": "2b9d428135e67213a47e64f780d595f3ca92ebdbb300e6c042e915d581d0957e",
-      "raw_bytes": 54775,
-      "canonical_sha256": "2b9d428135e67213a47e64f780d595f3ca92ebdbb300e6c042e915d581d0957e",
-      "canonical_bytes": 54775,
-      "git_blob": "e180236777756bfbabf4f0fc8589f74ea4fa57f5"
+      "raw_sha256": "99073359cebca56ff2847ec2a54a78a44d0f40ba719f22eac62a09ea2edc1393",
+      "raw_bytes": 54908,
+      "canonical_sha256": "99073359cebca56ff2847ec2a54a78a44d0f40ba719f22eac62a09ea2edc1393",
+      "canonical_bytes": 54908,
+      "git_blob": "3a9c219fac35534ea950931e14f0d6fc4c70ef25"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift",
@@ -1449,6 +1449,24 @@
       "junit_sha256": "3cca73f59a6d0db4c0ac3da2e3f102e8b7806a57291cf5da4000d74628e36a86",
       "rerun": false
     },
+    "bounds_seconds": {
+      "swift_build": 180,
+      "swift_test": 30
+    }
+  },
+  "host_final_followup": {
+    "parent_verification_commit": "ec1131cf5af720cb88f13d11881fcaad6d3aa0f6",
+    "captured_utc": "2026-11-15T22:39:33.394540+00:00",
+    "focus": "swift-only",
+    "changed_source_paths": [
+      "swift/PluginHost/Sources/PluginHost/BridgeServices.swift"
+    ],
+    "source_change": "Separate typed permissionCurrent and explicit optional permissions binding; legacy nil-provider fallback remains true",
+    "remaining_source_records_inherited": 121,
+    "workflow_inherited": true,
+    "original_python_run": 43768124344,
+    "python_rerun": false,
+    "expected_host_tests": 53,
     "bounds_seconds": {
       "swift_build": 180,
       "swift_test": 30

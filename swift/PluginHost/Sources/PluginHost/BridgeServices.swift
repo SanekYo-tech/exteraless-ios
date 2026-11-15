@@ -1029,7 +1029,12 @@ public final class BridgeServices: @unchecked Sendable {
     }
 
     private func nativeEffectLease(pluginId: String, ownerToken: String?, permission: PluginPermission) throws -> PluginNativeCallLease {
-        let permissionCurrent: @Sendable () -> Bool = permissions?.futurePredicate(pluginId, requiring: [permission]) ?? { true }
+        let permissionCurrent: @Sendable () -> Bool
+        if let permissions = self.permissions {
+            permissionCurrent = permissions.futurePredicate(pluginId, requiring: [permission])
+        } else {
+            permissionCurrent = { true }
+        }
         let lease = PluginNativeCallLease { [weak self] in
             guard let self else { return false }
             if self.ownerValidator != nil {
