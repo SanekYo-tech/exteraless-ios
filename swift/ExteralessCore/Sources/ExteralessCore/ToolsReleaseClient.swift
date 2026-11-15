@@ -141,7 +141,7 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
     private var handle: FileHandle?
     private var data = Data()
     private var count: Int64 = 0
-    private var hash = ToolsSHA256()
+    private var contentHash = ToolsSHA256()
     private var failure: Error?
     private var previousPercent = -1
 
@@ -258,7 +258,7 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
                 if data.count < 4 { data.append(chunk.prefix(4 - data.count)) }
             } else { data.append(chunk) }
             count += Int64(chunk.count)
-            hash.update(chunk)
+            contentHash.update(chunk)
             if let expectedSize, expectedSize > 0 {
                 let percent = Int(count * 100 / expectedSize)
                 if percent != previousPercent {
@@ -287,6 +287,6 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
         else if let failure { continuation?.resume(throwing: failure) }
         else if let error { continuation?.resume(throwing: error) }
         else if let expectedSize, count != expectedSize { continuation?.resume(throwing: ToolsError.incompleteDownload) }
-        else { continuation?.resume(returning: Result(data: data, count: count, digest: hash.hexDigest())) }
+        else { continuation?.resume(returning: Result(data: data, count: count, digest: contentHash.hexDigest())) }
     }
 }
