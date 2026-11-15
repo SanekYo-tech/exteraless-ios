@@ -56,7 +56,7 @@ filegroup(
         "Sources/RichTextInputDecUpstream/**/*.cc",
         "Sources/RichTextInputDecUpstream/**/*.cpp",
         "Sources/RichTextInputDecUpstream/**/*.hpp",
-    ]),
+    ], allow_empty = True),
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
