@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-posix-20261116-61d829ab",
+  "branch": "ci/elyx-posix-host-20261116-0ba564e7",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -27,11 +27,11 @@
     {
       "path": ".github/workflows/compat-tests.yml",
       "origin": "workflow",
-      "raw_sha256": "3c5c3dfaf4ec66ec92c0acf0f8151b7d67fb090f0f8af77fae7e385415700add",
-      "raw_bytes": 11392,
-      "canonical_sha256": "3c5c3dfaf4ec66ec92c0acf0f8151b7d67fb090f0f8af77fae7e385415700add",
-      "canonical_bytes": 11392,
-      "git_blob": "4aa19b5ca049d6c6237ce320176638881eca512e"
+      "raw_sha256": "1070311494e3920aed61972e3fa07984a94b249f9aa79260b8ecf1d31251e40a",
+      "raw_bytes": 5728,
+      "canonical_sha256": "1070311494e3920aed61972e3fa07984a94b249f9aa79260b8ecf1d31251e40a",
+      "canonical_bytes": 5728,
+      "git_blob": "e30a207e2e20566361ab6edb526e8f69c57be85f"
     },
     {
       "path": "python/bridge/__init__.py",
@@ -809,11 +809,11 @@
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift",
       "origin": "working-tree",
-      "raw_sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
-      "raw_bytes": 9952,
-      "canonical_sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
-      "canonical_bytes": 9952,
-      "git_blob": "8bb0ab0730a066054b984d4a057fc640451a342d"
+      "raw_sha256": "8fafbadf870bd85729d51629aceba85589763dbc08263b9940c06bd3c65c2c74",
+      "raw_bytes": 10006,
+      "canonical_sha256": "8fafbadf870bd85729d51629aceba85589763dbc08263b9940c06bd3c65c2c74",
+      "canonical_bytes": 10006,
+      "git_blob": "919ec6e5e349ec1f22603573b60584cac33118c3"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift",
@@ -1432,5 +1432,26 @@
       "canonical_bytes": 27867,
       "git_blob": "11c7f828e91a1485f4c05117b1e9a5a7e100f870"
     }
-  ]
+  ],
+  "followup": {
+    "parent_verification_commit": "ff9134924cdc1c41aeecb2af1f4cf194a1963550",
+    "captured_utc": "2026-11-15T22:26:22.348534+00:00",
+    "focus": "swift-only",
+    "changed_source_paths": [
+      "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift"
+    ],
+    "source_change": "Explicit host unwrap in permissionPredicate; remaining 121 original source records inherited byte-for-byte",
+    "predecessor_python": {
+      "run_id": 43768124344,
+      "commit": "ff9134924cdc1c41aeecb2af1f4cf194a1963550",
+      "passed": 42,
+      "skipped": 0,
+      "junit_sha256": "3cca73f59a6d0db4c0ac3da2e3f102e8b7806a57291cf5da4000d74628e36a86",
+      "rerun": false
+    },
+    "bounds_seconds": {
+      "swift_build": 180,
+      "swift_test": 30
+    }
+  }
 }

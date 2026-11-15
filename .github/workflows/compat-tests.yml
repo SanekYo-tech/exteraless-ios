@@ -1,4 +1,4 @@
-name: Elyx bounded POSIX cohort
+name: Elyx bounded POSIX Host followup
 
 on:
   workflow_dispatch:
@@ -12,110 +12,6 @@ env:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
 jobs:
-  python-posix:
-    name: Archive Python 3.12 + fresh C bridge (POSIX)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      EVIDENCE: ${{ github.workspace }}/build/elyx-posix/python
-      PYTHONPATH: ${{ github.workspace }}/python/vendor
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      PIP_DEFAULT_TIMEOUT: "15"
-      PIP_RETRIES: "1"
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            .github/workflows
-            docs/wave-2
-            python
-            tools/runtime
-            tools/compat/tests
-            swift/PluginHost
-            swift/ExteralessCore
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12"
-      - name: Verify immutable source pins
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$EVIDENCE"
-          cp docs/wave-2/elyx-posix-source-pins.json "$EVIDENCE/"
-          git rev-parse HEAD | tee "$EVIDENCE/cohort-sha.txt"
-          python -c 'import json; p=json.load(open("docs/wave-2/elyx-posix-source-pins.json")); print("\n".join("{}  {}".format(f["canonical_sha256"], f["path"]) for f in p["files"]))' > "$EVIDENCE/sources.sha256"
-          sha256sum --check "$EVIDENCE/sources.sha256" > "$EVIDENCE/source-check.log"
-          python -c 'import os,sys; assert os.name == "posix" and sys.version_info[:2] == (3,12); assert os.open in os.supports_dir_fd; print(sys.version)' | tee "$EVIDENCE/python-version.log"
-          uname -a | tee "$EVIDENCE/platform.log"
-      - name: Install pinned fixture and C build tools
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 120s python -m pip install pytest==8.3.5 setuptools==77.0.3 2>&1 | tee "$EVIDENCE/tool-install.log"
-          python -m pip freeze > "$EVIDENCE/test-tools.txt"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: ${{ runner.temp }}/python-wheel-cache
-          key: python-pure-dependencies-${{ hashFiles('python/runtime/dependency-lock.json') }}
-      - name: Stage checksum-locked pure dependencies
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 180s python -B tools/runtime/vendor_dependencies.py \
-            --cache "$RUNNER_TEMP/python-wheel-cache" \
-            --output "$GITHUB_WORKSPACE/python/vendor" \
-            --report "$EVIDENCE/python-dependencies.json" 2>&1 | tee "$EVIDENCE/vendor.log"
-          python -c 'import yaml; assert yaml.__version__ == "6.0.3" and not yaml.__with_libyaml__; print(yaml.__file__)' | tee "$EVIDENCE/yaml-provider.log"
-      - name: Build the frozen C bridge from scratch
-        working-directory: python/bridge
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 120s python -B setup.py build_ext --inplace --force 2>&1 | tee "$EVIDENCE/c-build.log"
-          sha256sum _exteraless_bridge*.so > "$EVIDENCE/c-extension.sha256"
-      - name: Run exactly four owned modules (120s outer, 20s children)
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 120s python -B -m pytest -q -s \
-            tools/compat/tests/test_ios_elyx_archives.py \
-            tools/compat/tests/test_ios_elyx_p1.py \
-            tools/compat/tests/test_ios_elyx_source_authority.py \
-            tools/compat/tests/test_ios_runtime.py \
-            --basetemp "$RUNNER_TEMP/elyx-posix-owned" \
-            --junitxml "$EVIDENCE/archive.xml" 2>&1 | tee "$EVIDENCE/pytest.log"
-      - name: Record counts and require every POSIX witness
-        if: always()
-        run: |
-          python -B - <<'PY'
-          import json, os, pathlib, xml.etree.ElementTree as ET
-          root = pathlib.Path(os.environ["EVIDENCE"])
-          root.mkdir(parents=True, exist_ok=True)
-          report = root / "archive.xml"
-          if not report.exists():
-              (root / "counts.json").write_text('{"error":"pytest did not produce JUnit"}\n')
-              raise SystemExit("Missing owned pytest JUnit")
-          cases = list(ET.parse(report).iter("testcase"))
-          counts = {"tests": len(cases), "failures": sum(c.find("failure") is not None for c in cases),
-                    "errors": sum(c.find("error") is not None for c in cases),
-                    "skipped": sum(c.find("skipped") is not None for c in cases)}
-          counts["passed"] = counts["tests"] - counts["failures"] - counts["errors"] - counts["skipped"]
-          counts["cases"] = [{"class": c.get("classname"), "name": c.get("name"), "seconds": c.get("time")} for c in cases]
-          (root / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
-          print(json.dumps({k:v for k,v in counts.items() if k != "cases"}))
-          names = {c.get("name") for c in cases}
-          required = {"test_elyx_p1[fd_extract_swap]", "test_elyx_p1[fd_cleanup_swap]",
-                      "test_elyx_p1[fd_replacements]", "test_elyx_p1[raw_os_paths]", "test_elyx_p1[two_owners]",
-                      "test_source_authority[namespace_replace]", "test_source_authority[verified_sdk]",
-                      "test_ios_elyx_archive[symlink_cache]"}
-          assert required <= names, sorted(required - names)
-          assert counts["passed"] == counts["tests"] == 42 and counts["skipped"] == 0, counts
-          PY
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: elyx-posix-python-${{ github.run_id }}
-          path: ${{ env.EVIDENCE }}/
-          if-no-files-found: error
-          retention-days: 14
-
   swift-host-posix:
     name: Ready PluginHost POSIX component (180s build, 30s tests)
     runs-on: ubuntu-24.04

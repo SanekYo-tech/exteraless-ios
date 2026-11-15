@@ -77,7 +77,8 @@ public final class PluginCallbackDispatcher: @unchecked Sendable {
     }
 
     public func permissionPredicate(_ pluginId: String, requiring permissions: Set<PluginPermission>) -> @Sendable () -> Bool {
-        host?.permissions.futurePredicate(pluginId, requiring: permissions) ?? { false }
+        guard let host = self.host else { return { false } }
+        return host.permissions.futurePredicate(pluginId, requiring: permissions)
     }
 
     var outstandingWorkCount: Int {
