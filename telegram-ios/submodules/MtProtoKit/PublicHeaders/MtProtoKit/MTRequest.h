@@ -13,7 +13,7 @@
 @property (nonatomic, readonly) double timestamp;
 @property (nonatomic, readonly) double duration;
 
-- (instancetype)initWithNetworkType:(int32_t)networkType timestamp:(double)timestamp duration:(double)duration;
+- (instancetype _Null_unspecified)initWithNetworkType:(int32_t)networkType timestamp:(double)timestamp duration:(double)duration;
 
 @end
 

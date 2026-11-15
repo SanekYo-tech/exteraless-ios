@@ -13,8 +13,8 @@
 
 @optional
 
-- (void)requestMessageServiceAuthorizationRequired:(MTRequestMessageService *)requestMessageService;
-- (void)requestMessageServiceDidCompleteAllRequests:(MTRequestMessageService *)requestMessageService;
+- (void)requestMessageServiceAuthorizationRequired:(MTRequestMessageService * _Null_unspecified)requestMessageService;
+- (void)requestMessageServiceDidCompleteAllRequests:(MTRequestMessageService * _Null_unspecified)requestMessageService;
 
 @end
 
@@ -27,17 +27,17 @@
     
 @property (nonatomic, copy) void (^didReceiveSoftAuthResetError)(void);
 
-- (instancetype)initWithContext:(MTContext *)context;
+- (instancetype _Null_unspecified)initWithContext:(MTContext * _Null_unspecified)context;
 
 /// Shipping response-log formatter, before error handling/completion. Exposed for
 /// bounded native fixtures without constructing an account or a transport.
 + (NSString * _Nonnull)responseLogDescriptionForRequest:(MTRequest * _Nonnull)request result:(id _Nullable)result error:(MTRpcError * _Nullable)error NS_SWIFT_NAME(responseLogDescription(request:result:error:));
 
-- (void)addRequest:(MTRequest *)request;
-- (void)removeRequestByInternalId:(id)internalId;
-- (void)removeRequestByInternalId:(id)internalId askForReconnectionOnDrop:(bool)askForReconnectionOnDrop;
+- (void)addRequest:(MTRequest * _Null_unspecified)request;
+- (void)removeRequestByInternalId:(id _Null_unspecified)internalId;
+- (void)removeRequestByInternalId:(id _Null_unspecified)internalId askForReconnectionOnDrop:(bool)askForReconnectionOnDrop;
 
-- (void)requestCount:(void (^)(NSUInteger requestCount))completion;
+- (void)requestCount:(void (^ _Null_unspecified)(NSUInteger requestCount))completion;
 
 /// Hands the requests over to another session (a live engine switch) without running any of them twice.
 /// From now on no request goes out under a new message id. A request that has none (never sent, or sent
@@ -47,7 +47,7 @@
 /// had a message id when the handover began or got one since, unless the server answered it with an
 /// error it was retried for; `retryAfter` is what is left of the wait it was serving. Requests added
 /// afterwards are released at once. Unused (nil) by default.
-- (void)handOverRequests:(void (^)(MTRequest *request, bool mayHaveReachedServer, double retryAfter))released;
+- (void)handOverRequests:(void (^ _Null_unspecified)(MTRequest * _Null_unspecified request, bool mayHaveReachedServer, double retryAfter))released;
 
 /// Releases every request still waiting after `handOverRequests:` (its deadline).
 - (void)releaseHandedOverRequests;

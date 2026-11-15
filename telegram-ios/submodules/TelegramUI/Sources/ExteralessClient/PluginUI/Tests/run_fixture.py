@@ -1,4 +1,4 @@
-"""Compile/run the shipping Foundation-only UI contract, with a 25s total bound.
+"""Compile the UI contract within 120s, then execute it within 25s.
 
 No SDK corpus, Python plugin, account, UIKit presentation, CI or network is used.
 The app glob sees an empty test file unless PLUGIN_UI_FIXTURE is explicitly set.
@@ -11,6 +11,11 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+REPO = Path(__file__).resolve().parents[7]
+sys.path.insert(0, str(REPO / "tools/compat/tests/tl_bridge"))
+from run_shared_fixtures import run_bounded
 
 
 def main():
@@ -26,16 +31,24 @@ def main():
         "PluginUIReleaseQueue.swift", "Tests/PluginUIFixture.swift",
     )]
     preferred = Path(os.environ.get("LOCALAPPDATA", "")) / "Temp" / "opencode"
-    deadline = time.monotonic() + 25
+    started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="plugin-ui-fixture-", dir=preferred if preferred.is_dir() else None) as temporary:
         binary = Path(temporary) / ("fixture.exe" if os.name == "nt" else "fixture")
         command = [compiler, "-swift-version", "6", "-warnings-as-errors", "-parse-as-library",
                    "-D", "PLUGIN_UI_FIXTURE", *map(str, sources), "-o", str(binary)]
+        phase = "compilation"
         try:
-            subprocess.run(command, check=True, timeout=min(20, deadline - time.monotonic()))
-            subprocess.run([str(binary)], check=True, timeout=max(0.1, deadline - time.monotonic()))
+            result = run_bounded(command, timeout=120)
+            if result:
+                return result
+            compiled = time.monotonic()
+            phase = "execution"
+            result = run_bounded([str(binary)], timeout=25)
+            if result:
+                return result
+            print(f"UI fixture compile: {compiled - started:.3f}s; execution: {time.monotonic() - compiled:.3f}s")
         except subprocess.TimeoutExpired:
-            print("FAIL: UI fixture exceeded its bounded deadline.", file=sys.stderr)
+            print(f"FAIL: UI fixture {phase} exceeded its bounded deadline.", file=sys.stderr)
             return 1
         except subprocess.CalledProcessError as error:
             return error.returncode

@@ -4722,7 +4722,7 @@ public class Postbox {
     /// Disposing removes only this registration on the owning queue.
     public func installMessageHistoryObserver(_ observer: @escaping (Transaction, Message, StoreMessage) -> Void) -> Disposable {
         let disposable = MetaDisposable()
-        self.impl.with { impl in
+        self.impl.with { [self] impl in
             let index = impl.messageHistoryObservers.add(observer)
             disposable.set(ActionDisposable { [weak self] in
                 self?.impl.with { impl in impl.messageHistoryObservers.remove(index) }

@@ -52,7 +52,7 @@ final class ToolsDarwinStorageTests: XCTestCase, @unchecked Sendable {
         let child = try ToolsFileSafety.checkedChild("fixture.bin", root: privateRoot)
         try Data([7]).write(to: child)
         XCTAssertEqual(try ToolsFileSafety.read(root.appendingPathComponent("fixture.bin"), maximumBytes: 1), Data([7]))
-        _ = try ToolsFileSafety.checkedPath(FileManager.default.homeDirectoryForCurrentUser, directory: true)
+        _ = try ToolsFileSafety.checkedPath(URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true), directory: true)
         let groupLike = root.appendingPathComponent("Library/Group Containers/group.fixture", isDirectory: true)
         let directory = try ToolsDirectoryDescriptor.open(groupLike, create: true)
         try directory.verify()

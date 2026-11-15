@@ -1065,7 +1065,7 @@ private enum ClientSettingsFile {
             // Preserve an explicitly selected boundary. Prefer the stable home
             // container over its temporary subdirectory when both contain the
             // file; selection must not depend on which descendant just appeared.
-            candidates = [previous].compactMap { $0 } + [FileManager.default.homeDirectoryForCurrentUser, FileManager.default.temporaryDirectory]
+            candidates = [previous].compactMap { $0 } + [URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true), FileManager.default.temporaryDirectory]
         }
         for candidate in candidates where candidate.isFileURL {
             let root = candidate.standardizedFileURL.resolvingSymlinksInPath()
