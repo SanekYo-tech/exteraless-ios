@@ -40,7 +40,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
     private let seekForward = UIButton(type: .system)
     private let previous = UIButton(type: .system)
     private let play = UIButton(type: .system)
-    private let next = UIButton(type: .system)
+    private let nextButton = UIButton(type: .system)
     private let order = UIButton(type: .system)
     private let repeatButton = UIButton(type: .system)
     private let actionsBackground = UIView()
@@ -115,7 +115,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
         error.font = UIFont.preferredFont(forTextStyle: .footnote)
         error.numberOfLines = 0
         error.textAlignment = .center
-        for view in [artwork, close, source, more, title, artist, like, progress, elapsed, remaining, seekBack, seekForward, previous, play, next, order, repeatButton, actionsBackground, lyrics, error] { content.addSubview(view) }
+        for view in [artwork, close, source, more, title, artist, like, progress, elapsed, remaining, seekBack, seekForward, previous, play, nextButton, order, repeatButton, actionsBackground, lyrics, error] { content.addSubview(view) }
         for view in [lyricsButton, queueButton, speedButton] { actionsBackground.addSubview(view) }
         configure(close, symbol: "chevron.down", label: "Minimize player", selector: #selector(closePressed))
         configure(source, symbol: nil, label: "Show track source", selector: #selector(sourcePressed))
@@ -123,7 +123,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
         configure(like, symbol: "heart", label: "Save to My Profile", selector: #selector(likePressed))
         configure(previous, symbol: "backward.end.fill", label: "Previous track", selector: #selector(previousPressed))
         configure(play, symbol: "play.fill", label: "Play", selector: #selector(playPressed))
-        configure(next, symbol: "forward.end.fill", label: "Next track", selector: #selector(nextPressed))
+        configure(nextButton, symbol: "forward.end.fill", label: "Next track", selector: #selector(nextPressed))
         configure(order, symbol: "shuffle", label: "Playback order", selector: #selector(orderPressed))
         configure(repeatButton, symbol: "repeat", label: "Repeat", selector: #selector(repeatPressed))
         configure(seekBack, symbol: nil, label: "Seek backward", selector: #selector(seekBackPressed))
@@ -233,7 +233,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
         play.accessibilityLabel = isPlaying ? "Pause" : "Play"
         play.isEnabled = available && session != nil
         previous.isEnabled = available && session != nil && (session?.state?.previousItem != nil || currentPosition > 5)
-        next.isEnabled = available && session?.state?.nextItem != nil
+        nextButton.isEnabled = available && session?.state?.nextItem != nil
         more.isEnabled = available && session != nil
         order.isHidden = !style.showModes || session?.type == .voice
         repeatButton.isHidden = order.isHidden
@@ -285,7 +285,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
         elapsed.textColor = palette.secondary
         remaining.textColor = palette.secondary
         error.textColor = palette.text
-        for button in [close, source, more, like, previous, next, order, repeatButton, seekBack, seekForward] { button.tintColor = palette.primary }
+        for button in [close, source, more, like, previous, nextButton, order, repeatButton, seekBack, seekForward] { button.tintColor = palette.primary }
         play.tintColor = palette.surface
         play.backgroundColor = palette.primary
         order.alpha = session?.state?.order == .regular ? 0.65 : 1
@@ -402,13 +402,13 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
                 play.layer.cornerRadius = playSize * 0.36
                 let spacing = min(width / 3, playSize / 2 + 46)
                 previous.frame = CGRect(x: left + width / 2 - spacing - 22, y: y + (height - 44) / 2, width: 44, height: 44)
-                next.frame = CGRect(x: left + width / 2 + spacing - 22, y: y + (height - 44) / 2, width: 44, height: 44)
+                nextButton.frame = CGRect(x: left + width / 2 + spacing - 22, y: y + (height - 44) / 2, width: 44, height: 44)
                 order.frame = CGRect(x: left, y: y + (height - 44) / 2, width: 44, height: 44)
                 repeatButton.frame = CGRect(x: left + width - 44, y: y + (height - 44) / 2, width: 44, height: 44)
                 // Narrow windows keep all five controls on distinct hit targets.
                 if !order.isHidden && width < 350 {
                     previous.center.x = left + 66
-                    next.center.x = left + width - 66
+                    nextButton.center.x = left + width - 66
                     order.frame.origin.y = y + height
                     repeatButton.frame.origin.y = y + height
                     y += 40
@@ -438,7 +438,7 @@ final class ExteralessPlayerSurface: UIView, UIGestureRecognizerDelegate {
         CATransaction.commit()
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === swipe, currentStyle.coverSwipe else { return false }
         let velocity = swipe.velocity(in: artwork)
         return abs(velocity.x) > abs(velocity.y) * 1.2

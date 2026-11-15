@@ -42,9 +42,9 @@
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift": "950973b1a855e6dcfb27a5a162e9696b0e8429e925b8481306caa0e10ed3c3b8",
     "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift": "cbc6628a82e53cc155b0da97280f86efa2dbd632f076350844114c3bc20a747d",
     "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
-    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift": "ee6d97ee3a01b1e593fd58806eab176b64be4f2adf4139ad2bf12ed602def18e",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift": "208b621139168b8d0bf2bef4bcbcd6552871f31a12d288d065ec20cb2becd3da",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ClientSettingsBridgeExtension.swift": "e0600d7492f6e9a478341235ff451147fc0e41fe2908d0925af50e9d14897717",
-    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "5709414fc3a29f553eb160c3fc267956e3138de56fc207cbcf61e57981a4dcbf",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "6d94c70b2b4e0f956365aa44a0dbafa60d1479eb734fbae6838afbf3ae943750",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift": "7d10fffce395a25c8cd50e5da177009e486648e66ab3c2043b3120c093986e6d",
     "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift": "e78665ba5d8c6a3ea47dae228ed69cd03b0586e9fdff8425265eb5faed9e4f44",
     "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/AvatarCornerType.java": "7014cc60413ef1451904578900986d53cf69f4b841e84be3481991317ea91040",
@@ -5898,7 +5898,7 @@
           {
             "kind": "source",
             "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift",
-            "line": 106,
+            "line": 107,
             "note": "settings.store.register(AINativeVisibilityPolicy.definitions)"
           }
         ]
@@ -5944,7 +5944,7 @@
           {
             "kind": "source",
             "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift",
-            "line": 106,
+            "line": 107,
             "note": "settings.store.register(AINativeVisibilityPolicy.definitions)"
           }
         ]
@@ -5990,7 +5990,7 @@
           {
             "kind": "source",
             "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift",
-            "line": 106,
+            "line": 107,
             "note": "settings.store.register(AINativeVisibilityPolicy.definitions)"
           }
         ]
@@ -6036,7 +6036,7 @@
           {
             "kind": "source",
             "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift",
-            "line": 106,
+            "line": 107,
             "note": "settings.store.register(AINativeVisibilityPolicy.definitions)"
           }
         ]

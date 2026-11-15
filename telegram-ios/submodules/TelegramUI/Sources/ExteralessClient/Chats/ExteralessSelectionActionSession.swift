@@ -30,9 +30,9 @@ final class ExteralessSelectionActionSession {
         self.actions = actions
     }
 
-    func read(requiresCopy: Bool, operation: ExteralessContentExportPermit.Operation, _ body: @escaping (ExteralessChatExportSnapshot, ChatAvailableMessageActions) -> Void) {
-        self.access.add((self.actions(false) |> take(1) |> deliverOnMainQueue).start(next: { available in
-            self.access.perform(requiresCopy: requiresCopy, operation: operation) { snapshot in
+    func read(requiresCopy: Bool, operation: ExteralessContentExportPermit.Operation, _ body: @escaping @MainActor (ExteralessChatExportSnapshot, ChatAvailableMessageActions) -> Void) {
+        self.access.add((self.actions(false) |> take(1) |> deliverOnMainQueue).start(next: { [self] available in
+            self.access.perform(requiresCopy: requiresCopy, operation: operation) { [self] snapshot in
                 guard !requiresCopy || !available.isCopyProtected else { self.access.invalidate(); return }
                 if !self.watching {
                     self.watching = true
@@ -40,7 +40,8 @@ final class ExteralessSelectionActionSession {
                         if current.options != available.options || current.isCopyProtected != available.isCopyProtected { self?.access.invalidate() }
                     }))
                 }
-                body(snapshot, available)
+                // access.perform delivers on main inside the terminal permit.
+                MainActor.assumeIsolated { body(snapshot, available) }
             }
         }))
     }

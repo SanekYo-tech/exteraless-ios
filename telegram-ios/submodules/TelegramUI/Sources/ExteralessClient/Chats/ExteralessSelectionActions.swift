@@ -7,13 +7,14 @@ import Display
 import ExteralessCore
 import Foundation
 import Pasteboard
+import PresentationDataUtils
 import SwiftSignalKit
 import TelegramCore
 import TextFormat
 import UIKit
 
 extension ChatControllerImpl: ExteralessChatSelectionActions {
-    private func exteralessLoadSelection(_ ids: Set<EngineMessage.Id>, apply: @escaping (ChatControllerImpl, ExteralessSelectionActionSession, ExteralessChatExportSnapshot, ChatAvailableMessageActions) -> Void) {
+    private func exteralessLoadSelection(_ ids: Set<EngineMessage.Id>, apply: @escaping @MainActor (ChatControllerImpl, ExteralessSelectionActionSession, ExteralessChatExportSnapshot, ChatAvailableMessageActions) -> Void) {
         guard !ids.isEmpty, ids.count <= 100, self.presentationInterfaceState.interfaceState.selectionState?.selectedIds == ids else { return }
         let context = self.context
         let access = self.exteralessSelectionExportAccess(ids: ids)
@@ -29,7 +30,7 @@ extension ChatControllerImpl: ExteralessChatSelectionActions {
             let messages = snapshot.messages.map { $0._asMessage() }
             var items: [ActionSheetItem] = []
             let sheet = ActionSheetController(presentationData: chat.presentationData)
-            func add(_ field: String?, _ title: String, allowed: Bool = true, export: ExteralessSelectionExportAction? = nil, eligible: @escaping (ChatControllerImpl, [EngineRawMessage], ChatAvailableMessageActions) -> Bool = { _, _, _ in true }, _ action: @escaping (ChatControllerImpl, [EngineRawMessage]) -> Void) {
+            @MainActor func add(_ field: String?, _ title: String, allowed: Bool = true, export: ExteralessSelectionExportAction? = nil, eligible: @escaping (ChatControllerImpl, [EngineRawMessage], ChatAvailableMessageActions) -> Bool = { _, _, _ in true }, _ action: @escaping (ChatControllerImpl, [EngineRawMessage]) -> Void) {
                 guard allowed, field.map({ ChatMenuPolicy.enabled($0) }) ?? true else { return }
                 let perform = session.action(requiresCopy: export != nil, operation: export != nil ? .exportEffect : .presentation, allowed: { [weak chat] current, available in
                     guard let chat, field.map({ ChatMenuPolicy.enabled($0) }) ?? true else { return false }

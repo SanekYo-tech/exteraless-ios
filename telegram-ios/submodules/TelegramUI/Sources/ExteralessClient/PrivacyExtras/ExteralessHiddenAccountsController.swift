@@ -92,7 +92,7 @@ final class ExteralessHiddenAccountsController: ExteralessPrivacyExtrasListContr
     private func confirmRemoval(title: String, text: String, action: @escaping () -> Void) {
         present(textAlertController(context: context, title: title, text: text, actions: [
             TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
-            TextAlertAction(type: .destructiveAction, title: presentationData.strings.Common_Remove, action: action)
+            TextAlertAction(type: .destructiveAction, title: presentationData.strings.Common_Delete, action: action)
         ]), in: .window(.root))
     }
 }
@@ -131,7 +131,7 @@ final class ExteralessHiddenAccountController: ExteralessPrivacyExtrasListContro
                 guard let self, self.valid else { return }
                 self.present(textAlertController(context: self.context, title: "Remove account code?", text: "This also makes the account visible again.", actions: [
                     TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}),
-                    TextAlertAction(type: .destructiveAction, title: self.presentationData.strings.Common_Remove, action: { [weak self] in
+                    TextAlertAction(type: .destructiveAction, title: self.presentationData.strings.Common_Delete, action: { [weak self] in
                         self?.perform({ try lease.check(); try ExteralessHiddenAccounts.shared.removeAccountCode(target: target, owner: owner, session: ExteralessNativeHiddenSettingsAuthorization(session: session)) }, completion: { _ in })
                     })
                 ]), in: .window(.root))
@@ -176,7 +176,7 @@ final class ExteralessPrivateCodeEditor: ExteralessPrivacyExtrasListController {
             else { try ExteralessHiddenAccounts.shared.setPanicCode(code, kind: kind, owner: owner, session: authorization) }
         }, completion: { [weak self] _ in
             guard let self else { return }; self.code = ""; self.repeated = ""
-            if self.valid { (self.navigationController as? NavigationController)?.popViewController(animated: true) }
+            if self.valid { _ = (self.navigationController as? NavigationController)?.popViewController(animated: true) }
         })
     }
 }

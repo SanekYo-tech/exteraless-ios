@@ -64,7 +64,8 @@ public final class ExteralessMiniPlayerVisualSurface {
     public var view: UIView { mini }
     public var preferredHeight: CGFloat { mini.preferredHeight }
 
-    public init(input: ExteralessPlayerVisualInput, registry: ExteralessContentOcclusions = .shared, open: (() -> Void)? = nil) {
+    public init(input: ExteralessPlayerVisualInput, registry: ExteralessContentOcclusions? = nil, open: (() -> Void)? = nil) {
+        let registry = registry ?? ExteralessContentOcclusions.shared
         let mini = ExteralessMiniPlayerView(frame: .zero)
         self.mini = mini
         self.accountId = input.track.account

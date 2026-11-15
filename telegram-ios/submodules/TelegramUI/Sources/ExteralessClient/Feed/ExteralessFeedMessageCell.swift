@@ -51,7 +51,7 @@ final class ExteralessFeedMessageCell: UITableViewCell, UIContextMenuInteraction
     private var revision: UInt64 = 0
     private var hiddenMedia: [EngineMessage.Id: [EngineRawMedia]] = [:]
     private var width: CGFloat = 0
-    private var selected: Bool?
+    private var renderedSelection: Bool?
     private var renderToken: FeedRenderLease.Token?
     private var layoutParams: ListViewItemLayoutParams?
     private var rendererKind: RendererKind?
@@ -146,7 +146,7 @@ final class ExteralessFeedMessageCell: UITableViewCell, UIContextMenuInteraction
 
     func configure(context: AccountContext, post: ExteralessFeedPost, presentation: PresentationData, width: CGFloat, viewportHeight: CGFloat, selected: Bool?, revision: UInt64, makeItem: () -> ChatMessageItemImpl) {
         let tokens = post.projections.map(\.renderToken)
-        let changed = self.post?.id != post.id || self.renderTokens != tokens || self.width != width || self.presentation != presentation || self.selected != selected || self.revision != revision || self.renderToken?.accountId != context.account.id.int64
+        let changed = self.post?.id != post.id || self.renderTokens != tokens || self.width != width || self.presentation != presentation || self.renderedSelection != selected || self.revision != revision || self.renderToken?.accountId != context.account.id.int64
         let kind = Self.rendererKind(post.messages[0])
         let compatible = self.renderedPostId == post.id && self.renderedPrimaryId == post.primaryId && self.rendererKind == kind && self.renderToken?.accountId == context.account.id.int64
         self.post = post
@@ -170,7 +170,7 @@ final class ExteralessFeedMessageCell: UITableViewCell, UIContextMenuInteraction
         self.theme = presentation.theme
         self.presentation = presentation
         self.revision = revision
-        self.selected = selected
+        self.renderedSelection = selected
         self.nativeReady = false
         let token = self.lease.begin(accountId: context.account.id.int64, post: post.id)
         self.renderToken = token

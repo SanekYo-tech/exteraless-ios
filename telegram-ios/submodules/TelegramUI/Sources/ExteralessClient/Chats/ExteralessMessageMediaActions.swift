@@ -5,6 +5,7 @@ import Display
 import Foundation
 import ImageIO
 import PeerInfoScreen
+import PresentationDataUtils
 import SaveToCameraRoll
 import SwiftSignalKit
 import TelegramCore

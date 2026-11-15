@@ -4,6 +4,7 @@ import Display
 import ExteralessCore
 import Foundation
 import PeerInfoUI
+import PresentationDataUtils
 import StatisticsUI
 import SwiftSignalKit
 import TelegramCore
@@ -80,7 +81,7 @@ extension ChatControllerImpl {
         let _ = (self.context.engine.messages.searchMessages(location: .peer(peerId: peerId, fromId: self.context.account.peerId, tags: nil, reactions: nil, threadId: self.chatLocation.threadId, minDate: nil, maxDate: nil), query: "", state: nil)
         |> take(1) |> deliverOnMainQueue).startStandalone(next: { [weak self] result, _ in
             guard let self, self.chatLocation.peerId == peerId else { return }
-            let messages = Array(result.messages.prefix(100)).map { $0._asMessage() }
+            let messages: [EngineRawMessage] = Array(result.messages.prefix(100))
             guard !messages.isEmpty else { return }
             self.present(textAlertController(context: self.context, title: "Delete my messages", text: "Review the \(messages.count) most recent matching messages in the native deletion sheet. Repeat for older messages.", actions: [TextAlertAction(type: .genericAction, title: self.presentationData.strings.Common_Cancel, action: {}), TextAlertAction(type: .defaultAction, title: self.presentationData.strings.Common_OK, action: { [weak self] in self?.interfaceInteraction?.deleteMessages(messages, nil, { _ in }) })]), in: .window(.root))
         })

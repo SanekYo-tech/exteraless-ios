@@ -5,6 +5,7 @@ import ExteralessCore
 import Foundation
 import GalleryUI
 import PeerSelectionController
+import PresentationDataUtils
 import SwiftSignalKit
 import TelegramCore
 import UIKit
@@ -21,7 +22,7 @@ import UIKit
             request.setDisposable(lifetime)
             let session = ExteralessSelectionActionSession(access: access, actions: { keepUpdated in context.sharedContext.chatAvailableMessageActions(engine: context.engine, accountPeerId: context.account.peerId, messageIds: [request.message.id], keepUpdated: keepUpdated) })
             session.read(requiresCopy: false, operation: .presentation) { snapshot, available in
-                func notice(_ text: String) {
+                @MainActor func notice(_ text: String) {
                     let controller = textAlertController(context: context, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: "OK", action: { access.cancel() })])
                     guard access.own(controller) else { return }
                     access.permit.presentWhenReady(controller, accountId: access.accountId, from: presenter, present: { request.interaction.presentController($0, nil) })
@@ -42,7 +43,7 @@ import UIKit
                 let sheet = ActionSheetController(presentationData: presentation)
                 sheet.dismissed = { _ in request.setInteracting(false) }
                 var items: [ActionSheetItem] = []
-                func add(_ field: String?, _ title: String, allowed: Bool = true, _ action: @escaping () -> Void) {
+                @MainActor func add(_ field: String?, _ title: String, allowed: Bool = true, _ action: @escaping @MainActor () -> Void) {
                     guard allowed, field.map({ ChatMenuPolicy.enabled($0) }) ?? true else { return }
                     let perform = session.action(requiresCopy: true, operation: .exportPreparation, allowed: { snapshot, _ in
                         guard field.map({ ChatMenuPolicy.enabled($0) }) ?? true, let current = snapshot.messages.first else { return false }
@@ -50,7 +51,7 @@ import UIKit
                     }, { _, _ in action() })
                     items.append(ActionSheetButtonItem(title: title, color: .accent, action: { [weak sheet] in sheet?.dismissAnimated(); perform() }))
                 }
-                func imageAction(_ action: ExteralessChatImageAction) {
+                @MainActor func imageAction(_ action: ExteralessChatImageAction) {
                     let timestamp: Double?
                     if selection.isVideo {
                         guard let sample = request.playbackSample() else { notice("Playback position is unavailable. Try again after playback is ready."); return }

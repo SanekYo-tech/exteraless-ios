@@ -211,8 +211,9 @@ final class ExteralessAIResultController: ViewController {
         task = Task { @MainActor [weak self] in
             do {
                 let content = try await operation { [weak self] event in
+                    guard let self else { return }
                     await MainActor.run {
-                        guard let self, self.requestId == id, self.state == .running else { return }
+                        guard self.requestId == id, self.state == .running else { return }
                         self.receive(event)
                     }
                 }

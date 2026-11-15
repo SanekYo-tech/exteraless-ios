@@ -856,10 +856,12 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         self.exteralessSettingsObservation = ClientSettings.shared.observe { [weak self] keys in
             guard !keys.isDisjoint(with: exteralessRenderKeys) else { return }
             Queue.mainQueue().async { [weak self] in
-                guard let self, let controller = self.controller else { return }
-                controller.updateChatPresentationInterfaceState(transition: .immediate, interactive: false, force: true, { $0 })
-                self.historyNode.forEachVisibleMessageItemNode { node in
-                    if let message = node.item?.message { self.controllerInteraction.requestMessageUpdate(message.id, false, nil) }
+                MainActor.assumeIsolated {
+                    guard let self, let controller = self.controller else { return }
+                    controller.updateChatPresentationInterfaceState(transition: .immediate, interactive: false, force: true, { $0 })
+                    self.historyNode.forEachVisibleMessageItemNode { node in
+                        if let message = node.item?.message { self.controllerInteraction.requestMessageUpdate(message.id, false, nil) }
+                    }
                 }
             }
         }
@@ -5515,12 +5517,12 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                         completion()
                     }, usedCorrelationId, operation: capturedOperation)
                     
-                    let messages = ChatComposerPolicy.ordering(messages, commentAfterForward: ClientSettings.shared.bool("chats.sendCommentAfterForward", default: true), isForward: { if case .forward = $0 { return true }; return false }).map { message -> EnqueueMessage in
+                    let preparedMessages = ChatComposerPolicy.ordering(messages, commentAfterForward: ClientSettings.shared.bool("chats.sendCommentAfterForward", default: true), isForward: { if case .forward = $0 { return true }; return false }).map { message -> EnqueueMessage in
                         let message = message.withNotificationOverride(silent: silentPosting)
                         guard case .message = message else { return message }
                         return message.withLinkPreviewOverride(disabled: exteralessComposeLinkPreviewsDisabled(effectivePresentationInterfaceState, url: effectivePresentationInterfaceState.urlPreview?.url ?? ""))
                     }
-                    self.sendMessages(messages, silentPosting, scheduleTime, repeatPeriod, messages.count > 1, postpone, operation)
+                    self.sendMessages(preparedMessages, silentPosting, scheduleTime, repeatPeriod, preparedMessages.count > 1, postpone, operation)
                 }
                 
                 var targetThreadId: Int64?

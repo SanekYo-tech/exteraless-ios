@@ -3,7 +3,7 @@ import Display
 import ExteralessCore
 import Foundation
 import SettingsUI
-import SwiftSignalKit
+@preconcurrency import SwiftSignalKit
 import TabBarUI
 import TelegramCore
 import TelegramPresentationData

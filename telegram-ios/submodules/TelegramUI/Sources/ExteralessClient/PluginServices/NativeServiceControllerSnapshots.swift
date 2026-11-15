@@ -109,7 +109,7 @@ final class NativeServiceControllerSnapshots: @unchecked Sendable {
         switch publisher.peer.kind { case .user: kind = .user; case .group: kind = .group; case .channel: kind = .channel }
         guard let peer = try? ExteralessTLPeerReference(kind: kind, id: publisher.peer.id) else { return }
         let id: EnginePeer.Id
-        switch kind {
+        switch publisher.peer.kind {
         case .user: id = EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: ._internalFromInt64Value(peer.id))
         case .group: id = EnginePeer.Id(namespace: Namespaces.Peer.CloudGroup, id: ._internalFromInt64Value(peer.id))
         case .channel: id = EnginePeer.Id(namespace: Namespaces.Peer.CloudChannel, id: ._internalFromInt64Value(peer.id))

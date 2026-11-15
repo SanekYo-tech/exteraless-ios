@@ -211,7 +211,7 @@ final class ExteralessFilterRuleEditor: ExteralessPrivacyExtrasListController {
                 try ExteralessFilteringRuntime.shared.setCollection("regexChatFiltersData", account: identity, value: .object(object))
             } else { try ExteralessFilteringRuntime.shared.setCollection("regexFiltersData", account: identity, value: value) }
         }, completion: { [weak self] _ in
-            guard let self, self.valid else { return }; (self.navigationController as? NavigationController)?.popViewController(animated: true)
+            guard let self, self.valid else { return }; _ = (self.navigationController as? NavigationController)?.popViewController(animated: true)
         })
     }
 }

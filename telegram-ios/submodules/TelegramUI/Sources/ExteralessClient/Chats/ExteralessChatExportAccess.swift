@@ -372,8 +372,8 @@ extension ChatControllerImpl {
             guard let self else { return false }
             return self.context === context && self.chatLocation == location && self.presentationInterfaceState.subject == subject && (!selection.required || self.presentationInterfaceState.interfaceState.selectionState?.selectedIds == ids)
         }
-        weak var window = self.viewIfLoaded?.window
-        let access = ExteralessChatExportAccess(context: context, ids: ids, expected: expected, permit: self.exteralessExportPermit, presentationValidity: self.presentationInterfaceStatePromise.get() |> map { state in current() && state.copyProtectionEnabled == copyProtection }, sourceWindow: window, sourceView: self.viewIfLoaded, current: current, presentationCurrent: { [weak self] in guard let window else { return false }; return self?.viewIfLoaded?.window === window }, copyAllowed: { [weak self] in self?.presentationInterfaceState.copyProtectionEnabled == false })
+        let window = (self.viewIfLoaded?.window).map { Weak($0) }
+        let access = ExteralessChatExportAccess(context: context, ids: ids, expected: expected, permit: self.exteralessExportPermit, presentationValidity: self.presentationInterfaceStatePromise.get() |> map { state in current() && state.copyProtectionEnabled == copyProtection }, sourceWindow: window?.value, sourceView: self.viewIfLoaded, current: current, presentationCurrent: { [weak self] in guard let window = window?.value else { return false }; return self?.viewIfLoaded?.window === window }, copyAllowed: { [weak self] in self?.presentationInterfaceState.copyProtectionEnabled == false })
         access.selectionCommitted = { selection.required = false }
         return access
     }

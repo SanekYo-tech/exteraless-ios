@@ -2069,8 +2069,10 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         var measure_isFirstTime = true
         let messageViewQueue = Queue.mainQueue()
         let includeRetained: Bool
-        if case .default = self.source {
-            includeRetained = !isScheduledMessages && tag == nil && subject != .pinnedMessages && mode == .bubbles
+        if case .pinnedMessages = subject {
+            includeRetained = false
+        } else if case .default = self.source {
+            includeRetained = !isScheduledMessages && tag == nil && mode == .bubbles
         } else { includeRetained = false }
         let retentionHistoryUpdate = exteralessRetentionHistoryUpdates(context: context, location: chatLocation, source: historyViewUpdate, enabled: includeRetained)
         let historyViewTransitionDisposable = (combineLatest(queue: messageViewQueue,

@@ -421,7 +421,7 @@ final class ExteralessPlayerSession {
         metadataAsset = nil
         guard type == .music, let file, let identity else { return }
         metadataDisposable.set((context.engine.resources.data(resource: EngineMediaResource(file.media.resource))
-        |> filter { $0.complete }
+        |> filter { $0.isComplete }
         |> take(1)
         |> deliverOnMainQueue).start(next: { [weak self] data in
             guard let self, self.accepts(identity) else { return }

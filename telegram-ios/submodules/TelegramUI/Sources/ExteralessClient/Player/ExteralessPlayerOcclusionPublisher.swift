@@ -27,10 +27,10 @@ final class ExteralessPlayerOcclusionPublisher {
     private var displayLink: CADisplayLink?
     private var windowObservers: [NSObjectProtocol] = []
 
-    init(accountId: Int64, view: UIView, registry: ExteralessContentOcclusions = .shared) {
+    init(accountId: Int64, view: UIView, registry: ExteralessContentOcclusions? = nil) {
         self.accountId = accountId
         self.view = view
-        self.registry = registry
+        self.registry = registry ?? .shared
         target.update = { [weak self] in self?.publishCurrentGeometry() }
         for name in [UIWindow.didBecomeHiddenNotification, UIWindow.didBecomeVisibleNotification] {
             windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in

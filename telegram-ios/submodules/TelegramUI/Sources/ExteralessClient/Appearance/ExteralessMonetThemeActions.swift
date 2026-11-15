@@ -1,11 +1,11 @@
-import AccountContext
+@preconcurrency import AccountContext
 import Display
 import ExteralessCore
 import Foundation
-import SwiftSignalKit
+@preconcurrency import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
-import TelegramUIPreferences
+@preconcurrency import TelegramUIPreferences
 
 private final class ExteralessMonetActionToken: @unchecked Sendable {
     private let lock = NSLock()

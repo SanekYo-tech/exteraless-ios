@@ -1,7 +1,9 @@
 import AccountContext
+import AlertComponent
 import Display
 import ExteralessCore
 import Foundation
+import PresentationDataUtils
 import SwiftSignalKit
 import TelegramCore
 
@@ -57,10 +59,15 @@ func exteralessRequestOutgoingCall(context: AccountContext, peerId: EnginePeer.I
             var actions: [TextAlertAction] = []
             if prompt != .external { actions.append(TextAlertAction(type: .genericAction, title: strings.Common_Cancel, action: cancel)) }
             actions.append(TextAlertAction(type: .defaultAction, title: strings.Common_OK, action: proceed))
-            let controller = textAlertController(context: context, title: title, text: text, actions: actions)
-            controller.dismissed = { _ in cancel() }
-            context.sharedContext.presentGlobalController(controller, nil)
-            return ActionDisposable { [weak controller] in Queue.mainQueue().async { controller?.dismissAnimated() } }
+            guard let controller = textAlertController(context: context, title: title, text: text, actions: actions) as? AlertScreen else { cancel(); return nil }
+            // CallFlow presents only after its peer read delivers on main.
+            MainActor.assumeIsolated {
+                controller.dismissed = { _ in cancel() }
+                context.sharedContext.presentGlobalController(controller, nil)
+            }
+            return ActionDisposable { [weak controller] in
+                Queue.mainQueue().async { MainActor.assumeIsolated { controller?.dismiss() } }
+            }
         }, completion: completion, navigate: { context.sharedContext.navigateToCurrentCall() })
     flow.start()
 }

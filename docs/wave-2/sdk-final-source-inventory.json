@@ -6,7 +6,7 @@
   "historical_adapter_handoff": "docs/wave-2/sdk-adapters-final.md",
   "config_receipt": {
     "path": "docs/wave-2/sdk-config-parity.json",
-    "sha256": "c65350e5da0d14d9edf51c091a69c8bb46248c9065658ef021f6a1bb61da07bb",
+    "sha256": "01f554ed71ab2f5a3440f2eba9afa7a67874ed54d3b3714b5830f866f1c85f6a",
     "counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
     "exact_ids": 308,
     "participating_declaration_pins": "59 raw-byte source_pins and actual root_registration in the receipt",
@@ -28,7 +28,7 @@
   },
   "sdk_source_sha256": {
     "python/exteraless_runtime/_config.py": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
-    "python/exteraless_runtime/_config_manifest.py": "3e0b56a5a75a634b383b04c579c08ac982dee9012e24daa11d0320c0144b699c",
+    "python/exteraless_runtime/_config_manifest.py": "1554d2e49b665b19094245e91d42f3da1bb65859c284ead9f1a848292479395c",
     "python/exteraless_runtime/_controllers.py": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
     "python/exteraless_runtime/_notifications.py": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
     "python/exteraless_runtime/_scheduling.py": "d5f4dd1b8598e38b0ab26850c4583621cfcf47b41b11940993b02abc8d3861a6",
@@ -152,6 +152,17 @@
     "original_failure_reproduced": true,
     "native_execution_claimed": false,
     "exteraconfig_308_catalog_changed": false
+  },
+  "telegram_ui_compiler_alignment": {
+    "source": "Git index captured for the f05473ea TelegramUI compiler follow-up",
+    "root_source_sha256": "6d94c70b2b4e0f956365aa44a0dbafa60d1479eb734fbae6838afbf3ae943750",
+    "config_receipt_sha256": "01f554ed71ab2f5a3440f2eba9afa7a67874ed54d3b3714b5830f866f1c85f6a",
+    "manifest_sha256": "1554d2e49b665b19094245e91d42f3da1bb65859c284ead9f1a848292479395c",
+    "apis": 308,
+    "bindings": 508,
+    "counts": {"implemented": 276, "blocked": 0, "unsupported": 32},
+    "source_pins": 59,
+    "native_executed": false
   },
   "remaining_config_ids": []
 }

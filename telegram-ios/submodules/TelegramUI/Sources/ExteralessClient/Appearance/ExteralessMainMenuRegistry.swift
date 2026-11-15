@@ -1,5 +1,6 @@
 import AccountContext
 import BrowserUI
+import DeviceAccess
 import Display
 import ExteralessCore
 import Foundation
@@ -143,7 +144,7 @@ private func exteralessOpenMenuQRScanner(context: AccountContext, parent: ViewCo
             scanner.dismiss(completion: {
                 guard ExteralessAppearanceEntry.isMainMenuAvailable(context: context) else { return }
                 let alert = UIAlertController(title: "QR Code", message: value, preferredStyle: .alert)
-                alert.addAction(UIAlertAction(title: data.strings.Common_Copy, style: .default, handler: { _ in UIPasteboard.general.string = value }))
+                alert.addAction(UIAlertAction(title: data.strings.Conversation_ContextMenuCopy, style: .default, handler: { _ in UIPasteboard.general.string = value }))
                 if let url = URL(string: value), ["http", "https", "tg", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") {
                     alert.addAction(UIAlertAction(title: "Open", style: .default, handler: { _ in context.sharedContext.applicationBindings.openUrl(value) }))
                 }

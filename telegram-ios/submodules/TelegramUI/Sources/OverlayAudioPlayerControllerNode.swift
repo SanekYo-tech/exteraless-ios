@@ -1206,6 +1206,7 @@ final class OverlayAudioPlayerControllerNode: ViewControllerTracingNode, ASGestu
         self.exteralessSurface?.setActive(visible)
     }
 
+    @MainActor
     func invalidateExteralessPlayerAccount() {
         self.exteralessAccountIsValid = false
         self.profileMutationDisposable.set(nil)

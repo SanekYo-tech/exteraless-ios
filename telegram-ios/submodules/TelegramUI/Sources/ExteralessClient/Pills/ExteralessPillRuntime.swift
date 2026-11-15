@@ -77,13 +77,13 @@ private final class ExteralessPillSignalHolder: @unchecked Sendable {
         self.rates = PillRateProvider(lease: lease, settings: .shared, http: http)
         let store = self.store
         self.settingsQueue.async { [weak self] in
-            let error: String?
-            do { try lease.withCurrent { try store.migrateLegacyRates() }; error = nil }
+            let errorMessage: String?
+            do { try lease.withCurrent { try store.migrateLegacyRates() }; errorMessage = nil }
             catch PillError.cancelled { return }
-            catch { error = "The previous rate layout could not be migrated. Its saved configuration was preserved." }
+            catch { errorMessage = "The previous rate layout could not be migrated. Its saved configuration was preserved." }
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.lease.isValid else { return }
-                self.migrationError = error
+                self.migrationError = errorMessage
                 for reference in self.screens {
                     if let screen = reference.value as? ExteralessPillTableController, screen.screenIsVisible { screen.settingsChanged?() }
                 }
@@ -117,15 +117,15 @@ private final class ExteralessPillSignalHolder: @unchecked Sendable {
     func toggleGhost(completion: @escaping (String?) -> Void) {
         let lease = self.lease
         self.settingsQueue.async {
-            let error: String?
+            let errorMessage: String?
             do {
                 try lease.withCurrent {
                     _ = try PrivacyGhostModeMutation.toggle(in: .shared)
                 }
-                error = nil
+                errorMessage = nil
             } catch PillError.cancelled { return }
-            catch { error = "Couldn't save ghost mode. Check the current privacy settings." }
-            DispatchQueue.main.async { if lease.isValid { completion(error) } }
+            catch { errorMessage = "Couldn't save ghost mode. Check the current privacy settings." }
+            DispatchQueue.main.async { if lease.isValid { completion(errorMessage) } }
         }
     }
 }

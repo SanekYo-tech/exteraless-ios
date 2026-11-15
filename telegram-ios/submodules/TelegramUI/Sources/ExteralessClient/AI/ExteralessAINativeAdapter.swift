@@ -12,7 +12,7 @@ import TextFormat
 /// The facade is below TelegramUI in the graph; no component imports TelegramUI
 /// back through a dependency cycle. All native object access is confined to main.
 @MainActor
-public final class ExteralessAINativeAdapter {
+public final class ExteralessAINativeAdapter: ExteralessAIEngineAdapter {
     private weak var integration: ExteralessAIIntegration?
     private var generation = UUID()
     private var operations: [UUID: (token: AINativeOperationLease, tag: String?)] = [:]

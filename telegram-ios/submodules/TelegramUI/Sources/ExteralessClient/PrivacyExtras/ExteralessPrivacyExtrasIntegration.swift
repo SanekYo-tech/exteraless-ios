@@ -124,7 +124,7 @@ func exteralessOpenHiddenAccountSettings(context: AccountContext, parent: ViewCo
         let controller = ExteralessHiddenAccountsController(context: context, session: session)
         if let navigation = parent.navigationController as? NavigationController { navigation.replaceTopController(controller, animated: true) }
         else { session.invalidate() }
-    })) {
+    }) {
         parent.push(controller)
     }
 }

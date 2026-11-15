@@ -432,5 +432,3 @@ final class ExteralessClientRuntime {
         clearContext()
     }
 }
-
-extension ExteralessAINativeAdapter: ExteralessAIEngineAdapter {}

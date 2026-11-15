@@ -308,7 +308,14 @@ final class ExteralessMainMenuController: ExteralessAppearanceListController, UI
         let context = self.context
         if self.asSheet {
             guard let root = self.presentationRoot else { return }
-            self.dismiss(completion: { MainActor.assumeIsolated { exteralessOpenMenuSearch(context: context, parent: root, filter: .chats) } })
+            self.dismiss(completion: {
+                MainActor.assumeIsolated {
+                    guard ExteralessAppearanceEntry.isMainMenuAvailable(context: context),
+                          (context.sharedContext.mainWindow?.viewController as? NavigationController) === root,
+                          let parent = root.topViewController as? ViewController else { return }
+                    exteralessOpenMenuSearch(context: context, parent: parent, filter: .chats)
+                }
+            })
         } else {
             MainActor.assumeIsolated { exteralessOpenMenuSearch(context: context, parent: self, filter: .chats) }
         }

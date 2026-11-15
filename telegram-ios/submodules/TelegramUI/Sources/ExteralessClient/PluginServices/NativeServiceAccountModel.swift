@@ -44,7 +44,8 @@ struct NativeServiceAccountModel: Sendable {
             cachedChatId = nil
             let value = try NativeServiceWire.object(model["peer"] ?? .null, name: "peer", keys: ["type", "id"])
             let name = try NativeServiceWire.string(value["type"], name: "peer.type", maximum: 16)
-            guard let kind = ExteralessTLPeerReference.Kind(rawValue: name), member != "nativeGetChat" || kind != .user else {
+            guard let kind = ExteralessTLPeerReference.Kind(rawValue: name), kind != .secret,
+                  member != "nativeGetChat" || kind != .user else {
                 throw BridgeFailure.malformed("peer.type must explicitly identify a cloud user, group or channel; nativeGetChat requires group/channel")
             }
             peer = try ExteralessTLPeerReference(kind: kind,
@@ -81,6 +82,7 @@ struct NativeServiceAccountModel: Sendable {
         case .user: namespace = Namespaces.Peer.CloudUser
         case .group: namespace = Namespaces.Peer.CloudGroup
         case .channel: namespace = Namespaces.Peer.CloudChannel
+        case .secret: return nil
         }
         return EngineMessage.Id(peerId: EnginePeer.Id(namespace: namespace, id: ._internalFromInt64Value(peer.id)),
             namespace: Namespaces.Message.Cloud, id: messageId)

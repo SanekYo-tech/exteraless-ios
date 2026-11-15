@@ -16,7 +16,7 @@ final class ExteralessMiniPlayerView: UIView {
     private let open = UIButton(type: .system)
     private let previous = UIButton(type: .system)
     private let play = UIButton(type: .system)
-    private let next = UIButton(type: .system)
+    private let nextButton = UIButton(type: .system)
     private let close = UIButton(type: .system)
     private let progress = CAShapeLayer()
     private let track = CAShapeLayer()
@@ -51,7 +51,7 @@ final class ExteralessMiniPlayerView: UIView {
         for (button, symbol, text, selector) in [
             (previous, "backward.end.fill", "Previous track", #selector(previousPressed)),
             (play, "play.fill", "Play", #selector(playPressed)),
-            (next, "forward.end.fill", "Next track", #selector(nextPressed)),
+            (nextButton, "forward.end.fill", "Next track", #selector(nextPressed)),
             (close, "xmark", "Close player", #selector(closePressed))
         ] {
             button.setImage(UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)), for: .normal)
@@ -107,11 +107,11 @@ final class ExteralessMiniPlayerView: UIView {
         self.artist.font = UIFont.systemFont(ofSize: style.miniCompact ? 11 : 12)
         self.artist.isHidden = !style.miniArtist
         previous.isHidden = !style.miniPrevious
-        next.isHidden = !style.miniNext
+        nextButton.isHidden = !style.miniNext
         close.isHidden = !style.miniClose
         artwork.isHidden = style.miniCover == .hidden
         previous.isEnabled = canControl && previousAvailable
-        next.isEnabled = canControl && nextAvailable
+        nextButton.isEnabled = canControl && nextAvailable
         play.isEnabled = canControl
         close.isEnabled = canControl
         open.isEnabled = canControl || openAction != nil
@@ -145,7 +145,7 @@ final class ExteralessMiniPlayerView: UIView {
         backgroundColor = palette.elevated
         title.textColor = palette.text
         artist.textColor = palette.secondary
-        for button in [previous, play, next, close] { button.tintColor = palette.primary }
+        for button in [previous, play, nextButton, close] { button.tintColor = palette.primary }
         progress.strokeColor = palette.primary.cgColor
         track.strokeColor = palette.secondary.withAlphaComponent(0.2).cgColor
     }
@@ -159,7 +159,7 @@ final class ExteralessMiniPlayerView: UIView {
         let side: CGFloat = style.miniCompact ? 36 : 44
         artwork.frame = CGRect(x: 10, y: (bounds.height - side) / 2, width: side, height: side)
         var right = bounds.width - 4
-        for button in [close, next, play, previous] where !button.isHidden {
+        for button in [close, nextButton, play, previous] where !button.isHidden {
             button.frame = CGRect(x: right - 44, y: (bounds.height - 44) / 2, width: 44, height: 44)
             right -= 44
         }
