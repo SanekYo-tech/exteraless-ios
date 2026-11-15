@@ -15,6 +15,12 @@ def _is_class_name(name: str) -> bool:
 
 
 def _member_kind(backend, fqcn: str, name: str) -> str:
+    from .registry import native_member_kind
+    live = native_member_kind(fqcn, name)
+    if live is not None:
+        if live == "unknown":
+            raise AttributeError(f"native class {fqcn} has no exported member {name!r}")
+        return live  # Provider replacement must not leave a positive cache entry.
     key = (id(backend), fqcn, name)
     kind = _KIND_CACHE.get(key)
     if kind is None:
@@ -30,9 +36,15 @@ class JavaClass(type):
         fqcn = cls.__name__
         backend = cls._backend
         if _is_class_name(name):
-            # Вложенный класс: Outer$Inner доступен как Outer.Inner.
-            return get_class(f"{fqcn}${name}", backend)
-        kind = _member_kind(backend, fqcn, name)
+            from .registry import native_member_kind
+            kind = native_member_kind(fqcn, name)
+            if kind is None:
+                # Вложенный класс: Outer$Inner доступен как Outer.Inner.
+                return get_class(f"{fqcn}${name}", backend)
+            if kind == "unknown":
+                raise AttributeError(f"native class {fqcn} has no exported member {name!r}")
+        else:
+            kind = _member_kind(backend, fqcn, name)
         if kind == "field":
             return backend.get(fqcn, name)
         return _StaticMember(fqcn, name, backend)
@@ -54,7 +66,7 @@ class JavaClass(type):
         target = getattr(instance, "_fqcn", None)
         if target is None:
             return False
-        return target == cls.__name__ or cls._backend.class_exists(target)
+        return target == cls.__name__ or cls.__name__ in getattr(type(instance), "_interfaces", ())
 
 
 class DynamicProxyMeta(JavaClass):
@@ -66,23 +78,38 @@ class DynamicProxyMeta(JavaClass):
     """
 
     def __call__(cls, *args, **kwargs):
-        return type.__call__(cls, *args, **kwargs)
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "_fqcn", cls._interfaces[0])
+        object.__setattr__(instance, "_backend", cls._backend)
+        initializer = cls.__init__
+        if initializer is not JavaInstance.__init__:
+            initializer(instance, *args, **kwargs)
+        elif args or kwargs:
+            raise TypeError("interface proxy has no constructor arguments")
+        return instance
 
 
-def dynamic_proxy(base):
+def dynamic_proxy(*interfaces):
     """java.chaquopy.dynamic_proxy: обёртка для реализации Java-интерфейсов.
 
     class MyTask(dynamic_proxy(Runnable)):
         def run(self): ...
     """
-    name = f"DynamicProxy[{getattr(base, '__name__', base)}]"
-    if isinstance(base, type) and isinstance(type(base), JavaClass):
-        return DynamicProxyMeta(name, (base,),
-                                {"__module__": "java.chaquopy",
-                                 "__qualname__": name})
+    if not interfaces or any(not isinstance(base, type) for base in interfaces):
+        raise TypeError("dynamic_proxy requires interface classes")
+    interfaces = tuple(dict.fromkeys(interfaces))
+    name = "DynamicProxy[" + ",".join(base.__name__ for base in interfaces) + "]"
+    if any(isinstance(base, JavaClass) for base in interfaces):
+        if not all(isinstance(base, JavaClass) for base in interfaces):
+            raise TypeError("cannot mix native proxies and Python interfaces")
+        def missing(self, member): raise AttributeError(member)
+        return DynamicProxyMeta(name, interfaces,
+                                {"__module__": "java.chaquopy", "__qualname__": name,
+                                 "_interfaces": tuple(base.__name__ for base in interfaces),
+                                 "__setattr__": object.__setattr__, "__getattr__": missing})
     # Стаб-класс или другой тип: наследуем как есть, обычным классом.
-    return type(name, (base,) if isinstance(base, type) else (),
-                {"__module__": "java.chaquopy"})
+    return type(name, interfaces,
+                 {"__module__": "java.chaquopy"})
 
 
 class _StaticMember:
@@ -176,6 +203,10 @@ _CLASS_CACHE = {}
 
 def get_class(fqcn: str, backend):
     """Прокси-класс по FQCN (с кэшем; бэкенд один на процесс)."""
+    from .registry import get_registered
+    registered = get_registered(fqcn)
+    if registered is not None:
+        return registered
     cached = _CLASS_CACHE.get(fqcn)
     if cached is not None:
         return cached

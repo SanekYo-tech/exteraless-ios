@@ -87,10 +87,33 @@ class JavaPackage(types.ModuleType):
         return sub
 
 
+def _array_type(element, backend):
+    from .arrays import PRIMITIVES, PRIMITIVE_DESCRIPTORS, array_type
+    descriptor = None
+    if isinstance(element, str):
+        if element in PRIMITIVES:
+            element = PRIMITIVES[element]
+        elif element in PRIMITIVE_DESCRIPTORS:
+            element = PRIMITIVE_DESCRIPTORS[element]
+        elif element.startswith("["):
+            element = _array_type(element[1:], backend)
+        elif element.endswith("[]"):
+            element = _array_type(element[:-2], backend)
+        else:
+            if element.startswith("L") and element.endswith(";"): element = element[1:-1]
+            fqcn = resolve_name(element.replace("/", "."))
+            # Keep the explicit Java name even for ports sharing Python storage.
+            descriptor = "L" + fqcn.replace(".", "/") + ";"
+            element = get_class(fqcn, backend)
+    return array_type(element, descriptor)
+
+
 def _chaquopy_builtin(name, backend):
     """java.jclass / jint / dynamic_proxy — точки входа reflection у плагинов."""
     if name == "jclass":
         def jclass(fqcn):
+            if fqcn.startswith("["): return _array_type(fqcn[1:], backend)
+            if fqcn.endswith("[]"): return _array_type(fqcn[:-2], backend)
             return get_class(resolve_name(fqcn), backend)
         return jclass
     if name == "dynamic_proxy":
@@ -99,13 +122,22 @@ def _chaquopy_builtin(name, backend):
     if name == "Override":
         return lambda func: func
 
-    def _generic(*args, **kwargs):
-        # jint(x)/jlong(x) — приведение типа; в прокси-мире — identity.
-        if len(args) == 1:
-            return args[0]
-        from .backend import _Universal
-        return _Universal(f"java.{name}({args!r})", backend)
-    return _generic
+    if name in ("findClass",):
+        return _chaquopy_builtin("jclass", backend)
+    if name == "jpackage":
+        return lambda package: __import__(package, fromlist=["*"])
+    if name == "cast":
+        def cast(target, value):
+            if isinstance(target, str):
+                target = _chaquopy_builtin("jclass", backend)(target)
+            if value is not None and not isinstance(value, target):
+                raise TypeError(f"cannot cast {type(value).__name__} to {target}")
+            return value
+        return cast
+    if name == "jarray":
+        return lambda element: _array_type(element, backend)
+    from .arrays import PRIMITIVES
+    return PRIMITIVES[name[1:]]
 
 
 # --- java.chaquopy: API форка exteraless-chaquopy (security-гейты) ---------
@@ -146,16 +178,33 @@ def _chaquopy_module():
     from .proxy import JavaClass, dynamic_proxy  # noqa: F401
 
     class GuardedMethod:  # noqa: D401 — эмуляция GuardedMethod chaquopy
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, fn, default=None, on_error=None):
+            if not callable(fn):
+                raise TypeError("GuardedMethod requires a callable")
+            self.fn, self.default, self.on_error = fn, default, on_error
+            self.__name__ = getattr(fn, "__name__", "callback")
+            self._exteraless_guarded = True
+
+        def __get__(self, instance, owner):
+            if instance is None:
+                return self
+            from types import MethodType
+            return MethodType(self, instance)
+
+        def __call__(self, *args, **kwargs):
+            try:
+                return self.fn(*args, **kwargs)
+            except Exception as error:
+                if self.on_error is not None:
+                    self.on_error(error)
+                return self.default
 
         def __getattr__(self, name):
-            from .backend import _Universal
-            return _Universal(f"GuardedMethod.{name}", None)
+            raise AttributeError(f"Chaquopy method metadata is unavailable: {name}")
 
     class ProxyClass:
         def __init__(self, *args, **kwargs):
-            pass
+            raise NotImplementedError("Chaquopy class generation requires a JVM")
 
     mod.GuardedMethod = GuardedMethod
     mod.ProxyClass = ProxyClass
@@ -203,7 +252,9 @@ class _Finder(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         root = fullname.split(".", 1)[0]
         if root not in JAVA_ROOTS:
-            return None
+            from .registry import registered_classes
+            if not any(name == fullname or name.startswith(fullname + ".") for name in registered_classes()):
+                return None
         if fullname in DENY_MODULES or any(
                 fullname.startswith(denied + ".")
                 for denied in DENY_MODULES):
@@ -241,4 +292,6 @@ def uninstall():
 def reset_class_cache():
     """Сброс кэша прокси-классов (смена бэкенда в тестах)."""
     from .proxy import reset_caches
+    from .arrays import reset_array_cache
     reset_caches()
+    reset_array_cache()

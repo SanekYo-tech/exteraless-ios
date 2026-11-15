@@ -49,6 +49,7 @@ private struct PythonObservation: Codable, Sendable {
     let fixtureCalls: [String: Int]
     let transportCalls: Int
     let transportErrors: Int
+    let bridgeBackendCalls: Int
     let nativeMembers: [String: Int]
     let sources: [String: String]
     let modulePaths: [String: String]
@@ -64,6 +65,9 @@ private struct PythonObservation: Codable, Sendable {
     let servicesVerified: Bool
     let unknownRejected: Bool
     let directories: [String: String]
+    let ownerToken: String?
+    let sdkChecks: [String: Bool]
+    let callbackLeases: Int
 }
 
 private struct InterpreterTrace: Encodable, Sendable {
@@ -211,19 +215,26 @@ private final class ObservedNativeEngine: CPythonEngine, @unchecked Sendable {
 
 /// Headless test fixture for the Telegram messages/account service and UIKit/UI
 /// service. Core BridgeServices, PluginServiceStorage and log storage are real.
-/// Only the declared account snapshot exists; every native effect is rejected.
-private final class NativeSDKFixtureServices: PluginMessagesService, PluginSettingsService,
+/// Only the declared account snapshot exists. The dedicated TL child can install
+/// its narrow legacy-text DTO recorder; the baseline rejects every native effect.
+final class NativeSDKFixtureServices: PluginMessagesService, PluginSettingsService,
     PluginUIService, PluginPlatformService, @unchecked Sendable {
-    let platformSnapshot = PluginPlatformSnapshot(accounts: [
-        PluginServiceAccount(index: fixtureAccount, recordId: 9_007_199_254_740_993, userId: 101)
-    ], selectedAccountIndex: fixtureAccount)
+    let platformSnapshot: PluginPlatformSnapshot
     let serviceStorage: PluginServiceStorage
     let serviceLogs = PluginServiceLogBuffer(capacity: 128)
     let runtimeVersion = "native-swift-sdk-fixture/1"
     private let lock = NSLock()
     private var rejectedEffects: [String] = []
+    private let textRecorder: (@Sendable (PluginTextMessageRequest) throws -> String)?
 
-    init(root: URL) { serviceStorage = PluginServiceStorage(rootDirectory: root) }
+    init(root: URL, textRecorder: (@Sendable (PluginTextMessageRequest) throws -> String)? = nil,
+         additionalAccounts: [PluginServiceAccount] = []) {
+        serviceStorage = PluginServiceStorage(rootDirectory: root)
+        self.textRecorder = textRecorder
+        platformSnapshot = PluginPlatformSnapshot(accounts: [
+            PluginServiceAccount(index: fixtureAccount, recordId: 9_007_199_254_740_993, userId: 101)
+        ] + additionalAccounts, selectedAccountIndex: fixtureAccount)
+    }
     func selectedAccount() throws -> Int32 { try platformSnapshot.selectedAccount() }
     func instanceHandle(fqcn: String, account: Int32) throws -> Int64 { throw reject("instanceHandle: \(fqcn)") }
     func themeKey(_ name: String) throws -> String { try platformSnapshot.themeKey(name) }
@@ -232,12 +243,22 @@ private final class NativeSDKFixtureServices: PluginMessagesService, PluginSetti
     func constructUI(fqcn: String, arguments: [Any]) throws -> Int64 { throw reject("constructUI: \(fqcn)") }
     func runOnUIThread(delayMs: Int, work: @escaping @Sendable () -> Void) {
         // Nonthrowing protocol requirement: record a hard probe failure. Python
-        // callbacks must instead use BridgeServices.onCallback and the host queue.
+        // callbacks must instead use BridgeServices.onOwnedCallback and the host queue.
         _ = reject("runOnUIThread bypassed the owner callback scheduler")
     }
-    func addToClipboard(_ text: String, pluginId: String) throws { throw reject("addToClipboard") }
-    func openURL(_ url: URL, pluginId: String) throws { throw reject("openURL") }
-    func sendMessage(_ request: PluginTextMessageRequest) throws -> String { throw reject("sendMessage") }
+    func addToClipboard(_ text: String, pluginId: String, lease: PluginNativeCallLease) throws {
+        try lease.check()
+        throw reject("addToClipboard")
+    }
+    func openURL(_ url: URL, pluginId: String, lease: PluginNativeCallLease) throws {
+        try lease.check()
+        throw reject("openURL")
+    }
+    func sendMessage(_ request: PluginTextMessageRequest, lease: PluginNativeCallLease) throws -> String {
+        try lease.check()
+        if let textRecorder { return try textRecorder(request) }
+        throw reject("sendMessage")
+    }
 
     var unexpectedEffects: [String] {
         lock.lock(); defer { lock.unlock() }
@@ -257,36 +278,41 @@ private struct CallbackRequest: Encodable, Sendable {
     let argumentsJSON: String
     let delayMs: Int
     let arrivedOnMainThread: Bool
+    let ownerToken: String
 }
 
 private final class OwnerCallbackQueue: @unchecked Sendable {
     private let lock = NSLock()
-    private var jobs: [Task<Void, any Error>] = []
+    private var dispatcher: PluginCallbackDispatcher?
+    private var owner: PluginHost.CallbackOwner?
     private var requests: [CallbackRequest] = []
     private var completed = 0
 
-    func enqueue(host: PluginHost, id: String, handle: Int64, method: String, arguments: String, delay: Int) {
-        let owner = host.callbackOwner(id: id)
-        let request = CallbackRequest(pluginId: id, handle: handle, method: method,
-            argumentsJSON: arguments, delayMs: delay, arrivedOnMainThread: Thread.isMainThread)
-        lock.lock()
-        requests.append(request)
-        jobs.append(Task { [self, host] in
-            try require(!request.arrivedOnMainThread && id == fixtureID && handle > 0,
-                        "native callback arrived with a wrong owner/thread/handle")
-            try require(method == "run" && arguments == "[]" && delay == 0, "unexpected runnable callback envelope")
-            // Task only enqueues a host invocation. The real owner mailbox executes
-            // Python after the original C callback returns; no inline reverse call.
-            guard let owner else { throw IntegrationFailure(description: "native callback owner was not available at enqueue") }
-            try await host.invokeCallback(id: id, handle: handle, method: method,
-                                          argumentsJSON: arguments, expectedOwner: owner)
-            noteCompletion()
-        })
-        lock.unlock()
+    func bind(host: PluginHost) {
+        lock.lock(); defer { lock.unlock() }
+        dispatcher = PluginCallbackDispatcher(host: host)
     }
 
-    func drain() async throws {
-        for job in pendingJobs() { try await job.value }
+    func enqueue(host: PluginHost, id: String, epoch: String?, handle: Int64, method: String, arguments: String, delay: Int) -> Bool {
+        guard let owner = host.callbackOwner(id: id), owner.wireToken == epoch else { return false }
+        guard !Thread.isMainThread, id == fixtureID, handle > 0,
+              method == "run", arguments == "[]", delay == 0, let dispatcher = currentDispatcher() else { return false }
+        let request = CallbackRequest(pluginId: id, handle: handle, method: method,
+            argumentsJSON: arguments, delayMs: delay, arrivedOnMainThread: Thread.isMainThread, ownerToken: owner.wireToken)
+        guard dispatcher.callback(owner, handle, method, arguments) else { return false }
+        lock.lock()
+        self.owner = owner
+        requests.append(request)
+        lock.unlock()
+        return true
+    }
+
+    func drain(checks: Int64? = nil) async throws {
+        guard let pending = pendingBarrier() else { return }
+        guard let checks else { throw IntegrationFailure(description: "owner callback fence requires its SDK checks handle") }
+        let result = try await pending.dispatcher.result(pending.owner, checks, "barrier", "[]")
+        try require(result == "null", "owner callback FIFO fence returned a non-void result")
+        noteCompletion(pending.count)
     }
 
     var snapshot: (requests: [CallbackRequest], completed: Int) {
@@ -294,12 +320,18 @@ private final class OwnerCallbackQueue: @unchecked Sendable {
         return (requests, completed)
     }
 
-    private func pendingJobs() -> [Task<Void, any Error>] {
+    private func currentDispatcher() -> PluginCallbackDispatcher? {
         lock.lock(); defer { lock.unlock() }
-        return jobs
+        return dispatcher
     }
 
-    private func noteCompletion() { lock.lock(); completed += 1; lock.unlock() }
+    private func pendingBarrier() -> (dispatcher: PluginCallbackDispatcher, owner: PluginHost.CallbackOwner, count: Int)? {
+        lock.lock(); defer { lock.unlock() }
+        guard completed < requests.count, let dispatcher, let owner else { return nil }
+        return (dispatcher, owner, requests.count)
+    }
+
+    private func noteCompletion(_ count: Int) { lock.lock(); completed = count; lock.unlock() }
 }
 
 private struct IntegrationReport: Encodable, Sendable {
@@ -338,6 +370,19 @@ private struct IntegrationReport: Encodable, Sendable {
     var completedCallbacks = 0
     var unexpectedEffects: [String] = []
     var nativeLogMessages: [String] = []
+    var sdkDTOBoundary = "Foundation DTO recorders; no UIKit/network/server acceptance"
+    var immutableCOwner = false
+    var bulkOpaqueSettings = false
+    var terminalUILease = false
+    var uiLiveModels = false
+    var ownerTaskResult = false
+    var asyncCallbackResult = false
+    var requestResponseDTO = false
+    var extensionReflection = false
+    var removedExtensionUnknown = false
+    var staleOwnerRejected = false
+    var transientHandlesReleased = false
+    var sdkDTOObservation: PluginJSONValue = .null
     var error: String?
 
     func write(to url: URL) throws {
@@ -352,6 +397,12 @@ private struct IntegrationReport: Encodable, Sendable {
 struct SwiftPluginProbe {
     static func main() async {
         let arguments = CommandLine.arguments
+        if arguments.count == 10 && arguments.last == "--tl-phase2" {
+            exit(await SDKTLNativeProbe.run(Array(arguments.dropLast())))
+        }
+        if arguments.count == 10 && arguments.last == "--hns-remediation" {
+            exit(await SDKHNSNativeProbe.run(Array(arguments.dropLast())))
+        }
         guard arguments.count == 9 else {
             log("usage: swift-plugin-probe report.json python-home stdlib dynload python-root plugin workdir probe-helper.py")
             exit(2)
@@ -364,6 +415,7 @@ struct SwiftPluginProbe {
         var engine: ObservedNativeEngine?
         var host: PluginHost?
         var binding: NativeBridgeBinding?
+        var sdkFixture: SDKDTOFixture?
 
         do {
             try report.write(to: reportURL)
@@ -386,9 +438,10 @@ struct SwiftPluginProbe {
                 services: PluginHost.BridgeServiceSet(messages: services, settings: services, ui: services),
                 log: { SwiftPluginProbe.log("HOST " + $0) })
             host = current
-            current.bridge.onCallback = { [weak current, callbacks] id, handle, method, args, delay in
-                guard let current else { return }
-                callbacks.enqueue(host: current, id: id, handle: handle, method: method, arguments: args, delay: delay)
+            callbacks.bind(host: current)
+            current.bridge.onOwnedCallback = { [weak current, callbacks] id, epoch, handle, method, args, delay in
+                guard let current else { return false }
+                return callbacks.enqueue(host: current, id: id, epoch: epoch, handle: handle, method: method, arguments: args, delay: delay)
             }
             let nativeBinding = NativeBridgeBinding(services: current.bridge)
             binding = nativeBinding
@@ -466,11 +519,52 @@ struct SwiftPluginProbe {
                         "Runtime directory/version/remove/error calls did not complete through Swift")
             report.runtimeServices = true
             try await current.invokeCallback(id: fixtureID, handle: checks, method: "queue_click")
-            try require(callbacks.snapshot.requests.count == 1, "SDK runnable did not reach Swift BridgeServices.onCallback")
-            try await callbacks.drain()
+            try require(callbacks.snapshot.requests.count == 1, "SDK runnable did not reach Swift BridgeServices.onOwnedCallback")
+            try await callbacks.drain(checks: checks)
             try require(callbacks.snapshot.completed == 1 && (try stored(services, "clicks")) == .integer(2),
                         "queued callback did not reenter the real plugin on its owner")
             report.ownerCallback = true
+
+            report.phase = "sdk-native-dto-and-owner-epoch"
+            try report.write(to: reportURL)
+            guard let firstOwner = current.callbackOwner(id: fixtureID) else {
+                throw IntegrationFailure(description: "SDK fixture has no native CallbackOwner")
+            }
+            try require(first.observation?.ownerToken == firstOwner.wireToken, "Host did not bind the C/SDK owner epoch before load")
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "reflection", argumentsJSON: "[false]", expectedOwner: firstOwner)
+            let dtoFixture = SDKDTOFixture(host: current)
+            sdkFixture = dtoFixture
+            current.bridge.extensionProvider = dtoFixture
+            let ownerJSON = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "verify_owner", expectedOwner: firstOwner)
+            try require(try JSONDecoder().decode(String.self, from: Data(ownerJSON.utf8)) == firstOwner.wireToken, "native C owner echo differs from Host")
+            report.immutableCOwner = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "reflection", argumentsJSON: "[true]", expectedOwner: firstOwner)
+            report.extensionReflection = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "bulk_settings", expectedOwner: firstOwner)
+            report.bulkOpaqueSettings = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "begin_ui", expectedOwner: firstOwner)
+            try await dtoFixture.completeUI(checks: checks)
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "after_ui", expectedOwner: firstOwner)
+            report.terminalUILease = true
+            report.uiLiveModels = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "begin_task", expectedOwner: firstOwner)
+            let taskResult = try await dtoFixture.completeTask(checks: checks)
+            try require(taskResult == .null, "Runnable exported an ignored Python result")
+            report.ownerTaskResult = true
+            let callbackJSON = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "async_result", expectedOwner: firstOwner)
+            let callbackValue = try JSONDecoder().decode(PluginJSONValue.self, from: Data(callbackJSON.utf8))
+            try require(callbackValue == .object(["value": .integer(42), "text": .string("result 雪\u{0}π"), "taskDone": .bool(true)]), "Host async result did not return actual callback JSON")
+            report.asyncCallbackResult = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "begin_request", expectedOwner: firstOwner)
+            try await dtoFixture.completeRequest(checks: checks)
+            try require(try stored(services, "sdk_request_done") == .bool(true), "native DTO reply did not reach the SDK request callback")
+            report.requestResponseDTO = true
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "after_transients", expectedOwner: firstOwner)
+            report.transientHandlesReleased = true
+            current.bridge.extensionProvider = nil
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "reflection", argumentsJSON: "[false]", expectedOwner: firstOwner)
+            report.removedExtensionUnknown = true
+            current.bridge.extensionProvider = dtoFixture
 
             report.phase = "events-and-send-decisions"
             try report.write(to: reportURL)
@@ -527,6 +621,18 @@ struct SwiftPluginProbe {
             try require(observed.trace.interpreters.first(where: { $0.nativeReference == first.nativeReference })?.destroyed == true,
                         "previous C interpreter survived disable")
             try checkNative(second)
+            guard let secondOwner = current.callbackOwner(id: fixtureID),
+                  let secondChecks = second.observation?.checksHandle else {
+                throw IntegrationFailure(description: "reloaded SDK fixture has no owner/checks handle")
+            }
+            try require(secondOwner.wireToken != firstOwner.wireToken, "reload reused its random native owner epoch")
+            _ = try await current.invokeCallbackResult(id: fixtureID, handle: secondChecks, method: "verify_owner", expectedOwner: secondOwner)
+            do {
+                _ = try await current.invokeCallbackResult(id: fixtureID, handle: checks, method: "verify_services", expectedOwner: firstOwner)
+                throw IntegrationFailure(description: "retired owner entered the replacement interpreter")
+            } catch PluginHostError.superseded {
+                report.staleOwnerRejected = true
+            }
             try require(try stored(services, "loads") == .integer(2), "reload did not execute SDK on_plugin_load again")
             try require(try stored(services, "unloads") == .integer(1), "reload duplicated unload")
             let reloadedRows = try await settingsRows(current)
@@ -549,7 +655,7 @@ struct SwiftPluginProbe {
             try checkFinalTrace(observed.trace)
             report.sdkLoaderAndSerializer = true
             report.finalized = true
-            current.bridge.onCallback = nil
+            current.bridge.onOwnedCallback = nil
             nativeBinding.uninstall()
             report.bindingUninstalled = true
             report.nativeTrace = observed.trace
@@ -557,6 +663,7 @@ struct SwiftPluginProbe {
             report.completedCallbacks = callbacks.snapshot.completed
             report.unexpectedEffects = services.unexpectedEffects
             report.nativeLogMessages = services.serviceLogs.entries(pluginId: fixtureID).map(\.message)
+            report.sdkDTOObservation = dtoFixture.observation
             try require(report.unexpectedEffects.isEmpty, "fixture attempted a native UI/account effect: \(report.unexpectedEffects)")
             try require(report.nativeLogMessages.filter { $0 == "native fixture loaded" }.count == 2,
                         "plugin logs did not cross the native Swift dispatcher twice")
@@ -571,7 +678,7 @@ struct SwiftPluginProbe {
             if let engine { report.nativeTrace = engine.trace }
             try? report.write(to: reportURL)
             try? await callbacks.drain()
-            if let host { await host.stop(); host.bridge.onCallback = nil }
+            if let host { await host.stop(); host.bridge.onOwnedCallback = nil }
             binding?.uninstall()
             report.bindingUninstalled = binding != nil
             if let engine {
@@ -582,6 +689,7 @@ struct SwiftPluginProbe {
             report.completedCallbacks = callbacks.snapshot.completed
             report.unexpectedEffects = services.unexpectedEffects
             report.nativeLogMessages = services.serviceLogs.entries(pluginId: fixtureID).map(\.message)
+            report.sdkDTOObservation = sdkFixture?.observation ?? .null
             try? report.write(to: reportURL)
             exit(1)
         }
@@ -656,7 +764,7 @@ struct SwiftPluginProbe {
         try require(plugins.count == 2, "missing per-load Python observations")
         for observation in plugins {
             try require(observation.profileActive && observation.problems.isEmpty && observation.loadedPlugins.isEmpty
-                && observation.handleCount == 0 && observation.legacyServiceCount == 0 && observation.mockCalls == 0,
+                    && observation.handleCount == 0 && observation.callbackLeases == 0 && observation.legacyServiceCount == 0 && observation.mockCalls == 0,
                         "SDK unload did not clear owner handles/registry, or a test mock was used")
             for name in ["load_plugin", "unload_plugin"] {
                 try require(observation.sdkCalls[name] == 1, "SDK \(name) did not execute once per interpreter")

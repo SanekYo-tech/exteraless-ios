@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "derived_readers": [
+    {
+      "class": "NekoChatSettingsActivity",
+      "fqcn": "tw.nekomimi.nekogram.settings.NekoChatSettingsActivity",
+      "member": "getDeleteMenuChecks",
+      "targets": ["nagram.defaultDeleteMenu", "nagram.defaultDeleteMenuBanUsers", "nagram.defaultDeleteMenReportSpam", "nagram.defaultDeleteMenuDeleteAll", "nagram.defaultDeleteMenuDoActionsInCommonGroups"],
+      "reason": "The four linked fields read the parent bitmask; the statically imported helper feeds the actual moderation sheet, not only a settings row.",
+      "evidence": [
+        {"file": "java/tw/nekomimi/nekogram/settings/NekoChatSettingsActivity.java", "anchor": "public static boolean[] getDeleteMenuChecks()"},
+        {"file": "java/org/telegram/ui/Components/AlertsCreator.java", "anchor": "final boolean[] checks = getDeleteMenuChecks();"},
+        {"file": "java/org/telegram/ui/Components/AlertsCreator.java", "anchor": "deleteMessagesBottomSheet.toggleDefaultChecks(checks);"},
+        {"file": "java/org/telegram/ui/Components/DeleteMessagesBottomSheet.java", "anchor": "public void toggleDefaultChecks(boolean[] checks)"}
+      ]
+    },
+    {
+      "class": "PillStackConfig",
+      "member": "getActivePills",
+      "targets": ["pillstack.activePillsRaw"],
+      "reason": "loadConfig materializes the persisted IDs into activePills; getActivePills returns that same collection.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "activePills.addAll(parseList(activePillsRaw.String()))"},
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "fun getActivePills(): ArrayList<Int> = activePills"}
+      ]
+    },
+    {
+      "class": "PillStackConfig",
+      "member": "getHiddenPills",
+      "targets": ["pillstack.hiddenPillsRaw"],
+      "reason": "loadConfig materializes persisted hidden IDs and excludes active IDs; getHiddenPills returns that collection.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "hiddenPills.addAll(parseList(hiddenPillsRaw.String())"},
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "fun getHiddenPills(): ArrayList<Int> = hiddenPills"}
+      ]
+    },
+    {
+      "class": "PillStackConfig",
+      "member": "hasActivePills",
+      "targets": ["pillstack.activePillsRaw"],
+      "reason": "The persisted active collection also controls whether the pill bar has content.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "activePills.addAll(parseList(activePillsRaw.String()))"},
+        {"file": "kotlin/app/exteraless/pillstack/PillStackConfig.kt", "anchor": "fun hasActivePills(): Boolean"}
+      ]
+    },
+    {
+      "class": "NaConfig",
+      "member": "preferredTranslateTargetLangList",
+      "access": "property",
+      "targets": ["nagram.preferredTranslateTargetLang"],
+      "reason": "The updater parses preferredTranslateTargetLang into the list consumed by Translator.kt.",
+      "evidence": [
+        {"file": "kotlin/xyz/nextalone/nagram/NaConfig.kt", "anchor": "val str = preferredTranslateTargetLang.String().trim()"},
+        {"file": "kotlin/xyz/nextalone/nagram/NaConfig.kt", "anchor": "preferredTranslateTargetLangList.add(lang.trim().lowercase())"}
+      ]
+    }
+  ],
+  "feature_notes": [
+    {
+      "id": "appearance.centerTitle",
+      "note": "Obsolete private storage registration. centerTitle() reads NaConfig.centerActionBarTitle; setCenterTitle also writes centerActionBarTitleType. Do not port this storage as a second centering feature.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/appearance/AppearanceConfig.kt", "anchor": "private val centerTitle = addConfig"},
+        {"file": "kotlin/app/exteraless/appearance/AppearanceConfig.kt", "anchor": "return NaConfig.centerActionBarTitle.Bool()"}
+      ]
+    },
+    {
+      "id": "nagram.backAnimationStyle",
+      "note": "Declared default 0 is not the effective fresh-install motion policy: UtilsConfig.applyMotionDefaults writes SPRING (1) when the preference is absent. Existing explicit user choices remain authoritative.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/utils/UtilsConfig.kt", "anchor": "private const val BACK_ANIMATION_SPRING = 1"},
+        {"file": "kotlin/app/exteraless/utils/UtilsConfig.kt", "anchor": "if (!prefs.contains(key))"},
+        {"file": "kotlin/app/exteraless/utils/UtilsConfig.kt", "anchor": "NaConfig.backAnimationStyle.setConfigInt(BACK_ANIMATION_SPRING)"}
+      ]
+    },
+    {
+      "id": "nagram.cameraInVideoMessages",
+      "note": "Declared default 1 is adjusted by fixConfig: if the new key is absent, legacy RearVideoMessages (default false) selects rear=1 or front=0. Preserve this distinction in iOS adaptation evidence.",
+      "evidence": [
+        {"file": "kotlin/xyz/nextalone/nagram/NaConfig.kt", "anchor": "if (!getPreferences().contains(cameraInVideoMessages.key))"},
+        {"file": "kotlin/xyz/nextalone/nagram/NaConfig.kt", "anchor": "cameraInVideoMessages.setConfigInt(if (legacyRear) 1 else 0)"}
+      ]
+    },
+    {
+      "id": "nagram.strokeOnViews",
+      "note": "Without a persisted choice fixConfig substitutes a device-performance-dependent value; the declaration alone is not an unconditional default.",
+      "evidence": [
+        {"file": "kotlin/xyz/nextalone/nagram/NaConfig.kt", "anchor": "strokeOnViews.changed(SharedConfig.getDevicePerformanceClass() != SharedConfig.PERFORMANCE_CLASS_LOW)"}
+      ]
+    },
+    {
+      "id": "general.showNagramSettings",
+      "note": "migrateLegacyKeys unconditionally clears a true value. A stored true flag is not evidence that the Nagram entry remains exposed after initialization.",
+      "evidence": [
+        {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "anchor": "if (showNagramSettings.Bool())"},
+        {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "anchor": "showNagramSettings.setConfigBool(false)"}
+      ]
+    },
+    {
+      "id": "neko.sortByUnread",
+      "note": "Legacy Neko sort_by_unread is a different preference from NaConfig.SortByUnread. The live control uses the Nagram property. Do not share one Core key across the two source IDs.",
+      "evidence": [
+        {"file": "java/tw/nekomimi/nekogram/NekoConfig.java", "anchor": "sortByUnread = addConfig(\"sort_by_unread\""},
+        {"file": "java/tw/nekomimi/nekogram/settings/NekoGeneralSettingsActivity.java", "anchor": "new ConfigCellTextCheck(NaConfig.INSTANCE.getSortByUnread())"}
+      ]
+    },
+    {
+      "id": "voskmanager.language",
+      "note": "The stored default is null. getLanguage resolves the current locale through VoskModels and finally falls back to en-us; this is not an unconditional English setting default.",
+      "evidence": [
+        {"file": "java/app/exteraless/speech/VoskManager.java", "anchor": "VoskModels.forCurrentLocale(locale.getLanguage(), locale.getCountry())"},
+        {"file": "java/app/exteraless/speech/VoskManager.java", "anchor": "return guessed != null ? guessed.code : \"en-us\""}
+      ]
+    }
+  ]
+}

@@ -1,4 +1,10 @@
-# iOS SDK loader adapter (wave 1)
+# iOS SDK loader adapter
+
+Wave-2 API/provider coverage and integration hunks:
+[SDK handoff](../../docs/wave-2/sdk.md), [wire contract](../../docs/wave-2/sdk-wire.md).
+The owner host binds C's immutable random epoch with `xt_set_owner_token`, then
+SDK `bind_owner_json` before load, and routes native FIFO release through
+`release_handles_json`. C injects pluginId/ownerToken; Python does not author them.
 
 `exteraless_runtime` uses the actual `python/sdk/extera_utils/plugin_loader.py`.
 Canonical imports are `extera_utils.plugin_loader`, `base_plugin`, `ui.settings`
@@ -11,9 +17,12 @@ On the plugin's dedicated worker, after Swift has called `xt_bind` and
 `virtualjava.install(BridgeBackend(service="java", manifest_path=EXPLICIT_PATH))`:
 
 ```python
+import json
 import exteraless_runtime as runtime
 runtime.configure("demo_plugin", "/.../plugins", "/.../settings")
 runtime.metadata_json("/.../plugins/demo_plugin.plugin")  # SDK metadata object
+# Host already bound the native C epoch; native_owner_epoch is its captured token.
+runtime.bind_owner_json(json.dumps(native_owner_epoch))
 runtime.load_json("/.../plugins/demo_plugin.plugin")
 # {"metadata": {...}, "handles": {"app_event": bool, "pre_request": bool,
 #  "post_request": bool, "update": bool, "updates": bool, "send_message": bool},
@@ -42,7 +51,7 @@ thread is refused; callbacks re-enter via the native owner-worker queue.
 
 `configure` discovers the sibling `python/vendor` bundle, validates its manifest
 and `.dist-info` metadata, and adds that directory after the SDK in `sys.path`.
-Only the eight agreed pure-Python packages are provided. Plugin requirements are
+The complete approved eight-package or twelve-package bundle is supported. Plugin requirements are
 checked with `packaging.Requirement` / `SpecifierSet`, actual-interpreter markers,
 Requires-Python and transitive/extra requirements. Missing versions, conflicts and
 URL requirements fail visibly; no dependency is installed at runtime. See
@@ -57,11 +66,11 @@ All calls use `_exteraless_bridge.xt_call_host` with this envelope:
  "args": ARGS, "kwargs": {}, "instance": None, "value": None}
 ```
 
-No request includes `pluginId`: `xt_set_plugin_id(plugin_id)` binds native state.
+No Python-authored request includes pluginId or ownerToken. Native C state supplies both.
 
 | MEMBER | ARGS | Native result |
 | --- | --- | --- |
-| `getSetting` | `[key, default_value]` | typed JSON value (default only for missing key) |
+| `getSetting` | `[key, default_value]` | retained native single-value API |
 | `setSetting` | `[key, value]` | null |
 | `removeSetting` | `[key]` | bool: whether the key existed |
 | `getFilesDir` | `[]` | absolute per-plugin files path string |
@@ -69,6 +78,11 @@ No request includes `pluginId`: `xt_set_plugin_id(plugin_id)` binds native state
 | `getCacheDir` | `[]` | absolute per-plugin cache path string |
 | `log` | `[text]` | null |
 | `getVersion` | `[]` | version string |
+| `getSettings` | `[]` | opaque JSON object string; used by SDK value/bulk reads |
+| `setSettings` / `updateSettings` | `[json_object_string]` | atomic replace / merge |
+| `clearSettings` | `[]` | reset per-plugin storage |
+| `uiRefreshSettings` | `[]` | actual native settings-page refresh |
+| `getProtectedPaths` | `[]` | native protected client-settings directories |
 | `completeCallback` | `[positive_handle]` | true only after the last scheduled reference; called by callback cleanup |
 | `hasPermission` | `[permission_name]` | actual native granted permission bool |
 | `isUnsafeMode` | `[]` | actual host unsafe-mode bool |
@@ -76,8 +90,8 @@ No request includes `pluginId`: `xt_set_plugin_id(plugin_id)` binds native state
 These signatures match `BridgeServices.callRuntime` and `PluginServiceStorage`.
 SDK permission checks are bound to these native results; an unavailable provider
 raises instead of taking the SDK's desktop no-JVM fallback.
-The adapter converts SDK JSON text to native typed values before setting. Reads
-use the native store directly with a typed default, distinguishing missing keys
+The SDK uses opaque JSON bulk transport, preserving literal user keys such as
+`__handle__` and `__bytes__`. Reads use the native store, distinguishing missing keys
 from stored JSON null and preserving the SDK's `coerce_value` rules. Python does
 not cache native defaults as if they were persisted values.
 Also used: `op="get"`, `fqcn="org.telegram.messenger.UserConfig"`,
@@ -125,9 +139,13 @@ Reload invokes the previous instance's unload hook before the SDK loads again.
 - Runtime installation of dependencies, native wheels and URL requirements.
   `__requirements__` satisfied by the provided pure-Python bundle are supported.
 - Elyx/EAF/bytecode archives and Java/JVM/Dex/Xposed method hooking.
-- SDK menu registration, bulk settings export/import/enumeration/replacement.
-- `reload_settings=True`: native automatic settings-screen refresh is not exposed;
-  this request fails before writing. The settings UI can call `settings_json` again.
+- Native menu/UI/TL/owner-queue operations require the wave-2 providers and owner
+  binding described in the handoff. Their absence raises instead of a fake success.
+- Arbitrary Android resource/layout/Canvas APIs and synchronous unported controller
+  caches: see the coverage table. Explicit asynchronous
+  controller/cache/download facades and three native notifications are implemented.
+- Media edits/albums/secret sends use the explicit native v1 DTO helpers; native
+  validation and upload/enqueue results remain authoritative.
 - Android media/cache objects; directory helpers use the real per-plugin native
   files/cache directories. `get_plugin_dir` retains the actual SDK
   `<plugins_dir>/.data/<id>` filesystem implementation; `get_plugin_cache_dir`
@@ -146,6 +164,12 @@ metadata are unit doubles. The adapter, virtualjava, SDK loader, BasePlugin
 registration, requirement parser and settings serializer execute as real code.
 These tests do not measure plugin-corpus compatibility or execute UIKit/Swift/C.
 
+The Config mirror uses the source-pinned `_config_manifest.py`, actual native
+ClientSettings keys and settings permission. Its 308 per-overload receipts are in
+`docs/wave-2/sdk-config-parity.json`; unknown schema and private credentials cannot
+be replaced by fabricated defaults. Pills use portable DTO classes; stable ID
+mapping and rendering belong to the native Pill bridge.
+
 The embedded audit regression additionally executes the real sealed
 `python/vendor` bundle without a `files` grant, including a genuine frozen `os`
 without `__file__`. See [AUDIT_PATHS.md](AUDIT_PATHS.md) for the reproduced cause,
@@ -160,8 +184,9 @@ Run (pytest must already be installed):
 With `-s`, each case prints `IOS_RUNTIME_UNIT_OK` with actual SDK function-call
 counts collected by the isolated worker's profiler and native-double call counts.
 
-Verified locally: **12 passed on CPython 3.12.10**, **12 passed on
-CPython 3.14.8**. The hard timeout is 20 seconds per isolated subprocess.
+The core file's **12 scenarios passed on CPython 3.12.10 and 3.14.8**. New SDK
+adapter coverage and the real native driver handoff are tracked in `sdk.md` and
+`sdk-native-probe.md`. The hard timeout is 20 seconds per isolated subprocess.
 The lifecycle/settings case recorded actual SDK `load_plugin` (1),
 `get_settings_json` (1), `notify_setting_changed` (3), `dispatch_setting_click` (2),
 `unload_plugin` (2), and 60 strict native-double calls. The hooks case recorded

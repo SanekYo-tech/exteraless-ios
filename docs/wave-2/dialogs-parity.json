@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "owner": "P-dialog-navigation",
+  "source_inventory": {
+    "path": "docs/parity/client-features.json",
+    "sha256": "17cf1a8efad7469c8696045904105694347e26a2dbe70040d0f64658464ed99c",
+    "android_root": "third_party/exteraless-android/TMessagesProj/src/main/"
+  },
+  "supersedes_chat_fragment_ids": ["nagram.sortByUnread", "neko.sortByUnread"],
+  "review_remediation": {
+    "findings": ["IDS-03", "IDS-04", "IDS-05"],
+    "status": "source-remediated-native-tests-pending",
+    "receipt": "docs/wave-2/dialogs-remediation.md",
+    "native_fixtures": "telegram-ios/submodules/TelegramCore/Tests/ExteralessDialogReviewTests.swift",
+    "native_fixture_count": 9,
+    "native_fixtures_executed": false,
+    "desktop_source_checks": {"remediation": 5, "family": 8, "status": "passed"},
+    "frozen_core_changed": false
+  },
+  "integration": {
+    "shared_hunks": "docs/wave-2/dialogs-native-hunks.patch",
+    "shared_hunks_applied_by_this_owner": true,
+    "shared_hunks_status": "All 23 dialog UI/shared hunks applied; separately delegated pin-echo observed in TL-owned source",
+    "applied_shared_files": [
+      "telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift",
+      "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift",
+      "telegram-ios/submodules/TelegramUI/Sources/NavigateToChatController.swift",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift",
+      "telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift",
+      "telegram-ios/submodules/AvatarNode/Sources/AvatarNode.swift",
+      "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift"
+    ],
+    "pending_shared_files": [],
+    "deferred_state_hunk": {"path": "docs/wave-2/dialogs-state-hunk.patch", "owner": "dialogs-remediation (authorized pin slice)", "applied": true, "applied_by_this_owner": true, "observed_callsite": "telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift:5194", "supersedes": "current-prefix-only unpin guard"},
+    "integration_receipt": "docs/dialogs-integration.md",
+    "native_test_target_wired_by_build_owner": "telegram-ios/Tests/Exteraless/BUILD:69-87; not executed",
+    "composition_pending": ["DialogFeatures.definitions", "ExteralessDialogIntegration.init/update/clearContext"],
+    "privacy_composition": "Explicit public Privacy Extras account/list/counter policies, before ordering; no global transform chain."
+  },
+  "verification": {
+    "native_build_executed": false,
+    "swift_xctest_executed": false,
+    "visual_frames_verified": false,
+    "source_fixtures": {"command": "python docs/wave-2/tests/dialogs_source_fixtures.py", "tests": 8, "status": "passed", "seconds": 0.105, "scope": "Offline direct-source contracts and applied UI/state postimages; not Swift execution"},
+    "postbox_import_check": {"command": "python telegram-ios/build-system/Make/PostboxImportCheck.py telegram-ios", "exit_code": 0, "allowlist_additions": 0},
+    "scoped_diff_check": "passed",
+    "expected_frames": "docs/wave-2/dialogs.md#expected-frames--written-before-recording"
+  },
+  "features": [
+    {
+      "id": "dialog.customForumTabsEnable", "kind": "setting-template",
+      "android": {"symbol": "DialogConfig.customForumTabsEnable", "default": false, "effective_default": "Absent key inherits forceForumTabs or chat.forum_tabs", "declaration": "java/tw/nekomimi/nekogram/DialogConfig.java:11", "evidence": ["java/org/telegram/messenger/ChatObject.java:2638-2642", "java/tw/nekomimi/nekogram/menu/forum/CustomForumTabsPopupWrapper.java:37-66"]},
+      "ios": {"setting_key": null, "storage": "Per-account native item cache: exteraless.dialog.forum.v1.<namespace-packed-peer-id>; absence/Tabs/List", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/ChatControllerContentData.swift", "line": 1044, "symbol": "ContentData peer layout"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatControllerContentData.swift", "line": 1477, "symbol": "ContentData reply-thread layout"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Dialogs/ExteralessDialogForumController.swift", "line": 71, "symbol": "select"}, {"path": "telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift", "line": 1419, "symbol": "peerSelected local layout before routing"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/NavigateToChatController.swift", "line": 55, "symbol": "navigateToChatControllerImpl local layout"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "symbol": "openResolved uses the shared forum-aware router"}], "pending_shared_callsites": [], "adaptation": "Local native layout, no channels.toggleForum/updateForumViewAsMessages mutation. Live panel updates preserve draft/current thread; list and URL entries now use the forum-aware router."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogForum.swift", "line": 1}]}
+    },
+    {
+      "id": "nagram.disableGlobalSearch", "kind": "setting",
+      "android": {"symbol": "NaConfig.disableGlobalSearch", "key": "DisableGlobalSearch", "default": false, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:1453", "evidence": ["java/org/telegram/ui/Adapters/DialogsSearchAdapter.java:1104-1109", "java/org/telegram/ui/Adapters/SearchAdapterHelper.java:184-258"]},
+      "ios": {"setting_key": "chats.disableGlobalSearch", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift", "line": 1649, "symbol": "GlobalPeerSearchContext.searchRemotePeers"}], "adaptation": "Original global peer-result gate, not an offline search switch: retain contacts.search my_results and contacts/joined chats from global results. Native message/hashtag providers are independent. Account/environment-scoped query cache and reactive preference projection."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogSearch.swift", "line": 1}]}
+    },
+    {
+      "id": "nagram.disableStories", "kind": "setting",
+      "android": {"symbol": "NaConfig.disableStories", "key": "DisableStories", "default": false, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:317", "evidence": ["java/org/telegram/ui/Stories/StoriesController.java:256-291", "java/org/telegram/ui/Components/SharedMediaLayout.java:3878,5042", "java/org/telegram/ui/Stories/StoriesUtilities.java:204"]},
+      "ios": {"setting_key": "chats.disableStories", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/StoryListContext.swift", "line": 351, "symbol": "StorySubscriptionsContext.Impl.updateTasks"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/StoryListContext.swift", "line": 894, "symbol": "PeerStoryListContext.Impl.loadMore"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/StoryListContext.swift", "line": 2193, "symbol": "SearchStoryListContext.Impl.loadMore"}, {"path": "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchControllerNode.swift", "line": 259, "symbol": "dialogPolicyDisposable/updateStorySearch"}, {"path": "telegram-ios/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/OpenStories.swift", "line": 10, "symbol": "openArchivedStories/openPeerStoriesCustom"}, {"path": "telegram-ios/submodules/ChatListUI/Sources/ChatListController.swift", "line": 2143, "symbol": "native preload/story/archive providers and three story entry guards"}, {"path": "telegram-ios/submodules/AvatarNode/Sources/AvatarNode.swift", "line": 1400, "symbol": "setStoryStats reactive policy and observer disposal"}, {"path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift", "line": 3624, "symbol": "openStoryArchive/openPostStory guards"}], "pending_shared_callsites": [], "adaptation": "Native discovery cancellation, header/preload providers, reactive avatar stats and story-entry guards are connected. Server/cache/upload/read data and native layout remain authoritative."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogStories.swift", "line": 1}]}
+    },
+    {
+      "id": "nagram.doNotUnarchiveBySwipe", "kind": "setting",
+      "android": {"symbol": "NaConfig.doNotUnarchiveBySwipe", "key": "DoNotUnarchiveBySwipe", "default": false, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:277", "evidence": ["java/org/telegram/ui/DialogsActivity.java:2519-2521"]},
+      "ios": {"setting_key": "chats.doNotUnarchiveBySwipe", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "line": 4057, "symbol": "asyncLayout reveal arrays"}, {"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "line": 5720, "symbol": "revealOptionSelected recheck"}], "pending_shared_callsites": [], "adaptation": "Both native swipe gates and policy-driven row invalidation are connected. Explicit menu operations keep native confirmation/permission/undo paths."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/DialogPolicy.swift", "line": 68}, {"kind": "applied-source-receipt", "path": "docs/dialogs-integration.md", "line": 1}]}
+    },
+    {
+      "id": "nagram.hideArchive", "kind": "setting",
+      "android": {"symbol": "NaConfig.hideArchive", "key": "HideArchive", "default": false, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:919", "evidence": ["java/org/telegram/messenger/MessagesController.java:10093-10101", "java/org/telegram/messenger/MessagesController.java:12650-12667"]},
+      "ios": {"setting_key": "appearance.hideArchive", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNodeEntries.swift", "line": 620, "symbol": "chatListNodeEntriesForView"}], "adaptation": "Remove the archive reference including story-only rows, not archive membership. Existing Appearance main-menu archive action remains the entry. Current native rows return on reset."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNodeEntries.swift", "line": 620}]}
+    },
+    {
+      "id": "nagram.searchHashtagDefaultPageChannel", "kind": "setting",
+      "android": {"symbol": "NaConfig.searchHashtagDefaultPageChannel", "key": "SearchHashtagDefaultPageChannel", "default": 0, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:479", "evidence": ["java/org/telegram/ui/ChatActivity.java:38011-38017", "java/tw/nekomimi/nekogram/settings/NekoChatSettingsActivity.java:312-318"]},
+      "ios": {"setting_key": "chats.searchHashtagDefaultPageChannel", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchControllerNode.swift", "line": 129, "symbol": "initial native page selection"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "line": 9838, "symbol": "ordinary hashtag opener honors configured channel default"}], "pending_shared_callsites": [], "adaptation": "Native pages use the existing providers. Ordinary public-channel taps now honor default 0; an explicit scope inherited from an existing search remains explicit."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/DialogPolicy.swift", "line": 76}]}
+    },
+    {
+      "id": "nagram.searchHashtagDefaultPageChat", "kind": "setting",
+      "android": {"symbol": "NaConfig.searchHashtagDefaultPageChat", "key": "SearchHashtagDefaultPageChat", "default": 0, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:485", "evidence": ["java/org/telegram/ui/ChatActivity.java:38016", "java/tw/nekomimi/nekogram/settings/NekoChatSettingsActivity.java:312-318"]},
+      "ios": {"setting_key": "chats.searchHashtagDefaultPageChat", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchControllerNode.swift", "line": 129, "symbol": "initial native page selection"}], "adaptation": "Separate non-public-chat default. Existing current/my/public native providers and explicit chat-only mode are retained. Does not reset an already user-selected search tab."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/DialogPolicy.swift", "line": 76}]}
+    },
+    {
+      "id": "neko.disableSwipeToNext", "kind": "setting",
+      "android": {"symbol": "NekoConfig.disableSwipeToNext", "key": "disableSwipeToNextChannel", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:167", "evidence": ["java/tw/nekomimi/nekogram/helpers/ChatsHelper.java:505-506"]},
+      "ios": {"setting_key": "chats.disableSwipeToNext", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "line": 11210, "symbol": "updateNextChannelToReadVisibility"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift", "line": 1357, "symbol": "release-time policy guard"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift", "line": 781, "symbol": "offerNextChannelToRead disarm"}], "pending_shared_callsites": [], "adaptation": "Native offer, disarm and gesture commit are connected. The current native chat/thread selects the flag even when no next candidate exists; native peer/location/read/draft paths remain intact."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ChatControllerContentData.swift", "line": 2550}, {"kind": "applied-source-receipt", "path": "docs/dialogs-integration.md", "line": 1}]}
+    },
+    {
+      "id": "neko.disableSwipeToNextTopic", "kind": "setting",
+      "android": {"symbol": "NekoConfig.disableSwipeToNextTopic", "key": "disableSwipeToNextTopic", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:168", "evidence": ["java/tw/nekomimi/nekogram/helpers/ChatsHelper.java:505-506"]},
+      "ios": {"setting_key": "chats.disableSwipeToNextTopic", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "line": 11210, "symbol": "updateNextChannelToReadVisibility"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift", "line": 1357, "symbol": "release-time topic policy"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryListNode.swift", "line": 781, "symbol": "offerNextChannelToRead disarm"}], "pending_shared_callsites": [], "adaptation": "Separate topic flag is connected using the current native thread. Actual ThreadData.id/getNextUnreadForumTopic and the native handoff are retained; disabling clears the armed overscroll."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ChatControllerContentData.swift", "line": 2550}, {"kind": "applied-source-receipt", "path": "docs/dialogs-integration.md", "line": 1}]}
+    },
+    {
+      "id": "neko.openArchiveOnPull", "kind": "setting",
+      "android": {"symbol": "NekoConfig.openArchiveOnPull", "key": "OpenArchiveOnPull", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:114", "evidence": ["java/org/telegram/ui/DialogsActivity.java:2340-2350"]},
+      "ios": {"setting_key": "chats.openArchiveOnPull", "disposition": "native-preference-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNode.swift", "line": 3287, "symbol": "revealScrollHiddenItem / didEndScrolling"}, {"path": "telegram-ios/submodules/TelegramUIPreferences/Sources/ChatArchiveSettings.swift", "line": 42, "symbol": "withExteralessArchivePull"}], "adaptation": "One-shot native reveal followed by native archive groupSelected after settling. Real updateChatArchiveSettings lease makes the row pullable and restores prior position on off; later native Unhide wins. Hide archive/search/edit/custom-folder precedence preserved."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Dialogs/ExteralessDialogIntegration.swift", "line": 1}]}
+    },
+    {
+      "id": "neko.rememberAllBackMessages", "kind": "setting",
+      "android": {"symbol": "NekoConfig.rememberAllBackMessages", "key": "rememberAllBackMessages", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:171", "evidence": ["java/org/telegram/ui/ChatActivity.java:11729-11732", "java/org/telegram/ui/ChatActivity.java:18564-18566", "java/org/telegram/ui/ChatActivity.java:52048-52051"]},
+      "ios": {"setting_key": "chats.rememberAllBackMessages", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationStack.swift", "line": 6, "symbol": "ChatHistoryNavigationStack.add/removeLast/filterOutIndicesLessThan"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ChatController.swift", "line": 11216, "symbol": "updateExteralessDialogHistoryControls installation"}], "pending_shared_callsites": [], "adaptation": "Latest-only/all-return-point native history and long-press clear are connected. The current chat/thread owns native EngineMessage.Index values; clear then uses the existing down action without a read mutation."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/DialogHistoryPolicy.swift", "line": 5}]}
+    },
+    {
+      "id": "neko.sortByContacts", "kind": "setting",
+      "android": {"symbol": "NekoConfig.sortByContacts", "key": "sort_by_contacts", "default": true, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:123", "evidence": ["Java+Kotlin source search: declaration only"]},
+      "ios": {"setting_key": null, "disposition": "original-storage-only", "implementation_callsites": [], "adaptation": "No native row, behavioral mapping or migration invented for a declaration-only original. No preference-import completion claimed."},
+      "implementation": {"status": "compat-storage", "ported": false, "disposition_complete": true, "evidence": [{"kind": "original-source-review", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoConfig.java", "line": 123}]}
+    },
+    {
+      "id": "neko.sortByUnmuted", "kind": "setting",
+      "android": {"symbol": "NekoConfig.sortByUnmuted", "key": "sort_by_unmuted", "default": true, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:121", "evidence": ["Java+Kotlin source search: declaration only"]},
+      "ios": {"setting_key": null, "disposition": "original-storage-only", "implementation_callsites": [], "adaptation": "Independent legacy storage flag. Nagram's unmuted unread-priority rule is not an alias for this preference."},
+      "implementation": {"status": "compat-storage", "ported": false, "disposition_complete": true, "evidence": [{"kind": "original-source-review", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoConfig.java", "line": 121}]}
+    },
+    {
+      "id": "neko.sortByUser", "kind": "setting",
+      "android": {"symbol": "NekoConfig.sortByUser", "key": "sort_by_user", "default": true, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:122", "evidence": ["Java+Kotlin source search: declaration only"]},
+      "ios": {"setting_key": null, "disposition": "original-storage-only", "implementation_callsites": [], "adaptation": "No native row, sorting behavior or migration invented; kept distinct from live Nagram sorting."},
+      "implementation": {"status": "compat-storage", "ported": false, "disposition_complete": true, "evidence": [{"kind": "original-source-review", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoConfig.java", "line": 122}]}
+    },
+    {
+      "id": "neko.unlimitedPinnedDialogs", "kind": "setting",
+      "pending_shared_callsites": [],
+      "shared_owner_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift", "line": 5194, "symbol": "generation-owned root pin replay", "owner": "dialogs-remediation"}],
+      "android": {"symbol": "NekoConfig.unlimitedPinnedDialogs", "key": "UnlimitedPinnedDialogs", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:113", "evidence": ["java/org/telegram/ui/DialogsActivity.java:9622-9641", "java/org/telegram/messenger/MessagesController.java:17848-17882"]},
+      "ios": {"setting_key": "chats.unlimitedPinnedDialogs", "disposition": "native-local-pin-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Peers/TogglePeerChatPinned.swift", "line": 54, "symbol": "native local limit"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedSynchronizePinnedChatsOperations.swift", "line": 119, "symbol": "generation-owned native sync"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedSynchronizePinnedChatsOperations.swift", "line": 305, "symbol": "actual encoded outgoing order recording"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedSynchronizePinnedChatsOperations.swift", "line": 315, "symbol": "true native RPC acknowledgement"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift", "line": 5194, "symbol": "generation-owned pin replay"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Dialogs/ExteralessDialogIntegration.swift", "line": 50, "symbol": "initial/changed flag account attach"}], "adaptation": "Root capacity and wire order use actual native limits. IDS-03/04 remediation adds account-local sent snapshots, native-operation-watermark intent, claimed reconciliation ownership and authoritative verification of ambiguous echoes. Initial false on a detached account's reattach queues only uncovered work. Actual read/RPC acknowledgements remain distinct from local writes; native tests pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogPinReconciliation.swift", "line": 1}, {"kind": "remediation-source-receipt", "path": "docs/wave-2/dialogs-remediation.md", "line": 1}]}
+    },
+    {
+      "id": "neko.unreadBadgeOnBackButton", "kind": "setting",
+      "android": {"symbol": "NekoConfig.unreadBadgeOnBackButton", "key": "unreadBadgeOnBackButton", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:79", "evidence": ["java/org/telegram/ui/ActionBar/ActionBar.java:2614-2617"]},
+      "ios": {"setting_key": "chats.unreadBadgeOnBackButton", "disposition": "native-preference-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift", "line": 604, "symbol": "initialNavigationBadge via exteralessDialogInitialBackBadge"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerLoadDisplayNode.swift", "line": 4985, "symbol": "chatUnreadCountDisposable via exteralessDialogBackBadge"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Dialogs/ExteralessDialogBackBadge.swift", "line": 44, "symbol": "same-set native contribution eligibility"}, {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogBadgeContribution.swift", "line": 8, "symbol": "native seed tag/mute/group eligibility"}], "pending_shared_callsites": [], "adaptation": "IDS-05 remediation subtracts only a contribution in the same native tag/mute/group set as its total. Excluded peers contribute zero; unknown included counts suppress the number. Existing Privacy Extras projections are reused once, and the unqualified initial scalar waits for the checked live stream. Native rendering/main-thread delivery remain; native tests pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Dialogs/ExteralessDialogBackBadge.swift", "line": 1}, {"kind": "applied-source-receipt", "path": "docs/dialogs-integration.md", "line": 1}]}
+    },
+    {
+      "id": "nagram.sortByUnread", "kind": "setting",
+      "android": {"symbol": "NaConfig.sortByUnread", "key": "SortByUnread", "default": false, "declaration": "kotlin/xyz/nextalone/nagram/NaConfig.kt:1399", "evidence": ["java/org/telegram/messenger/MessagesController.java:1436-1515", "java/tw/nekomimi/nekogram/helpers/ChatsHelper.java:375-413"]},
+      "ios": {"setting_key": "chats.sortByUnread", "disposition": "native-adaptation", "implementation_callsites": [{"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNodeLocation.swift", "line": 201, "symbol": "chatListViewForLocation"}, {"path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListNodeEntries.swift", "line": 780, "symbol": "dialogUnreadPriority and actual entry comparator"}], "adaptation": "Actual stable ordering of locally known native dialogs before windowing. Mentions/reactions or positive unmuted unread count; manual unread dot alone is not priority; monoforum mentions excluded. Native pins, account/group/filter identities, draft/date tie order, scroll/pagination IDs and underlying data are retained. Unknown server dialogs are not fabricated."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessDialogs/ExteralessDialogList.swift", "line": 1}, {"kind": "unexecuted-xctest", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/DialogPolicyTests.swift", "line": 1}]}
+    },
+    {
+      "id": "neko.sortByUnread", "kind": "setting",
+      "android": {"symbol": "NekoConfig.sortByUnread", "key": "sort_by_unread", "default": false, "declaration": "java/tw/nekomimi/nekogram/NekoConfig.java:120", "evidence": ["Java+Kotlin source search: declaration only", "java/tw/nekomimi/nekogram/settings/NekoGeneralSettingsActivity.java:171,353 uses NaConfig instead"]},
+      "ios": {"setting_key": null, "disposition": "original-storage-only", "implementation_callsites": [], "adaptation": "Distinct legacy storage preference, not an alias of SortByUnread. No native row, key migration, or Android import completion claimed."},
+      "implementation": {"status": "compat-storage", "ported": false, "disposition_complete": true, "evidence": [{"kind": "original-source-review", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/NekoConfig.java", "line": 120}]}
+    }
+  ]
+}

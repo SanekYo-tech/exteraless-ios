@@ -1,0 +1,22 @@
+{
+  "neko.tabletMode": {
+    "status": "blocked",
+    "reason": "Frozen AP receipt still has setting_key=null: native automaticMasterDetail follows size classes, while the original forced phone/tablet override has no key or provider. This portable policy remains unimplemented; automatic native layout does not supply a zero-valued Config setting.",
+    "evidence": [{"kind":"source","path":"telegram-ios/submodules/TelegramUI/Sources/TelegramRootController.swift","note":"super.init(mode: .automaticMasterDetail)"},{"kind":"source","path":"docs/wave-2/appearance-parity.json","note":"neko.tabletMode: setting_key null and forced layout override explicitly not implemented"}]
+  },
+  "neko.typeface": {
+    "status": "blocked",
+    "reason": "Frozen AP receipt still has setting_key=null: the bundled/system font-family selector has no native key/provider or supplied Android font assets. UIFont is only the native baseline; useSystemFont changes Dynamic Type size, and forceFontWeightFallback changes weight, so neither is this Boolean.",
+    "evidence": [{"kind":"source","path":"docs/wave-2/appearance-parity.json","note":"neko.typeface: exact family-selection parity explicitly absent"},{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/TypefaceHelper.java","line":353}]
+  },
+  "chats.cameraType": {
+    "status": "unsupported",
+    "reason": "Exact CameraType enum selects Android Camera1/Camera2/CameraX implementations. Native Legacy/Neo capture has different modes; these ordinals cannot select a native camera pipeline.",
+    "evidence": [{"kind":"source","path":"third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/CameraType.java","line":3},{"kind":"source","path":"docs/wave-2/tools-parity.json","note":"chats.cameraType native Legacy/Neo adaptation, no Android enum key"}]
+  },
+  "chats.unmuteWithVolumeButtons": {
+    "status": "unsupported",
+    "reason": "Exact contract consumes Android hardware-volume KeyEvents for unmute. This native client has no equivalent consumable hardware-key event; output-volume observation is not that event/override.",
+    "evidence": [{"kind":"source","path":"docs/parity/remaining-ownership.json","note":"exact_platform_only_ids: chats.unmuteWithVolumeButtons"},{"kind":"source","path":"docs/parity/remaining-ownership.md","line":146}]
+  }
+}

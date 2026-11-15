@@ -19,7 +19,7 @@ import weakref
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).parent / "fixtures" / "ios_runtime"
-CASES = ("metadata", "lifecycle_settings", "hooks", "load_errors", "cleanup", "bootstrap", "requirements", "permissions", "callback_cleanup", "audit_paths", "audit_paths_frozen", "audit_layout")
+CASES = ("metadata", "lifecycle_settings", "settings_account_scope", "hooks", "load_errors", "cleanup", "bootstrap", "requirements", "permissions", "callback_cleanup", "audit_paths", "audit_paths_frozen", "audit_layout")
 
 
 class StrictNativeHost:
@@ -32,6 +32,7 @@ class StrictNativeHost:
         self.plugins.mkdir(parents=True)
         self.settings.mkdir()
         self.plugin_id = None
+        self.owner_token = None
         self.thread = threading.get_ident()
         self.storage = {}
         self.handles = {}
@@ -42,6 +43,7 @@ class StrictNativeHost:
         self.fail_writes = False
         self.clear_count = 0
         self.bound = None
+        self.settings_reloads = 0
         self.permissions = {"ui", "messages.read", "messages.send", "network", "files", "intents", "settings", "hooks", "native"}
 
     def register(self, value):
@@ -62,6 +64,19 @@ class StrictNativeHost:
         assert isinstance(plugin_id, str) and plugin_id
         assert self.plugin_id in (None, plugin_id)
         self.plugin_id = plugin_id
+
+    def set_owner_token(self, token):
+        if self.plugin_id is None: raise RuntimeError("plugin id must be bound first")
+        if not isinstance(token, str): raise TypeError("owner token must be str")
+        if not 0 < len(token.encode("utf-8")) <= 256 or "\0" in token: raise ValueError("invalid owner token")
+        if self.owner_token not in (None, token): raise RuntimeError("native owner token is immutable")
+        self.owner_token = token
+
+    def transport(self, request):
+        request = dict(request)
+        request.pop("ownerToken", None)
+        if self.owner_token is not None: request["ownerToken"] = self.owner_token
+        return self.call(request)
 
     def bind(self, instance_class, error_class):
         self.bound = (instance_class, error_class)
@@ -106,6 +121,7 @@ class StrictNativeHost:
             raise JavaMemberError(f"strict fixture has no {fqcn}#{member}")
         assert self.plugin_id is not None and request["op"] == "call"
         arities = {"getSetting": 2, "setSetting": 2, "removeSetting": 1,
+                   "getSettings": 0, "setSettings": 1, "updateSettings": 1, "clearSettings": 0, "uiRefreshSettings": 0, "getProtectedPaths": 0,
                    "getPluginsDir": 0, "getFilesDir": 0, "getCacheDir": 0,
                    "log": 1, "getVersion": 0, "completeCallback": 1,
                    "hasPermission": 1, "isUnsafeMode": 0}
@@ -117,6 +133,20 @@ class StrictNativeHost:
             key = (self.plugin_id, args[0])
         if member == "getSetting":
             return json.loads(json.dumps(self.storage.get(key, args[1]), allow_nan=False))
+        if member == "getSettings":
+            return json.dumps({key: value for (owner, key), value in self.storage.items() if owner == self.plugin_id})
+        if member == "getProtectedPaths": return []
+        if member in ("setSettings", "updateSettings", "clearSettings"):
+            if self.fail_writes: raise RuntimeError("strict fixture storage write failed")
+            values = {} if member == "clearSettings" else json.loads(args[0])
+            assert isinstance(values, dict)
+            if member in ("setSettings", "clearSettings"):
+                self.storage = {key: value for key, value in self.storage.items() if key[0] != self.plugin_id}
+            self.storage.update({(self.plugin_id, key): value for key, value in values.items()})
+            return None
+        if member == "uiRefreshSettings":
+            self.settings_reloads += 1
+            return None
         if member == "setSetting":
             json.dumps(args[1], allow_nan=False)
             if self.fail_writes:
@@ -172,18 +202,19 @@ class StrictNativeHost:
                 return fqcn in self.manifest["classes"]
 
             def call(self, fqcn, member, args, kwargs):
-                return host.call({"op": "call", "fqcn": fqcn, "member": member,
+                return host.transport({"op": "call", "fqcn": fqcn, "member": member,
                                   "args": list(args), "kwargs": kwargs, "instance": None, "value": None})
 
             def get(self, fqcn, member):
-                return host.call({"op": "get", "fqcn": fqcn, "member": member,
+                return host.transport({"op": "get", "fqcn": fqcn, "member": member,
                                   "args": [], "kwargs": {}, "instance": None, "value": None})
 
         module = types.ModuleType("_exteraless_bridge")
         module.BridgeBackend = StrictBridgeBackend
         module.xt_bind = self.bind
         module.xt_set_plugin_id = self.set_plugin_id
-        module.xt_call_host = self.call
+        module.xt_set_owner_token = self.set_owner_token
+        module.xt_call_host = self.transport
         module.xt_register_handle = self.register
         module.xt_resolve_handle = self.handles.get
         module.xt_release_handle = lambda handle: self.handles.pop(handle, None) is not None
@@ -302,9 +333,8 @@ def case_lifecycle_settings(directory):
         assert instance.get_setting("coerced", True) is False
         assert instance.get_setting("missing", 1) == 1
         assert instance.get_setting("missing", 2) == 2
-        raises(runtime.UnsupportedSurfaceError,
-               lambda: instance.set_setting("reload", True, reload_settings=True), "settings-reload")
-        assert "reload" not in {key for owner, key in host.storage if owner == host.plugin_id}
+        instance.set_setting("reload", True, reload_settings=True)
+        assert host.value("reload") is True and host.settings_reloads == 1
     before = len(instance.events)
     host.fail_writes = True
     raises(RuntimeError, lambda: runtime.setting_changed_json("enabled", "false"), "storage write failed")
@@ -313,13 +343,16 @@ def case_lifecycle_settings(directory):
 
     handle, delay = host.queued[0]
     assert delay == 5
-    # Exact callback method currently emitted by BridgeServices.scheduleCallback.
-    assert json.loads(runtime.invoke_handle_json(handle, "run", "[]")) == {
-        "plugin": host.plugin_id, "account": None}
+    # BridgeServices' Runnable is void, while its user callback still executes in
+    # exactly the same SDK/owner context. Explicit result callbacks below retain JSON.
+    assert runtime.invoke_handle_json(handle, "run", "[]") == "null"
+    assert instance.events[-1] == ("native", host.plugin_id, None)
     assert host.value("native_seen") == host.plugin_id
     assert bridge.xt_resolve_handle(handle) is None and handle not in host.pending_callbacks
     raises(LookupError, lambda: runtime.invoke_handle_json(999999, "run", "[]"))
     object_handle = bridge.xt_register_handle(instance)
+    returned = {"plugin": host.plugin_id, "account": None}
+    assert json.loads(runtime.invoke_handle_json(object_handle, "echo", json.dumps([returned]))) == returned
     assert runtime.invoke_handle_json(object_handle, "clicked", "[]") == "null"
     assert host.value("clicks") == 2
     marker = {"__handle__": object_handle, "__fqcn__": None, "__fqcn": None}
@@ -344,6 +377,39 @@ def case_lifecycle_settings(directory):
     runtime.unload()
     assert host.value("unloads") == 1
     raises(runtime.RuntimeStateError, lambda: runtime.setting_click_json(rows[3]["callback_id"]))
+    return host
+
+
+def case_settings_account_scope(directory):
+    runtime, host, bridge = bootstrap(directory)
+    path = copy_fixture(host, "lifecycle")
+    runtime.load_json(path)
+    from extera_utils import plugin_loader as loader
+    import client_utils
+    record = loader.plugins[host.plugin_id]
+    rows = json.loads(runtime.settings_json())
+    callback = rows[3]["callback_id"]
+    before_calls = len(host.calls)
+    assert runtime.setting_changed_json("enabled", "false", 4) == "null"
+    assert record.instance.events[-1] == ("change", host.plugin_id, 4)
+    assert host.value("enabled") is False and host.value("changed_enabled") is False
+    assert runtime.setting_click_json(callback, 4) == "null"
+    assert record.instance.events[-1] == ("click", host.plugin_id, 4)
+    assert not any(call[2] == "selectedAccount" for call in host.calls[before_calls:]), "captured settings account was retargeted"
+    before = dict(host.storage), list(record.instance.events)
+    for account in (True, False, -1, 2 ** 31, 4.0, "4"):
+        raises(ValueError, lambda: runtime.setting_changed_json("enabled", "true", account), "Int32")
+        raises(ValueError, lambda: runtime.setting_click_json(callback, account), "Int32")
+    assert (host.storage, record.instance.events) == before
+    # Old arities still enter the original unbound scope; they never reuse the
+    # previous numeric account from an earlier invocation.
+    runtime.setting_changed_json("enabled", "true")
+    assert record.instance.events[-1] == ("change", host.plugin_id, None)
+    runtime.setting_click_json(callback)
+    assert record.instance.events[-1] == ("click", host.plugin_id, None)
+    assert client_utils.get_hook_account() is None and loader.current_plugin_id() is None
+    runtime.unload()
+    assert bridge.xt_handle_count() == 0
     return host
 
 
@@ -806,7 +872,7 @@ def worker(case, directory):
 
 if __name__ == "__main__":
     worker(sys.argv[1], sys.argv[2])
-else:
+elif __name__ != "_ios_runtime_fixture_support":
     import pytest
 
     @pytest.mark.parametrize("case", CASES)

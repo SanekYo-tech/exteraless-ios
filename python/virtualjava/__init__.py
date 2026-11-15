@@ -12,10 +12,12 @@
 from .proxy import JavaClass, JavaInstance, get_class, reset_caches
 from .backend import Backend, MockBackend, JavaMemberError
 from .finder import install, uninstall, JAVA_ROOTS, reset_class_cache
+from .registry import register_class, register_factory, get_registered, registered_classes, unregister_class
 
 __all__ = [
     "JavaClass", "JavaInstance", "get_class",
     "Backend", "MockBackend", "JavaMemberError",
     "install", "uninstall", "JAVA_ROOTS",
     "reset_class_cache", "reset_caches",
+    "register_class", "register_factory", "get_registered", "registered_classes", "unregister_class",
 ]

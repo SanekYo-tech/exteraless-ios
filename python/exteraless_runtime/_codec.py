@@ -57,6 +57,9 @@ def decode(value, bridge):
 
 
 def _encode(value, bridge):
+    from ._tl import TLObject, to_wire
+    if isinstance(value, TLObject):
+        return to_wire(value)
     if value is None or isinstance(value, (str, bool)):
         return value
     if isinstance(value, int):

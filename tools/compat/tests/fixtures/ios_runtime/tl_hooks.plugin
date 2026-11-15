@@ -1,0 +1,57 @@
+__id__ = "ios_sdk_wave2"
+__name__ = "Local schema-backed TL hook fixture"
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_hook_account
+from java import jclass
+
+
+class TLHooks(BasePlugin):
+    def on_plugin_load(self):
+        self.events = []
+        self.mode = "modify"
+        for name, substring, priority in (("TL_users_getUsers", False, 1), ("users.getUsers", False, -2),
+                ("getUsers", True, 7), ("TL_updateUserName", False, 11), ("UserName", True, 5),
+                ("TL_updates", False, 13), ("messages.sendMessage", False, 100)):
+            self.add_hook(name, substring, priority)
+
+    def inspect_context(self, value):
+        context = value._exteraless_tl_context
+        assert context["observational"] in (True, False)
+        assert "_exteraless_tl_context" not in getattr(value, "_values", {})
+        try:
+            context["metadata"]["forged"] = True
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("native metadata is mutable")
+        try:
+            value._exteraless_tl_context = {}
+        except AttributeError:
+            pass
+        else:
+            raise AssertionError("native TL context was replaced")
+
+    def pre_request_hook(self, request_name, account, request):
+        assert account == get_hook_account()
+        assert isinstance(request, jclass("org.telegram.tgnet.TLRPC$TL_users_getUsers"))
+        self.inspect_context(request)
+        self.events.append(("pre", request_name, account, len(request.id)))
+        if self.mode == "cancel": return HookResult(HookStrategy.CANCEL)
+        request.id.add(jclass("org.telegram.tgnet.TLRPC$TL_inputUserSelf")())
+        return HookResult(HookStrategy.MODIFY_FINAL if self.mode == "final" else HookStrategy.MODIFY, request=request)
+
+    def post_request_hook(self, request_name, account, response, error):
+        self.inspect_context(response if response is not None else error)
+        self.events.append(("post", request_name, account, error.code if error is not None else response.objects.size()))
+
+    def on_update_hook(self, update_name, account, update):
+        self.inspect_context(update)
+        self.events.append(("update", update_name, account))
+        update.first_name = "edited 雪\0π"
+        return HookResult(HookStrategy.MODIFY_FINAL, update=update)
+
+    def on_updates_hook(self, container_name, account, updates):
+        self.inspect_context(updates)
+        self.events.append(("updates", container_name, account))
+        return HookResult(HookStrategy.CANCEL)

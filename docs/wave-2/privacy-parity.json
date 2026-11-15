@@ -1,0 +1,196 @@
+{
+  "notes": [
+    "Source implementation evidence only. Swift/Xcode/device/visual tests have not run in this Windows session. No record is verified or ported=true.",
+    "Both Network guards and willSubmit/didComplete hooks are applied. Remaining AppDelegate/PeerInfo and chat-owned Enqueue hunks are in docs/wave-2/privacy-insertion-hunks.md.",
+    "Phase 2 removed all privacy UI Postbox imports/access, corrected real peer-scoped history bounds, expiry/quota/cancellation, and consumes validated final TL metadata. Central namespace declaration still needs the coordinator hunk in docs/wave-2/privacy-phase-2.md.",
+    "Eight bounded static source fixtures passed; this is not Swift execution or native compile evidence. NotificationService registers only normal definitions, with no provider credentials/tokens/secrets in this fragment."
+  ],
+  "features": [
+    {
+      "id": "neko.sendReadMessagePackets",
+      "ios": {"setting_key": "privacy.sendReadMessagePackets", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift", "line": 440}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift", "line": 256}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1391}], "adaptation": "Typed reads retain local state and complete without fabricated PTS. Both raw transport guards are applied; validated batch metadata requires every peer plus the global policy for unresolved IDs."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/SynchronizePeerReadState.swift", "line": 440}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Tests/ExteralessPrivacySignalTests.swift", "line": 7, "note": "Prepared signal/cancellation tests, not executed"}, {"kind": "source", "path": "docs/wave-2/tests/privacy_source_fixtures.py", "note": "Static fixtures executed; not Swift/runtime proof"}]}
+    },
+    {
+      "id": "neko.sendReadStoriesPackets",
+      "ios": {"setting_key": "privacy.sendReadStoriesPackets", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift", "line": 122}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/Stories.swift", "line": 2073}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1459}], "adaptation": "Story read and pinned-view increment paths are gated, local seen state is maintained, and both raw Network guards are connected."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedSynchronizeViewStoriesOperations.swift", "line": 122}]}
+    },
+    {
+      "id": "neko.sendOnlinePackets",
+      "ios": {"setting_key": "privacy.sendOnlinePackets", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift", "line": 27}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1391}], "adaptation": "Live settings project requested presence to offline and reactivate normal presence. Raw guard now consumes validated online/offline metadata, with conservative denial when metadata is absent."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift", "line": 27}]}
+    },
+    {
+      "id": "neko.sendUploadProgress",
+      "ios": {"setting_key": "privacy.sendUploadProgress", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift", "line": 146}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/TypingDraftStop.swift", "line": 93}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1459}], "adaptation": "Native typing/upload/recording/game/sticker/emoji/encrypted typing and both raw transport guards are connected. Unknown peers cannot borrow another chat's exception."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ManagedLocalInputActivities.swift", "line": 146}]}
+    },
+    {
+      "id": "neko.markReadAfterSend",
+      "ios": {"setting_key": "privacy.markReadAfterSend", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 200}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1395}], "adaptation": "Both will-submit hooks call the account-owned explicit read. Max ID uses native peer-scoped top-index lookup; final validated metadata supplies raw TL peer identity, without fake PTS."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 200}, {"kind": "source", "path": "docs/wave-2/privacy-phase-2.md"}]}
+    },
+    {
+      "id": "neko.sendOfflinePacketAfterOnline",
+      "ios": {"setting_key": "privacy.sendOfflinePacketAfterOnline", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 207}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/Network.swift", "line": 1426}], "adaptation": "Both Network completion hooks perform the one-second account-owned offline follow-up with typing exceptions/cancellation. A validated unresolved or multi-peer metadata result never falls back to pre-mutation parameters."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 207}, {"kind": "source", "path": "docs/wave-2/privacy-phase-2.md"}]}
+    },
+    {
+      "id": "neko.sendReadMessagePacketsLocked",
+      "ios": {"setting_key": "privacy.sendReadMessagePacketsLocked", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 7}], "adaptation": "Exclusion from the bulk ghost toggle, not passcode lock state."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift"}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/PrivacyPolicyTests.swift", "line": 5, "note": "Prepared, not executed"}]}
+    },
+    {
+      "id": "neko.sendReadStoriesPacketsLocked",
+      "ios": {"setting_key": "privacy.sendReadStoriesPacketsLocked", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 7}]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift"}]}
+    },
+    {
+      "id": "neko.sendOnlinePacketsLocked",
+      "ios": {"setting_key": "privacy.sendOnlinePacketsLocked", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 7}]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift"}]}
+    },
+    {
+      "id": "neko.sendUploadProgressLocked",
+      "ios": {"setting_key": "privacy.sendUploadProgressLocked", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 7}]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift"}]}
+    },
+    {
+      "id": "neko.sendOfflinePacketAfterOnlineLocked",
+      "ios": {"setting_key": "privacy.sendOfflinePacketAfterOnlineLocked", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessOutgoingPrivacy.swift", "line": 7}]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift"}]}
+    },
+    {
+      "id": "neko.showGhostModeStatus",
+      "ios": {"setting_key": "privacy.showGhostModeStatus", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift", "line": 753}], "adaptation": "Native chat-title ghost indicator, with accessibility label and live invalidation. Recorded-frame verification remains outstanding."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift", "line": 753}]}
+    },
+    {
+      "id": "neko.showGhostInDrawer",
+      "ios": {"setting_key": "privacy.showGhostInDrawer", "implementation_callsites": [], "adaptation": "Optional native Settings quick-toggle counterpart. Exact PeerInfo insertion is supplied but not applied by this owner."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}
+    },
+    {
+      "id": "nagram.askBeforeOpeningStory",
+      "ios": {"setting_key": "privacy.askBeforeOpeningStory", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/StoryContainerScreen.swift", "line": 2207}], "adaptation": "Native viewer gates presentation before markAsSeen, with normal/private/cancel choices and an account-scoped viewer lease. Unknown initial peer prompts conservatively; own known peer skips prompt."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/Stories/StoryContainerScreen/Sources/ExteralessStoryPrivacy.swift"}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Tests/ExteralessPrivacySignalTests.swift", "note": "Prepared lease/cancellation tests, not executed"}]}
+    },
+    {
+      "id": "nagram.ghostScheduledSend",
+      "ios": {"setting_key": "privacy.ghostScheduledSend", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/PendingMessages/ExteralessPrivacyOutgoingMessages.swift", "line": 7}], "adaptation": "Native +12-second scheduled-send helper preserves existing attributes and excludes unsupported special flows. Chat-owned enqueue insertion is supplied separately."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/PendingMessages/ExteralessPrivacyOutgoingMessages.swift", "line": 7}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}
+    },
+    {
+      "id": "neko.hidePhone",
+      "ios": {"setting_key": "privacy.hidePhone", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift", "line": 1273}, {"path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoProfileItems.swift", "line": 176}], "adaptation": "Own header/profile display only, not server phone privacy. Shared Settings-edit label and phone-confirmation suggestion hunks still require integration."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoHeaderNode.swift", "line": 1273}]}
+    },
+    {
+      "id": "nagram.saveLocalLastSeen",
+      "ios": {"setting_key": "privacy.saveLocalLastSeen", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift", "line": 29}, {"path": "telegram-ios/submodules/TelegramCore/Sources/UpdatePeers.swift", "line": 480}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Privacy/ExteralessPrivacyObservationData.swift"}], "adaptation": "Seven-day expiry is enforced on load/maintenance, with a 50000-activity cap and cancellable account/epoch-checked queued work. UI uses Engine data helpers. Requires the supplied central namespace declaration before compiling."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift", "line": 29}, {"kind": "source", "path": "docs/wave-2/tests/privacy_source_fixtures.py", "note": "Eight static source fixtures passed, not Swift execution"}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/PrivacyObservationLifecycleTests.swift", "note": "Prepared, not executed"}]}
+    },
+    {
+      "id": "nagram.saveReadDate",
+      "ios": {"setting_key": "privacy.saveReadDate", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift", "line": 58}, {"path": "telegram-ios/submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift", "line": 4770}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Privacy/ExteralessPrivacyObservationData.swift"}], "adaptation": "Corrected Postbox peer/namespace bounds and strict 50000 scan cap; quota is applied once per read batch, with deterministic load-time repair. First observed dates survive replay, clear invalidates captured batches, and UI queries validate account identity/cancellation. Central namespace declaration remains an integration hunk."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift", "line": 58}, {"kind": "source", "path": "docs/wave-2/tests/privacy_source_fixtures.py", "note": "Static fixtures executed; not a native database test"}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/PrivacyObservationLifecycleTests.swift", "note": "Prepared quota/replay/cancellation tests, not executed"}]}
+    },
+    {
+      "id": "general.contentCapture",
+      "ios": {"setting_key": "privacy.contentCapture", "implementation_callsites": [{"path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift", "line": 702}], "adaptation": "iOS adaptation gates Siri incoming-message interaction donation. It is not a claim of implementing Android ContentCaptureManager."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift", "line": 702}]}
+    },
+    {
+      "id": "general.botPrivacyEnabled",
+      "ios": {"setting_key": "privacy.botPrivacyEnabled", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/NavigateToChatController.swift", "line": 25}, {"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages/RequestStartBot.swift", "line": 8}], "adaptation": "Private chat and Mini App routing inspects each identity's history/access hash, preserves established conversations, and cancels stale decisions. Shared enqueue preflight remains a chat-owner insertion."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessBotAccountRouter.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}
+    },
+    {
+      "id": "general.botPrivacyAlwaysAsk",
+      "ios": {"setting_key": "privacy.botPrivacyAlwaysAsk", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/NavigateToChatController.swift", "line": 25}, {"path": "telegram-ios/submodules/TelegramUI/Sources/Chat/ChatControllerOpenWebApp.swift", "line": 43}], "adaptation": "Independent always-ask mode uses all-account positive evidence and bounded main-thread choice; stale callbacks terminate. Enqueue guard insertion remains pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessBotAccountRouter.swift"}]}
+    },
+    {
+      "id": "general.botPrivacyUserId",
+      "ios": {"setting_key": "privacy.botPrivacyUserId", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessBotAccountRouter.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessPrivacyControllers.swift"}], "adaptation": "Persists Telegram user ID, resolves to the currently existing native AccountRecordId/object, and never uses Android account slots. Explicit same-identity send checks await the shared enqueue insertion."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessBotAccountRouter.swift"}]}
+    },
+    {
+      "id": "openextera.proxyDisableConditions",
+      "ios": {"setting_key": "privacy.proxyDisableConditions", "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/Account/Account.swift", "line": 1579}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift"}], "adaptation": "Event-driven Wi-Fi/mobile projection keeps user enabled intent. Like Android onAvailable-only logic, unavailable paths retain the last usable conditions; the next usable route replaces them. Explicit process-wide monitor teardown and per-account cancellable subscriptions; masks 0/2/4/6 only.", "platform_constraints": ["Reliable system-wide third-party VPN detection is not exposed to this iOS app; VPN bit 1 has no native mode."]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift"}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/PrivacyProxyPathTests.swift", "note": "Prepared airplane/restore tests, not executed"}, {"kind": "source", "path": "docs/wave-2/tests/privacy_source_fixtures.py"}]}
+    },
+    {
+      "id": "proxycontroller.exteraless_proxy_names",
+      "ios": {"setting_key": null, "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/SyncCore/SyncCore_ProxySettings.swift", "line": 79}, {"path": "telegram-ios/submodules/TelegramCore/Sources/SyncCore/SyncCore_ProxySettings.swift", "line": 88}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Settings/ProxySettings.swift", "line": 159}, {"path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxyServerSettingsController.swift", "line": 305}, {"path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift", "line": 253}], "adaptation": "Original ancillary global state: SharedPreferences text defaults to null, yielding an empty link-to-name map. Native state is optional ProxyServerSettings.displayName, default nil, encoded with the native proxy list in SharedDataKeys.proxySettings. Empty names become nil and display falls back to the native address. Editor saves and connection-identity dedup retain names with their proxy; there is no separate ClientSettings key or additional UI control."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/proxy/ProxyController.java", "line": 45, "note": "Original state read/default null; persist/setName at lines 59 and 89 maintain the link-keyed map."}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/SyncCore/SyncCore_ProxySettings.swift", "line": 56, "note": "Native state default nil, newline normalization, Codable decode/encode and name update."}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Settings/ProxySettings.swift", "line": 168, "note": "Connection-identity dedup preserves displayName before the shared settings transaction is committed."}, {"kind": "source", "path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift", "line": 253}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Tests/ExteralessProxyNameTests.swift", "line": 6, "note": "Round-trip/legacy-default coverage; this ledger change makes no native test-execution claim."}]}
+    },
+    {
+      "id": "proxyutil.oe_proxy_auto_disabled",
+      "ios": {"setting_key": null, "implementation_callsites": [{"path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyProxyPathState.swift", "line": 11}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift", "line": 20}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift", "line": 45}, {"path": "telegram-ios/submodules/TelegramCore/Sources/SyncCore/SyncCore_ProxySettings.swift", "line": 142}, {"path": "telegram-ios/submodules/TelegramCore/Sources/Account/Account.swift", "line": 1580}], "adaptation": "Original ancillary global state defaults to false and remembers whether ProxyUtil disabled the proxy so onAvailable can restore it. Native adaptation derives suspension from PrivacyProxyPathState and the existing privacy.proxyDisableConditions policy instead of persisting a second auto-disabled boolean. Initial conditions are empty (not suppressed); loss keeps the last usable conditions and the next usable route replaces them. effectiveActiveServer projects suspension while preserving durable ProxySettings.enabled and activeServer, so manual off is not auto-restored. No additional ClientSettings key or UI control is introduced; VPN-condition limitations remain on the separate proxyDisableConditions receipt."},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/utils/ProxyUtil.kt", "line": 61, "note": "Original state default false; automatic disable/restore at lines 82-91 and onAvailable at 107-110."}, {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyProxyPathState.swift", "line": 7, "note": "Empty initial conditions and explicit last-usable-route state."}, {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/SyncCore/SyncCore_ProxySettings.swift", "line": 143, "note": "User enabled state remains authoritative over the transient projection."}, {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/PrivacyProxyPathTests.swift", "line": 5, "note": "Existing Core policy coverage for airplane/cellular restoration, condition reset and stale unavailable-route flags."}, {"kind": "source", "path": "docs/wave-2/progress.md", "line": 7, "note": "Coordinator's existing Core CI ledger; not a native proxy/device verification claim. Receipt remains implemented, not verified."}]}
+    },
+    {
+      "id": "nagram.disableProxyWhenVpnEnabled",
+      "ios": {"setting_key": null, "implementation_callsites": [], "adaptation": "Android legacy preference migrates into OpenExteraConfig's VPN bit. No automatic Android preference import or reliable global VPN detector exists here.", "platform_constraints": ["System-wide VPN state unavailable through the app's public iOS API surface"]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.showNotificationPreviewWhenLocked",
+      "ios": {"setting_key": "privacy.showNotificationPreviewWhenLocked", "implementation_callsites": [{"path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift", "line": 796}, {"path": "telegram-ios/Telegram/NotificationService/Sources/ExteralessNotificationPrivacy.swift"}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessPrivacyIntegration.swift"}], "adaptation": "Service extension reloads normal settings; new locked previews redact title/subtitle/body/attachments/intents and disable reply category. App-lock transitions remove existing message alerts rather than re-alerting through local replacements. Final/expiry fallback rechecks lock state. Foreground delegate helper insertion is pending."},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/Telegram/NotificationService/Sources/ExteralessNotificationPrivacy.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceType",
+      "ios": {"setting_key": null, "implementation_callsites": [{"path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/AccountData/RegisterNotificationToken.swift", "line": 31}, {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessNotificationCallbacks.swift"}], "adaptation": "iOS uses APNs plus Telegram registerDevice and the native bounded wakeup/service-extension path. No Android FCM/UnifiedPush selector is exposed. Application-side callback hunks are supplied separately.", "platform_constraints": ["Physical-device APNs test", "Signing profile and aps-environment entitlement", "APNs topic/bundle/environment must match Telegram provider-side delivery configuration", "A certificate and bundle ID alone do not establish Telegram push delivery; no provider key belongs in the app"]},
+      "implementation": {"status": "platform-prerequisite", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/AccountData/RegisterNotificationToken.swift", "line": 31}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}
+    },
+    {
+      "id": "nagram.notificationIcon",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["iOS controls notification app icons; Android small-notification-icon modes have no equivalent API."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "neko.disableNotificationBubbles",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["iOS does not offer Android notification bubbles to this app."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeInAppDialog",
+      "ios": {"setting_key": null, "implementation_callsites": [], "adaptation": "Android provider-selection prompt is not the iOS notification permission prompt; native permission requests are implemented separately."},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeUnifiedGateway",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["Android UnifiedPush gateway mode is not an APNs delivery implementation."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeUnifiedSimple",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["Android UnifiedPush distributor endpoint has no corresponding native iOS background-delivery service."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeUnifiedWebPushPrivateKey",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["Android WebPush/distributor credentials are not imported or embedded as APNs provider credentials."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeUnifiedWebPushPublicKey",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["Android WebPush/distributor credential mode is not supported by native APNs registration."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    },
+    {
+      "id": "nagram.pushServiceTypeUnifiedWebPushAuthSecret",
+      "ios": {"setting_key": null, "implementation_callsites": [], "platform_constraints": ["Android WebPush/distributor credentials are not imported or embedded as APNs provider credentials."]},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "docs/wave-2/privacy.md"}]}
+    }
+  ],
+  "modules": {
+    "ghost": {"id": "module.ghost", "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/State/ExteralessPrivacyObservations.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}},
+    "privacy": {"id": "module.privacy", "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Privacy/ExteralessBotPrivacy.swift"}, {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessBotAccountRouter.swift"}]}},
+    "proxy": {"id": "module.proxy", "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Network/ExteralessProxyPolicy.swift"}, {"kind": "source", "path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxyServerSettingsController.swift"}]}},
+    "notifications": {"id": "module.notifications", "implementation": {"status": "platform-prerequisite", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift"}, {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Privacy/ExteralessNotificationClearing.swift"}, {"kind": "source", "path": "docs/wave-2/privacy-insertion-hunks.md"}]}}
+  }
+}

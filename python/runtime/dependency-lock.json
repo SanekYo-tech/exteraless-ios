@@ -126,6 +126,77 @@
       "requires_dist": [],
       "provides_extra": [],
       "import_roots": ["typing_extensions"]
+    },
+    {
+      "name": "beautifulsoup4",
+      "version": "4.15.0",
+      "filename": "beautifulsoup4-4.15.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl",
+      "pypi_json": "https://pypi.org/pypi/beautifulsoup4/4.15.0/json",
+      "sha256": "d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9",
+      "size": 109924,
+      "requires_python": ">=3.7.0",
+      "requires_dist": [
+        "soupsieve>=1.6.1",
+        "typing-extensions>=4.0.0",
+        "cchardet; extra == \"cchardet\"",
+        "chardet; extra == \"chardet\"",
+        "charset-normalizer; extra == \"charset-normalizer\"",
+        "html5lib; extra == \"html5lib\"",
+        "lxml; extra == \"lxml\""
+      ],
+      "provides_extra": ["cchardet", "chardet", "charset-normalizer", "html5lib", "lxml"],
+      "import_roots": ["bs4"]
+    },
+    {
+      "name": "soupsieve",
+      "version": "4.1.1",
+      "filename": "soupsieve-4.1.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/cd/65/7fae69a095696195334a934eab23aeb12e2715e6c3f08025d2f91942750e/soupsieve-4.1.1-py3-none-any.whl",
+      "pypi_json": "https://pypi.org/pypi/soupsieve/4.1.1/json",
+      "sha256": "8ff3422dab0b720fb667ee79864d80531a0e57994a13eb701697719ffcb751f6",
+      "size": 55089,
+      "requires_python": ">=3.11.5",
+      "requires_dist": [],
+      "provides_extra": [],
+      "import_roots": ["soupsieve"]
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "artifact_kind": "sdist-python",
+      "projection": "pyyaml-pure",
+      "filename": "pyyaml-6.0.3.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz",
+      "pypi_json": "https://pypi.org/pypi/pyyaml/6.0.3/json",
+      "sha256": "d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f",
+      "size": 130960,
+      "requires_python": ">=3.8",
+      "requires_dist": [],
+      "provides_extra": [],
+      "import_roots": ["yaml", "_yaml"],
+      "implementation": "upstream pure-Python fallback; yaml.__with_libyaml__ is False"
+    },
+    {
+      "name": "debugpy",
+      "version": "1.8.22",
+      "artifact_kind": "sdist-python",
+      "projection": "debugpy-python",
+      "filename": "debugpy-1.8.22.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/44/9d/3cb6693342acf96802dba89934a5b8da43c201d764ebd1f2c0514a3d42bd/debugpy-1.8.22.tar.gz",
+      "pypi_json": "https://pypi.org/pypi/debugpy/1.8.22/json",
+      "sha256": "e489c7268e1c7b41e13b438d9c533d2a7af73fb59bf8cd30fead8286c1c39c4e",
+      "size": 1710877,
+      "requires_python": ">=3.10",
+      "requires_dist": [],
+      "provides_extra": [],
+      "import_roots": ["debugpy"],
+      "implementation": "upstream Python sources; native accelerators and PID-attach binaries excluded before sealing",
+      "ios_constraints": {
+        "listen": "default SDK call spawns an adapter process; unavailable on iOS",
+        "connect": "external-adapter protocol; not verified on iOS or OWN_GIL",
+        "stop_listening": "not provided by this upstream version"
+      }
     }
   ]
 }

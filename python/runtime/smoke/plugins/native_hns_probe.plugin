@@ -1,0 +1,68 @@
+__id__ = "nativeHNSSdk"
+__name__ = "Own native SDK lease remediation fixture"
+__version__ = "1.0"
+__permissions__ = ["ui", "messages.read", "network", "files"]
+
+from base_plugin import BasePlugin
+import client_utils as client
+
+
+class NativeHNS(BasePlugin):
+    def on_plugin_load(self):
+        self.bodies = []
+
+    def create_settings(self):
+        from ui.settings import Switch, Text
+        return [Switch("enabled", "Enabled", True, on_change=self.setting_changed),
+                Text("Captured account", on_click=self.setting_clicked)]
+
+    def setting_changed(self, value):
+        assert self.get_setting("enabled") == value
+        self.set_setting("change_account", client.get_hook_account())
+
+    def setting_clicked(self):
+        self.set_setting("click_account", client.get_hook_account())
+
+    def body(self, kind, value=None, error=None):
+        assert client.get_hook_account() == 2
+        self.bodies.append(kind)
+        return {1: object()}
+
+    def pending_resources(self):
+        from ui.alert import AlertDialogBuilder
+        self.task_id = client.get_queue_by_name(client.PLUGINS_QUEUE).postRunnable(lambda: self.body("long-task"), 60000)
+        self.observer = client.get_messages_controller(2).observePeer(101, lambda value, error: self.body("persistent", value, error))
+        owner = self
+        class Observer(client.NotificationCenterDelegate):
+            def didReceivedNotification(self, event, account, args):
+                assert event == 25 and account == 2 and args == []
+                owner.bodies.append("notification")
+        self.notification = Observer()
+        self.center = client.get_notification_center(2)
+        self.center.addObserver(self.notification, 25)
+        self.dialog = AlertDialogBuilder().set_title("HNS SDK lease fixture").show().get_dialog()
+        return {"task": self.task_id, "observer": self.observer.id,
+            "notification": next(iter(self.center.observers.values())).id, "ui": self.dialog.id}
+
+    def callback_resources(self, positive=False):
+        self.bodies.clear()
+        user = client.get_messages_controller(2).getUser(101, lambda value, error: self.body("user", value, error))
+        self.transients = [user]
+        if not positive:
+            download = client.get_file_loader(2).loadFile({"peer": {"type": "user", "id": 101}, "messageId": 7, "fileId": "fixture"},
+                lambda value, error: self.body("download", value, error))
+            observer = client.get_messages_controller(2).observePeer(101, lambda value, error: self.body("observe", value, error))
+            self.transients.extend([download, observer])
+        return [operation.id for operation in self.transients]
+
+    def on_plugin_unload(self):
+        self.set_setting("unloads", self.get_setting("unloads", 0) + 1)
+        try:
+            client.get_queue_by_name(client.PLUGINS_QUEUE).postRunnable(lambda: self.body("retiring-new-work"), 60000)
+        except Exception as error:
+            assert "owner" in str(error).lower() or "retir" in str(error).lower()
+            self.set_setting("retiring_admission_rejected", True)
+        else:
+            raise AssertionError("retiring interpreter admitted a new native effect")
+        # Intentionally leave task/subscriptions/UI alive. The real runtime's
+        # CallbackLeases.end(), not this plugin, must issue every cleanup call.

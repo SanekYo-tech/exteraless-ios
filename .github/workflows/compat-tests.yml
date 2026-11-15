@@ -115,6 +115,7 @@ jobs:
 
     env:
       PYTHONUTF8: "1"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
     steps:
       - name: Checkout
@@ -173,9 +174,6 @@ jobs:
       - name: Generate manifest
         run: python -m tools.compat.generate_manifest
 
-      - name: Simulate corpus (virtual-java)
-        run: python -m tools.compat.simulate_plugins || true
-
       - name: Feature inventory
         run: python -m tools.compat.feature_inventory || true
 
@@ -187,7 +185,12 @@ jobs:
           sudo apt-get update -qq || true
           sudo apt-get install -y -qq default-jdk-headless >/dev/null \
             || echo "::warning::JDK install failed (apt/network flake) — Java harness tests will skip"
-          python -m pytest tools/compat/tests -q --no-header
+          # Corpus collection/manifest tests above are static. Execute only the
+          # repository-owned bounded fixtures in this gate; the legacy corpus
+          # simulation modules import arbitrary plugin code in the test process.
+          python -m pytest tools/compat/tests -q --no-header \
+            --ignore=tools/compat/tests/test_simulation.py \
+            --ignore=tools/compat/tests/test_runtime_sim.py
 
       - name: Upload compat reports
         if: always()
@@ -197,7 +200,6 @@ jobs:
           path: |
             build/compat/manifest.json
             build/compat/report.md
-            build/compat/simulation.json
             build/compat/features.json
             build/compat/features-report.md
           if-no-files-found: warn

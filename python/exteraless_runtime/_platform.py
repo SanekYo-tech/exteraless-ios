@@ -32,8 +32,12 @@ class _PluginServices:
         self.platform = platform
 
     def runOnUiThread(self, callback, delay=0):
+        if not callable(callback): raise TypeError("UI work must be callable")
+        def run():
+            callback()
+            return None
         return self.platform.call(
-            "runOnUIThread", callback, delay,
+            "runOnUIThread", run, delay,
             fqcn="org.telegram.messenger.AndroidUtilities")
 
     def __getattr__(self, member):
@@ -55,6 +59,7 @@ class Platform:
         self.settings_dir = settings_dir
         self.thread_id = threading.get_ident()
         self.loader = None
+        self.owner_token = None
 
     def check_worker(self):
         if threading.get_ident() != self.thread_id:
@@ -68,16 +73,32 @@ class Platform:
     @contextlib.contextmanager
     def mark(self, plugin_id):
         if plugin_id is not None:
-            self.check_plugin(plugin_id)
-            self.bridge.xt_set_plugin_id(self.plugin_id)
-        yield
+            if plugin_id != self.plugin_id:
+                raise RuntimeStateError("cannot enter another plugin's context")
+            if threading.get_ident() == self.thread_id:
+                self.bridge.xt_set_plugin_id(self.plugin_id)
+            elif not self.callbacks.active:
+                raise RuntimeStateError("background work belongs to an inactive plugin")
+        previous = getattr(self.loader._context_state, "plugin_id", None)
+        self.loader._context_state.plugin_id = plugin_id
+        try:
+            yield
+        finally:
+            self.loader._context_state.plugin_id = previous
 
     def call(self, member, *args, fqcn="exteraless.ios.Runtime", op="call"):
         self.check_worker()
-        return self.bridge.xt_call_host({
+        request = {
             "op": op, "fqcn": fqcn, "member": member,
             "args": list(args), "kwargs": {}, "instance": None, "value": None,
-        })
+        }
+        return self.bridge.xt_call_host(request)
+
+    def supported(self, member):
+        kind = self.call(member, op="member_kind")
+        if kind not in ("method", "field", "unknown"):
+            raise RuntimeStateError("native member_kind returned an invalid descriptor")
+        return kind == "method"
 
     def _directory(self, member):
         path = self.call(member)
@@ -133,17 +154,17 @@ class Platform:
         self.check_plugin(plugin_id)
         if not isinstance(key, str):
             raise TypeError("setting key must be a string")
-        # Swift accepts a typed JSON default and distinguishes it from stored null.
-        json.dumps(default, ensure_ascii=False, allow_nan=False)
-        return self.call("getSetting", key, default)
+        values = self.get_settings(plugin_id)
+        if key not in values:
+            return None
+        return json.dumps(values[key], ensure_ascii=False, allow_nan=False)
 
     def setSetting(self, plugin_id, key, raw, reload_settings=False):
         self.check_plugin(plugin_id)
         if not isinstance(key, str):
             raise TypeError("setting key must be a string")
-        if reload_settings:
-            raise UnsupportedSurfaceError("reload_settings=True has no native settings-reload service")
-        self.call("setSetting", key, loads(raw))
+        from ._settings import set_raw
+        set_raw(self, plugin_id, key, raw, reload_settings)
 
     def removeSetting(self, plugin_id, key):
         self.check_plugin(plugin_id)
@@ -281,3 +302,24 @@ class Platform:
         settings.remove_setting = module_remove
         settings.get_settings = unsupported("plugin_settings.get_settings (enumeration)")
         settings._save_settings_to_file = unsupported("plugin_settings._save_settings_to_file (bulk replace)")
+
+        # Concrete wave-2 providers. The SDK files and the installed C backend
+        # remain authoritative; only platform seams and explicit class ports change.
+        from . import _callbacks, _java_types, _settings, _registrations, _ui, _tl, _scheduling, _logging, _controllers
+        self.callbacks = _callbacks.CallbackLeases(self)
+        _java_types.install()
+        _settings.install(self, base, settings)
+        _registrations.install(self, base, files)
+        _logging.install(self, android, client)
+        _ui.install(self, android, client)
+        _tl.install(self, client)
+        _controllers.install(self, client)
+        _scheduling.install(self, android, client, services)
+        from . import _facades, _config, _pill_types, _pills
+        _facades.install(self, base, services, client)
+        _config.install(self)
+        _pill_types.install()
+        _pills.install(self, client)
+        from virtualjava.registry import register_native_metadata
+        register_native_metadata("exteraless.ios.Runtime", lambda member: self.call(
+            member, fqcn="exteraless.ios.Runtime", op="member_kind"))

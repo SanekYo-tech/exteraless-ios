@@ -1,0 +1,100 @@
+__id__ = "nativeTLSdkZ"
+__name__ = "Native SDK TL first-priority fixture"
+__version__ = "1.0"
+__permissions__ = ["messages.read", "messages.send", "network", "settings"]
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_hook_account
+from java import jclass
+
+
+class First(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("TL_users_getUsers", priority=2)
+        self.add_hook("users.getUsers", priority=7)
+        self.add_hook("TL_updateUserName", priority=11)
+        self.add_hook("TL_updates", priority=13)
+        self.add_hook("messages.sendMessage", priority=7)
+        self.add_hook("stories.readStories", priority=7)
+        self.add_hook("messages.receivedQueue", priority=7)
+
+    def inspect(self, value, account):
+        assert account == get_hook_account() == 2
+        context = value._exteraless_tl_context
+        assert context["observational"] is False and context["schemaVersion"] == 1
+        assert "metadata" not in getattr(value, "_values", {})
+        try:
+            context["metadata"]["forged"] = True
+        except TypeError:
+            self.set_setting("readonly_metadata", True)
+        else:
+            raise AssertionError("native metadata became mutable")
+
+    def pre_request_hook(self, request_name, account, request):
+        self.inspect(request, account)
+        mode = self.get_setting("mode", "modify")
+        if request_name == "TL_messages_sendMessage":
+            self.set_setting("text_pre_calls", self.get_setting("text_pre_calls", 0) + 1)
+            if mode == "origin_root":
+                if not self.get_setting("origin_sent", False):
+                    from client_utils import send_text
+                    send_text(101, "sdk-legacy-origin-child", account=account)
+                    self.set_setting("origin_sent", True)
+                return
+            if mode in ("silent_on", "silent_off"):
+                request.silent = mode == "silent_on"
+                return HookResult(HookStrategy.MODIFY, request=request)
+            if mode == "unknown_flags":
+                request.flags |= 1 << 31
+                request.silent = True
+                return HookResult(HookStrategy.MODIFY, request=request)
+            raise AssertionError("unexpected text fixture mode")
+        assert request_name == "TL_users_getUsers"
+        assert isinstance(request, jclass("org.telegram.tgnet.TLRPC$TL_users_getUsers"))
+        self.set_setting("pre_calls", self.get_setting("pre_calls", 0) + 1)
+        if mode == "cancel": return HookResult(HookStrategy.CANCEL)
+        if mode == "invalid":
+            return HookResult(HookStrategy.MODIFY, request=dict(request.to_dict(), unknown_field=True))
+        request.id.add(jclass("org.telegram.tgnet.TLRPC$TL_inputUserSelf")())
+        return HookResult(HookStrategy.MODIFY_FINAL if mode == "final" else HookStrategy.MODIFY, request=request)
+
+    def post_request_hook(self, request_name, account, response, error):
+        self.inspect(response if response is not None else error, account)
+        if error is not None:
+            assert request_name == "TL_users_getUsers"
+            self.set_setting("post_error", error.code)
+            return
+        assert isinstance(response, jclass("org.telegram.tgnet.Vector"))
+        assert response._definition is None and "objects" not in response._values
+        mode = self.get_setting("mode", "modify")
+        if request_name == "TL_users_getUsers":
+            if mode == "vector_users":
+                response.objects.add(jclass("org.telegram.tgnet.TLRPC$TL_userEmpty")(id=29))
+            else:
+                user = response.objects[0]
+                assert type(user.usernames) is jclass("java.util.ArrayList")
+                if mode in ("flags2_on", "flags2_off"): user.close_friend = mode == "flags2_on"
+                elif mode in ("bot_missing", "bot_on"):
+                    user.bot = True
+                    if mode == "bot_on": user.bot_info_version = 9
+                elif mode == "bot_off_inconsistent": user.bot = False
+                else: raise AssertionError("unexpected User fixture mode")
+        elif request_name == "TL_stories_readStories":
+            assert response.toIntArray() == [7]
+            response.objects.add(jclass("org.telegram.tgnet.Vector$Int")(29))
+        elif request_name == "TL_messages_receivedQueue":
+            assert response.objects[0].value == 9007199254740993
+            response.objects[0].value += 1
+        else: raise AssertionError("unexpected vector fixture")
+        return HookResult(HookStrategy.MODIFY, response=response)
+
+    def on_update_hook(self, update_name, account, update):
+        self.inspect(update, account)
+        assert update_name == "TL_updateUserName"
+        update.first_name = "native TL 雪\0π"
+        return HookResult(HookStrategy.MODIFY_FINAL, update=update)
+
+    def on_updates_hook(self, container_name, account, updates):
+        self.inspect(updates, account)
+        assert container_name == "TL_updates"
+        return HookResult(HookStrategy.CANCEL)

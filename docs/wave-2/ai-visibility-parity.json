@@ -1,0 +1,150 @@
+{
+  "schema_version": 2,
+  "_meta": {
+    "owner": "AI native visibility",
+    "inventory": "docs/parity/client-features.json",
+    "receipt_request": "docs/parity/wave-2-reconciliation.md:53-58",
+    "fragment_feature_count": 3,
+    "scope": "Only the three independent original stock-AI visibility controls.",
+    "verification": "Source evidence only; not a native build, XCTest, runtime or recorded-frame pass. All ported flags remain false.",
+    "settings_ui": "Registered definitions appear as real Bool rows with Reset in the native Exteraless settings controller.",
+    "shared_hunks": "docs/wave-2/ai-visibility-shared-hunks.patch",
+    "shared_hunks_status": "applied-source; includes the authorized index-preserving IV projection correction",
+    "integration_report": "docs/wave-2/ai-visibility-integration.md",
+    "fixture_execution": "Not run: local Windows host has no native Swift/iOS toolchain. Three bounded visibility fixtures cover default/reset independence, native caption matching, and actual IV placeholder objects.",
+    "source_checks": "5/5 exact applied visibility spans; local Swift syntax parse and PostboxImportCheck passed. Native typecheck, execution and recorded frames remain pending.",
+    "native_core_cohort": "c17e6a68591e3e23fd3052cfcefc4a8dc0eba697b78178f4a88398b795769cfa",
+    "native_core_pins": "docs/wave-2/ai-followup-core.sha256",
+    "followup_report": "docs/wave-2/ai-followup-remediation.md"
+  },
+  "features": [
+    {
+      "id": "appearance.hideAiEditor",
+      "android": {
+        "symbol": "AppearanceConfig.hideAiEditor",
+        "key": "OEAppearanceHideAiEditor",
+        "default": {"kind": "literal", "value": false},
+        "definition": {"path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/appearance/AppearanceConfig.kt", "line": 416},
+        "effect": "AiFeaturesHelper.isAiEditorHidden hides the stock AI editor button in the chat composer, attachment/caption panels and rich editor toolbar.",
+        "consumers": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/appearance/AiFeaturesHelper.java", "line": 20},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java", "line": 6964},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAttachAlert.java", "line": 6733},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/CaptionPhotoViewer.java", "line": 532},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditorToolbar.java", "line": 185}
+        ]
+      },
+      "ios": {
+        "setting_key": "appearance.hideAiEditor",
+        "default": false,
+        "reset": "ClientSettings.reset removes only this override. The false default restores existing native eligibility, without changing ai.replaceTelegramEditor or privacy capability.",
+        "implementation_callsites": [
+          {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift", "line": 106},
+          {"path": "telegram-ios/submodules/AccountContext/Sources/ExteralessAIHooks.swift", "line": 33},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift", "line": 3661},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift", "line": 4039},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/LegacyMessageInputPanel/Sources/LegacyMessageInputPanel.swift", "line": 461},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/RichTextAttachmentScreen/Sources/RichTextAttachmentScreen.swift", "line": 2187}
+        ],
+        "adaptation": "Applied gates hide the actual common chat/attachment-caption AI button and its pill slot, omit the legacy caption AI callback and remove the rich editor AI control/slot. Entry handlers reject stale invocations. Rich-input expansion remains governed by its original eligibility. Provider replacement and selected-text translation remain independently configured; protected processing capabilities are unchanged."
+      },
+      "implementation": {
+        "status": "implemented",
+        "ported": false,
+        "evidence": [
+          {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift", "line": 12},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift", "line": 3661},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/LegacyMessageInputPanel/Sources/LegacyMessageInputPanel.swift", "line": 461},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/RichTextAttachmentScreen/Sources/RichTextAttachmentScreen.swift", "line": 2187},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "line": 202},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "line": 360},
+          {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/AINativePolicyTests.swift", "line": 22, "purpose": "unexecuted semantic default/reset and replacement-independence fixture"}
+        ],
+        "remaining": [
+          "Native compilation, reset/visibility execution and recorded frames"
+        ]
+      }
+    },
+    {
+      "id": "appearance.hideIvSummary",
+      "android": {
+        "symbol": "AppearanceConfig.hideIvSummary",
+        "key": "OEAppearanceHideIvSummary",
+        "default": {"kind": "literal", "value": false},
+        "definition": {"path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/appearance/AppearanceConfig.kt", "line": 426},
+        "effect": "ArticleViewer skips top-level pageBlockBlockquote/pageBlockBlockquoteBlocks whose plain caption equals exactly Cocoon AI Summary. It does not hide a summary request button or arbitrary quote content.",
+        "consumers": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/appearance/AiFeaturesHelper.java", "line": 28},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java", "line": 1988}
+        ]
+      },
+      "ios": {
+        "setting_key": "appearance.hideIvSummary",
+        "default": false,
+        "reset": "Reset removes the override; false admits the original source block on the next native IV layout. The stored InstantPage is not modified.",
+        "implementation_callsites": [
+          {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift", "line": 106},
+          {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessAI/ExteralessAIVisibility.swift", "line": 8},
+          {"path": "telegram-ios/submodules/InstantPageUI/Sources/InstantPageLayout.swift", "line": 1167},
+          {"path": "telegram-ios/submodules/InstantPageUI/Sources/InstantPageLayout.swift", "line": 1116}
+        ],
+        "adaptation": "Both original TL constructors map to native InstantPageBlock.blockQuote. The applied common V1 layout gate matches its plain caption exactly, retaining pull quotes and nonmatching/nested content. It projects marked top-level summary output to zero height while preserving embed/details ordinals and zero-height anchors. The backing InstantPage/block order and V2 quote/translation source mapping are not rewritten."
+      },
+      "implementation": {
+        "status": "implemented",
+        "ported": false,
+        "evidence": [
+          {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift", "line": 16},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ApiUtils/InstantPage.swift", "line": 255},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessAI/ExteralessAIVisibility.swift", "line": 8},
+          {"kind": "source", "path": "telegram-ios/submodules/InstantPageUI/Sources/InstantPageLayout.swift", "line": 1167},
+          {"kind": "source", "path": "telegram-ios/submodules/InstantPageUI/Sources/InstantPageLayout.swift", "line": 1116},
+          {"kind": "source", "path": "telegram-ios/submodules/InstantPageUI/Tests/InstantPageAIVisibilityTests.swift", "line": 9, "purpose": "unexecuted actual V1 placeholder/index/anchor fixture"},
+          {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "line": 283},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Tests/ExteralessAINativeTests.swift", "line": 147, "purpose": "unexecuted native block/caption fixture"}
+        ],
+        "remaining": [
+          "Native layout execution/reset and recorded-frame verification"
+        ]
+      }
+    },
+    {
+      "id": "appearance.hideMessageSummary",
+      "android": {
+        "symbol": "AppearanceConfig.hideMessageSummary",
+        "key": "OEAppearanceHideMessageSummary",
+        "default": {"kind": "literal", "value": false},
+        "definition": {"path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/appearance/AppearanceConfig.kt", "line": 421},
+        "effect": "Suppresses ChatMessageCell.drawSummarizeButton independently of whether the message is summarizable or which provider handles a request.",
+        "consumers": [
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/appearance/AiFeaturesHelper.java", "line": 24},
+          {"path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java", "line": 7154}
+        ]
+      },
+      "ios": {
+        "setting_key": "appearance.hideMessageSummary",
+        "default": false,
+        "reset": "Reset restores the false default and the existing native summarize eligibility. It does not clear summaries or change ai.replaceTelegramSummaries.",
+        "implementation_callsites": [
+          {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIIntegration.swift", "line": 106},
+          {"path": "telegram-ios/submodules/AccountContext/Sources/ExteralessAIHooks.swift", "line": 34},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift", "line": 2037},
+          {"path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift", "line": 7824},
+          {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/AI/ExteralessAIChatPolicyObserver.swift", "line": 15}
+        ],
+        "adaptation": "The real bubble needsSummarizeButton is gated before layout/control creation. A hidden/stale button cannot begin a new summary. An already open summary can still be closed. Settings/reset changes refresh the existing chat; native protection/export leases remain in force."
+      },
+      "implementation": {
+        "status": "implemented",
+        "ported": false,
+        "evidence": [
+          {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/AINativePolicyVisibility.swift", "line": 19},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources/ChatMessageBubbleItemNode.swift", "line": 2037},
+          {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "line": 360},
+          {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/AINativePolicyTests.swift", "line": 22, "purpose": "unexecuted semantic default/reset and replacement-independence fixture"}
+        ],
+        "remaining": ["Native typecheck, summary-button/default/reset execution and recorded frames"]
+      }
+    }
+  ]
+}

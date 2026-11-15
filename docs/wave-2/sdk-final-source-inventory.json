@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "status": "SDK source handoff; native Mac compilation/execution pending",
+  "handoff": "docs/wave-2/sdk-adapters-final.md",
+  "config_receipt": {
+    "path": "docs/wave-2/sdk-config-parity.json",
+    "sha256": "63e97b1f4814cd7eacad9a4cebb859e3de26ac1390ac10024cd4409d9cd84b07",
+    "counts": {"implemented": 272, "blocked": 4, "unsupported": 32},
+    "exact_ids": 308,
+    "participating_declaration_pins": "source_pins and root_registration in the receipt",
+    "generation_check": "passed"
+  },
+  "verification": {
+    "python_full_cohort_each": 49,
+    "python_native_root_join_each": 7,
+    "new_distinct_root_join_scenarios": 1,
+    "python_scenario_timeout_seconds": 20,
+    "native_children": 3,
+    "native_child_timeout_seconds": 30,
+    "native_executed": false,
+    "evidence": "docs/wave-2/tests/sdk-python-checks.json",
+    "native_build_fingerprint": "build-inputs.json (unchanged filename; produced by the Mac driver)"
+  },
+  "sdk_source_sha256": {
+    "python/exteraless_runtime/_config.py": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
+    "python/exteraless_runtime/_config_manifest.py": "3a706224ce2305a3638f87db675c9417d871403ee67b04ecccdb1330bbf97a16",
+    "python/exteraless_runtime/_controllers.py": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
+    "python/exteraless_runtime/_notifications.py": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
+    "python/exteraless_runtime/_scheduling.py": "d5f4dd1b8598e38b0ab26850c4583621cfcf47b41b11940993b02abc8d3861a6",
+    "tools/compat/sdk_config_manifest.py": "3ed6a4d554c335bb44f97940a6edae06e007487364b31d52c1bbb58946efa151",
+    "tools/compat/tests/test_sdk_config_binding.py": "ab73f6b0a17b93276bfe8566a2f7940b96af7964c77bb3c7fe888c94d0ae8d29",
+    "tools/compat/tests/test_sdk_config_manifest.py": "e4886315137bbc7e50daaa9a53cf5a5373158210e9c77cb609a1b79c2a590c72",
+    "tools/compat/tests/test_sdk_adapter_wave2.py": "b241f52305612b600f061909b527cdea969624cf0464040d217e9598b6ed1116",
+    "tools/runtime/check_swift_plugin_embedding.py": "4a552745237b00db33b6f7d1885426af645b0aff0b8647a9028a3d164c66912f",
+    "python/runtime/smoke/swift_sdk_config_root_fixture.swift": "fd8c180dd4c8c94457bbcd24f6bbbf32d1647d07f1f4bfbc574a27b0d470496e",
+    "python/runtime/smoke/swift_sdk_hns_fixture.swift": "3fac3b4afae147757201c043f24cebb50e3f0dda71c8c2300dc5e4e0419f3161",
+    "python/runtime/smoke/swift_sdk_hns_probe.swift": "e7afb3eb02dcea293eb5d3122dfa1db6c3dafffaffffabc8ace4adbc66f95afa",
+    "python/runtime/smoke/swift_sdk_tl_probe.swift": "646272183ee57f8d5c5d00f27b27fadba2ac9053d01975ba7962d13785cf6e54",
+    "python/runtime/smoke/native_tl_probe.py": "6a90928a3082c24b1b8ef85dc08c8813b17031152241251ae60377fa9e744e3e",
+    "python/runtime/smoke/native_hns_probe.py": "7d0fb49cea521f4599e8b76d41659221cf8d12cde4f03f5fd93963bee0591fc7",
+    "docs/wave-2/tests/sdk-python-checks.json": "5f9f9f9f70826330517f6a9ef3f539a5584b971df13685360dd1c4a86333c5e1"
+  },
+  "integration_dependency_note": "Other owners' current source, not an SDK-agent freeze of those files",
+  "integration_dependency_snapshot_sha256": {
+    "swift/PluginHost/Sources/PluginHost/PluginHost.swift": "db6dad816dcf11ccd82400f753c42dc46d20acfb4ec11fed33db541fb1435837",
+    "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift": "079c928225f64db1c25b77eac650bd057af77f01dc1fa936a14bdaa89f56c473",
+    "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
+    "python/exteraless_runtime/_tl.py": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7",
+    "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
+    "python/virtualjava/finder.py": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71"
+  },
+  "post_tbf05_alignment": {
+    "manifest_sections_changed": ["SOURCES"],
+    "all_bindings_and_api_records_unchanged": true,
+    "root_registration_unchanged": true,
+    "remaining_unavailable_reasons_unchanged": true,
+    "runtime_recovery_patch_sha256": "de1d31dbc2a1f00f7e31eeec64cc4b29e6e13252a9e775a0726c8fbb4d6b6a58",
+    "client_inventory_sha256": "8fa5e3e5e40e29160ab2db033bd2fe413ef5dbee72162abfa16039aa685f0423",
+    "appearance_receipt_sha256": "5ec07e4502e4fe87794578047caca7fab930207ca64adc8132f023cdf725a57d",
+    "receipt_checks": {"python312_passed": 4, "python314_passed": 4},
+    "native_executed": false
+  },
+  "java_sdk_cohort": {
+    "handoff": "docs/wave-2/sdk-java-remediation.md",
+    "staging_directory": "java-sdk-cohort",
+    "source_copies_verified": 9,
+    "runtime_loaded_from": "complete --python-root; Java adapters must match the repository cohort",
+    "tl_byte_branch_preserved": true,
+    "reported_owner_results": {"python312_passed": 12, "python312_skipped": 1, "python314_passed": 11, "python314_skipped": 2, "existing_regressions_each": 34},
+    "results_rerun_in_alignment": false,
+    "source_sha256": {
+      "python/virtualjava/arrays.py": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
+      "python/virtualjava/finder.py": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71",
+      "python/exteraless_runtime/_java_types.py": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
+      "python/exteraless_runtime/_tl.py": "6108bc28915113b7927696a11588f55fd4783c35f2238b108f6584d050801ba7",
+      "python/exteraless_runtime/_codec.py": "a9c6b19357d0a637dd6f6c641198cd37552f317ac1202722291fde3a313fe6fb",
+      "tools/compat/tests/test_java_value_regressions.py": "12675f1b9820b7890fefe34cd03bc5228bb5a7bba65424bc3644b6778341e164",
+      "tools/compat/tests/fixtures/java_values/schema.json": "49b2d7dff4f02074f645d42089751d4f9b1d625cbc489f52f3e07241fea725a3",
+      "tools/compat/tests/fixtures/java_values/native_codec.swift": "c4799ff395a0707ad3b675b2bc51f2679cee280a27ba15ca3487bea1b86cb9cd",
+      "docs/wave-2/sdk-java-remediation.md": "55007047346fba8707841482a31bac2307a16885a47ab0b6f64c1533a811712a"
+    }
+  },
+  "remaining_config_ids": [
+    "compat.ExteraConfig.getTabletMode()",
+    "compat.ExteraConfig.setTabletMode(int)",
+    "compat.ExteraConfig.getUseSystemFonts()",
+    "compat.ExteraConfig.setUseSystemFonts(boolean)"
+  ]
+}

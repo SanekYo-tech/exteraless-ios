@@ -1,0 +1,502 @@
+{
+  "schema_version": 2,
+  "owner": "tools-backup-updater-camera-utilities",
+  "proof_level": "source-only; Swift, UIKit, capture and visual tests not executed in this Windows session",
+  "handoff": "docs/wave-2/tools-phase-2.md",
+  "dependency_verification": "Coordinator reported 28 ClientSettings/CAS tests passed on 4b3f7064 / CI 43653040458. This is not verification of the Tools patch.",
+  "features": [
+    {
+      "id": "nagram.cameraInVideoMessages",
+      "ios": {"setting_key": "tools.videoMessageCameraFacing", "adaptation": "Original int declaration default 1, but absent-key migration selects front=0 from legacy false. Actual front/rear/Ask native recording gate is applied: Ask appears over preview, defers recording clock/start, waits for the chosen camera and starts hands-free; cancel/retirement invalidates the dialog and wait. Remembering preserves Ask. Native execution/frames pending; backend-quality selector is distinct.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "initialCameraIsFront / Camera.Configuration.position / cameraStateDisposable"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/xyz/nextalone/nagram/NaConfig.kt", "line": 1404},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/xyz/nextalone/nagram/NaConfig.kt", "line": 1618},
+        {"kind": "source", "path": "docs/wave-2/tools-owner-completion.md"}
+      ]}
+    },
+    {
+      "id": "nagram.disableCrashlyticsCollection",
+      "ios": {"setting_key": "tools.crashReports", "adaptation": "Legacy bool false; true is consumed only by GeneralConfig migration to crashReports=false and then cleared. Reuses the real local MetricKit consumer; true disables, false is not inverted into opt-in. No duplicate Crashlytics control or automatic upload.", "implementation_callsites": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift", "symbol": "legacyCrashOptOut"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateDiagnostics"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/general/GeneralConfig.kt", "line": 144},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift"}
+      ]}
+    },
+    {
+      "id": "nagram.enhancedVideoBitrate",
+      "ios": {"setting_key": "tools.enhancedVideoBitrate", "adaptation": "Original bool false raises HD caps while retaining source-bitrate scaling. Core rung policy and exact MediaEditor AVVideoAverageBitRateKey consumer/registration hunk are supplied to coordinator, not applied. Round/sticker/avatar budgets and legacy converter coverage are distinct; no capture/encoder parity is inferred from transfer boost.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java", "line": 7477},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift", "symbol": "videoBitrateKbps"},
+        {"kind": "source", "path": "docs/wave-2/tools-mode-hunks.patch", "note": "Coordinator-owned common consumer; not applied or executed."}
+      ]}
+    },
+    {
+      "id": "nagram.noiseSuppressAndVoiceEnhance",
+      "ios": {"setting_key": "tools.voiceEnhancement", "adaptation": "Original bool false enables available AudioRecord AGC/AEC/NS for voice and recording capture. Exact ordinary ManagedAudioRecorder VoiceProcessingIO/fallback hunk supplied; not applied. Native AVCapture round-audio processing is a separate pipeline and is not claimed covered.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/xyz/nextalone/nagram/helper/AudioEnhance.kt", "line": 20},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java", "line": 5481},
+        {"kind": "source", "path": "docs/wave-2/tools-mode-hunks.patch", "note": "Unapplied native audio-unit consumer/registration; no measured DSP claim."}
+      ]}
+    },
+    {
+      "id": "nagram.performanceClass",
+      "ios": {"setting_key": null, "existing_equivalent": "EnergyUsageSettings.default uses hw.ncpu and separate native autoplay/loop/translucency/background power-saving controls.", "adaptation": "Original int 0=measure, 1=high, 2=average, 3=low overrides a cached Android Canvas/Lottie class. Stock native automatic/energy policy has real consumers; the forced global Android class has no one-key native mapping and is not registered as unused state.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1830},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUIPreferences/Sources/MediaAutoDownloadSettings.swift", "symbol": "EnergyUsageSettings.default / powerSavingDefault"},
+        {"kind": "source", "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift", "line": 767}
+      ]}
+    },
+    {
+      "id": "nagram.showRPCError",
+      "ios": {"setting_key": "tools.showRPCError", "adaptation": "Original bool false drives ErrorDatabase toast with raw text. Bounded method/code buffer and Diagnostics reader are applied; central NetworkEngineRequest producer/registration remain a coordinator hunk. No raw RPC text or credential parameters are accepted, and no unbounded main-queue toast fanout is added.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "symbol": "ToolsRPCFailureBuffer snapshot/report/refresh/clear"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/tgnet/ConnectionsManager.java", "line": 495},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift", "symbol": "ToolsRPCFailureBuffer"},
+        {"kind": "source", "path": "docs/wave-2/tools-mode-hunks.patch", "note": "Producer is not connected until coordinator applies the classified-completion hunk."}
+      ]}
+    },
+    {
+      "id": "neko.cachePath",
+      "ios": {"setting_key": null, "adaptation": "Original text default empty is an old Neko directory used only by FilesMigrationService to move audios/documents/images/stories/videos/caches into Android external-files Telegram storage. iOS MediaBox is account-root/media; an Android absolute path is not that layout or a sandbox grant. It is not aliased to the Files export destination.", "platform_constraints": ["android-system"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/FilesMigrationService.java", "line": 90},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/FilesMigrationService.java", "line": 218},
+        {"kind": "source", "path": "telegram-ios/submodules/Postbox/Sources/Postbox.swift", "symbol": "MediaBox(basePath: basePath + /media)"}
+      ]}
+    },
+    {
+      "id": "neko.customAudioBitrate",
+      "ios": {"setting_key": "tools.groupAudioBitrate", "adaptation": "Original int default 32 is passed only to makeGroupNativeInstance; options 32/64/128/192/256/320 kbit/s. Native outgoingAudioBitrateKbit policy/consumer hunk supplied to coordinator, not applied. Native 0 preserves the existing server/default choice. Voice notes, AAC video and private-call encoding are separate.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/voip/NativeInstance.java", "line": 83},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsNativeModePolicy.swift", "symbol": "groupAudioBitrate"},
+        {"kind": "source", "path": "docs/wave-2/tools-mode-hunks.patch"}
+      ]}
+    },
+    {
+      "id": "neko.disableAutoDownloadingArchive",
+      "ios": {"setting_key": "tools.skipAutoDownloadArchives", "adaptation": "Original bool true, exact APK/ZIP/7z/TAR/GZ/ZST/ISO/XZ/LHA/LZH list. Real automatic-download and predownload decisions now reject these suffixes; manual action paths remain native. RAR is not silently added to the original list.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUIPreferences/Sources/MediaAutoDownloadSettings.swift", "symbol": "shouldDownloadMediaAutomatically / shouldPredownloadMedia"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsAutomaticDownload.swift", "symbol": "exteralessToolsAllowsAutomaticFileDownload"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/utils/AndroidUtil.java", "line": 145},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/PrefetchManager.swift", "symbol": "shouldDownloadMediaAutomatically"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsTransferPolicyTests.swift", "note": "Bounded model fixtures supplied, not executed."}
+      ]}
+    },
+    {
+      "id": "neko.disableAutoDownloadingWin32Executable",
+      "ios": {"setting_key": "tools.skipAutoDownloadExecutables", "adaptation": "Original bool true, exact CMD/BAT/COM/EXE/LNK/MSI/PS1/REG/VB/VBE/VBS/VBSCRIPT list. Real native automatic fetch/prefetch eligibility, independent of archive/MIME/ad classification; not a storage-only flag.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUIPreferences/Sources/MediaAutoDownloadSettings.swift", "symbol": "shouldDownloadMediaAutomatically / shouldPredownloadMedia"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsAutomaticDownload.swift", "symbol": "exteralessToolsAllowsAutomaticFileDownload"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/tw/nekomimi/nekogram/utils/AndroidUtil.java", "line": 142},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageFileBubbleContentNode/Sources/ChatMessageFileBubbleContentNode.swift", "symbol": "automaticDownload"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsTransferPolicyTests.swift", "note": "Bounded model fixtures supplied, not executed."}
+      ]}
+    },
+    {
+      "id": "neko.disableInstantCamera",
+      "ios": {"setting_key": "chats.hideCameraTile", "adaptation": "Original bool true suppresses automatic preview but retains a static camera tile and initializes on click. Reuses the existing native hideCameraTile control (default false), preventing live tile creation; explicit camera attachment remains. Native removal of the tile is a stated stronger UI adaptation, not an exact storage rename or duplicate control.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift", "symbol": "useLegacyCamera / TGAttachmentCameraView"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift", "symbol": "disableInstantCamera canonical-key alias precedence"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/ChatAttachAlertPhotoLayout.java", "line": 2490},
+        {"kind": "source", "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift", "line": 756}
+      ]}
+    },
+    {
+      "id": "neko.enhancedFileLoader",
+      "ios": {"setting_key": "tools.downloadSpeedBoost", "adaptation": "Original bool false is a consumed migration marker: true clears itself and promotes downloadSpeedBoost 0 to 1. Reuses actual V1/V2 native download budgets; explicit newer/higher imported profile wins. It is not another loader/upload toggle.", "implementation_callsites": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift", "symbol": "legacyLoader"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/MultipartFetch.swift", "symbol": "ToolsDownloadPolicy.budget"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/FetchV2.swift", "symbol": "ToolsDownloadPolicy.budget"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/app/exteraless/general/GeneralConfig.kt", "line": 137},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsNativeModePolicyTests.swift", "note": "Migration fixtures supplied, not executed."}
+      ]}
+    },
+    {
+      "id": "neko.rearVideoMessages",
+      "ios": {"setting_key": "tools.videoMessageCameraFacing", "adaptation": "Legacy bool false is migrated to the newer front/rear selector, not a separate control. The newer field wins by presence. Real native Camera.Configuration consumes the choice; existing remembered state is retained when the new override is absent.", "implementation_callsites": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift", "symbol": "rearCamera / cameraInVideoMessages precedence"},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "ToolsCameraPolicy.initialCameraIsFront"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/kotlin/xyz/nextalone/nagram/NaConfig.kt", "line": 1618},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsNativeModePolicyTests.swift", "note": "Migration/precedence fixtures supplied, not executed."}
+      ]}
+    },
+    {
+      "id": "neko.uploadBoost",
+      "ios": {"setting_key": "tools.uploadBoost", "adaptation": "Original bool false raises minimum upload chunk to 512 KiB; it is not a parallelism multiplier. Real MultipartUpload complete-resource sizing now has a 512-KiB floor for unencrypted/headerless inputs above 256 KiB before any part starts. Native streaming, 3/30 parallelism and already-large chunks are retained; no throughput claim.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/MultipartUpload.swift", "symbol": "MultipartUploadManager.checkState / toolsUploadBoost"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/FileUploadOperation.java", "line": 334},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Network/MultipartUpload.swift"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsTransferPolicyTests.swift", "note": "Geometry fixtures only, not executed."}
+      ]}
+    },
+    {
+      "id": "general.downloadSpeedBoost",
+      "ios": {"setting_key": "tools.downloadSpeedBoost", "adaptation": "Actual MultipartFetch V1/V2 request budgets for large unencrypted files. Default 0 preserves native iOS; 1/2 use 512-KiB/8 and 1-MiB/12 floors without reducing faster native windows. No throughput claim.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/MultipartFetch.swift", "symbol": "MultipartFetchManager.init: ToolsDownloadPolicy.budget"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/FetchV2.swift", "symbol": "defaultPartSize/masterPendingParts/cdnPendingParts"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Network/MultipartFetch.swift"},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/Network/FetchV2.swift"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsDownloadPolicyTests.swift", "note": "Supplied offline policy fixtures, not executed locally."}
+      ]}
+    },
+    {
+      "id": "neko.customSavePath",
+      "ios": {"setting_key": "tools.customSavePath", "adaptation": "A subfolder inside a user-selected Files destination. The permission bookmark remains in Keychain. Actual SaveMediaToFiles uses bounded streaming copy and non-overwrite naming.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/SaveMediaToFiles.swift", "symbol": "exteralessToolsSaveDownloaded"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileSaving.swift", "symbol": "ExteralessToolsFileSaveService.save"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/SaveMediaToFiles.swift"},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java", "line": 6521}
+      ]}
+    },
+    {
+      "id": "nagram.saveToChatSubfolder",
+      "ios": {"setting_key": "tools.saveToChatSubfolder", "adaptation": "Real per-account/chat-ID folders inside a selected Files destination, adapting Android chat-name folders. Android MediaController has actual filesystem and MediaStore consumers.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileSaving.swift", "symbol": "ExteralessToolsFileSaveService.save"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsFileSaving.swift", "symbol": "ToolsLocalFileSaver.copy"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/SaveMediaToFiles.swift"},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java", "line": 6522}
+      ]}
+    },
+    {
+      "id": "neko.unlimitedFavedStickers",
+      "ios": {"setting_key": null, "adaptation": "Independent account-local native favorite retention and 10,000-document backup with real export/inspect/import/remove UI. Not a server quota override. Normal keyboard/menu hooks are supplied to the stickers owner and remain pending; no unused global preference is registered.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsLocalFavoriteStickers.swift", "symbol": "exteralessImportLocalFavoriteStickers"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFavoriteStickersController.swift", "symbol": "importArchive/export"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsLocalFavoriteStickers.swift"},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFavoriteStickersController.swift"},
+        {"kind": "source", "path": "docs/wave-2/tools-favorites-hooks.md"}
+      ]}
+    },
+    {
+      "id": "chats.cameraMirrorMode",
+      "ios": {
+        "setting_key": "tools.cameraMirrorMode",
+        "adaptation": "AVFoundation preview/photo/video mirroring in both native pipelines; default true.",
+        "implementation_callsites": [
+          {"path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraOutput.swift", "line": 241},
+          {"path": "telegram-ios/submodules/Camera/CameraNeo/Sources/RoundVideoFrameProcessor.swift", "line": 666}
+        ]
+      },
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraOutput.swift", "line": 241},
+        {"kind": "source", "path": "telegram-ios/submodules/Camera/CameraNeo/Sources/RoundVideoFrameProcessor.swift", "line": 666}
+      ]}
+    },
+    {
+      "id": "chats.cameraStabilization",
+      "ios": {"setting_key": "tools.cameraStabilization", "adaptation": "Requests standard stabilization only on supporting native connections; default false.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraOutput.swift", "line": 183}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraOutput.swift", "line": 183}]}
+    },
+    {
+      "id": "chats.cameraType",
+      "ios": {"setting_key": null, "existing_equivalent": "ExperimentalUISettings.useModernVideoMessagePipeline / videoMessageCameraMode select native Legacy/Neo capture.", "adaptation": "Android Camera1/2/X enum values are not copied to an inactive iOS preference.", "platform_constraints": ["camera"], "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 966}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 966}]}
+    },
+    {
+      "id": "chats.extendedFramesPerSecond",
+      "ios": {"setting_key": "tools.extendedFramesPerSecond", "adaptation": "Up to supported 60 FPS in single-camera sessions; multicam retains its existing hardware budget. Default false.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraDevice.swift", "line": 73},
+        {"path": "telegram-ios/submodules/Camera/CameraNeo/Sources/CameraNeo.swift", "line": 907}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/Camera/CameraNeo/Sources/CameraNeo.swift", "line": 907}]}
+    },
+    {
+      "id": "chats.flashIntensity",
+      "ios": {"setting_key": "tools.flashIntensity", "adaptation": "Original percent units/default 100; real screen brightness and front flash opacity.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 383},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 607}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 383}]}
+    },
+    {
+      "id": "chats.flashWarmth",
+      "ios": {"setting_key": "tools.flashWarmth", "adaptation": "Original FlashViews blue/white/warm endpoints; percent default 50.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 70}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "line": 70}]}
+    },
+    {
+      "id": "chats.rememberLastUsedCamera",
+      "ios": {"setting_key": "tools.rememberLastUsedCamera", "adaptation": "Round-video front/back selection; default false. Stock story-camera persistence remains its native equivalent.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "ToolsCameraPolicy.initialCameraIsFront"},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "togglePosition / cameraStateDisposable"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "ToolsCameraPolicy.initialCameraIsFront"}]}
+    },
+    {
+      "id": "chats.startWithWideAngleCamera",
+      "ios": {"setting_key": "tools.startWithWideAngleCamera", "adaptation": "Real minimum of a supported rear virtual camera; no synthetic 0.5x for single/front/multicam devices. Default false.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraDevice.swift", "line": 343},
+        {"path": "telegram-ios/submodules/Camera/CameraNeo/Sources/CameraNeo.swift", "line": 815}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/Camera/CameraLegacy/Sources/CameraDevice.swift", "line": 343}]}
+    },
+    {
+      "id": "chats.staticZoom",
+      "ios": {"setting_key": "tools.staticZoom", "adaptation": "Controls the real round-camera pinch reset; default false.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "handlePinch: tools.staticZoom"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "handlePinch: tools.staticZoom"}]}
+    },
+    {
+      "id": "chats.zoomSlider",
+      "ios": {"setting_key": "tools.zoomSlider", "adaptation": "Native lens stops plus logarithmic UISlider; KVO active-device limits and actual rampZoom. Default true; frame acceptance pending.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Components/CameraScreen/Sources/CameraScreen.swift", "line": 3905},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/VideoMessageCameraScreen/Sources/VideoMessageCameraScreen.swift", "symbol": "toolsZoomControl / tools.zoomSlider"},
+        {"path": "telegram-ios/submodules/Camera/Sources/ExteralessCameraZoomControl.swift", "line": 145}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/Camera/Sources/ExteralessCameraZoomControl.swift", "line": 145}]}
+    },
+    {
+      "id": "energyprofiler.running",
+      "ios": {"setting_key": null, "adaptation": "Manual bounded native capture and optional MetricKit replace the measurement surface. Android persistent background sampler/resume semantics are not ported.", "platform_constraints": ["background", "android-system"], "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 87}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 87}]}
+    },
+    {
+      "id": "energyprofiler.wakelock_hooks_broken",
+      "ios": {"setting_key": null, "adaptation": "Android wake-lock/Xposed hook failure state has no public iOS equivalent; not registered as a toggle.", "platform_constraints": ["android-system", "jvm"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/debug/EnergyProfiler.java", "line": 570}]}
+    },
+    {
+      "id": "energyprofiler.wakelock_hooks_pending",
+      "ios": {"setting_key": null, "adaptation": "Android hook crash-recovery marker, not an iOS energy control.", "platform_constraints": ["android-system", "jvm"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/debug/EnergyProfiler.java", "line": 582}]}
+    },
+    {
+      "id": "etgbackup.ChatSwipeAction",
+      "ios": {"setting_key": null, "existing_equivalent": "Native per-peer reveal read/pin/archive/mute/delete actions and separate folder-pager gesture.", "adaptation": "Original int -1 selects folders when filters exist, archive otherwise; 0/1/2/3/4/5 are pin/read/archive/mute/delete/folders. A native global primary-action/folder-gesture adapter is not installed. Exact eligible-reveal insertion boundary is handed to Chat/Root; the raw mainconfig field remains reported/ignored rather than bypassing admitted public writes.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1774},
+        {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/ui/Components/SwipeGestureSettingsView.java", "line": 30},
+        {"kind": "source", "path": "telegram-ios/submodules/ChatListUI/Sources/Node/ChatListItem.swift", "symbol": "revealOptions / eligible peer reveal options"},
+        {"kind": "source", "path": "docs/wave-2/tools-owner-completion.md"}
+      ]}
+    },
+    {
+      "id": "general.crashReports",
+      "ios": {"setting_key": "tools.crashReports", "adaptation": "Opt-in local MetricKit crash/energy cache and manual export; default false. No Crashlytics or automatic upload. System delivery/native verification pending.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateDiagnostics"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 29}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateDiagnostics"}]}
+    },
+    {
+      "id": "githubupdater.last_check",
+      "ios": {"setting_key": null, "adaptation": "Actual state key UserDefaults.ExteralessToolsLastUpdateAttempt, used for six-hour scheduling. Not a dummy ClientSettings row; failed attempts also throttle retries.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "checkAutomatically: ExteralessToolsLastUpdateAttempt read"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "checkAutomatically: ExteralessToolsLastUpdateAttempt write"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "checkAutomatically"}]}
+    },
+    {
+      "id": "githubupdater.skipped_tag",
+      "ios": {"setting_key": null, "adaptation": "Actual state key UserDefaults.ExteralessToolsSkippedUpdate suppresses the available-update notice while manual review/download stays possible.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "registerActions: ExteralessToolsSkippedUpdate"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateTitle"}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateTitle"}]}
+    },
+    {
+      "id": "glyph.enabled",
+      "ios": {"setting_key": null, "adaptation": "Nothing rear LED/matrix hardware and Android proxy service are absent on iPhone; no inactive iOS switch.", "platform_constraints": ["glyph", "android-system"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 123}]}
+    },
+    {
+      "id": "glyph.onCall",
+      "ios": {"setting_key": null, "adaptation": "Nothing breathing-light effect requires unavailable hardware/service. iOS alert settings are system-owned.", "platform_constraints": ["glyph"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 241}]}
+    },
+    {
+      "id": "glyph.onNewMessage",
+      "ios": {"setting_key": null, "adaptation": "Nothing LED pulse is not replaced by a misleading software-only preference.", "platform_constraints": ["glyph"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 182}]}
+    },
+    {
+      "id": "glyph.onRecording",
+      "ios": {"setting_key": null, "adaptation": "Nothing matrix/strip recording animation cannot run on iPhone hardware.", "platform_constraints": ["glyph"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 221}]}
+    },
+    {
+      "id": "glyph.screenOffOnly",
+      "ios": {"setting_key": null, "adaptation": "A filter for the unavailable Nothing hardware effect, not an implemented iOS background feature.", "platform_constraints": ["glyph", "background"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 205}]}
+    },
+    {
+      "id": "legacydefaults.OELegacyDefaultsGeneration",
+      "ios": {"setting_key": null, "adaptation": "Android preference-generation migration state is not an iOS toggle. Native ClientSettings preserves existing overrides, but Android installation-generation migration is not claimed.", "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/config/LegacyDefaults.java", "line": 38}]}
+    },
+    {
+      "id": "legacydefaults.OELegacyDefaultsPinned",
+      "ios": {"setting_key": null, "adaptation": "Android migration marker; no stored-unused iOS flag is created.", "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/config/LegacyDefaults.java", "line": 64}]}
+    },
+    {
+      "id": "nagram.autoUpdateChannel",
+      "ios": {"setting_key": "tools.autoUpdateChannel", "adaptation": "0 manual, 1 stable, 2 prereleases. Explicit iOS default change: 0/manual instead of Android 1/stable. Public GitHub API, cached result/notice, cancellation, no PAT.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "checkAutomatically"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessUpdateController.swift", "line": 119}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "checkAutomatically"}]}
+    }
+  ],
+  "modules": {
+    "backup": {
+      "ios": {"adaptation": "Archive v2 preserves storedKeys. Restore only revalidates the inspection's admitted key/presence projection; clientAPI.* and cloud.includeApiKeys cannot be general-backup writes. Journal v3 uses actual in-call receipts, conservative restart and explicit keep-current recovery. Plugin I/O needs current source/settings/schema evidence and a native pin; unproven dynamic schemas grant no permission. Core applyPublic is unchanged; readonly path resolution is coordinator-applied.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessBackupController.swift", "symbol": "ExteralessToolsBackupService.export/inspect/restore"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupRestore.swift", "symbol": "ToolsBackupRestorer.restore/recover"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupArchive.swift", "symbol": "export(snapshot:) / clientStoredKeys"},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsBackupRestore.swift", "symbol": "clientSettings / restore / rollback / recover"},
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsHostMaintenance.swift"},
+        {"kind": "source", "path": "docs/wave-2/tools-remediation.md", "note": "TB-01–07 remediation is source evidence; new XCTest/native execution remains pending."},
+        {"kind": "source", "path": "docs/wave-2/tools-schema-evidence-contract.md", "note": "HNS-01 Core contract applied; arbitrary Python schemas are unproven, native joined-patch/runtime proof pending."},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsAdmittedProjectionTests.swift", "note": "CA-01/02 actual Core/restorer regressions supplied; not executed locally."},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsBackupTests.swift", "note": "Fixtures supplied; not executed here."}
+      ]}
+    },
+    "updater": {
+      "ios": {"adaptation": "Real public Releases API, streamed size/digest-checked IPA, explicit errors/cancel/progress and export for external manual signing. Repository visibility, published IPA/digest and actual installation are separate prerequisites.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessUpdateController.swift", "line": 121},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessUpdateController.swift", "line": 139}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsReleaseClient.swift", "symbol": "latest(includePrereleases:)"},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsReleaseClient.swift", "symbol": "download(_:directory:progress:) / ToolsReleaseTransfer.finish"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsReleaseTests.swift", "note": "URLProtocol fixtures only; not executed here."}
+      ]}
+    },
+    "camera": {
+      "ios": {"adaptation": "Native AVFoundation controls on both existing camera pipelines, active-device lens/KVO limits and real camera/round-camera insertions. Android backend enum and Pixel morph choreography are not claimed equivalent; hardware/frames remain unverified.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/Camera/Sources/CameraZoomState.swift", "line": 27},
+        {"path": "telegram-ios/submodules/Camera/Sources/ExteralessCameraZoomControl.swift", "line": 145},
+        {"path": "telegram-ios/submodules/TelegramUI/Components/CameraScreen/Sources/CameraScreen.swift", "line": 3012}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/Camera/Sources/ExteralessCameraZoomControl.swift", "line": 62},
+        {"kind": "source", "path": "telegram-ios/submodules/Camera/CameraNeo/Sources/RoundVideoFrameProcessor.swift", "line": 226}
+      ]}
+    },
+    "debug": {
+      "ios": {"adaptation": "20-second callback-cadence profile, actual CPU/RSS/system state and optional local MetricKit. UI integrator applied the real plugin-toggle duration producer; Java/GIL stack sampling and wake-lock hooks are not simulated.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 87},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 143},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift", "symbol": "setEnabled: ToolsToggleTraceBuffer.shared.record"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 87}]}
+    },
+    "glyph": {
+      "ios": {"adaptation": "Hardware/platform constraint, separate from software implementation progress.", "platform_constraints": ["glyph", "android-system"], "implementation_callsites": []},
+      "implementation": {"status": "unsupported", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 123}]}
+    },
+    "shortcuts": {
+      "ios": {"setting_key": "tools.quickToggles", "adaptation": "Real UIApplicationShortcutItems and Quick toggles screen. AppDelegate readiness/app-lock routing and context-aware Root forwarder have been applied by their owners; real ghost/safe-mode closures remain a composition requirement.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ApplicationShortcutItem.swift", "line": 51},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "handleShortcut(type:completion:)"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ApplicationShortcutItem.swift", "line": 51}]}
+    },
+    "utils": {
+      "ios": {"adaptation": "Native file/image utilities, independent account-local favorite archive/store/UI, actual download/save consumers. Normal Gallery subtitle factory/status/measured-layout/menu/lifecycle hooks are applied, including native PiP transfer/return/failure; native compile/frames remain pending. Shared keyboard hooks remain pending. Ayu is delegated to retention; navigation and SDK config classification use their owners' fragments.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileUtilitiesController.swift", "line": 15},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileUtilitiesController.swift", "line": 198},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsVideoController.swift", "line": 86},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessGallerySubtitleAdapter.swift", "symbol": "update/select/clear"},
+        {"path": "telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift", "symbol": "toolsSetupSubtitles/toolsUpdateSubtitleStatus/toolsUpdateSubtitleLayout/setupNativePictureInPicture/contextMenuMainItems"},
+        {"path": "telegram-ios/submodules/GalleryUI/Sources/ExteralessGallerySubtitleBridge.swift", "symbol": "ExteralessGallerySubtitleBridge.register/make/unregister"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateGallerySubtitles/clearGallerySubtitles"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/ExteralessTools/ToolsLocalFavoriteStickers.swift", "symbol": "exteralessImportLocalFavoriteStickers"}
+      ]},
+      "implementation": {"status": "partial", "ported": false, "evidence": [
+        {"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileUtilitiesController.swift", "line": 15},
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsSubtitles.swift"},
+        {"kind": "source", "path": "telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift", "note": "A-E and AVKit lifecycle applied; source hygiene only, native execution and frames pending."},
+        {"kind": "source", "path": "telegram-ios/submodules/GalleryUI/Sources/ExteralessGallerySubtitleBridge.swift"},
+        {"kind": "source", "path": "docs/wave-2/tools-gallery-integration.md"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsUtilityTests.swift", "note": "Tests supplied, not executed here."}
+      ]}
+    },
+    "crash": {
+      "ios": {"adaptation": "Opt-in local MetricKit crash payload capture and native manual file export. System delivery is asynchronous; no fabricated immediate crash log, unsafe signal handler or automatic upload.", "implementation_callsites": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 29}
+      ]},
+      "implementation": {"status": "implemented", "ported": false, "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "line": 29}]}
+    },
+    "config": {
+      "ios": {"adaptation": "Core ClientSettings preserves registered overrides and uses Keychain classification. Android install-generation pinning is not imported or exposed as a fake control.", "implementation_callsites": []},
+      "implementation": {"status": "partial", "ported": false, "evidence": [{"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "ClientSettings.register/readSnapshot"}]}
+    }
+  },
+  "delegated_features": [
+    {"id": "utils.predictiveBackIntensity", "owner_fragment": "docs/wave-2/appearance-parity.json"}
+  ],
+  "original_storage_classifications_owner_fragment": "docs/wave-2/sdk-config-parity.json",
+  "original_storage_classifications": [
+    {"id": "compat.ExteraConfig.getUseGoogleAnalytics()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1237, "note": "Original storage-only classification, not a verified native SDK mirror."}]}},
+    {"id": "compat.ExteraConfig.setUseGoogleAnalytics(boolean)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1241}]}},
+    {"id": "compat.ExteraConfig.getEnableAdBlock()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1245}]}},
+    {"id": "compat.ExteraConfig.setEnableAdBlock(boolean)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1249}]}},
+    {"id": "compat.ExteraConfig.getUpdateScheduleTimestamp()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1253}]}},
+    {"id": "compat.ExteraConfig.setUpdateScheduleTimestamp(long)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1257}]}},
+    {"id": "compat.ExteraConfig.getSdkUpdateScheduleTimestamp()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1261}]}},
+    {"id": "compat.ExteraConfig.setSdkUpdateScheduleTimestamp(long)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1265}]}},
+    {"id": "compat.ExteraConfig.getPluginsPySdkAutoUpdate()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1329}]}},
+    {"id": "compat.ExteraConfig.setPluginsPySdkAutoUpdate(boolean)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1333}]}},
+    {"id": "compat.ExteraConfig.getPluginsPySdkBetaVersions()", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1337}]}},
+    {"id": "compat.ExteraConfig.setPluginsPySdkBetaVersions(boolean)", "implementation": {"status": "compat-storage", "ported": false, "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/com/exteragram/messenger/ExteraConfig.java", "line": 1341}]}}
+  ],
+  "separate_platform_constraints": {
+    "ipa_distribution_and_installation": {
+      "status": "platform-prerequisite",
+      "description": "A public iOS Release with an IPA and digest is needed for in-app retrieval. Actual signing/provisioning/installation is a user-operated external iOS flow. No GitHub visibility change, publication, certificate or installation was performed.",
+      "evidence": [{"kind": "source", "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessUpdateController.swift", "line": 51}]
+    },
+    "nothing_glyph_hardware": {
+      "status": "unsupported",
+      "description": "Nothing Phone rear strip/matrix and its Android proxy service do not exist on iPhone. This constraint is independent of implementation or test completeness.",
+      "evidence": [{"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/app/exteraless/glyph/GlyphController.java", "line": 123}]
+    },
+    "apple_execution_and_frames": {
+      "status": "platform-prerequisite",
+      "description": "No local Swift/Apple SDK/XcodeBuildMCP. Source checks and supplied fixtures are not runtime, captured-media, UIKit layout or visual verification. Expected frames and bounded commands are in tools.md."
+    }
+  }
+}

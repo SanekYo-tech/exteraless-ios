@@ -1,0 +1,48 @@
+__id__ = "nativeTLSdkA"
+__name__ = "Native SDK TL lower-priority fixture"
+__version__ = "1.0"
+__permissions__ = ["messages.read", "settings"]
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from client_utils import get_hook_account
+from java import jclass
+
+
+class Second(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("TL_users_getUsers", priority=5)
+        self.add_hook("messages.sendMessage", priority=5)
+        self.add_hook("stories.readStories", priority=5)
+        self.add_hook("messages.receivedQueue", priority=5)
+
+    def pre_request_hook(self, request_name, account, request):
+        if request_name == "TL_messages_sendMessage":
+            assert get_hook_account() == account == 2
+            self.set_setting("text_pre_calls", self.get_setting("text_pre_calls", 0) + 1)
+            self.set_setting("seen_silent", request.silent)
+            self.set_setting("seen_flags", request.flags)
+            return
+        assert get_hook_account() == account == 2 and request_name == "TL_users_getUsers"
+        self.set_setting("pre_calls", self.get_setting("pre_calls", 0) + 1)
+        self.set_setting("seen_count", len(request.id))
+        assert "unknown_field" not in request._values
+        request.id.add(jclass("org.telegram.tgnet.TLRPC$TL_inputUserSelf")())
+        return HookResult(HookStrategy.MODIFY_FINAL, request=request)
+
+    def post_request_hook(self, request_name, account, response, error):
+        if error is not None: return
+        assert get_hook_account() == account == 2
+        assert isinstance(response, jclass("org.telegram.tgnet.Vector"))
+        self.set_setting("vector_count", response.objects.size())
+        first = response.objects[0]
+        if request_name == "TL_users_getUsers":
+            self.set_setting("vector_user_ids", [user.id for user in response.objects])
+            if hasattr(first, "bot"):
+                self.set_setting("seen_bot", first.bot)
+                self.set_setting("seen_bot_version", getattr(first, "bot_info_version", None))
+                self.set_setting("seen_close_friend", first.close_friend)
+                self.set_setting("seen_flags2", first.flags2)
+                assert type(first.usernames) is jclass("java.util.ArrayList")
+        else:
+            self.set_setting("vector_numbers", [item.value for item in response.objects])
+        return HookResult(HookStrategy.MODIFY_FINAL, response=response)

@@ -1,0 +1,171 @@
+{
+  "date": "2026-11-15",
+  "scope": "SDK runtime, original local source fixtures, registry and source-pinned receipt checks",
+  "focused": {
+    "suites": [
+      "tools/compat/tests/test_sdk_config_manifest.py",
+      "tools/compat/tests/test_sdk_adapter_wave2.py",
+      "tools/compat/tests/test_ios_runtime.py",
+      "tools/compat/tests/test_native_sdk_tl_fixture.py"
+    ],
+    "scenario_timeout_seconds": 20,
+    "runs": [
+      {
+        "python": "3.12.10",
+        "passed": 33,
+        "failed": 0,
+        "seconds": 22.67,
+        "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-phase2-handoff-py312.xml"
+      },
+      {
+        "python": "3.14.8",
+        "passed": 33,
+        "failed": 0,
+        "seconds": 25.08,
+        "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-phase2-handoff-py314.xml"
+      }
+    ],
+    "command": "python -X utf8 -B -m pytest tools/compat/tests/test_sdk_config_manifest.py tools/compat/tests/test_sdk_adapter_wave2.py tools/compat/tests/test_ios_runtime.py tools/compat/tests/test_native_sdk_tl_fixture.py -q"
+  },
+  "legacy": {
+    "runner": "tools/compat/tests/run_sdk_legacy.py",
+    "suite_timeout_seconds": 20,
+    "py312": {
+      "passed": 166,
+      "skipped": 4,
+      "report": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-legacy-slice-py312/report.json",
+      "bridge": "existing CPython 3.12 owner-token C extension; not a new C/P2 build"
+    },
+    "py314": {
+      "passed": 142,
+      "skipped": 3,
+      "report": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-legacy-slice-py314/report.json",
+      "selection": "Python-only suites; no CPython-3.14 native bridge artifact used"
+    }
+  },
+  "config_receipt": {
+    "path": "docs/wave-2/sdk-config-parity.json",
+    "exact_overload_ids": 308,
+    "source_partition": {"mapped_alias": 220, "compat_storage": 44, "utility_or_unresolved": 44},
+    "sdk_implementation": {"implemented": 272, "blocked": 4, "unsupported": 32},
+    "previous_frozen_implementation": {"implemented": 260, "blocked": 16, "unsupported": 32},
+    "prior_accepted_implementation": {"implemented": 179, "blocked": 102, "unsupported": 27},
+    "handoff": "docs/wave-2/sdk-config-binding.md",
+    "frozen": true,
+    "check_current": true,
+    "drift": {
+      "cause": "Parallel Tools/Chat definitions and authorized Runtime HNS stitch after Config freeze",
+      "status": "resolved by explicit registered-cohort reconciliation; retained here as historical evidence",
+      "read_only_candidate": {"implemented": 262, "blocked": 14, "unsupported": 32},
+      "candidate_status_changes": ["compat.ExteraConfig.getUploadSpeedBoost()", "compat.ExteraConfig.setUploadSpeedBoost(boolean)"],
+      "candidate_native_key": "tools.uploadBoost",
+      "accepted_outputs_regenerated": true
+    },
+    "regeneration": "python -X utf8 -B -m tools.compat.sdk_config_manifest --write",
+    "check": "python -X utf8 -B -m tools.compat.sdk_config_manifest --check"
+  },
+  "ui_stitch": {
+    "handoff": "docs/wave-2/sdk-ui-source-handoff.md",
+    "scenario_timeout_seconds": 20,
+    "distinct_cases_each_interpreter": 8,
+    "initial_selection": "ui or settings_menu or failures or owner_binding or registrations or pill_scopes",
+    "final_selection": "[ui] or lifecycle_settings or callback_cleanup",
+    "runs": [
+      {"python": "3.12.10", "passed": 6, "seconds": 3.65, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-ui-stitch-py312.xml"},
+      {"python": "3.14.8", "passed": 6, "seconds": 3.99, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-ui-stitch-py314.xml"},
+      {"python": "3.12.10", "passed": 3, "seconds": 2.53, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-ui-stitch-final-py312.xml"},
+      {"python": "3.14.8", "passed": 3, "seconds": 2.82, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-ui-stitch-final-py314.xml"}
+    ],
+    "native_model_assertion": "ui_live_models",
+    "native_executed": false
+  },
+  "native_sdk": {
+    "driver": "tools/runtime/check_swift_plugin_embedding.py",
+    "handoff": "docs/wave-2/sdk-native-probe.md",
+    "native_children": 3,
+    "timeout_seconds_each": 30,
+    "executed": false,
+    "pending": "macOS/Xcode compilation and native execution; no new CI run",
+    "boundary": "Real C/CPython/Host/SDK, native TL codec and NativeServices lifecycle; explicit Foundation UI/service DTO recorders",
+    "reports": ["swift-plugin-smoke.json", "swift-sdk-tl-smoke.json", "swift-sdk-hns-smoke.json"],
+    "markers": ["EXTERALESS_SWIFT_PLUGIN_PROBE_OK", "EXTERALESS_SWIFT_SDK_TL_PROBE_OK", "EXTERALESS_SWIFT_SDK_HNS_PROBE_OK"],
+    "existing_fingerprint_file": "build-inputs.json"
+  },
+  "tl_hns_remediation": {
+    "handoff": "docs/wave-2/sdk-tl-remediation.md",
+    "scenario_timeout_seconds": 20,
+    "command": "python -X utf8 -B -m pytest tools/compat/tests/test_sdk_config_manifest.py tools/compat/tests/test_sdk_adapter_wave2.py tools/compat/tests/test_ios_runtime.py tools/compat/tests/test_native_sdk_tl_fixture.py tools/compat/tests/test_sdk_tl_remediation.py tools/compat/tests/test_native_sdk_hns_fixture.py tools/compat/tests/test_sdk_config_binding.py -q",
+    "runs": [
+      {"python": "3.12.10", "passed": 42, "failed": 1, "failure": "test_config_source_receipt_is_current: frozen Config metadata detects parallel source drift", "seconds": 24.58, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-remediation-bundle-py312.xml"},
+      {"python": "3.14.8", "passed": 42, "failed": 1, "failure": "test_config_source_receipt_is_current: frozen Config metadata detects parallel source drift", "seconds": 26.89, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-remediation-bundle-py314.xml"}
+    ],
+    "final_native_fixture_python_runs": [
+      {"python": "3.12.10", "passed": 4, "failed": 0, "seconds": 1.68, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-native-fixture-final-py312.xml"},
+      {"python": "3.14.8", "passed": 4, "failed": 0, "seconds": 1.85, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-native-fixture-final-py314.xml"}
+    ],
+    "python_source_parse": "passed",
+    "swift_delimiter_and_whitespace_check": "passed; not a Swift parser/typecheck",
+    "native_executed": false
+  },
+  "runtime_hns_stitch": {
+    "handoff": "docs/wave-2/sdk-runtime-hns-stitch.md",
+    "patch": "docs/wave-2/plugin-ui-runtime-remediation.patch",
+    "applied": true,
+    "status": "historical applied patch receipt; later coordinator changes are pinned in sdk-final-source-inventory.json",
+    "input_sha256": "0f70d82e30d864df0698b5062277806a4fc6b03623301f54ea980d87361ba21a",
+    "output_sha256": "cac276516c768a12660780810fb4efa0657178194f86db88c4fa196c5e2f07eb",
+    "patch_sha256": "2e17d1076a7e2d70a5ed18c850dcd752ac6860127ae58ce49a7eaadf4a6c20bb",
+    "config_composition_preserved": true,
+    "strict_in_memory_preflight": "passed before application; applied bytes equal its candidate",
+    "reverse_apply_check": "passed",
+    "postbox_import_check": "passed",
+    "native_executed": false
+  },
+  "final_sdk_cohort": {
+    "handoff": "docs/wave-2/sdk-adapters-final.md",
+    "source_inventory": "docs/wave-2/sdk-final-source-inventory.json",
+    "findings": ["SDK02", "SDK03", "SDK04", "HNS-F03", "HNS-F04"],
+    "dependency_joins": ["SDK01 applied root registration and UI exclusion", "SDK05 PluginConfigAuthority/pinnedSet writer", "HNS-F02 captured settings-read API", "Java HashSet Set interface"],
+    "scenario_timeout_seconds": 20,
+    "runs": [
+      {"python": "3.12.10", "passed": 49, "failed": 0, "seconds": 32.97, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-final-cohort-py312.xml"},
+      {"python": "3.14.8", "passed": 49, "failed": 0, "seconds": 36.23, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-final-cohort-py314.xml"}
+    ],
+    "final_receipt_checks": {"passed": 4, "failed": 0, "seconds": 0.88, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-final-receipt-current.xml", "change_since_full_runs": "root source hash only; all bindings and API statuses identical"},
+    "root_sensitive_global_storage_overloads": 44,
+    "native_root_helper_join": {
+      "suites": ["tools/compat/tests/test_sdk_config_binding.py", "tools/compat/tests/test_native_sdk_tl_fixture.py"],
+      "new_distinct_scenarios": 1,
+      "runs": [
+        {"python": "3.12.10", "passed": 7, "failed": 0, "seconds": 5.45, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-root-native-join-py312.xml"},
+        {"python": "3.14.8", "passed": 7, "failed": 0, "seconds": 5.61, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-root-native-join-py314.xml"}
+      ],
+      "native_executed": false
+    },
+    "native_notification_ids": [1, 3, 25, 46, 137, 142, 143, 148, 150, 151, 152, 306],
+    "post_tbf05_alignment": {
+      "manifest_sections_changed": ["SOURCES"],
+      "all_508_bindings_unchanged": true,
+      "all_308_api_records_unchanged": true,
+      "root_registration_unchanged": true,
+      "counts": {"implemented": 272, "blocked": 4, "unsupported": 32},
+      "runs": [
+        {"python": "3.12.10", "passed": 4, "failed": 0, "seconds": 0.87, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-last-alignment-py312.xml"},
+        {"python": "3.14.8", "passed": 4, "failed": 0, "seconds": 0.93, "junit": "C:/Users/sasha/AppData/Local/Temp/opencode/sdk-last-alignment-py314.xml"}
+      ]
+    },
+    "java_sdk_cohort": {
+      "handoff": "docs/wave-2/sdk-java-remediation.md",
+      "evidence_origin": "Java SDK06-09 owner; not rerun during source alignment",
+      "reported_regressions": [
+        {"python": "3.12.10", "passed": 12, "skipped": 1, "existing_regressions_passed": 34},
+        {"python": "3.14.8", "passed": 11, "skipped": 2, "existing_regressions_passed": 34}
+      ],
+      "staged_source_files": 9,
+      "staging_byte_identity_check": "passed in a fresh bounded process",
+      "tl_byte_branch_preserved": true,
+      "native_codec_execution": "pending Mac/Swift gate"
+    },
+    "native_executed": false
+  }
+}

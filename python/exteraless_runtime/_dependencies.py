@@ -21,6 +21,11 @@ PROVIDED_ROOTS = {
     "idna": ["idna"], "certifi": ["certifi"], "charset-normalizer": ["charset_normalizer"],
     "cachetools": ["cachetools"], "typing-extensions": ["typing_extensions"],
 }
+BASE_PROVIDED_NAMES = frozenset(PROVIDED_ROOTS)
+PROVIDED_ROOTS.update({
+    "beautifulsoup4": ["bs4"], "soupsieve": ["soupsieve"],
+    "pyyaml": ["yaml", "_yaml"], "debugpy": ["debugpy"],
+})
 
 
 def _name(value):
@@ -198,8 +203,8 @@ def create_provider(python_root=None):
         if _name(distribution.metadata["Name"] or "") != name or distribution.version != version:
             raise _error(f"{name}: provided .dist-info version/name mismatch")
         distributions[name] = distribution
-    if distributions.keys() != PROVIDED_ROOTS.keys():
-        raise _error("provided dependency manifest does not contain the eight agreed packages")
+    if set(distributions) not in (BASE_PROVIDED_NAMES, set(PROVIDED_ROOTS)):
+        raise _error("provided dependency manifest is not a complete approved wave-1 or wave-2 bundle")
     for path in vendor.iterdir():
         if path.name not in allowed_roots or path.is_symlink():
             raise _error(f"unexpected top-level vendor entry / module shadowing: {path.name}")

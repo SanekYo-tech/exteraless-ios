@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "kind": "planning-snapshot-not-code-review",
+  "snapshot_date": "2026-11-15",
+  "implementation_or_review_pass_claimed": false,
+  "main_inventory_modified": false,
+  "source_inventory": {
+    "path": "docs/parity/client-features.json",
+    "sha256": "17cf1a8efad7469c8696045904105694347e26a2dbe70040d0f64658464ed99c",
+    "android_java_kotlin_sha256": "8ef4beb977e16fc92583851958c906cfcf2e2f3a0a9c635e35209d3ad0e25cf4",
+    "feature_count": 567,
+    "android_anchor_root": "third_party/exteraless-android/TMessagesProj/src/main/"
+  },
+  "fragment_snapshots": [
+    {"path":"docs/wave-2/ai-parity.json","sha256":"f3f296df18a3cf89e068bada6a1317b99a48f2808669afc168017b312e78e57a","feature_records":80},
+    {"path":"docs/wave-2/appearance-parity.json","sha256":"493347ffce1d6a0fe599e756e19b078320f621881072ddd73dbba49d467113db","feature_records":56},
+    {"path":"docs/wave-2/chat-parity.json","sha256":"e629342d816ae98c907ffb5cd0cfe022667150a7cf72762e6d528db2febcd0ce","feature_records":56},
+    {"path":"docs/wave-2/privacy-parity.json","sha256":"af0d89e6d66ed10c7e1c53044540b737d6ce775854574b8bc1dad235fdcd46b9","feature_records":34},
+    {"path":"docs/wave-2/tools-parity.json","sha256":"25ec9b8600a8a9960fd9d93ff9a22f8e1e5bcfdd07f198556d7ceecc030b002e","feature_records":26}
+  ],
+  "handoff_snapshots": [
+    {"path":"docs/wave-2/appearance.md","sha256":"249cbe1e1b02e377cc6cb315ab3c5f2fb75c45c8e61453cbfd0c1b85429e35f7"},
+    {"path":"docs/wave-2/appearance-subwave.md","sha256":"1f36fa1e1115eaf9d2a747df9043306491d113d9f2474279bfe2d6ce6b81bd40"},
+    {"path":"docs/wave-2/ai.md","sha256":"aa8e9f9ab051b1b09ddf213ab20c2a353af96bd5a68f4fd54f3566d2cc90a412"},
+    {"path":"docs/wave-2/ai-subwave-2.md","sha256":"6ce4468bbae3be37b04bac6e6deaae424444a7abbebc1bb49187ebc2c09a0d19"},
+    {"path":"docs/wave-2/chat.md","sha256":"102592ca5d111ae9f095e59b0e8a6126ab21570354248e3333d54b069355c9fa"},
+    {"path":"docs/wave-2/privacy.md","sha256":"95f4d93471208b141f3b63550047e57ad93e3516a455e64aa8fb5155aa1a2b81"},
+    {"path":"docs/wave-2/tools.md","sha256":"29bda2ecc6a808da9e80fa45fcce5ad3dd310968c2a6cad169deb556629548c9"},
+    {"path":"docs/wave-2/sdk.md","sha256":"e0cb44cc75fe7a2937fd242a729240861d5b40bba1077ae3b2c322137ec9144e"},
+    {"path":"docs/wave-2/plugin-ui.md","sha256":"92628ae1960144bfb17e9010b02c2e9fb13b66e99071e1abdaa4bdcac33fe860"},
+    {"path":"docs/wave-2/tl.md","sha256":"8f273f91abe0dfc3fa524c9af767917650385d22695bbd797e7f8fd9bce1098a"},
+    {"path":"docs/wave-2/core-settings.md","sha256":"24ed63b313034cef9272bbee42429664519e7ce3b6f37bc16e2c3291746bd8bf"},
+    {"path":"docs/wave-2/coordinator.md","sha256":"9fe3dfb5b863c551daac1b0ac861dd77bee094c838dc90cd80073b9ca7265c74"},
+    {"path":"docs/wave-2/progress.md","sha256":"7cc00f8cb08189d5564c6a2a16cd638ca4e5eedb0b507cb5723cc3938b832c6c"},
+    {"path":"docs/wave-2/build-dependencies.md","sha256":"64229401fcdb37c7f3b0e8cc376f0185464c740d21d1eaf8274677e97b1b4425"}
+  ],
+  "counts": {
+    "original_features_and_state": 567,
+    "fragment_feature_records": 252,
+    "distinct_fragment_feature_ids": 249,
+    "fragment_ids_with_declared_functional_callsites": 190,
+    "fragment_ids_without_declared_functional_callsites": 59,
+    "ids_without_feature_fragment": 318,
+    "no_functional_callsite_claim_in_fragments": 377,
+    "initial_handoff_only_functional_adaptation_claims": 3,
+    "ai_phase2_claim_ids_now_received_in_fragment": 15,
+    "handoff_only_source_claim_ids_total": 3,
+    "without_any_source_implementation_claim_in_read_reports": 374,
+    "unfragmented_ids_with_reserved_owner": 236,
+    "unfragmented_ids_needing_explicit_family_assignment": 82,
+    "new_assignment_packages": 10,
+    "new_assignment_exact_platform_only_ids": 1,
+    "unfragmented_core_config_ids":{"nagram":145,"neko":61,"openextera":1},
+    "initial_addressable_package_ids_before_progress_update":148,
+    "ids_confirmed_assigned_by_progress":{"chat_input_actions":65,"tools_favorites":1},
+    "needs_assignment_source_kinds":{"setting":77,"state":2,"setting-template":3},
+    "needs_assignment_source_behaviors":{"effect-callsite":76,"unresolved":6}
+  },
+  "per_feature_join": {
+    "source":"docs/parity/client-features.json",
+    "collection":"features",
+    "primary_key":"id",
+    "requested_ids_from":["unfragmented_packages[*].feature_ids","reported_without_functional_callsite_claims[*][0]"],
+    "copy_fields":["kind","android.behavior","android.symbol","android.file","android.line","android.type","android.default","android.references","android.source_review"],
+    "first_anchor_precedence":[
+      {"field":"android.references.effect","index":0,"anchor_role":"effect-callsite"},
+      {"field":"android.references.ui","index":0,"anchor_role":"ui-definition"},
+      {"fields":["android.file","android.line"],"anchor_role":"declaration-only"}
+    ],
+    "source_file_pins":"source_files",
+    "disposition_overrides":"dispositions",
+    "require_source_inventory_sha256_match":true
+  },
+  "interpretation": {
+    "functional_claim_rule": "A fragment status of implemented or partial AND a nonempty ios.implementation_callsites array is a reported functional-source claim, not proof. Three handoff-only adaptations remain separate. Fifteen AI claims initially received via handoff are now in the refreshed AI fragment; pending shared wiring is not promoted to completion.",
+    "assignment_rule": "Reserved means the current user steering names the family, or an existing fragment owns that exact ID. Needs-assignment means no addressable reservation for the remaining family was supplied; a broad nearest domain is not silently treated as acceptance of the whole family.",
+    "gap_union": "unfragmented_packages[*].feature_ids UNION reported_without_functional_callsite_claims[*][0] = 377 distinct original IDs lacking JSON functional-callsite receipts. Subtract handoff_only_claims[*].id for 374 IDs with no source implementation claim in the read reports. Additional AI handoff groups are receipt-refresh history, no longer members of this gapset. An implemented adapter with unapplied shared hunks is not an integrated/verified port.",
+    "source_category_for_every_id": "Join id to source_inventory.features[].id. Preserve kind (setting/state/setting-template) AND android.behavior; apply the independent disposition lists below. ui-only/unresolved is not proof of inertness.",
+    "android_anchor_for_every_id": "Join by id in the pinned inventory: retain all android.references.effect and ui anchors; choose effect[0], else ui[0], else android.file/android.line as the compact first anchor. A fallback declaration/UI site is not labelled an effect. Per-file hashes are source_inventory.source_files. Package anchors below are actual representative source consumers.",
+    "native_claim_anchor_for_every_reported_id": "Use the matching pinned fragment's ios.implementation_callsites and implementation.evidence. These are implementer statements; no individual Swift/UI method was re-reviewed here.",
+    "freeze_rule": "If an input hash changes, this is a historical planning snapshot. Reconcile a new snapshot; do not rewrite the live client-features.json to make these counts fit.",
+    "not_completion": "Neither CoreSettings tests, a stored schema, an assigned owner, an imported package nor a partial fragment creates ported=true. This document grants no review pass."
+  },
+  "current_reservations": {
+    "appearance-phase2": "Native visual styles, mini-avatar/list geometry and navigation; appearance-subwave.md names the reserved seams.",
+    "ai-phase2": "Stock AI replacement, translation modes/automatic/article paths and persisted keys.",
+    "chat": "Progress.md:30 explicitly reserves phase-2 input/actions/links/Enqueue/silent-send. The 65 input/action IDs are assigned here; complete field-batch receipts are still needed.",
+    "player": "Progress.md:42 assigns a dedicated player/lyrics/styles owner, including MediaManager/SharedMediaPlayer.",
+    "feed": "Progress.md:43 assigns a dedicated feed media/receipts/pagination owner.",
+    "pills": "Progress.md:44 assigns a dedicated pill provider/header owner.",
+    "privacy": "Ghost/read/presence, proxy, APNs and bot routing; shared insertion and evidence follow-up.",
+    "retention": "New user-appointed owner: deleted/edit archiving, media retention and deleted inline presentation.",
+    "privacy-extras": "New user-appointed owner: local filters/restrictions, hidden accounts and panic.",
+    "tools": "Backup/updater/camera/debug/Glyph/launcher shortcuts and transfer options; progress.md:33 explicitly adds subtitle/favorites work.",
+    "sdk": "Python adapter phase 1; SDK class/method receipts and storage/compatibility dispositions.",
+    "extra-services": "New native owner-tasks/files/intents/controller/NotificationCenter provider.",
+    "tl-phase2": "Actual pre/post/update hook boundaries and rich-media native effects.",
+    "build-deps": "All dependency packages and CI/package admission.",
+    "coordinator": "Composition and ownership assignment; current explicit shared-file reservations in progress.md take precedence over the older general table.",
+    "host-lifecycle": "Progress.md:41 reserves PluginHost/SubinterpreterManager/PluginCallbackDispatcher for maintenance/mailbox gates.",
+    "app-integrator": "Progress.md:45 reserves AppDelegate/PeerInfoSettingsItems/Network for known integration hunks.",
+    "plugin-ui-composition": "Progress.md:35 reserves ExteralessPluginRuntime/PluginSettingsController and chat open-message/open-peer menus."
+  },
+  "unfragmented_packages": [
+    {
+      "id":"P-message-actions","priority":"P0","assignment":"reserved-current-progress","current_owner":"chat",
+      "reservation_source":"docs/wave-2/progress.md:30",
+      "recommended_owner":"Current Chat phase 2; coordinator may split this 46-ID batch without duplicating already-owned helpers",
+      "title":"Message/selection/media-viewer menus, admin shortcuts and delete defaults",
+      "feature_ids":["nagram.ActionBarButtonCopy","nagram.ActionBarButtonEdit","nagram.ActionBarButtonForward","nagram.ActionBarButtonReply","nagram.ActionBarButtonSelectBetween","nagram.chatMenuItemBoostGroup","nagram.chatMenuItemDeleteOwnMessages","nagram.chatMenuItemGoToMessage","nagram.chatMenuItemHideTitle","nagram.chatMenuItemLinkedChat","nagram.chatMenuItemToBeginning","nagram.defaultDeleteMenReportSpam","nagram.defaultDeleteMenu","nagram.defaultDeleteMenuBanUsers","nagram.defaultDeleteMenuDeleteAll","nagram.defaultDeleteMenuDoActionsInCommonGroups","nagram.deleteChatForBothSides","nagram.groupedMessageMenu","nagram.mediaViewerMenuItemCopyFrame","nagram.mediaViewerMenuItemCopyPhoto","nagram.mediaViewerMenuItemForward","nagram.mediaViewerMenuItemNoQuoteForward","nagram.mediaViewerMenuItemScanQRCode","nagram.mediaViewerMenuItemSetProfilePhoto","nagram.shortcutsAdministrators","nagram.shortcutsMembers","nagram.shortcutsPermissions","nagram.shortcutsRecentActions","nagram.shortcutsStatistics","nagram.showAddToBookmark","nagram.showAddToFavorites","nagram.showAddToStickers","nagram.showCopyAsSticker","nagram.showCopyFrame","nagram.showCopyLink","nagram.showCopyPhoto","nagram.showNoQuoteForward","nagram.showReactions","nagram.showRepeatAsCopy","nagram.showReplyInPrivate","nagram.showSetReminder","neko.showAdminActions","neko.showChangePermissions","neko.showDeleteDownloadedFile","neko.showReport","neko.showShareMessages"],
+      "android_anchors":[{"file":"java/org/telegram/ui/ChatActivity.java","line":11345,"scope":"selection action buttons"},{"file":"java/org/telegram/ui/ChatActivity.java","line":5057,"scope":"chat admin shortcuts, not launcher quick actions"},{"file":"java/org/telegram/ui/PhotoViewer.java","line":6187,"scope":"media-viewer menu gates"},{"file":"java/org/telegram/ui/Components/AlertsCreator.java","line":2756,"scope":"delete-for-both default"}],
+      "related_reported_gaps":["nagram.showMessageID","neko.repeatConfirm","neko.showAddToSavedMessages","neko.showMessageDetails","neko.showRepeat"],
+      "done_when":["Each original action has an actual native placement, default and on/off behavior or an explicit source-backed legacy disposition.","Actions invoke the real allowed operation; selection, media/entities, permission checks, cancellation and delete/forward semantics are preserved.","Existing Chat helpers are integrated/reused rather than duplicated; shared menu hunks go through coordinator.","Linked delete bits currently seen only in UI require original-effect disposition before exposing additional native controls."]
+    },
+    {
+      "id":"P-composer-policy","priority":"P0","assignment":"reserved-current-progress","current_owner":"chat",
+      "reservation_source":"docs/wave-2/progress.md:30",
+      "recommended_owner":"Current Chat phase 2; coordinate full 19-ID input/policy batch with AI and TL",
+      "title":"Remaining send defaults, parsing, scheduling, confirmations and composer controls",
+      "feature_ids":["chats.hideMoneyButton","chats.keepAttachButton","nagram.combineMessage","nagram.defaultScheduledTime","nagram.disableMarkdown","nagram.enablePanguOnSending","nagram.fixLinkPreview","nagram.hideBotButtonInInputField","nagram.leftBottomButton","nagram.markdownParser","nagram.showQuickReplyInBotCommands","nagram.showSendAsUnderMessageHint","nagram.showTextCreateMention","nagram.typeMessageHintUseGroupName","neko.askBeforeCall","neko.confirmAVMessage","neko.disableLinkPreviewByDefault","neko.sendCommentAfterForward","neko.useChatAttachMediaMenu"],
+      "android_anchors":[{"file":"java/org/telegram/messenger/SendMessagesHelper.java","line":2535,"scope":"Pangu send transformation"},{"file":"java/org/telegram/messenger/MediaDataController.java","line":7566,"scope":"actual parser choice"},{"file":"java/tw/nekomimi/nekogram/helpers/ScheduleTimeHelper.java","line":41,"scope":"schedule default"},{"file":"java/org/telegram/ui/Components/ChatActivityEnterView.java","line":3119,"scope":"AV confirmation"}],
+      "done_when":["Map every default to a real send/parse/preview/schedule/confirmation or composer path, with explicit user overrides retaining precedence.","Use one ordered composition with AI translate-before-send, bot privacy, silent-send and TL hooks; cancel keeps the original draft, reply and queue.","Exercise rich/UTF-16/media/grouping behavior, not a text-only replacement or a getter test."]
+    },
+    {
+      "id":"P-stickers-emoji","priority":"P0","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"new stickers-emoji-favorites agent; SDK/UI support only at explicit boundaries",
+      "title":"Sticker/emoji settings, emoji-pack source/cache, favorites and pinned reactions",
+      "feature_ids":["chats.stickerShape","chats.stickerTimeSide","emojihelper.emojiPack","emojihelper.emoji_packs_v2","nagram.pinnedReactionsChannels","nagram.pinnedReactionsChats","nagram.sendLockedCustomEmojiAsSticker","nagram.unlimitedSavedGifs","nagram.usePinnedReactionsChannels","nagram.usePinnedReactionsChats","neko.disableChoosingSticker","neko.disableTrending","neko.dontSendGreetingSticker","neko.hideGroupSticker","neko.hideTimeForSticker","neko.maxRecentStickerCount","neko.minimizedStickerCreator","neko.stickerSize","neko.useCustomEmoji","neko.useSystemEmoji","openextera.downloadEmojiPacks"],
+      "collaborators":["tools"],
+      "scope_note":"neko.unlimitedFavedStickers and FaveStickersBackup are explicitly reserved to Tools by the newer progress handoff; coordinate that boundary rather than assigning them again.",
+      "android_anchors":[{"file":"java/tw/nekomimi/nekogram/helpers/remote/EmojiHelper.java","line":119,"scope":"metadata-source selection"},{"file":"java/org/telegram/messenger/Emoji.java","line":95,"scope":"selected emoji pack and system rendering"},{"file":"java/app/exteraless/chats/StickerTime.java","line":31,"scope":"combined side/hidden precedence"},{"file":"java/app/exteraless/utils/FaveStickersBackup.java","line":29,"scope":"local favorites backup, not merely server favorites"},{"file":"java/tw/nekomimi/nekogram/helpers/PinnedElementsHelper.java","line":19,"scope":"pinned reaction data and enable flags"}],
+      "done_when":["Pack selection/cache/download opt-in and sticker shape/time/size/recents/picker controls change actual rendering or data behavior.","Account-local favorites backup/restore and pinned reaction sets have real consumers; server-limit behavior is represented accurately.","System emoji and absent legacy fields may be adapted only with the original effect documented; state cache entries do not require fake settings rows."]
+    },
+    {
+      "id":"P-dialog-navigation","priority":"P0","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"new dialog-search-archive agent; coordinate Appearance header/mini-avatar seams",
+      "title":"Chat list data ordering/search, archive, forum tabs and navigation history",
+      "feature_ids":["dialog.customForumTabsEnable","nagram.disableGlobalSearch","nagram.disableStories","nagram.doNotUnarchiveBySwipe","nagram.hideArchive","nagram.searchHashtagDefaultPageChannel","nagram.searchHashtagDefaultPageChat","neko.disableSwipeToNext","neko.disableSwipeToNextTopic","neko.openArchiveOnPull","neko.rememberAllBackMessages","neko.sortByContacts","neko.sortByUnmuted","neko.sortByUser","neko.unlimitedPinnedDialogs","neko.unreadBadgeOnBackButton"],
+      "android_anchors":[{"file":"java/org/telegram/ui/Adapters/DialogsSearchAdapter.java","line":1105,"scope":"global search source"},{"file":"java/org/telegram/messenger/ChatObject.java","line":2640,"scope":"per-dialog forum tab policy"},{"file":"java/app/exteraless/general/GeneralHelper.java","line":148,"scope":"archive hide/pull/swipe"},{"file":"java/tw/nekomimi/nekogram/helpers/ChatsHelper.java","line":506,"scope":"next channel/topic gesture"}],
+      "related_reported_gaps":["nagram.sortByUnread","neko.sortByUnread"],
+      "done_when":["List/search/archive/forum/navigation consumers use the intended keys, account/peer scope and original defaults; results are not only schema entries.","Keep visual header/mini-avatar reservations intact; give shared list-controller hunks to coordinator.","Resolve the Nagram SortByUnread versus Neko sort_by_unread collision and legacy sort flags explicitly; no duplicate live key or fabricated server pin capacity."]
+    },
+    {
+      "id":"P-message-presentation","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"new message-presentation agent, or explicitly extend Chat's input/media slice",
+      "title":"Bubble/reply/unread presentation and message/header affordances",
+      "feature_ids":["chats.hideCallButton","chats.hideChannelSearchButton","chats.removeMessageTail","chats.replyBackground","chats.replyColors","chats.replyEmoji","chats.unreadCapsule","nagram.hideShareButtonInChannel","nagram.showTimeHint","neko.showSpoilersDirectly"],
+      "android_anchors":[{"file":"java/org/telegram/ui/ActionBar/MessageDrawable.java","line":882,"scope":"tail geometry"},{"file":"java/org/telegram/ui/Components/ReplyMessageLine.java","line":247,"scope":"reply colors/emoji/background"},{"file":"java/org/telegram/ui/Cells/ChatUnreadCell.java","line":59,"scope":"unread capsule"},{"file":"java/org/telegram/messenger/MessageObject.java","line":277,"scope":"spoiler presentation"}],
+      "done_when":["Wire original toggles to the real relevant message variants and matching layout/invalidation paths.","Preserve underlying message, reaction, reply and read data; distinguish a stock appearance from a working disable/alternate preference.","Keep geometry fixtures and expected-frame acceptance attached to the final implementation; this planning snapshot is not that acceptance."]
+    },
+    {
+      "id":"P-local-identity","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"new profile/localization agent, or an explicit extension of Appearance beyond its reserved geometry",
+      "title":"Local names, ID/DC/about/profile presentation and Persian calendar",
+      "feature_ids":["localnamehelper.chatNameOverride","localnamehelper.userNameOverride","nagram.dateOfForwardedMsg","nagram.idDcType","nagram.preferCommonGroupsTab","nagram.showFullAbout","nagram.showOnlineStatus","neko.displayPersianCalendarByLatin","neko.nameOrder","neko.showIdAndDc","neko.usePersianCalendar"],
+      "android_anchors":[{"file":"java/org/telegram/messenger/MessagesController.java","line":6941,"scope":"local user/chat name overrides"},{"file":"java/org/telegram/messenger/ContactsController.java","line":3078,"scope":"name order"},{"file":"java/org/telegram/messenger/LocaleController.java","line":456,"scope":"Persian date formatting"},{"file":"java/tw/nekomimi/nekogram/shamsicalendar/PersianDate.java","line":186,"scope":"Latin digits"},{"file":"java/app/exteraless/general/GeneralHelper.java","line":147,"scope":"ID/DC type"}],
+      "done_when":["Local alias, naming, date and metadata policies affect their actual consumers without changing server identity or losing account/peer scope.","Exercise calendar boundaries/locale/digits and alias fallback/reset; map legacy showIdAndDc to the real replacement instead of inventing another control.","Coordinate existing privacy last-seen and Appearance title work at shared profile/formatting seams."]
+    },
+    {
+      "id":"P-local-premium","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"local-presentation agent, possibly same owner as P-local-identity",
+      "title":"Local Premium/peer-color/emoji-status presentation policies",
+      "feature_ids":["nagram.premiumItemBoosts","nagram.premiumItemCustomColorInReplies","nagram.premiumItemCustomWallpaper","nagram.premiumItemEmojiInReplies","nagram.premiumItemEmojiStatus","nagram.premiumItemStarInReactions","nagram.premiumItemStickerEffects","nagram.premiumItemVideoAvatar","nagram.useLocalEmojiStatusData","nagram.useLocalQuoteColorData","neko.localPremium"],
+      "android_anchors":[{"file":"kotlin/xyz/nextalone/nagram/helper/LocalPremiumStatusHelper.kt","line":66,"scope":"local status data consumer"},{"file":"kotlin/xyz/nextalone/nagram/helper/LocalPeerColorHelper.kt","line":85,"scope":"local peer colors"},{"file":"java/org/telegram/ui/Components/ReplyMessageLine.java","line":399,"scope":"reply styling flags"},{"file":"java/org/telegram/ui/EmojiAnimationsOverlay.java","line":430,"scope":"sticker-effect presentation"}],
+      "done_when":["State data and individual presentation flags have explicit native consumers, persistence/reset and correctly scoped caches.","Document which effects are client-local and which still require actual server capability; never represent a server result or entitlement with a stored boolean.","Coordinate style ownership with Appearance and sticker behavior with P-stickers-emoji; plain stored data is not completion."]
+    },
+    {
+      "id":"P-network-resolver","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"network-policy agent, or explicit Tools extension with Privacy/TL coordination",
+      "title":"DNS/DoH and IPv6 network policy",
+      "feature_ids":["neko.customDoH","neko.dnsType","neko.useIPv6"],
+      "android_anchors":[{"file":"java/tw/nekomimi/nekogram/utils/DnsFactory.kt","line":74,"scope":"DoH client selection"},{"file":"java/org/telegram/tgnet/ConnectionsManager.java","line":992,"scope":"resolver policy"},{"file":"java/org/telegram/tgnet/ConnectionsManager.java","line":1263,"scope":"IPv6 selection"}],
+      "done_when":["Define the actual iOS resolver/MTProto/HTTP scope, then connect the choices to that network path with fallback/cancel/route-change behavior.","Proxy suspension and native TL serialization are not substitutes for resolver selection. Explicitly document any backend-limited scope."]
+    },
+    {
+      "id":"P-maps","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"map/location-policy agent or explicit Tools/Appearance split",
+      "title":"Map preview/provider selection and coordinate correction",
+      "feature_ids":["neko.mapDriftingFixForGoogleMaps","neko.mapPreviewProvider","neko.useOSMDroidMap"],
+      "android_anchors":[{"file":"java/org/telegram/messenger/AndroidUtilities.java","line":2905,"scope":"map preview provider"},{"file":"java/org/telegram/messenger/GoogleMapsProvider.java","line":595,"scope":"coordinate correction"},{"file":"java/org/telegram/messenger/ApplicationLoader.java","line":131,"scope":"map backend choice"}],
+      "done_when":["Identify actual native provider/preview/location consumers and apply choices/correction there, with explicit coordinates/region/default handling.","Android OSMDroid implementation is platform-specific; the user-visible map behavior still needs an adaptation or precise documented boundary, not a blanket no-op selector."]
+    },
+    {
+      "id":"P-cloud-sync","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"new cloud-settings-sync agent, or explicit acceptance by Tools",
+      "title":"Automatic remote settings synchronization",
+      "feature_ids":["cloudsettingshelper.autoSync","cloudsettingshelper.includeApiKeys","cloudsettingshelper.localSyncedDate"],
+      "android_anchors":[{"file":"java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java","line":269,"scope":"auto-sync control"},{"file":"java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java","line":278,"scope":"credential inclusion policy"},{"file":"java/tw/nekomimi/nekogram/helpers/CloudSettingsHelper.java","line":314,"scope":"successful sync timestamp/state"}],
+      "done_when":["Map the original remote/account synchronization and restore/conflict lifecycle, not only the manual local backup archive.","The timestamp is state driven by a successful sync. Credential inclusion requires an explicit native secret/export policy and truthful adaptation evidence; no dummy include-keys control.","Demonstrate account isolation, restart, failed upload and restore behavior using bounded fixtures."]
+    },
+    {
+      "id":"P-client-api","priority":"P1","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"coordinator-owned client-identity task with Build/network implementer",
+      "title":"NekoX custom API identity",
+      "feature_ids":["nekox.customApi","nekox.customAppHash","nekox.customAppId"],
+      "android_anchors":[{"file":"java/org/telegram/messenger/PasskeysController.java","line":191,"scope":"actual selected app ID/hash consumers"},{"file":"java/tw/nekomimi/nekogram/NekoXConfig.java","line":49,"scope":"currentAppId/currentAppHash fallback"}],
+      "done_when":["Select an explicit build-time or runtime iOS identity policy and connect it to the actual API environment/authentication paths, with restart/existing-account semantics documented.","A Core string/int schema or the generic SDK getClientSetting bridge is not the API-identity feature; credentials stay out of this gapset."]
+    },
+    {
+      "id":"P-system-contacts","priority":"P2","assignment":"needs-explicit-family-assignment","current_owner":null,
+      "recommended_owner":"Privacy-extras or coordinator for exact platform disposition",
+      "title":"Android system-account registration switch",
+      "feature_ids":["neko.disableSystemAccount"],
+      "android_anchors":[{"file":"java/org/telegram/messenger/ContactsController.java","line":427,"scope":"Android system-account registration"}],
+      "done_when":["Record the Android AccountManager-specific effect and the absence of that mechanism on iOS; distinguish it from the native contact permission/sync feature.","Close only this exact platform mechanism with evidence; do not invent a successful unused switch."]
+    },
+    {
+      "id":"R-retention","priority":"P0","assignment":"reserved-current-user","current_owner":"retention",
+      "title":"Deleted/edited archive, retained media and inline presentation",
+      "feature_ids":["nagram.chatMenuItemClearDeleted","nagram.chatMenuItemViewDeleted","nagram.customDeletedMark","nagram.customEditedMessage","nagram.deletedMarkColor","nagram.enableSaveDeletedMessages","nagram.enableSaveEditsHistory","nagram.messageSavingSaveMedia","nagram.replyToDeletedAsQuote","nagram.saveDeletedExceptionsMode","nagram.saveDeletedInChannels","nagram.saveDeletedInGroups","nagram.saveDeletedInPrivateChats","nagram.saveDeletedMessageForBot","nagram.saveDeletedMessageForBotUser","nagram.saveEditedExceptionsMode","nagram.saveInArchivedChats","nagram.saveMediaInPrivateChannels","nagram.saveMediaInPrivateChats","nagram.saveMediaInPrivateGroups","nagram.saveMediaInPublicChannels","nagram.saveMediaInPublicGroups","nagram.translucentDeletedMessages","nagram.useDeletedIcon","nagram.useEditedIcon","neko.showMessageHide","neko.showViewHistory"],
+      "android_anchors":[{"file":"java/com/radolyn/ayugram/messages/AyuSavePreferences.java","line":167,"scope":"retention exception modes"},{"file":"java/com/radolyn/ayugram/proprietary/AyuMessageUtils.java","line":666,"scope":"archive-owned media retention"},{"file":"java/app/exteraless/chats/DeletedReplyQuote.java","line":99,"scope":"deleted reply presentation"}],
+      "done_when":["Submit exact feature receipts for archive capture/replay/media lifetime/per-chat exceptions and inline/menu consumers; observations of timestamps alone are not retained content.","Include the AyuDatabaseImport module boundary and deletion/clear behavior; do not reassign this family to first-wave Privacy."]
+    },
+    {
+      "id":"R-privacy-extras","priority":"P0","assignment":"reserved-current-user","current_owner":"privacy-extras",
+      "title":"Client filters/restrictions and hidden-account/panic policies",
+      "feature_ids":["nagram.blockedChannelsData","nagram.customFilteredUsersData","nagram.forwardProtectedAsCopy","nagram.regexChatFiltersData","nagram.regexFiltersData","nagram.regexFiltersEnableInChats","nagram.regexFiltersEnabled","nagram.regexFiltersExcludedDialogs","nagram.zalgoFilter","neko.ignoreBlocked","neko.ignoreContentRestrictions","passcodehelper.accountAllowPanic","passcodehelper.accountHidden","passcodehelper.settingsHidden","passcodehelper.settingsKey"],
+      "android_anchors":[{"file":"java/tw/nekomimi/nekogram/filters/AyuFilter.java","line":48,"scope":"filter state consumer"},{"file":"java/org/telegram/ui/Components/PasscodeView.java","line":1111,"scope":"panic policy"},{"file":"java/app/exteraless/drawer/DrawerAccountPickerView.java","line":328,"scope":"account hiding"}],
+      "done_when":["Return field-level filtering/hidden-account/panic effects, reset and account isolation; native server block/passcode settings alone are not these features.","Disposition for restrictions/forward protection must identify the exact local versus server-controlled behavior; shared presentation/menu seams are coordinated."]
+    },
+    {
+      "id":"R-appearance","priority":"P1","assignment":"reserved-current-user","current_owner":"appearance-phase2",
+      "title":"Remaining visual/nav fields and associated state",
+      "feature_ids":["draweraccountpickerview.expanded","drawercontainer.lastDarkTheme","drawercontainer.lastDayTheme","iconpickerview.fabX","iconpickerview.fabY","mainmenuhelper.channel_intro","nagram.customTitleUserName","nagram.disableBotOpenButton","nagram.disableDialogsFloatingButton","nagram.folderNameAsTitle","nagram.hideDialogsSearchField","nagram.hideDividers","nagram.hideHelpSection","nagram.hidePremiumSection","nagram.hideStoriesFromHeader","nagram.showStickersRowToplevel","nagram.springAnimationCrossfade","nagram.strokeOnViews","neko.forceFontWeightFallback","neko.hideAllTab","neko.mediaPreview","nekodelegatefragment.view_animations","regexfiltereditactivity.view_animations"],
+      "android_anchors":[{"file":"java/org/telegram/ui/DialogsActivity.java","line":15175,"scope":"search-field visibility"},{"file":"java/org/telegram/ui/DialogsActivity.java","line":13287,"scope":"story-header visibility"},{"file":"java/org/telegram/ui/ActionBar/ActionBarLayout.java","line":4136,"scope":"crossfade"}],
+      "done_when":["Add exact receipts to phase 2 for live fields and source-backed replacement/legacy-state dispositions for the rest; geometry/nav state need not become fake generic UI.","Do not silently claim the separate metadata/calendar/local-alias families from a mini-avatar or style implementation."]
+    },
+    {
+      "id":"R-ai","priority":"P0","assignment":"reserved-current-user","current_owner":"ai-phase2",
+      "title":"Additional original stock-AI visibility gates",
+      "feature_ids":["appearance.hideAiEditor","appearance.hideIvSummary","appearance.hideMessageSummary"],
+      "android_anchors":[{"file":"java/app/exteraless/appearance/AiFeaturesHelper.java","line":21,"scope":"editor/summary visibility gates"}],
+      "done_when":["Include these original Appearance-owned IDs in stock-AI replacement/visibility receipts, with effect and interaction between hide flags and provider replacement.","Fifteen former AI receipt gaps are now claimed in the refreshed AI fragment. Continue only their remaining integration/evidence work; no second owner is needed merely because a config prefix is appearance."]
+    },
+    {
+      "id":"R-player","priority":"P1","assignment":"reserved-current-progress","current_owner":"player",
+      "reservation_source":"docs/wave-2/progress.md:42",
+      "title":"Player-style, mini-player, profile music and online lyrics continuation",
+      "feature_ids":["appearance.lrclibAllowed","appearance.md3MiniPlayer","appearance.md3Player","appearance.playerActionsStyle","appearance.playerBackground","appearance.playerColors","appearance.playerControlsSize","appearance.playerCoverExtend","appearance.playerCoverRadius","appearance.playerCoverSize","appearance.playerCoverStyle","appearance.playerCoverSwipe","appearance.playerDiscSpin","appearance.playerMiniArtist","appearance.playerMiniClose","appearance.playerMiniColors","appearance.playerMiniCompact","appearance.playerMiniCover","appearance.playerMiniNext","appearance.playerMiniPrevious","appearance.playerMiniProgress","appearance.playerMiniShape","appearance.playerMiniTop","appearance.playerOrder","appearance.playerShowActions","appearance.playerShowLike","appearance.playerShowModes","appearance.playerShowSource","appearance.playerTitleAbove","appearance.playerTitleAlign","appearance.playerTitleSize","appearance.playerWavy","appearance.profileMusicCard"],
+      "android_anchors":[{"file":"java/app/exteraless/player/PlayerStyle.java","line":60,"scope":"style consumers"},{"file":"java/app/exteraless/player/PlayerSheet.java","line":1586,"scope":"lyrics consent"},{"file":"java/app/exteraless/player/Md3Player.java","line":21,"scope":"full/mini routing"}],
+      "done_when":["Separate real player controls already claimed from these still-unclaimed original style/visibility/lyrics effects.","Supply each actual flag consumer, reset/lifecycle and lyrics-provider/cache/alignment contract; the dedicated Player owner supersedes the first-slice Chat reservation, despite the AppearanceConfig prefix."]
+    },
+    {
+      "id":"R-pillstack","priority":"P1","assignment":"reserved-current-progress","current_owner":"pills",
+      "reservation_source":"docs/wave-2/progress.md:44",
+      "title":"Rate/weather providers and state behind remaining pill IDs",
+      "feature_ids":["pillstack.btcTargetCurrency","pillstack.ethTargetCurrency","pillstack.eurTargetCurrency","pillstack.goldPriceCache","pillstack.goldPriceCacheTime","pillstack.goldTargetCurrency","pillstack.gramTargetCurrency","pillstack.rateInstancesMigrated","pillstack.rateInstancesRaw","pillstack.ratesCache","pillstack.ratesCacheTime","pillstack.usdTargetCurrency","pillstack.weatherAddress","pillstack.weatherLatitude","pillstack.weatherLongitude","pillstack.weatherUseCurrentLocation"],
+      "android_anchors":[{"file":"java/app/exteraless/pillstack/RateInstances.java","line":49,"scope":"rate-instance registry"},{"file":"java/app/exteraless/pillstack/ExchangeRates.java","line":111,"scope":"exchange-rate cache"},{"file":"java/app/exteraless/pillstack/pills/WeatherPill.java","line":110,"scope":"weather location selection"}],
+      "done_when":["Expand beyond the reported cache/proxy pills with real currency/weather data, stale/cache/error handling, location selection and disabled-state cancellation.","Cover non-ConfigItem ghost/telemetry/DC-ping/last-seen pill providers through Privacy/Tools and plugin-created pill contracts through SDK/UI; state entries may close as behavior-preserving adaptations."]
+    },
+    {
+      "id":"R-feed","priority":"P1","assignment":"reserved-current-progress","current_owner":"feed",
+      "reservation_source":"docs/wave-2/progress.md:43",
+      "title":"Feed entry/badge and original unread policy",
+      "feature_ids":["appearance.showFeedTab","appearance.showFeedUnreadCounter"],
+      "android_anchors":[{"file":"java/org/telegram/ui/MainTabsActivity.java","line":142,"scope":"feed tab"},{"file":"java/app/exteraless/feed/FeedController.java","line":714,"scope":"unread badge"}],
+      "done_when":["Connect the native feed entry and actual unread/read-receipt data with Privacy/Appearance cooperation, without using parked iOS News as completion.","Keep module-level full inline media/window/album/read behavior in the Chat continuation receipt."]
+    },
+    {
+      "id":"R-chat-media","priority":"P1","assignment":"reserved-current-user","current_owner":"chat",
+      "collaborators":["player","ai-phase2","tools"],
+      "title":"Input/media/browser/silent-send continuation and legacy aliases",
+      "feature_ids":["chats.hdrPhotos","chats.swipeToPip","chats.translateInSheet","chats.unmuteWithVolumeButtons","nagram.defaultHlsVideoQuality","nagram.disableChannelMuteButton","nagram.disableInAppBrowserGestures","nagram.disablePreviewVideoSoundShortcut","nagram.hideReactions","nagram.messageColoredBackground","nagram.playerDecoder","nagram.sendMp4DocumentAsVideo","nagram.showSmallGIF","nagram.silentMessageByDefault","neko.autoPauseVideo","neko.takeGIFasVideo"],
+      "android_anchors":[{"file":"java/org/telegram/ui/PhotoViewer.java","line":24918,"scope":"HDR window behavior"},{"file":"java/org/telegram/ui/Components/VideoPlayer.java","line":288,"scope":"decoder selection"},{"file":"java/org/telegram/messenger/SendMessagesHelper.java","line":11398,"scope":"MP4 document routing"},{"file":"java/org/telegram/ui/LaunchActivity.java","line":8883,"scope":"exact hardware-volume-key interception boundary"}],
+      "done_when":["Return actual input/media behavior or precise per-option platform disposition; EDR/decoder/stock PiP presence does not implement all original selectors.","Reconcile migrated reaction/reply/quality/mute keys as aliases where source proves it. Coordinate translateInSheet with AI; silent default must retain explicit notify override."]
+    },
+    {
+      "id":"R-tools","priority":"P1","assignment":"reserved-current-user","current_owner":"tools",
+      "title":"Transfer/capture/performance/RPC-diagnostic options",
+      "feature_ids":["general.downloadSpeedBoost","nagram.cameraInVideoMessages","nagram.enhancedVideoBitrate","nagram.noiseSuppressAndVoiceEnhance","nagram.performanceClass","nagram.saveToChatSubfolder","nagram.showRPCError","neko.cachePath","neko.customAudioBitrate","neko.customSavePath","neko.disableAutoDownloadingArchive","neko.disableAutoDownloadingWin32Executable","neko.disableInstantCamera","neko.enhancedFileLoader","neko.rearVideoMessages","neko.unlimitedFavedStickers","neko.uploadBoost"],
+      "scope_note":"Favorites continuation is explicitly named in progress.md:33; include FaveStickersBackup/account-local lifetime and the unlimitedFavedStickers receipt.",
+      "android_anchors":[{"file":"java/org/telegram/messenger/FileLoadOperation.java","line":306,"scope":"download boost"},{"file":"kotlin/xyz/nextalone/nagram/helper/AudioEnhance.kt","line":20,"scope":"audio enhancement"},{"file":"java/org/telegram/messenger/voip/NativeInstance.java","line":83,"scope":"audio bitrate"},{"file":"java/org/telegram/tgnet/ConnectionsManager.java","line":495,"scope":"RPC-error visibility"}],
+      "done_when":["Provide per-field data-path consumers for transfer chunk/concurrency, save paths/subfolders, download selection and capture/encoder choices.","Coordinate actual RPC diagnostics with TL phase 2 and compatibility aliases with camera/transfer migration; metadata/schema alone is not a performance change."]
+    },
+    {
+      "id":"R-telemetry-legacy","priority":"P2","assignment":"reserved-current-user","current_owner":"tools",
+      "title":"Old Crashlytics collection flag disposition",
+      "feature_ids":["nagram.disableCrashlyticsCollection"],
+      "android_anchors":[{"file":"java/tw/nekomimi/nekogram/settings/NekoGeneralSettingsActivity.java","line":250,"scope":"legacy UI flag; migration target is GeneralConfig.crashReports"}],
+      "done_when":["Document its source migration/replacement and native reporting policy next to the actual general.crashReports receipt; no duplicate inert switch."]
+    },
+    {
+      "id":"R-runtime","priority":"P1","assignment":"reserved-current-user","current_owner":"coordinator",
+      "collaborators":["sdk","extra-services","build-deps"],
+      "title":"Plugin manager flags, modes, watchdog state and exact Xposed exclusions",
+      "feature_ids":["pluginscontroller.compactView","pluginscontroller.compatibilityMode","pluginscontroller.developerMode","pluginscontroller.engineEnabled","pluginscontroller.pluginPinned","pluginscontroller.pluginSettingJson","pluginscontroller.safeMode","pluginswatchdog.pluginsSafeModeAuto","pluginswatchdog.warningMuted","pluginswatchdog.watchdog_crashed_plugin","pluginswatchdog.watchdog_early_crashes","pluginswatchdog.watchdog_loading_plugin","xposedhooks.nativeHooksBroken","xposedhooks.native_hooks_init_pending","xposedhooks.native_hooks_init_strikes","xposedhooks.native_hooks_unsupported_stamp"],
+      "android_anchors":[{"file":"java/app/exteraless/plugins/PythonPluginsEngine.java","line":133,"scope":"developer behavior"},{"file":"java/app/exteraless/plugins/PluginsWatchdog.java","line":740,"scope":"engine/safe-mode lifecycle"},{"file":"java/app/exteraless/plugins/ui/PluginsActivity.java","line":172,"scope":"pin/list behavior"},{"file":"java/app/exteraless/plugins/PluginsController.java","line":1145,"scope":"per-plugin JSON storage API"}],
+      "done_when":["Supply exact original-ID receipts for manager UI, engine admission/restart/modes and watchdog/crash recovery. Existing PluginHost infrastructure does not automatically claim every original flag.","Per-plugin JSON storage already has a handoff claim; record it as a storage API rather than claiming all client-setting effects.","Java/Xposed crash markers close only as exact excluded-mechanism dispositions; debugpy source provision does not prove the developer server works."]
+    },
+    {
+      "id":"R-proxy-state","priority":"P2","assignment":"reserved-current-user","current_owner":"privacy",
+      "title":"Proxy state adaptation receipts missing from feature JSON",
+      "feature_ids":["proxycontroller.exteraless_proxy_names","proxyutil.oe_proxy_auto_disabled"],
+      "android_anchors":[{"file":"java/org/telegram/ui/ProxyListActivity.java","line":183,"scope":"persisted proxy name"},{"file":"java/tw/nekomimi/nekogram/utils/ProxyUtil.kt","line":61,"scope":"auto-disabled state declaration"}],
+      "done_when":["Translate the existing privacy.md name/projection claims into original-ID adaptation receipts and behavior evidence. These states do not need new visible Core settings."]
+    }
+  ],
+  "reported_without_functional_callsite_claims_columns":["id","current_owner","fragment_status"],
+  "reported_without_functional_callsite_claims":[
+    ["appearance.centerTitle","appearance-phase2","compat-storage"],
+    ["appearance.customThemes","appearance-phase2","partial"],
+    ["appearance.glassMessageMenu","appearance-phase2","pending"],
+    ["appearance.glassOutlineStyle","appearance-phase2","pending"],
+    ["appearance.gooeyAvatarAnimation","appearance-phase2","pending"],
+    ["appearance.immersiveDrawerAnimation","appearance-phase2","pending"],
+    ["appearance.iosChatHeader","appearance-phase2","partial"],
+    ["appearance.iosNavigationBarStyle","appearance-phase2","partial"],
+    ["appearance.monetStyle","appearance-phase2","partial"],
+    ["appearance.newChatHeaderStyle","appearance-phase2","pending"],
+    ["appearance.newLoadingStyle","appearance-phase2","pending"],
+    ["appearance.newNavigationBarStyle","appearance-phase2","pending"],
+    ["appearance.senderMiniAvatars","appearance-phase2","pending"],
+    ["appearance.squareFab","appearance-phase2","unsupported"],
+    ["energyprofiler.wakelock_hooks_broken","tools","unsupported"],
+    ["energyprofiler.wakelock_hooks_pending","tools","unsupported"],
+    ["etgbackup.ChatSwipeAction","tools","pending"],
+    ["general.showNagramSettings","appearance-phase2","unsupported"],
+    ["glyph.enabled","tools","unsupported"],
+    ["glyph.onCall","tools","unsupported"],
+    ["glyph.onNewMessage","tools","unsupported"],
+    ["glyph.onRecording","tools","unsupported"],
+    ["glyph.screenOffOnly","tools","unsupported"],
+    ["icons.customNotificationIcon","appearance-phase2","unsupported"],
+    ["icons.useSystemIconShape","appearance-phase2","pending"],
+    ["legacydefaults.OELegacyDefaultsGeneration","tools","unsupported"],
+    ["legacydefaults.OELegacyDefaultsPinned","tools","unsupported"],
+    ["nagram.alwaysShowDownloadIcon","appearance-phase2","pending"],
+    ["nagram.backAnimationStyle","appearance-phase2","pending"],
+    ["nagram.centerActionBarTitle","appearance-phase2","pending"],
+    ["nagram.centerActionBarTitleType","appearance-phase2","pending"],
+    ["nagram.chatDecoration","appearance-phase2","pending"],
+    ["nagram.disableAvatarBlur","appearance-phase2","pending"],
+    ["nagram.disableProxyWhenVpnEnabled","privacy","unsupported"],
+    ["nagram.hideBottomNavigationBar","appearance-phase2","partial"],
+    ["nagram.mainTabsHideProfile","appearance-phase2","pending"],
+    ["nagram.notificationIcon","privacy","unsupported"],
+    ["nagram.pushServiceType","privacy","platform-prerequisite"],
+    ["nagram.pushServiceTypeInAppDialog","privacy","unsupported"],
+    ["nagram.pushServiceTypeUnifiedGateway","privacy","unsupported"],
+    ["nagram.pushServiceTypeUnifiedSimple","privacy","unsupported"],
+    ["nagram.pushServiceTypeUnifiedWebPushAuthSecret","privacy","unsupported"],
+    ["nagram.pushServiceTypeUnifiedWebPushPrivateKey","privacy","unsupported"],
+    ["nagram.pushServiceTypeUnifiedWebPushPublicKey","privacy","unsupported"],
+    ["nagram.showMessageID","chat","partial"],
+    ["nagram.sliderStyle","appearance-phase2","pending"],
+    ["nagram.sortByUnread","chat","pending"],
+    ["nagram.switchStyle","appearance-phase2","pending"],
+    ["neko.actionBarDecoration","appearance-phase2","pending"],
+    ["neko.disableNotificationBubbles","privacy","unsupported"],
+    ["neko.repeatConfirm","chat","partial"],
+    ["neko.showAddToSavedMessages","chat","partial"],
+    ["neko.showGhostInDrawer","privacy","partial"],
+    ["neko.showMessageDetails","chat","partial"],
+    ["neko.showRepeat","chat","partial"],
+    ["neko.sortByUnread","chat","pending"],
+    ["neko.tabletMode","appearance-phase2","partial"],
+    ["neko.typeface","appearance-phase2","partial"],
+    ["utils.predictiveBackIntensity","appearance-phase2","conflicting-unsupported-and-pending"]
+  ],
+  "handoff_only_claims":[
+    {"id":"proxycontroller.exteraless_proxy_names","owner":"privacy","claim":"functional-state-adaptation","report":{"path":"docs/wave-2/privacy.md","line":142},"receipt_needed":true},
+    {"id":"proxyutil.oe_proxy_auto_disabled","owner":"privacy","claim":"functional-state-adaptation","report":{"path":"docs/wave-2/privacy.md","line":141},"receipt_needed":true},
+    {"id":"pluginscontroller.pluginSettingJson","owner":"sdk","claim":"storage-api-adaptation","report":{"path":"docs/wave-2/sdk.md","line":37},"receipt_needed":true}
+  ],
+  "additional_handoff_claim_groups_status":"Receipt-refresh history: these 15 IDs are now present as functional-source claims in the updated AI fragment, so they are not counted again in the active gapset.",
+  "additional_handoff_claim_groups":[
+    {
+      "id":"AI2-stock-interception","owner":"ai-phase2",
+      "feature_ids":["ai.replaceTelegramEditor","ai.replaceTelegramSummaries"],
+      "claim":"implemented native adapters; actual shared interception hunks pending",
+      "report":{"path":"docs/wave-2/ai-subwave-2.md","line":66},
+      "planning_action":"Supersede the first-slice no-implementation statement, keep coordinator wiring/feature receipt pending; do not assign to another implementer."
+    },
+    {
+      "id":"AI2-legacy-service-selection","owner":"ai-phase2",
+      "feature_ids":["ai.selectedServiceHash"],
+      "claim":"source implementation of legacy signed Java hash selection during explicit service import, not a new stored UI field",
+      "report":{"path":"docs/wave-2/ai-subwave-2.md","line":59},
+      "planning_action":"Replace stale unsupported classification with the eventual source-backed import adaptation receipt; verification remains separate."
+    },
+    {
+      "id":"AI2-bing-cache","owner":"ai-phase2",
+      "feature_ids":["bingtranslatorraw.tokenExpiryInterval","bingtranslatorraw.tokenTs"],
+      "claim":"atomic secret session cache, persistence/recreation and expiry dataflow implemented in source",
+      "report":{"path":"docs/wave-2/ai-subwave-2.md","line":145},
+      "planning_action":"Do not keep the old unsupported-TTL statement as current. Record the new state-consumer receipt and later behavior evidence."
+    },
+    {
+      "id":"AI2-translation-policy","owner":"ai-phase2",
+      "feature_ids":["nagram.articleTranslationProvider","nagram.enableSeparateArticleTranslator","nagram.keepTranslatorPreferences","nagram.llmUseContextInAutoTranslate","nagram.preferredTranslateTargetLang","nagram.showTranslateMessageLLM","nagram.telegramUIAutoTranslate","nagram.translatorMode","nagram.translatorModeWithOriginalMigrated","neko.showTranslate"],
+      "claim":"mode/migration/language/article/auto/visibility source consumers supplied; several shared rendering and interception hunks still need coordinator application",
+      "report":{"path":"docs/wave-2/ai-subwave-2.md","line":87},
+      "planning_action":"Keep AI ownership and separate implemented owned code from pending shared integration. Source schema alone is not the basis for this claim."
+    }
+  ],
+  "concurrent_report_updates":[
+    {"path":"docs/wave-2/ai-subwave-2.md","observation":"Appeared during this read-only slice. After interruption the AI fragment also refreshed: 15 former no-callsite rows now carry source claims. No client inventory or implementation was rewritten by this planning task."},
+    {"path":"docs/wave-2/privacy.md","observation":"Refreshed handoff/fragment report some previously pending shared guards applied; original feature-ID membership is unchanged. No native code was re-reviewed."},
+    {"path":"docs/wave-2/progress.md","observation":"New authoritative ownership handoff names Chat input/actions, Tools favorites, separate Player/Feed/Pills, Host maintenance and App lifecycle integrator. The 148 initial addressable IDs shrink to 82 needing assignment; 66 are now counted as explicitly reserved."},
+    {"path":"docs/wave-2/core-settings.md","observation":"New batch/CAS handoff header was read. User-reported 15-test baseline does not prove the new batch/CAS additions or any domain feature."}
+  ],
+  "validation_snapshot": {
+    "data_partition":"82 needs assignment + 236 reserved = 318 unfragmented; 59 reported gaps; 377 distinct active gap IDs; 3 handoff-only adaptations; 374 without source implementation claim",
+    "all_active_ids_and_android_anchor_joins_valid":true,
+    "five_fragment_hashes_matched_at_final_data_check":true,
+    "main_inventory_hash_unchanged":true,
+    "handoffs_changed_after_their_selected_read_snapshot":["docs/wave-2/appearance-subwave.md","docs/wave-2/ai-subwave-2.md"],
+    "drift_policy":"Read-time handoff pins are intentionally retained for this bounded planning snapshot. Later handoff changes need the next reconciliation; no continuous polling or code review is performed.",
+    "code_review_or_runtime_verification":false
+  },
+  "dispositions": {
+    "exact_platform_only_ids":["chats.unmuteWithVolumeButtons","energyprofiler.wakelock_hooks_broken","energyprofiler.wakelock_hooks_pending","glyph.enabled","glyph.onCall","glyph.onNewMessage","glyph.onRecording","glyph.screenOffOnly","icons.customNotificationIcon","nagram.disableProxyWhenVpnEnabled","nagram.notificationIcon","nagram.pushServiceTypeInAppDialog","nagram.pushServiceTypeUnifiedGateway","nagram.pushServiceTypeUnifiedSimple","nagram.pushServiceTypeUnifiedWebPushAuthSecret","nagram.pushServiceTypeUnifiedWebPushPrivateKey","nagram.pushServiceTypeUnifiedWebPushPublicKey","neko.disableNotificationBubbles","neko.disableSystemAccount","xposedhooks.nativeHooksBroken","xposedhooks.native_hooks_init_pending","xposedhooks.native_hooks_init_strikes","xposedhooks.native_hooks_unsupported_stamp"],
+    "external_prerequisite_not_platform_impossibility_ids":["nagram.pushServiceType"],
+    "migration_or_disabled_legacy_candidates":["appearance.centerTitle","general.showNagramSettings","nagram.disableCrashlyticsCollection","nagram.hideReactions","nagram.messageColoredBackground","neko.enhancedFileLoader","neko.rearVideoMessages","neko.showIdAndDc"],
+    "legacy_no_consumer_candidates_requiring_source_disposition":["neko.sortByUnread","neko.sortByContacts","neko.sortByUnmuted","neko.sortByUser","neko.useCustomEmoji","nagram.customTitleUserName","nagram.folderNameAsTitle"],
+    "state_adaptation_examples":["ai.selectedServiceHash","bingtranslatorraw.tokenExpiryInterval","bingtranslatorraw.tokenTs","cloudsettingshelper.localSyncedDate","emojihelper.emoji_packs_v2","pillstack.rateInstancesMigrated","pillstack.goldPriceCache","pillstack.goldPriceCacheTime","pillstack.ratesCache","pillstack.ratesCacheTime","proxycontroller.exteraless_proxy_names","proxyutil.oe_proxy_auto_disabled","pluginscontroller.pluginSettingJson"],
+    "not_blanket_platform_exclusions":["appearance.squareFab","appearance.monetStyle","utils.predictiveBackIntensity","chats.hdrPhotos","nagram.playerDecoder","neko.useOSMDroidMap","neko.customDoH"],
+    "closure_criterion":"State/legacy entries may close as an adaptation only after the owner relates the actual original read/write/migration effect to the native replacement or to a documented excluded mechanism, supplies behavior evidence, and avoids duplicate/inert UI. An absent lexical consumer or an unsupported label alone is not closure."
+  },
+  "fragment_conflicts_to_reconcile_not_review_findings":[
+    {"id":"nagram.showTextTranslate","reports":["ai-parity.json:partial, ai.showTextTranslate for selected-text action","chat-parity.json:partial, chats.showTextTranslate for Format submenu"],"planning_owner":"coordinator with chat and ai-phase2","action":"Both now claim different native keys for the same original ID. Agree one source-of-truth policy or explicit linked alias; preserve both native entry paths. This is a receipt/key reconciliation task, not a code-review verdict."},
+    {"id":"general.crashReports","reports":["appearance-parity.json:pending","tools-parity.json:implemented adaptation"],"planning_owner":"tools","action":"Use Tools' local MetricKit/manual-export claim as its scope, not an assertion of Android automatic-upload parity."},
+    {"id":"utils.predictiveBackIntensity","reports":["appearance-parity.json:unsupported","tools-parity.json:pending and delegated to Appearance"],"planning_owner":"appearance-phase2","action":"Keep native navigation adaptation pending a precise contract; Android event API specificity does not close the whole configurable visual effect."}
+  ],
+  "shim_api_gapset": {
+    "source_section":"compatibility_apis",
+    "id_resolution":"Every exact id is in the pinned source_inventory.compatibility_apis; select by behavior below. These 308 API IDs are not extra client features.",
+    "current_owner":"sdk",
+    "counts":{"mapped-alias":220,"compat-storage":44,"shim-utility-or-unresolved":44},
+    "classification_only_receipts_in_tools_fragment":12,
+    "functional_native_mirror_claim":"No exact ExteraConfig per-method mirror receipt supplied in the read fragments; generic getClientSetting is not automatically that API.",
+    "done_when":"Map alias methods to the final native feature keys, preserve compatible storage behavior for genuinely storage-only slots, and publish named unsupported/helper dispositions with evidence. Do not implement 139 imaginary client toggles.",
+    "source_anchor":{"file":"java/com/exteragram/messenger/ExteraConfig.java","line":37},
+    "exact_exclusions":"Original Java/DEX loading and JVM/Xposed replacement remain distinct excluded mechanisms; portable Python-facing settings/class aliases are not excluded solely by Java spelling."
+  },
+  "non_config_continuations": [
+    {"source_module":"module.utils","family":"FaveStickersBackup","current_owner":"tools","collaborators":["P-stickers-emoji"],"report":"docs/wave-2/progress.md:33","criterion":"Real account-local favorites/TL backup behavior; server favorites alone are insufficient. New Tools reservation supersedes the older outbound chat handoff."},
+    {"source_module":"module.backup","family":"AyuDatabaseImport","current_owner":"retention","report":"docs/wave-2/tools.md:176","criterion":"Explicit source-schema to native retained-history transaction; manual config archive is not this feature."},
+    {"source_module":"module.pillstack","family":"remaining PillType providers and plugin-created pills","current_owner":"pills","collaborators":["privacy","tools","sdk","extra-services"],"report":"docs/wave-2/progress.md:44","criterion":"Cover actual providers/registry lifecycle, not only the four layout settings."},
+    {"source_module":"module.utils","family":"external subtitles inside shared Telegram gallery","current_owner":"tools","collaborators":["player","chat"],"report":"docs/wave-2/progress.md:33","criterion":"Reuse real parser/sidecar behavior in native gallery with the actual gallery owner; a separate Files AVPlayer is only a scoped adaptation."},
+    {"source_module":"module.plugins","family":"owner tasks, file/intent hooks, controller and NotificationCenter services","current_owner":"extra-services","report":"docs/wave-2/sdk.md:110","criterion":"Actual host effects and result-bearing before barriers, owner-token lifetime, cancellation and scoped subscriptions; Python DTO success is not a native effect."},
+    {"source_module":"module.plugins","family":"mutation-capable pre/post/update and rich-media hooks","current_owner":"tl-phase2","report":"docs/wave-2/tl.md:169","criterion":"Use actual native request/state boundaries; observational data and generated schema alone do not supply mutation semantics."},
+    {"source_module":"module.plugins","family":"dependency admission including lxml/Pillow/debugpy","current_owner":"build-deps","report":"docs/wave-2/build-dependencies.md:134","criterion":"Source packages, native candidates and admitted OWN_GIL/iOS behavior stay separate; all packages are already assigned."}
+  ],
+  "coordinator_supplied_context": {
+    "core_settings":{"tests":15,"run_id":"43645893132","commit":"496d426","reported_result":"green","source":"current user instruction","used_as_client_feature_completion":false},
+    "baseline_ipa":{"run_id":"43635233046","commit":"68bb1adf","reported_result":"green","source":"current user instruction","used_as_wave2_feature_completion":false},
+    "ci_was_queried_or_dispatched":false
+  }
+}

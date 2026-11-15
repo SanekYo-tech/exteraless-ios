@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "constructors": [
+    {"id": 2107670217, "name": "inputPeerSelf", "kind": "constructor", "params": [], "type": "InputPeer", "supported": true},
+    {"id": -763367294, "name": "inputCheckPasswordSRP", "kind": "constructor", "params": [
+      {"name": "srp_id", "type": "long"},
+      {"name": "A", "type": "bytes"},
+      {"name": "M1", "type": "bytes"}
+    ], "type": "InputCheckPasswordSRP", "supported": true}
+  ],
+  "methods": [
+    {"id": -1824339449, "name": "messages.getBotCallbackAnswer", "kind": "method", "params": [
+      {"name": "flags", "type": "#"},
+      {"name": "game", "type": "flags.1?true"},
+      {"name": "peer", "type": "InputPeer"},
+      {"name": "msg_id", "type": "int"},
+      {"name": "data", "type": "flags.0?bytes"},
+      {"name": "password", "type": "flags.2?InputCheckPasswordSRP"}
+    ], "type": "messages.BotCallbackAnswer", "supported": true}
+  ],
+  "aliases": {
+    "org.telegram.tgnet.TLRPC$TL_inputPeerSelf": "inputPeerSelf",
+    "org.telegram.tgnet.TLRPC$TL_inputCheckPasswordSRP": "inputCheckPasswordSRP",
+    "org.telegram.tgnet.TLRPC$TL_messages_getBotCallbackAnswer": "messages.getBotCallbackAnswer"
+  }
+}

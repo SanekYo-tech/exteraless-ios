@@ -16,6 +16,9 @@ __all__ = [
     "configure", "metadata_json", "load_json", "unload", "dispatch_json",
     "settings_json", "setting_changed_json", "setting_click_json", "invoke_handle_json",
     "PluginLoadError", "RuntimeStateError", "UnsupportedSurfaceError",
+    "bind_owner_json",
+    "release_handles_json",
+    "hook_priority_json",
 ]
 
 
@@ -68,7 +71,7 @@ def configure(plugin_id, plugins_dir, settings_dir) -> None:
 
     bridge = importlib.import_module("_exteraless_bridge")
     finder = importlib.import_module("virtualjava.finder")
-    for name in ("xt_set_plugin_id", "xt_call_host", "xt_resolve_handle",
+    for name in ("xt_set_plugin_id", "xt_set_owner_token", "xt_call_host", "xt_resolve_handle",
                  "xt_register_handle", "xt_release_handle", "xt_clear_handles", "BridgeBackend"):
         if not hasattr(bridge, name):
             raise RuntimeStateError(f"native bridge is missing {name}")
@@ -97,8 +100,35 @@ def _runtime(loaded=False):
     return platform
 
 
+def bind_owner_json(owner_json) -> None:
+    """Host-only bootstrap seam: bind a native CallbackOwner token before load."""
+    platform = _runtime()
+    token = _codec.loads(owner_json)
+    if not isinstance(token, str) or not token or len(token.encode("utf-8")) > 256 or "\0" in token:
+        raise ValueError("owner token must be a nonempty bounded JSON string")
+    if platform.callbacks.active or platform.owner_token not in (None, token):
+        raise RuntimeStateError("callback owner identity is immutable for this interpreter")
+    # The host binds C first. Repeating it here validates agreement with the
+    # immutable native epoch; Python state never becomes authority for requests.
+    platform.bridge.xt_set_owner_token(token)
+    platform.owner_token = token
+    return None
+
+
+def release_handles_json(handles_json) -> None:
+    """Native FIFO release seam, including silent account-replacement teardown."""
+    platform = _runtime()
+    handles = _codec.loads(handles_json)
+    if not isinstance(handles, list) or len(handles) > 4096 or any(
+            type(handle) is not int or not 0 < handle < 2 ** 63 for handle in handles):
+        raise ValueError("release requires at most 4096 positive Int64 handles")
+    platform.callbacks.release_handles(handles)
+    return None
+
+
 @contextmanager
 def _scope(platform, account=None):
+    platform.refresh_protected_paths()
     with platform.loader.plugin_context(platform.plugin_id):
         with platform.loader.client_utils.hook_scope(account):
             yield
@@ -131,7 +161,21 @@ def _cleanup(platform, record=None, path=None, module_name=None):
     loader.client_utils._queues.clear()
     # This interpreter/realm belongs exclusively to this plugin, including refs
     # exported by C while marshalling native service arguments (UI callbacks).
-    platform.bridge.xt_clear_handles()
+    primary_error = sys.exception()
+    try:
+        platform.callbacks.end()
+    except BaseException:
+        if primary_error is None:
+            raise
+    finally:
+        platform.registrations.entries.clear()
+        platform.registrations.menu_keys.clear()
+        platform.tl.pending.clear()
+        with platform.callbacks.lock:
+            platform.scheduler.tasks.clear()
+        platform.controller_caches.clear()
+        platform.pills.clear()
+        platform.bridge.xt_clear_handles()
 
 
 def load_json(path) -> str:
@@ -145,6 +189,7 @@ def load_json(path) -> str:
         unload()
     loader = platform.loader
     module_name = loader._module_name_for(platform.plugin_id)
+    platform.callbacks.begin()
     try:
         with _scope(platform):
             result = _codec.loads(loader.load_plugin(path, platform.plugin_id))
@@ -193,11 +238,36 @@ def _account(payload):
     return value
 
 
-def _registered(instance, hook, name=None):
+def _matching_priorities(platform, instance, hook, name, canonical_name=None):
+    if hook not in _HOOKS:
+        raise UnsupportedSurfaceError(f"unsupported TL hook protocol name {hook!r}")
+    schema = platform.tl.schema
+    canonical_name = canonical_name or schema.canonical_name(name)
+    candidates = {name, canonical_name, *schema.hook_names(canonical_name)}
+    group = "request" if hook in ("pre_request_hook", "post_request_hook") else "update" if hook == "on_update_hook" else "updates"
+    # BasePlugin.add_hook stores ONE Python ledger. PluginsController.java:1726–1744
+    # partitions it into exact request/update/container maps plus shared substrings.
+    for pattern, substring, priority in instance.__dict__.get("_exteraless_request_hooks", ()):
+        if not pattern or not isinstance(pattern, str): continue
+        if not substring and schema.hook_group(pattern) != group: continue
+        if any(pattern in candidate if substring else pattern == candidate for candidate in candidates):
+            yield int(priority)
+
+
+def hook_priority_json(hook, name, canonical_name):
+    platform = _runtime(loaded=True)
+    if not isinstance(name, str) or not isinstance(canonical_name, str):
+        raise TypeError("hook names must be strings")
+    instance = platform.loader.plugins[platform.plugin_id].instance
+    with _scope(platform):
+        matches = list(_matching_priorities(platform, instance, hook, name, canonical_name))
+        return _codec.dumps(max(matches) if matches else None)
+
+
+def _registered(instance, hook, name=None, platform=None, canonical_name=None):
     if hook == "on_send_message_hook":
         return bool(instance.__dict__.get("_exteraless_send_message_registered", False))
-    return any((pattern in name if substring else pattern == name)
-               for pattern, substring, _ in instance.__dict__.get("_exteraless_request_hooks", ()))
+    return next(_matching_priorities(platform, instance, hook, name, canonical_name), None) is not None
 
 
 def dispatch_json(hook, payload_json) -> str:
@@ -222,6 +292,9 @@ def dispatch_json(hook, payload_json) -> str:
         raise UnsupportedSurfaceError(f"unsupported hook {hook!r}")
     account = _account(payload)
     instance = loader.plugins[plugin_id].instance
+    canonical_name = payload.get("canonical_name")
+    if canonical_name is not None and not isinstance(canonical_name, str): raise TypeError("canonical_name must be a string")
+    native_snapshot = None
     if hook == "on_send_message_hook":
         field, name = "params", None
         value = _codec.decode(payload[field], platform.bridge)
@@ -235,16 +308,29 @@ def dispatch_json(hook, payload_json) -> str:
         if not isinstance(name, str):
             raise TypeError(f"{name_field} must be a string")
         value = _codec.decode(payload[field], platform.bridge)
+        snapshot = value
+        if isinstance(snapshot, dict) and "tl" in snapshot: native_snapshot = snapshot
+        if canonical_name is None and isinstance(snapshot, dict) and "tl" in snapshot:
+            metadata = snapshot.get("metadata", {})
+            if hook == "post_request_hook" and isinstance(metadata, dict): canonical_name = metadata.get("canonicalName", metadata.get("requestName"))
+            elif isinstance(snapshot["tl"], dict): canonical_name = snapshot["tl"].get("_")
+        value = platform.tl.schema.hook_value(snapshot, request_name=(canonical_name or name) if hook == "post_request_hook" else None)
         args = (account, name, value)
         if hook == "post_request_hook":
-            args += (_codec.decode(payload.get("error"), platform.bridge),)
+            error = payload.get("error")
+            if error is None and isinstance(snapshot, dict): error = snapshot.get("tlError")
+            error = platform.tl.schema.decode(_codec.decode(error, platform.bridge))
+            if native_snapshot is not None: error = platform.tl.schema.attach_context(error, native_snapshot)
+            args += (error,)
         fn = getattr(loader, function)
     with _scope(platform, account):
         result = None
-        if _registered(instance, hook, name):
+        if _registered(instance, hook, name, platform, canonical_name):
             result = fn(plugin_id, *args)
         strategy = "DEFAULT" if result is None else result.strategy
-        if result is not None and result.value is not None:
+        if native_snapshot is not None and strategy in ("DEFAULT", "CANCEL"):
+            value = native_snapshot["tl"]
+        elif result is not None and result.value is not None:
             value = result.value
         return _codec.dumps({"strategy": strategy, field: value}, platform.bridge)
 
@@ -255,22 +341,30 @@ def settings_json() -> str:
         return platform.loader.get_settings_json(platform.plugin_id)
 
 
-def setting_changed_json(key, value_json) -> str:
+def _settings_account(account):
+    if account is not None and (type(account) is not int or not 0 <= account < 2 ** 31):
+        raise ValueError("settings account must be a nonnegative Int32 SDK index")
+    return account
+
+
+def setting_changed_json(key, value_json, account=None) -> str:
     platform = _runtime(loaded=True)
+    account = _settings_account(account)
     if not isinstance(key, str):
         raise TypeError("setting key must be a string")
     _codec.loads(value_json)  # The SDK alone would turn malformed JSON into null.
-    with _scope(platform):
+    with _scope(platform, account):
         platform.loader.notify_setting_changed(platform.plugin_id, key, value_json)
     return "null"
 
 
-def setting_click_json(callback_id) -> str:
+def setting_click_json(callback_id, account=None) -> str:
     platform = _runtime(loaded=True)
+    account = _settings_account(account)
     record = platform.loader.plugins[platform.plugin_id]
     if callback_id not in record.click_callbacks:
         raise LookupError(f"unknown settings callback {callback_id!r}")
-    with _scope(platform):
+    with _scope(platform, account):
         platform.loader.dispatch_setting_click(platform.plugin_id, callback_id)
     return "null"
 

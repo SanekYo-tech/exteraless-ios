@@ -1,0 +1,55 @@
+__id__ = "ios_sdk_wave2"
+__name__ = "Local SDK wave-2 fixture"
+
+from base_plugin import BasePlugin
+from ui.settings import Header, Input, Switch, Text, Slider
+from client_utils import get_hook_account
+from file_utils import _current_plugin_id
+
+
+class Wave2Plugin(BasePlugin):
+    def on_plugin_load(self):
+        self.events = []
+
+    def note(self, value):
+        assert _current_plugin_id() == self.id
+        self.events.append((value, get_hook_account()))
+
+    def menu(self, context):
+        self.note(["menu", context])
+
+    def clicked(self):
+        self.note("click")
+
+    def long_clicked(self):
+        self.note("long-click")
+
+    def changed(self, value):
+        self.note(["change", value, self.get_setting("enabled")])
+
+    def button(self, builder, which):
+        self.note(["button", which, builder.get_context() is not None])
+
+    def dismissed(self, builder):
+        self.note("dismiss")
+
+    def response(self, response, error):
+        self.note(["response", response, error])
+
+    def create_settings(self):
+        return [Header("Wave 2"), Switch("enabled", "Enabled", True, on_change=self.changed),
+                Input("prefix", "Prefix", "native", icon="sf:pencil"),
+                Text("Tap" + self.get_setting("ui_label", ""), on_click=self.clicked, on_long_click=self.long_clicked),
+                Slider("amount", "Amount", 3, 0, 10, 1)]
+
+    def background(self):
+        import threading
+        from android_utils import run_on_ui_thread
+        thread = threading.Thread(target=lambda: run_on_ui_thread(lambda: self.note("background-owner")))
+        thread.start()
+        thread.join(2)
+        assert not thread.is_alive()
+
+    def audit_event(self, event, args):
+        import sys
+        sys.audit(event, *args)

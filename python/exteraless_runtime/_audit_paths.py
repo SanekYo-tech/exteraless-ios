@@ -129,7 +129,7 @@ def capture(platform, loader, dependencies, own_files, own_cache):
         code.append(dependencies.vendor_dir)
     stdlib = _stdlib_directories()
     directories = [*code, *stdlib, *_framework_directories(python_root, stdlib)]
-    files = [python_root / "compat-manifest.json"]
+    files = [python_root / "compat-manifest.json", python_root / "tl-schema.json"]
     version = f"python{sys.version_info.major}{sys.version_info.minor}.zip"
     dll = f"python{sys.version_info.major}{sys.version_info.minor}.dll"
     for prefix in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix):
@@ -166,6 +166,24 @@ def install(platform, loader, dependencies, files):
         raise RuntimeStateError("native plugin files/cache paths cannot be resolved")
     paths = capture(platform, loader, dependencies, own_files, own_cache)
     platform.audit_paths = paths
+    protected_native_directories = ()
+
+    def refresh_protected_paths():
+        nonlocal protected_native_directories
+        raw = platform.call("getProtectedPaths")
+        if not isinstance(raw, list) or len(raw) > 64:
+            raise RuntimeStateError("getProtectedPaths must return at most 64 absolute paths")
+        native_directories = set()
+        for name in raw:
+            if not isinstance(name, str) or not os.path.isabs(name) or "\0" in name or len(name) > 4096:
+                raise RuntimeStateError("native protected path must be absolute")
+            path = _real(name)
+            if not path:
+                raise RuntimeStateError("native protected path cannot be resolved")
+            native_directories.add(path)
+        protected_native_directories = tuple(native_directories)
+
+    platform.refresh_protected_paths = refresh_protected_paths
 
     # iOS native directories are already per-plugin. The SDK's Android fallback
     # would additionally own all TMPDIR and infer a wrong filesDir/plugins root.
@@ -204,6 +222,12 @@ def install(platform, loader, dependencies, files):
         for target in targets:
             if paths.touches(target):
                 raise audit._denial(PermissionError(f"plugin {plugin_id!r}: bundled runtime is read-only: {target}"))
+            resolved = _real(target)
+            sealed = resolved is not None and (
+                any(_within(resolved, path) or _within(path, resolved) for path in protected_native_directories))
+            if sealed and not active_loader.has_permission("hooks", plugin_id):
+                raise audit._denial(PermissionError(
+                    f"plugin {plugin_id!r}: native app settings are protected; use setClientSetting or grant hooks"))
         return previous_protected_write(event, args, plugin_id, active_loader)
 
     audit._check_protected_write = protected_write
