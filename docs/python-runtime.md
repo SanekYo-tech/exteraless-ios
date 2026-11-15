@@ -2,16 +2,18 @@
 
 ## Полная client/SDK волна — 15.11.2026
 
-- **[Runtime43738810843](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43738810843)
-  на `136c946f` — полностью GREEN.** Пройдены Foundation Core/Host/Hooks,
+- **[Runtime43743252038](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43743252038)
+  на `e16f3808` — полностью GREEN.** Пройдены Foundation Core/Host/Hooks,
   23 HNS-сценария, Java/TL codec, настоящий Swift/CPython engine и три SDK child
   процесса с лимитом30с. iOS simulator выполнил новый **219-call gate**;
   unsigned device probe скомпилирован и опубликован.
-- Артефакты run19 скачаны в `build/artifacts/python-runtime-43738810843/`.
-  Независимая локальная сверка manifests, Mach-O, cleanup и Git source fingerprints
-  выполняется; её отдельный receipt фиксирует именно этот commit.
-- **[Linux43732308228](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43732308228)
-  на `96bff39e`: 661 Core + 180 Host + 30 Hooks PASS.** Darwin storage aliases,
+- Артефакты run20 скачаны в `build/artifacts/python-runtime-43743252038/`.
+  [Независимая сверка](wave-2/runtime-native-acceptance-20.md) — **PASS**:680/180/30 tests,
+  включая9/9 atomic Ghost tests, три SDK child,219/169/41 C calls,2/2 terminal payload cleanup,
+  source fingerprints и56 unsigned arm64 Mach-O диагностической IPA совпали.
+- **[Linux43759513734](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43759513734)
+  на `1880b663`: 704 Core + 180 Host + 30 Hooks PASS.** Search и reset Core fixtures
+  включены. Darwin storage aliases,
   UTF-16 scalar boundaries и async-fixture исправления прошли последующий Mac gate.
 - SDK Config: **276 implemented / 0 blocked / 32 unsupported**,308 API;
   59 raw source pins и canonical consumed-inventory contract. Пять portable

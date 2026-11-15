@@ -6,26 +6,54 @@
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **fac6cf26be9f622dc1c5eec8cf7cf165fff6200c**, pushed |
-| Полный Mac/CPython gate | **43738810843 / 136c946f GREEN**; три native SDK child, iOS simulator probes и device probe compilation |
-| Последний разобранный Linux Core | **43732308228 / 96bff39e: 661 Core / 180 Host / 30 Hooks** |
+| HEAD | **1880b663**: reset fixture registers real DialogFeatures; reset implementation d1df6ad6, bubble fix590ce05b |
+| Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
+| Последний разобранный Linux | **43759513734 / 1880b663 GREEN:704 Core /180 Host /30 Hooks** (12.321/6.236/0.654s); Python baseline1af:363/23skip |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
 | Native XCTest / UIKit | **1f97255c** публикует frozen delta: 36 labels / 85 sources / 88 classes / 410 методов, записи **3+3+2**; execution/frames ожидаются |
-| Полная IPA | **43740868881 / fac6cf26 выполняется**, Xcode 27.1, unsigned, cache и `--continueOnError` |
+| Полная IPA | **43758245026 / 590ce05b выполняется**; пять bubble diagnostics исправлены в source |
 | Последняя проверенная Telegram IPA | **build23 / 43635233046 / 68bb1adf** |
 
-**Активный watcher только один:** `sh_1e03cb1f2001v9Qs60eSN4RG36` →
-`ipa-fac6cf26-watch.log`. Все предыдущие Mac/IPA watchers завершены. Не poll.
+**Активен только IPA watcher:** `sh_1e0f1375a0010JR11YiBIZovmA`
+(`ipa-590ce05b-watch-2.log`). Core/Compat43759513734 GREEN; егоwatcherзавершён. Не poll.
+ПервыйIPAwatcher590ce05bоборвалсяпоTLS timeout; GitHubподтвердилin_progress,
+jobнеперезапускался. ResetCI43758843590compiled/ran,единственныйfailedmethodне
+регистрировалDialogFeatures(145вместо148keys);1880b663добавляетреальнуюгруппу,
+сохраняя148иexactunavailableassertions. Productionresolverнеизменён.
+Bubble590ce05b сохраняет native comment-condition и timestamp того жеforwardInfo;
+Core/Compat43757030337 GREEN остаётся687/180/30 baselineдоreset17.
+43756548501 compiledCore иупаланатолькоодномtest:fixtureлокализовалаоднимзаголовком
+иSearch.Title,иsetting.Title. 93edf05eсохраняетassertionнаlocalizedsetting, исправляет
+mapperнаexactkeyидобавляетконтрольобычногоSearch. Новогоindexbugэтотfailureнепоказал.
+43754686421 завершилась на optional primaryContext floating-compose guard;
+исправлено47858c64. Предыдущие watchers завершены.
+Последние full-app compiler corrections: e16 —25 TelegramCore diagnostics,
+5a4 —generic prepared Network,9956 —Camera factors/SSK/Rust notification,
+e766 —cached nil initial zoom state в Legacy/Neo.
+43749522967/e766 дошла до ChatTextInputPanelNode и завершилась на двух diagnostics;
+00bf3344 использует предыдущий property snapshot и современные button insets/font.
+
+Runtime run20 скачан в `build/artifacts/python-runtime-43743252038/{runtime,swift-components}`.
+Независимый receipt: `runtime-native-acceptance-20.md` и `local-verification.json`.
+Проверены565/565 Git fingerprints,314 build inputs,9/9 Ghost tests,C219/169/41,
+2/2 terminal payload cleanup и56 unsigned arm64 Mach-O. IPA-SHA
+`2ce31c2ca798b0857cbad194b5c3d07a51a1d7b678647f29b36ec395e9fab1f5` — диагностическая
+runtime IPA, не полная Telegram IPA.
 
 Полный runtime run19 скачан в `build/artifacts/python-runtime-43738810843/`:
-`runtime/`, `device/`, `swift-components/`. Независимая проверка binary hashes,
-source fingerprints, cleanup и counts выполняется в `ses_e1fc5a762ffed9YFp10GajDrY0`;
-результат будет в `runtime-native-acceptance.md` и новом `local-verification.json`.
+`runtime/`, `device/`, `swift-components/`. **Независимый PASS** записан в
+`runtime-native-acceptance.md` и `local-verification.json`:671/180/30 tests,
+23 HNS, три SDK child (6.734/4.570/1.611s), iOS219/169/41 и payload cleanup2/2.
+1002 уникальных Git blobs +2 gitlink blobs +2 generated inputs сверены; probe IPA
+56 unsigned arm64 Mach-O, SHA4e7e0d82e72bef3b0c6823225405c06f874f8e33524894e10f3238c1cb1ec4ee.
 
 IPA43738711102/136c946f выявила оставшиеся unannotated properties/blocks MtProtoKit
 и iOS-unavailable `CTFontTableOptions.excludeSynthetic`. fac6cf26 завершает все
 pointer annotations и читает cmap непосредственно через `CGFont.table(for:)`.
 Разбор compile-цепочки — `ios-compile-remediation.md`.
+
+TelegramCore compiler cohort опубликован e16 и прошёл последующую компиляцию.
+Nonnull нового MTRequest initializer и typed redacted Mirror включены.
 
 Frozen UIKit delivery принят **22/22 по точным Git bytes**, prerequisites110 без
 drift. Исходный source boundary e2a5684c сохранён в receipts; опубликованные позже
@@ -36,10 +64,111 @@ recording workflow запускается после прохода full-app com
 CMC03/05, Feed/Player FU01–04, TLN-F01/F02, Darwin storage. Native XCTest и кадры
 с их actual frame/PTS references остаются обязательными acceptance gates.
 
-Финальное source reconciliation567/925 выполняет `ses_e1fc2b7aeffe9GcuqtB99tTZZz`:
-`docs/parity/` + `parity-final-source-join.md`; входные SDK receipts readonly.
-После текущей сборки: исправить фактические compiler errors, выполнить UIKit gate,
-проверить и передать новую unsigned IPA, синхронизировать evidence/Obsidian.
+Атомарный Ghost Mode опубликован в1afee5f9, independently source-closed и9/9MacPASS.
+SCR01 quarantine source follow-up также завершён: `reviews/settings-quarantine-source-closure.md`,
+три named Mac tests PASS. Новая UI wording-delta различает unknown secret и confirmed
+absence; её actual UILabel probe добавлен воба core-сценария(теперь11probes),3+3+2сохранены.
+
+567-source join опубликован9bfce05f,0receiptgaps. Индивидуальные925 SDK routes готовы:
+249core-api+267utilities+262Elyx+147UI, и14/102/666 General/Settings/Plugins method maps.
+Они включают metadata, partial и unsupported; это не925работающихAPI. Новый exact-ID
+join опубликован в `8b726b75`: обычная регенерация сохраняет все925маршрутов,
+14/102/666module identities и исходные boundaries; verification promotions=0.
+
+### Активные исправления конкретных SDK/route findings
+
+**Последние реальные blockers из независимого follow-up:**
+- Trust secondary permissions:3P2 S1–S3 (`reviews/plugin-trust-level-source-closure.md`)
+  — TL external media.files, deferred UI link.intents и late-grant Share.files.
+  Исправляет `ses_e1f70f8b3ffeUtL1662l0wpYzD`: полный набор зависимостей при admission,
+  irreversible permission predicates через подготовку/открытие/доставку callbacks.
+- SettingsSearch MS-ROUTE-01:5P2sourcewitnessesR1–R5(`settings-search-source-closure.md`)
+  — launchconsumer-before-intents,pendingURLsessionABA,schemaeventABA,defaultRoot
+  nilauthorityfallback,explicitclassqualification. Searchownerисправляетвappliedsource;
+  разрешёнузкийprocess-localCoredefinitionversionmetadataбезсменыfile/CASformat.
+- Archive GAP01:3P1 (`reviews/elyx-archive-source-closure.md`) — cached.pyc filenames,
+  immutable/code-protected execution, fd/nofollow extraction/cleanup. Archiveowner
+  исправляетдоsourcefreeze; новыйarchiveкодНЕвключёнвпроверяемыйcommit.
+- ManagerCustom/alias:2P2 (`reviews/manager-custom-alias-source-closure.md`) —
+  callbacksnapshot refreshдоnativecommit иrootclickобгоняетinlineFIFO; ownerисправляет.
+- NativeElyxdevelopercommand ingress: P2;8остальныхSDKcounterexamplesclosedsource.
+  Developerownerделаетnativeworker-routing, файловыеchangesдолжныопиратьсяна
+  исправленнуюarchiveFD/manifestauthority;онуведомлёнобэтихP1.
+
+Последний follow-up `reviews/sdk-symbol-remediation-source-closure.md`:
+**8 counterexamples source-closed**, остаётся P2 native Elyx command ingress.
+Его исправляет developer/proxy owner `ses_e1f7a723bffeBMTKIuM4Qx6b3m`: routing
+authenticated native commands к captured Host owner, сохранение изменений при
+archive reload; shared Host/Runtime hunks вернёт координатору.
+
+Search application завершена: все17paths51hunks, включая exports_files послеtrust.
+`settings-search-applied.json` сохраняет исходный16-path handoff; CORE_PROBES13,
+7driverchecksPASS. Reviewer `ses_e1f1fd562ffeEpJev9Kon2gUEU` выявилR1–R5 выше.
+RootClientRuntime, AppDelegate, Core schema metadata и прочие search участки
+сейчас у `ses_e1fa49bedffe9T2IHYNLWYNLIj` для их устранения.
+
+**Trust integration APPLIED**: `plugin-trust-level-applied-manifest.json`,28paths,
+167sourceassertions,13Host/2UItestsprepared. Native executionpending.
+Coordinator затемAPPLIEDпоследнийSearch Tests/Exteraless/BUILDexport; все17searchpaths
+теперьjoined. Trustreview `ses_e1f1c511cffeeQHqwH0UJjDrme` завершён: базовая модель
+признана source-correct; исправляются три вторичных permission dependencies выше.
+АрхивныйиCustomfixcohortвсёещёнефризитсядозакрытияизвестныхP1/P2.
+
+Reset scopes readyиCorecommittedd1df6ad6:3original scopes,17fixtures,publiconeCAS,
+explicitcredentialsteps/retryprogress. КоординаторAPPLIEDRootupdate/clear/registration,
+BUILDfingerprints иOriginalother.resetSettings→general.settingsResetpreview route.
+Независимоеreview — `ses_e21807247ffeFnULrI55blC3CT`, settings-reset-source-closure.md.
+UI/RuntimeWIP sourcepins ждутфинальногокоординаторскогоregeneration.
+
+| Scope | Owner / границы файлов |
+|---|---|
+| ELYX-GAP01: bounded .elyx/.eaf inspect/install/load/cache | `ses_e1f7e69c8ffe8uVIgEPrHC2jv6`: Host loader,верхний PluginModel,`__init__`,new `_archives`; common install/UI hunks координатору |
+| gen/gen2 + dev-command shape + daemon/native-server lifecycle | `ses_e1f7a723bffeBMTKIuM4Qx6b3m`: proxy/java interfaces,new helpers; `_platform.install`/Runtime hunks координатору |
+| Direct hook facade ledger + CORE-F02 send priority | `ses_e243a7152ffeYsQQZoLZXmyT32`: `_platform` hook methods; Host send/query hunks координатору |
+| CORE-F01/F03/F04/F05 edit omission,find_class,callback containment,queue cancel | `ses_e25088ca2ffeapc0yZ2vwlbKAh`: `_tl`,`_scheduling`,new reflection helper; install hunks координатору |
+| Manager Custom widget materialization / setting aliases | `ses_e21807519ffebI1gU3ny5Wbf92`: `_ui`,`_facades`,PluginSettingsModel/Controller; common Runtime/manager hunks координатору |
+| Native trust levels and grant cap/pruning | `ses_e1f70f8b3ffeUtL1662l0wpYzD`: new trust helper,PluginModel нижние PermissionsModel/PluginStore; Host/UI hunks координатору |
+| Native settings-search and row routes | `ses_e1fa49bedffe9T2IHYNLWYNLIj`: new index/helpers; common SettingsController/search/Root hunks координатору |
+| Original aggregate reset scopes | `ses_e243feabaffewbO5DkO2qNaCMs`: new Core/UI helpers,exact Original scope; общие hunks координатору |
+
+Developer/proxy owner вернулготовыйhdo: constructorbase дляgen/gen2, correctedElyx
+command shape иnative listenercontrols. Coordinator APPLIED2-line `_platform.install`,
+newPluginDeveloperBridgeExtension иRuntimecomposition; общиеfilesещёworkingtree.
+Listenerfixturecompile/run budgets120/10с, process-group cleanup. СтарыйWindowsC
+fixture подтверждаетhandleidentity, не актуальныйC-ownerABI; новыйMacgateобязателен.
+Native socket Elyx live-sync остаётся explicit отдельным маршрутом.
+
+Direct hook owner hdo получен: Python6/6на3.12и3.14 среальнымCdispatcher.
+Coordinator APPLIEDврабочемдереве `hook_priority_json` sendmetadata, Host
+canInvokeSend/priority-query/sort/before-afterguards и2существующихFakeEngine
+fixtures;8новыхHosttestsготовы. Archiveowner уведомлёнобэтихнепересекающихсяhunks.
+НовыйобщийHost/Python source snapshot ещёНЕкоммититсядофризаarchive/trust/custom.
+
+Archive иManager Custom/alias owners сдалиreadyкод. Coordinator APPLIEDarchive
+picker32MiB/4extensions иCoreIDcodec; APPLIED11 Customhunks(Runtimepageforward/
+closeAll,modeltargetRowId,actualfocus,harnessforward,BUILDsourcegroup). 12archive
+Pythoncases(+1WindowsOS-symlinkskip),13sourceruntimecases и10Customcasespassedуowners.
+Все7trustpatch применены. Новый общийHost/Python snapshot ожидает закрытия
+archive/Custom/search/trust findings и native Elyx command ingress.
+
+Независимыеreviewsновыхfixes: `ses_e1fa67f7fffe5rs24AiE2bkk5f` archive,
+`ses_e1f405489ffeax73Cv9nGJs0Se` core/hook/dev/proxy,
+`ses_e1fa43b5dffe4fy9i3YW3fVcwH` Manager Custom/alias. Source-only; новыйMacgatepending.
+
+Все старые source closures сохраняют собственный scope; новый925-аудит выявил эти
+дополнительные конкретные gaps. Их fixes пока НЕвключены в запущенный590ce05b snapshot.
+Два General scalar getter дефекта исправлены d7d499f7;30/30 generator/binding tests
+наPython3.12/3.14,308-counts276/0/32 и508bindings сохранены.
+
+После текущей сборки: завершить опубликованный native graph, принять готовые SDK
+fixes с независимым follow-up, обновить bounded component/native map, выполнить
+UIKit gate ипросмотреть реальныеframe/PTS references, проверить и передать unsigned IPA.
+
+Native gate/tooling follow-up у `ses_e25088d28ffem4nSC3FcOP577B`: новыйcomputed
+native method map, четвёртый bounded real Swift/C/SDK child для archive,
+Darwin developer listener и актуальные sparse/input fingerprints. Визуальная
+проверка должна включать фактические math/Pill/map attribution controls после
+UIButton.Configuration corrections; frame/PTS acceptance пока отсутствует.
 
 ### История: native source и последовательные Mac исправления
 

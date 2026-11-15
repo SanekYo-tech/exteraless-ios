@@ -82,12 +82,12 @@ staging проверяет fingerprints. Полный контракт —
 commit `68bb1adf`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046/artifacts/14131805640).
 Проверены 67 ARM64 Mach-O, 55 runtime frameworks, 1071 Python-ресурс и шесть extensions.
 Актуальный CPython/Swift/SDK gate:
-[runtime build 19](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43738810843),
-commit `136c946f` — **GREEN**, включая три bounded native SDK-процесса и iOS probes.
+[runtime build 20](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43743252038),
+commit `e16f3808` — **GREEN**, включая три bounded native SDK-процесса и iOS probes.
 Подробности текущей интеграционной волны и проверки — [docs/python-runtime.md](docs/python-runtime.md).
 
-Проверенный Linux Core-срез: [43732308228](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43732308228),
-`96bff39e`: **661 Core + 180 Host + 30 Hooks**. SDK Config: **276 реализовано,
+Проверенный Linux Core-срез: [43759513734](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43759513734),
+`1880b663`: **704 Core + 180 Host + 30 Hooks**. SDK Config: **276 реализовано,
 0 заблокировано, 32 явно неподдерживаемых API**. Полная сборка новой IPA и UIKit
 приёмка продолжаются; актуальные результаты и владение файлами —
 [docs/wave-2/progress.md](docs/wave-2/progress.md).
