@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "module_id": "module.general",
+  "source_boundary": "d7d499f7; source routes only, subsequent to Mac e16f3808",
+  "verified": false,
+  "ported": false,
+  "members": [
+    {
+      "original": {"file": "java/app/exteraless/general/GeneralHelper.java", "name": "applyContentCapture", "parameter_types": ["Activity"], "line": 44},
+      "disposition": "native-adaptation",
+      "route": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyFeatures.swift", "symbol": "PrivacyFeatures.definitions", "role": "privacy.contentCapture registration", "line": 23},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/PrivacyPolicy.swift", "symbol": "contentCapture", "role": "native cached policy"},
+        {"path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift", "symbol": "interaction.donate", "role": "gated Siri interaction donation", "line": 714}
+      ],
+      "contract": "The registered opt-in controls message-activity donation to Siri independently of displaying the notification.",
+      "limitations": ["iOS has no Android ContentCaptureManager; activity-wide Android content indexing is not reproduced.", "GeneralHelper is not installed as an arbitrary Java Activity utility."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "java/app/exteraless/general/GeneralHelper.java", "name": "showTextInputDialog", "parameter_types": ["BaseFragment", "String", "String", "String", "StringCallback"], "line": 66},
+      "disposition": "native-adaptation",
+      "route": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "ExteralessClientSettingsController.Mode.editor", "role": "native setting editor"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "savePressed", "role": "retain raw string draft and validate through the selected setting"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "update", "role": "worker write and guarded completion"}
+      ],
+      "contract": "Native settings use the real editor and preserved string draft; normalization belongs to the selected definition or consuming service.",
+      "limitations": ["A settings-page flow is not a Java BaseFragment/StringCallback overload.", "Exact Android dialog geometry and focus timing are not claimed."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "java/app/exteraless/general/GeneralHelper.java", "name": "sanitizeSavePath", "parameter_types": ["String"], "line": 112},
+      "disposition": "native-adaptation",
+      "route": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsFileSaving.swift", "symbol": "ToolsSavePathPolicy.customFolder", "role": "single relative folder validation", "line": 4},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessFileSaving.swift", "symbol": "ExteralessToolsFileSaveService.save", "role": "apply the folder inside a security-scoped Files destination", "line": 41}
+      ],
+      "contract": "Trim the folder name; accept empty for the destination itself and ASCII letters/digits/space/dot/dash/underscore; reject dot and parent components.",
+      "limitations": ["Native path validation caps at 200 UTF-8 bytes; Original accepts up to 255 ASCII characters.", "Native invalid input throws instead of silently returning the Android default folder.", "The destination is a Files-provider grant, not Android public storage."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "java/app/exteraless/general/GeneralHelper.java", "name": "resetSettings", "parameter_types": [], "line": 130},
+      "disposition": "partial",
+      "route": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "confirmReset", "role": "reachable individual native setting reset"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "reset", "role": "remove the selected override or native credential"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "applyPublic", "role": "available atomic public reset primitive, not a supplied domain-wide action"}
+      ],
+      "contract": "Individual registered native settings can be reset to their current definitions.",
+      "limitations": ["No current one-call/UI action reproduces Original's exact OpenExtera/General/Appearance/Chats/IconPacks/Pills/Utils plus named Neko/Na reset set.", "A batch primitive alone does not establish that aggregate reset route."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "java/app/exteraless/general/GeneralHelper.java", "name": "resetAllSettings", "parameter_types": [], "line": 153},
+      "disposition": "partial",
+      "route": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "confirmReset", "role": "individual native repair/reset"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "reset", "role": "explicit selected-key reset"}
+      ],
+      "contract": "Native selected-key reset is available; the broader Android namespace-clearing operation has no matching aggregate entry.",
+      "limitations": ["No native route currently reproduces resetSettings plus nekocloud/nekox_config clearing and LegacyDefaults.keepPinned.", "The map does not equate clearing public JSON with resetting all credentials/private domains or deleting accounts."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "getConfigTypes", "parameter_types": [], "line": 24},
+      "disposition": "unsupported",
+      "route": [
+        {"path": "python/exteraless_runtime/_config_manifest.py", "symbol": "CLASSES", "role": "GeneralConfig exact unsupported method entry"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "install.unsupported", "role": "named UnsupportedSurfaceError"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "definitions", "role": "native schema API, not the Original raw-key/type-code map"}
+      ],
+      "contract": "The exact Java Map<String, Int> getter is not exposed by the Config mirror.",
+      "limitations": ["Native definition introspection uses canonical keys/types and is not silently presented as the Original ConfigItem map."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "getPreferences", "parameter_types": [], "line": 30},
+      "disposition": "unsupported",
+      "route": [
+        {"path": "python/exteraless_runtime/_config_manifest.py", "symbol": "CLASSES", "role": "GeneralConfig exact unsupported method entry"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "install.unsupported", "role": "named UnsupportedSurfaceError"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "applyPublic", "role": "separate typed native persistence authority"}
+      ],
+      "contract": "No Android SharedPreferences/Editor object is returned; supported ConfigItems use native typed readers/writers.",
+      "limitations": ["Arbitrary preference-key writes/clear are not exposed through a fabricated Android store."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "downloadSpeedBoost", "parameter_types": [], "line": 52},
+      "disposition": "native-adapter",
+      "route": [
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "ConfigItem.__call__", "role": "source scalar getter reads its ConfigStore binding"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ClientSettingsBridgeExtension.swift", "symbol": "getClientSetting", "role": "owner/permission-checked native setting read"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsDownloadPolicy.swift", "symbol": "ToolsDownloadPolicy.budget", "role": "native chunk/request budget"},
+        {"path": "telegram-ios/submodules/TelegramCore/Sources/Network/FetchV2.swift", "symbol": "ToolsDownloadPolicy.budget", "role": "master/CDN request-window consumer", "line": 467}
+      ],
+      "contract": "Read tools.downloadSpeedBoost (0/1/2), consumed for new eligible native downloads.",
+      "limitations": ["Unknown-size, encrypted, small and story downloads retain native geometry; larger native parallelism is not reduced.", "No throughput or real-network performance measurement is claimed."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "showNagramSettings", "parameter_types": [], "line": 66},
+      "disposition": "unsupported",
+      "route": [
+        {"path": "python/exteraless_runtime/_config_manifest.py", "symbol": "BINDINGS", "role": "general.showNagramSettings has no native key"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "ConfigItem.__call__", "role": "no registered source scalar call for this field"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift", "symbol": "exteralessSettingsController", "role": "unified native settings entry, not a NagramX settings activity"}
+      ],
+      "contract": "The deprecated parallel Nagram settings entry is not a native switch.",
+      "limitations": ["The source scalar syntax currently raises TypeError; a ConfigItem field read reports the missing native binding.", "The ordinary native settings entry does not impersonate that legacy flag."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "contentCapture", "parameter_types": [], "line": 78},
+      "disposition": "native-adapter",
+      "route": [
+        {"path": "tools/compat/sdk_config_manifest.py", "symbol": "build", "role": "exact reviewed loadConfig(false)/same-field Bool wrapper"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "ConfigItem.__call__", "role": "live native ConfigStore read"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ClientSettingsBridgeExtension.swift", "symbol": "getClientSetting", "role": "privacy.contentCapture read"},
+        {"path": "telegram-ios/Telegram/NotificationService/Sources/NotificationService.swift", "symbol": "interaction.donate", "role": "actual opt-in consumer"}
+      ],
+      "contract": "Return the current native Siri-donation opt-in Boolean; the scalar-call defect was repaired in d7d499f7.",
+      "limitations": ["The policy is an iOS donation adaptation, not Android content indexing.", "New getter regression uses a strict native-service recorder; fresh native getter execution is not claimed."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "crashReports", "parameter_types": [], "line": 84},
+      "disposition": "native-adapter",
+      "route": [
+        {"path": "tools/compat/sdk_config_manifest.py", "symbol": "build", "role": "exact reviewed cache-loading scalar wrapper"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "ConfigItem.__call__", "role": "live tools.crashReports reader"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessToolsIntegration.swift", "symbol": "updateDiagnostics", "role": "context/policy-dependent collection lifecycle"},
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Tools/ExteralessDiagnosticsController.swift", "symbol": "ExteralessMetricCollector", "role": "bounded local MetricKit payload collection"}
+      ],
+      "contract": "Return the opt-in for local system-delivered diagnostic collection, with manual export; scalar syntax was repaired in d7d499f7.",
+      "limitations": ["No automatic crash-report upload or Android Crashlytics behavior is implied.", "Actual MetricKit delivery is system/device-dependent."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "init", "parameter_types": [], "line": 96},
+      "disposition": "native-lifecycle-adaptation",
+      "route": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift", "symbol": "ExteralessClientSettingsWorker.prepare", "role": "configure/register native definitions before account readiness"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "install.unsupported", "role": "the Java init utility is not a successful no-op"}
+      ],
+      "contract": "Native app startup owns initialization; imported Config metadata does not initialize a second preference store.",
+      "limitations": ["GeneralConfig.init() itself remains an explicitly unsupported Java utility."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "loadConfig", "parameter_types": ["Boolean"], "line": 101},
+      "disposition": "native-lifecycle-adaptation",
+      "route": [
+        {"path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift", "symbol": "ExteralessClientSettingsWorker.prepare", "role": "serialized explicit reload and error propagation"},
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "reload", "role": "refresh native storage/cache"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "install.unsupported", "role": "no public force-reload/Android migration utility"}
+      ],
+      "contract": "Native reload preserves the configured storage authority and startup/error state.",
+      "limitations": ["GeneralConfig.loadConfig(force) is not an SDK entry to force Root reload.", "Android SharedPreferences migration side effects are not executed by scalar getters."],
+      "verified": false, "ported": false
+    },
+    {
+      "original": {"file": "kotlin/app/exteraless/general/GeneralConfig.kt", "name": "reset", "parameter_types": [], "line": 155},
+      "disposition": "partial",
+      "route": [
+        {"path": "swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift", "symbol": "reset", "role": "selected-key override removal"},
+        {"path": "python/exteraless_runtime/_config.py", "symbol": "install.unsupported", "role": "the Config group's reset utility is unavailable"}
+      ],
+      "contract": "Individual native fields reset through their settings UI/store.",
+      "limitations": ["No GeneralConfig group-reset route reproduces all seven Original fields in one call.", "The obsolete showNagramSettings field has no native definition to reset."],
+      "verified": false, "ported": false
+    }
+  ],
+  "findings": [
+    {"id": "GENERAL-SCALAR-01", "status": "source-fixed", "scope": ["GeneralConfig.contentCapture()", "GeneralConfig.crashReports()"], "evidence": "docs/wave-2/sdk-general-scalar-readers.md", "commit": "d7d499f7"}
+  ],
+  "remaining_portable_routes": ["GeneralHelper.resetSettings exact domain cohort", "GeneralHelper.resetAllSettings exact native scope", "GeneralConfig.reset group route"],
+  "evidence": ["docs/wave-2/sdk-general-scalar-readers.md", "docs/wave-2/settings-remediation.md", "docs/wave-2/runtime-native-acceptance-20.md"]
+}
