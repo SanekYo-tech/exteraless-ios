@@ -47,11 +47,13 @@
     },
     {
       "id": "nagram.performanceClass",
-      "ios": {"setting_key": null, "existing_equivalent": "EnergyUsageSettings.default uses hw.ncpu and separate native autoplay/loop/translucency/background power-saving controls.", "adaptation": "Original int 0=measure, 1=high, 2=average, 3=low overrides a cached Android Canvas/Lottie class. Stock native automatic/energy policy has real consumers; the forced global Android class has no one-key native mapping and is not registered as unused state.", "implementation_callsites": []},
+      "ios": {"setting_key": null, "existing_equivalent": "EnergyUsageSettings.default retains hw.ncpu-based defaults; the native animation clock retains its measured automatic 30/60-fps heuristic.", "adaptation": "Defined native 0 automatic / 1 High up to 60 fps / 2 Average 30 fps with reduced effects / 3 Low static cached animations policy and revisioned publication are supplied in ToolsPerformancePolicy. Native per-feature false values and system/battery/thermal/background constraints remain ceilings. Energy projection, per-target veto and live clock helpers are supplied, with exact native consumer and Root registration hunks staged separately. The key stays null until coordinator applies the consumers and registration; this is pending integration, not an unsupported Android enum or verified native execution.", "implementation_callsites": []},
       "implementation": {"status": "partial", "ported": false, "evidence": [
         {"kind": "source", "path": "third_party/exteraless-android/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java", "line": 1830},
-        {"kind": "source", "path": "telegram-ios/submodules/TelegramUIPreferences/Sources/MediaAutoDownloadSettings.swift", "symbol": "EnergyUsageSettings.default / powerSavingDefault"},
-        {"kind": "source", "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaPickerScreen.swift", "line": 767}
+        {"kind": "source", "path": "swift/ExteralessCore/Sources/ExteralessCore/ToolsPerformancePolicy.swift", "symbol": "ToolsPerformancePolicy.resolve / ToolsPerformancePolicyStore.publish"},
+        {"kind": "source", "path": "swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsPerformancePolicyTests.swift", "note": "Bounded 0/1/2/3, explicit preference, power/thermal/background/reset and publication fixtures supplied, not executed."},
+        {"kind": "source", "path": "docs/wave-2/performance-parity.md"},
+        {"kind": "source", "path": "docs/wave-2/performance-native-hunks.patch", "note": "Shared consumers staged for coordinator; key promotion requires actual application."}
       ]}
     },
     {
