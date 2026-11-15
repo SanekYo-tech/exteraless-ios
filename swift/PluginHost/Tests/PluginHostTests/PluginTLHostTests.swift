@@ -120,9 +120,12 @@ final class PluginTLHostTests: HostLifecycleTestCase {
         _ = try await maintenanceTestWait(started)
         active.set(false)
         blocked.signal()
-        let result = try await task.value
-        XCTAssertEqual(result.strategy, .default)
+        do {
+            _ = try await task.value
+            XCTFail("Revoked native scope must not publish a live hook decision")
+        } catch PluginHostError.superseded { }
         XCTAssertEqual(hooks.count, 0)
+        XCTAssertTrue(fixture.host.pluginList().first(where: { $0.id == "alpha" })?.loaded == true)
     }
 
     func testAncestrySkipsOnlyAncestorAndPreservesOtherPlugin() async throws {

@@ -8,9 +8,11 @@ final class PluginSettingsExecutionTests: HostLifecycleTestCase {
         let changeAdmitted = OneShotResult<Void>()
         let clickAdmitted = OneShotResult<Void>()
         let gate = DispatchSemaphore(value: 0)
+        let workerThreads = Recorder<Thread>()
         defer { gate.signal() }
         let engine = MaintenanceTestEngine(onScript: { _, source in
             if source.hasPrefix("_exteraless_runtime.invoke_handle_json(55,") {
+                workerThreads.append(Thread.current)
                 entered.succeed(())
                 try maintenanceTestBlock(gate)
             }
@@ -26,29 +28,37 @@ final class PluginSettingsExecutionTests: HostLifecycleTestCase {
         let change = Task {
             try await f.host.updateSetting(id: "alpha", key: "mode", valueJSON: "true", expectedOwner: owner, account: 7,
                 shouldExecute: {
+                    if workerThreads.values.contains(where: { $0 === Thread.current }) {
+                        workerChecks.append("change")
+                        return current.value
+                    }
                     changeAdmitted.succeed(())
-                    if let name = Thread.current.name, name.hasPrefix("plugin-") { workerChecks.append(name) }
-                    return current.value
+                    return true
                 })
         }
         let click = Task {
             try await f.host.clickSetting(id: "alpha", callbackId: "row", expectedOwner: owner, account: 7,
                 shouldExecute: {
+                    if workerThreads.values.contains(where: { $0 === Thread.current }) {
+                        workerChecks.append("click")
+                        return current.value
+                    }
                     clickAdmitted.succeed(())
-                    if let name = Thread.current.name, name.hasPrefix("plugin-") { workerChecks.append(name) }
-                    return current.value
+                    return true
                 })
         }
         _ = try await maintenanceTestWait(changeAdmitted)
         _ = try await maintenanceTestWait(clickAdmitted)
-        current.set(false) // account/revision revoked after admission, before worker entry
+        // Keep off-worker admission open deliberately: only the actual worker
+        // sees revocation, so an earlier guard cannot make this fixture pass.
+        current.set(false)
         gate.signal()
         try await prior.value
         for task in [change, click] {
             do { try await task.value; XCTFail("expired settings action must be skipped") }
             catch PluginHostError.superseded { }
         }
-        XCTAssertEqual(workerChecks.count, 2)
+        XCTAssertEqual(workerChecks.values.sorted(), ["change", "click"])
         XCTAssertFalse(engine.calls.contains { $0.source.hasPrefix("_exteraless_runtime.setting_changed_json(") })
         XCTAssertFalse(engine.calls.contains { $0.source.hasPrefix("_exteraless_runtime.setting_click_json(") })
     }
