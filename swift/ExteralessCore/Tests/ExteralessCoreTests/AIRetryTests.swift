@@ -34,6 +34,63 @@ final class AIRetryTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(attempts, [0, 1])
     }
 
+    func testAICF01CloudFallbackKeepsHTMLIntentSpansAndSeparateCredentials() async throws {
+        let fixture = try AISettingsFixture()
+        defer { fixture.remove() }
+        let formatted = AIFormattedText(text: "Hi 👋 docs", spans: [
+            .init(id: 0, offset: 0, length: 2, tag: .bold),
+            .init(id: 1, offset: 3, length: 2, tag: .protected, preserveText: true),
+            .init(id: 2, offset: 6, length: 4, tag: .link)
+        ])
+        let encoded = #"<b data-e="0">Hi</b> <tg-emoji data-e="1">👋</tg-emoji> <a data-e="2">docs</a>"#
+        let translated = #"<b data-e="0">Bonjour</b> <tg-emoji data-e="1">👋</tg-emoji> <a data-e="2">documentation</a>"#
+        let restored = AIFormattedText(text: "Bonjour 👋 documentation", spans: [
+            .init(id: 0, offset: 0, length: 7, tag: .bold),
+            .init(id: 1, offset: 8, length: 2, tag: .protected, preserveText: true),
+            .init(id: 2, offset: 11, length: 13, tag: .link)
+        ])
+        let cases: [(input: AIFormattedText, preserve: Bool, query: String, response: String, expected: AIFormattedText?)] = [
+            (formatted, true, encoded, translated, restored),
+            (.init(text: formatted.text), true, formatted.text, restored.text, .init(text: restored.text)),
+            (formatted, false, formatted.text, restored.text, .init(text: restored.text)),
+            (formatted, true, encoded, translated.replacingOccurrences(of: "👋", with: "🙃"), nil)
+        ]
+        for item in cases {
+            var config = configuration(fixture.settings)
+            config.preserveFormatting = item.preserve
+            config.googleExperimental = false
+            config.googleCloudKey = "fixture-google-cloud-key"
+            let response = try JSONSerialization.data(withJSONObject: ["data": ["translations": [["translatedText": item.response]]]])
+            let transport = AIScriptedTransport([.init(status: 502), .init(status: 502), .init(status: 502), .init(body: String(decoding: response, as: UTF8.self))])
+            let translator = AITranslationClient(transport: transport, settings: fixture.settings, retryDelay: { _ in })
+            do {
+                let result = try await translator.translate(item.input, to: "fr", configuration: config)
+                if let expected = item.expected { XCTAssertEqual(result.text, expected) }
+                else { XCTFail("AICF-01: changed protected text passed validation") }
+                XCTAssertEqual(result.provider, .google)
+                XCTAssertTrue(result.usedFallback)
+            } catch {
+                if item.expected == nil { XCTAssertEqual(error as? AIError, .formattingLost) }
+                else { throw error }
+            }
+            let requests = transport.requests
+            XCTAssertEqual(requests.map { $0.url?.host }, ["llm.fixture.test", "llm.fixture.test", "llm.fixture.test", "translation.googleapis.com"])
+            let cloud = try XCTUnwrap(requests.last)
+            XCTAssertNil(cloud.value(forHTTPHeaderField: "Authorization"))
+            let body = String(decoding: try XCTUnwrap(cloud.httpBody), as: UTF8.self)
+            let fields = try XCTUnwrap(URLComponents(string: "https://fixture.invalid/?" + body)?.queryItems)
+            XCTAssertEqual(fields.first { $0.name == "q" }?.value, item.query)
+            XCTAssertEqual(fields.first { $0.name == "format" }?.value, item.preserve && !item.input.spans.isEmpty ? "html" : "text")
+            XCTAssertEqual(fields.first { $0.name == "key" }?.value, "fixture-google-cloud-key")
+            XCTAssertFalse(body.contains("fixture-one"))
+            XCTAssertFalse(body.contains("fixture-two"))
+            let first = try XCTUnwrap(requests.first)
+            let llmBody = try XCTUnwrap(try JSONSerialization.jsonObject(with: XCTUnwrap(first.httpBody)) as? [String: Any])
+            let prompt = try XCTUnwrap((llmBody["messages"] as? [[String: Any]])?.last?["content"] as? String)
+            XCTAssertTrue(prompt.contains(item.query))
+        }
+    }
+
     func testEmptyAndMalformedSuccessfulResponsesUseSameBoundedFallback() async throws {
         let fixture = try AISettingsFixture()
         defer { fixture.remove() }

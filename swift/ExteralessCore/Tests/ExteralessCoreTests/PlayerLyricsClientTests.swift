@@ -202,6 +202,37 @@ final class PlayerLyricsClientTests: XCTestCase, @unchecked Sendable {
         catch { XCTAssertEqual(error as? PlayerLyricsError, .timeout); XCTAssertFalse(error.localizedDescription.contains(query.title)) }
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1.5)
     }
+
+    func testTinySearchReplyCannotMultiplyPastAggregateCandidateBudget() async throws {
+        let query = query()
+        let timestamps = (0..<64).map { String(format: "[%02d:%02d]", $0 / 60, $0 % 60) }.joined()
+        let expandedBoundary = timestamps + String(repeating: "x", count: 4096)
+        let object = try JSONSerialization.jsonObject(with: lrclib(query, synced: expandedBoundary))
+        let two = try JSONSerialization.data(withJSONObject: [object, object])
+        let three = try JSONSerialization.data(withJSONObject: [object, object, object])
+        XCTAssertLessThan(three.count, 16_000)
+        PlayerLyricsFixtureProtocol.registry.install(query: query.title, path: "lrclib.net/api/search", plans: [.init(data: two), .init(data: three)])
+        defer { PlayerLyricsFixtureProtocol.registry.remove(query: query.title) }
+        let client = client()
+        let allowed = try await client.search(query: query, onlineAllowed: true)
+        XCTAssertEqual(allowed.count, 2)
+        do { _ = try await client.search(query: query, onlineAllowed: true); XCTFail("Aggregate expansion escaped the budget") }
+        catch { XCTAssertEqual(error as? PlayerLyricsError, .responseTooLarge) }
+        let counts = await client.cacheCounts()
+        XCTAssertEqual(counts.lyrics, 0)
+    }
+
+    func testCandidateCapDoesNotBlockOriginalSyncedFallbackPreference() async throws {
+        let query = query()
+        let values = try (0..<40).map { try JSONSerialization.jsonObject(with: lrclib(query, synced: nil, plain: "Hello", id: $0)) }
+        PlayerLyricsFixtureProtocol.registry.install(query: query.title, path: "lrclib.net/api/search", plans: [.init(data: try JSONSerialization.data(withJSONObject: values))])
+        PlayerLyricsFixtureProtocol.registry.install(query: query.title, path: "api.lrcmux.dev/get", plans: [.init(data: Data(#"{"track":{"duration":180},"meta":{"level":"line"},"lines":[{"start":1000,"text":"hello"}]}"#.utf8))])
+        defer { PlayerLyricsFixtureProtocol.registry.remove(query: query.title) }
+        let result = try await client().lookup(track: track(query), onlineAllowed: true)
+        XCTAssertTrue(result.lyrics?.synced == true)
+        XCTAssertLessThanOrEqual(result.candidates.count, 40)
+        XCTAssertTrue(result.candidates.contains { $0.id == "lrcmux" })
+    }
 }
 
 private final class PlayerLyricsExpectation: @unchecked Sendable {

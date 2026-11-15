@@ -140,7 +140,7 @@ public actor AITranslationClient {
             var result: String
             var usedProvider = configuration.provider
             if configuration.provider == .llm {
-                let llmResult = try await llm(query: query, to: language, from: from, context: context, config: configuration)
+                let llmResult = try await llm(query: query, html: !original.spans.isEmpty, to: language, from: from, context: context, config: configuration)
                 result = llmResult.0
                 usedProvider = llmResult.1
             } else if configuration.provider == .microsoft || configuration.provider == .realMicrosoft {
@@ -177,7 +177,7 @@ public actor AITranslationClient {
         return output
     }
 
-    private func llm(query: String, to: String, from: String, context: [String], config: AITranslationConfiguration) async throws -> (String, AITranslationProvider) {
+    private func llm(query: String, html: Bool, to: String, from: String, context: [String], config: AITranslationConfiguration) async throws -> (String, AITranslationProvider) {
         guard !config.llmKeys.isEmpty else { throw AIError.missingKey }
         let system = config.llmSystemPrompt.isEmpty ? Self.systemPrompt : config.llmSystemPrompt
         let language = Locale(identifier: "en").localizedString(forIdentifier: to) ?? to
@@ -212,7 +212,9 @@ public actor AITranslationClient {
         }
         try Task.checkCancellation()
         let to = try AITranslationLanguage.normalize(to, provider: .google)
-        let fallbackRequest = try AITranslationRequest.build(provider: .google, query: query, from: from, to: to, html: false, configuration: config)
+        // AICF-01: query is already encoded for the effective formatting policy.
+        // Cloud must receive the same HTML intent as the direct Google route.
+        let fallbackRequest = try AITranslationRequest.build(provider: .google, query: query, from: from, to: to, html: html, configuration: config)
         let data = try await transport.data(for: fallbackRequest, timeout: 60)
         return (try AITranslationRequest.parse(data, provider: .google, configuration: config), .google)
     }

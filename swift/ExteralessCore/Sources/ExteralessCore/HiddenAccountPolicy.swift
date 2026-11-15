@@ -64,11 +64,15 @@ public final class HiddenAccountPolicy: @unchecked Sendable {
     private var pending: UUID?
     private var revealed: PrivacyExtrasAccountIdentity?
     private var unlockContinuation: HiddenAccountAuthorization?
+    private let presentationChanged: @Sendable () -> Void
 
-    public init() {}
+    public init(presentationChanged: @escaping @Sendable () -> Void = {}) {
+        self.presentationChanged = presentationChanged
+    }
 
     public func update(configuration: HiddenAccountConfiguration, accounts: [PrivacyExtrasAccountIdentity], current: PrivacyExtrasAccountIdentity?, foreground: Bool, locked: Bool, available: Bool) {
-        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        lock.lock(); defer { lock.unlock(); if changed { presentationChanged() } }
         let accounts = Array(accounts.prefix(Self.maximumAccounts))
         if let continuation = unlockContinuation, case let .unlock(target, _) = continuation.plan {
             if self.configuration != configuration || self.accounts != accounts || !foreground || !available || (self.current != current && current != target) || (!self.locked && locked) {
@@ -77,6 +81,7 @@ public final class HiddenAccountPolicy: @unchecked Sendable {
         }
         if self.configuration != configuration || self.accounts != accounts || self.current != current || self.foreground != foreground || self.locked != locked || self.available != available {
             generation &+= 1; pending = nil
+            changed = true
         }
         if !foreground || !available || (!self.locked && locked) || (self.current != current && current != revealed) || self.configuration != configuration {
             revealed = nil
@@ -110,8 +115,10 @@ public final class HiddenAccountPolicy: @unchecked Sendable {
     }
 
     public func beginAttempt(now: TimeInterval, explicitPasscodeEntry: Bool) -> HiddenAccountAttempt? {
-        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        lock.lock(); defer { lock.unlock(); if changed { presentationChanged() } }
         guard available, foreground, locked, now.isFinite, !accounts.isEmpty else { return nil }
+        changed = unlockContinuation != nil || revealed != nil
         unlockContinuation = nil; revealed = nil
         let attempt = HiddenAccountAttempt(generation: generation, deadline: now + 15, acceptsPanic: explicitPasscodeEntry)
         pending = attempt.id
@@ -145,8 +152,10 @@ public final class HiddenAccountPolicy: @unchecked Sendable {
     /// One-shot, immediately before native account-manager work on the main queue.
     /// No work may be scheduled from authorize() or from a failed/cancelled PIN.
     public func consume(_ authorization: HiddenAccountAuthorization, now: TimeInterval) -> HiddenAccountEffectPlan? {
-        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        lock.lock(); defer { lock.unlock(); if changed { presentationChanged() } }
         guard accepts(authorization.attempt, now: now) else { return nil }
+        changed = true
         pending = nil
         switch authorization.plan {
         case let .unlock(account, reveal): revealed = reveal ? account : nil; unlockContinuation = authorization
@@ -158,24 +167,32 @@ public final class HiddenAccountPolicy: @unchecked Sendable {
     /// Recheck after the asynchronous native account switch and before AppLock is
     /// allowed to uncover the window. Only the expected switch preserves this grant.
     public func finishUnlock(_ authorization: HiddenAccountAuthorization, now: TimeInterval) -> Bool {
-        lock.lock(); defer { lock.unlock() }
+        var finished = false
+        lock.lock(); defer { lock.unlock(); if !finished { presentationChanged() } }
         guard unlockContinuation === authorization else { return false }
         unlockContinuation = nil
         guard available, foreground, locked, now.isFinite, now <= authorization.attempt.deadline else { if locked { revealed = nil }; return false }
+        // The successful AppLock state emission publishes the unlocked view. Do
+        // not blank the ready root during the short finish -> unlock handoff.
+        finished = true
         return true
     }
 
     public func abandonUnlock(_ authorization: HiddenAccountAuthorization) {
-        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        lock.lock(); defer { lock.unlock(); if changed { presentationChanged() } }
         if unlockContinuation === authorization {
+            changed = true
             unlockContinuation = nil
             if locked { revealed = nil }
         }
     }
 
     public func cancel(_ attempt: HiddenAccountAttempt?) {
-        lock.lock(); defer { lock.unlock() }
+        var changed = false
+        lock.lock(); defer { lock.unlock(); if changed { presentationChanged() } }
         if attempt == nil || pending == attempt?.id || unlockContinuation?.attempt.id == attempt?.id {
+            changed = pending != nil || unlockContinuation != nil || (locked && revealed != nil)
             pending = nil; unlockContinuation = nil; generation &+= 1
             if locked { revealed = nil }
         }

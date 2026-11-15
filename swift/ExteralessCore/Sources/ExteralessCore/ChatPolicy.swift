@@ -1,5 +1,16 @@
 import Foundation
 
+/// Persisted Android values. These are actions, not indexes in a platform-specific menu.
+public enum ChatDoubleTapAction: Int, CaseIterable, Sendable {
+    case disabled = 0, quickReaction = 1, reactions = 2, translate = 3, reply = 4
+    case save = 5, repeatMessage = 6, repeatAsCopy = 7, edit = 8, translateLLM = 9
+    case delete = 10, forward = 11, download = 12
+
+    public static func selected(incoming: Bool, settings: ClientSettings = .shared) -> ChatDoubleTapAction {
+        Self(rawValue: settings.integer(incoming ? "chats.doubleTapAction" : "chats.doubleTapActionOut", default: 1)) ?? .quickReaction
+    }
+}
+
 public enum ChatFormattingPolicy {
     public struct Action: Equatable, Sendable {
         public let id: String
@@ -19,9 +30,21 @@ public enum ChatFormattingPolicy {
         Action(id: "quote", settingField: "showTextQuote", title: "Quote"),
         Action(id: "spoiler", settingField: "showTextSpoiler", title: "Spoiler"),
         Action(id: "link", settingField: "showTextCreateLink", title: "Link"),
+        Action(id: "mention", settingField: "showTextCreateMention", title: "Mention"),
         Action(id: "date", settingField: "showTextCreateDate", title: "Date"),
         Action(id: "regular", settingField: "showTextRegular", title: "Clear formatting")
     ]
+
+    /// The format menu and AI selection translator share one user intent. The AI provider,
+    /// language and credentials are independent of whether this action is offered.
+    public static func translationActionEnabled(in settings: ClientSettings = .shared) -> Bool {
+        settings.bool("chats.showTextTranslate", default: true)
+    }
+
+    public static func isVisible(_ action: Action, in settings: ClientSettings = .shared) -> Bool {
+        if action.id == "translate" { return translationActionEnabled(in: settings) }
+        return settings.bool("chats.\(action.settingField)", default: true)
+    }
 
     /// Unknown entries never hide newly available native actions. Duplicates cannot duplicate a command.
     public static func ordered(_ available: [String], order: String, hidden: Set<String>) -> [String] {

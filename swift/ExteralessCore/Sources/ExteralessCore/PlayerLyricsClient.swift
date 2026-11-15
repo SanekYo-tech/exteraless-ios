@@ -30,11 +30,24 @@ public actor PlayerLyricsClient {
         let lyrics: PlayerLyricsDocument
         let candidates: [PlayerLyricsCandidate]
         var accessed: Date
+
+        func encodedUpperBound() throws -> Int {
+            var candidatesBudget = PlayerLyricsCandidateBudget()
+            for candidate in candidates { try candidatesBudget.admit(candidate) }
+            return 256 + (try track.encodedUpperBound()) + (try lyrics.checkedFootprint().encodedUpperBound) + candidatesBudget.encodedUpperBound
+        }
     }
     private struct OverrideEntry: Codable {
         let track: PlayerLyricsTrack
         var value: PlayerLyricsOverride
         var accessed: Date
+
+        func encodedUpperBound() throws -> Int {
+            guard value.offset.isFinite else { throw PlayerLyricsError.invalidResponse }
+            let documentCost: Int
+            if let lyrics = value.lyrics { documentCost = try lyrics.checkedFootprint().encodedUpperBound } else { documentCost = 0 }
+            return 256 + (try track.encodedUpperBound()) + documentCost
+        }
     }
     private struct Archive: Codable {
         let version: Int
@@ -61,6 +74,7 @@ public actor PlayerLyricsClient {
 
     public func lookup(track: PlayerLyricsTrack, onlineAllowed: Bool, embedded: PlayerLyricsDocument? = nil, refresh: Bool = false) async throws -> PlayerLyricsResult {
         try Task.checkCancellation()
+        if let embedded { _ = try embedded.checkedFootprint() }
         loadCache()
         let revision = generation
         let override = overrides.first(where: { $0.track == track })?.value
@@ -90,17 +104,20 @@ public actor PlayerLyricsClient {
         defer { activeRequests -= 1 }
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         var candidates: [PlayerLyricsCandidate] = []
+        var candidatesBudget = PlayerLyricsCandidateBudget()
         var primary: PlayerLyricsDocument?
         var failure: PlayerLyricsError?
         do {
             if !track.query.artist.isEmpty, let data = try await get(track.query, endpoint: .exact, deadline: deadline) {
                 if let candidate = try decodeExact(data), PlayerLyricsMatching.score(candidate, query: track.query) != nil {
+                    try candidatesBudget.admit(candidate)
                     candidates = [candidate]
                     primary = candidate.lyrics
                 }
             }
             if primary == nil, let data = try await get(track.query, endpoint: .search, deadline: deadline) {
                 candidates = try decodeSearch(data)
+                for candidate in candidates { try candidatesBudget.admit(candidate) }
                 primary = PlayerLyricsMatching.best(candidates, query: track.query)?.lyrics
             }
         } catch {
@@ -109,14 +126,24 @@ public actor PlayerLyricsClient {
         var lyrics = primary
         if primary?.synced != true && primary?.instrumental != true {
             do {
-                if let data = try await get(track.query, endpoint: .fallback, deadline: deadline), let fallback = try decodeFallback(data, query: track.query) {
+                if let data = try await get(track.query, endpoint: .fallback, deadline: deadline), let fallback = try decodeFallback(data, query: track.query, maximumLogicalBytes: PlayerLyricsLimits.textBytes, maximumWords: PlayerLyricsLimits.words) {
+                    // Keep the original synced-fallback preference even when the
+                    // optional search-candidate collection already fills its cap.
+                    var fallbackBudget = PlayerLyricsCandidateBudget()
+                    try fallbackBudget.admit(fallback)
+                    var retained: [PlayerLyricsCandidate] = []
+                    for candidate in candidates {
+                        do { try fallbackBudget.admit(candidate); retained.append(candidate) }
+                        catch PlayerLyricsError.responseTooLarge { continue }
+                    }
                     if fallback.lyrics.synced || primary == nil {
                         lyrics = fallback.lyrics
                         if let primary, fallback.lyrics.synced {
                             lyrics = PlayerLyricsMatching.punctuate(timed: fallback.lyrics, plain: primary) ?? fallback.lyrics
                         }
                     }
-                    candidates.append(fallback)
+                    retained.append(fallback)
+                    candidates = retained
                 }
             } catch {
                 failure = try recoverable(error)
@@ -125,6 +152,7 @@ public actor PlayerLyricsClient {
         try Task.checkCancellation()
         guard revision == generation else { throw PlayerLyricsError.cancelled }
         if let lyrics {
+            _ = try lyrics.checkedFootprint()
             entries.removeAll { $0.track == track }
             entries.append(CacheEntry(track: track, lyrics: lyrics, candidates: Array(candidates.prefix(PlayerLyricsLimits.candidates)), accessed: Date()))
             missing.removeValue(forKey: track)
@@ -158,7 +186,7 @@ public actor PlayerLyricsClient {
     public func setOverride(_ value: PlayerLyricsOverride?, for track: PlayerLyricsTrack) throws {
         try Task.checkCancellation()
         loadCache()
-        if let lyrics = value?.lyrics, !lyrics.isValid { throw PlayerLyricsError.invalidResponse }
+        if let lyrics = value?.lyrics { _ = try lyrics.checkedFootprint() }
         let previous = overrides
         overrides.removeAll { $0.track == track }
         if var value {
@@ -238,15 +266,30 @@ public actor PlayerLyricsClient {
         let plainLyrics: String?
     }
 
-    private func candidate(_ value: LRCLIB) throws -> PlayerLyricsCandidate? {
+    private struct LRCLIBSearch: Decodable {
+        let values: [LRCLIB]
+        init(from decoder: Decoder) throws {
+            var container = try decoder.unkeyedContainer()
+            var values: [LRCLIB] = []
+            // Preserve the existing first-40 selection without first allocating
+            // a typed array for every raw JSON object in a provider reply.
+            while !container.isAtEnd && values.count < PlayerLyricsLimits.candidates {
+                values.append(try container.decode(LRCLIB.self))
+            }
+            self.values = values
+        }
+    }
+
+    private func candidate(_ value: LRCLIB, maximumLogicalBytes: Int = PlayerLyricsLimits.textBytes, maximumWords: Int = PlayerLyricsLimits.words) throws -> PlayerLyricsCandidate? {
         let lyrics: PlayerLyricsDocument?
         if value.instrumental == true { lyrics = .instrumental(provider: "LRCLIB") }
         else {
-            let synced = try PlayerLyricsDocument.parse(value.syncedLyrics ?? "", source: .online, provider: "LRCLIB")
+            let synced = try PlayerLyricsDocument.parse(value.syncedLyrics ?? "", source: .online, provider: "LRCLIB", maximumLogicalBytes: maximumLogicalBytes, maximumWords: maximumWords)
             if synced?.synced == true { lyrics = synced }
-            else { lyrics = try PlayerLyricsDocument.parse(value.plainLyrics ?? "", source: .online, provider: "LRCLIB") ?? synced }
+            else { lyrics = try PlayerLyricsDocument.parse(value.plainLyrics ?? "", source: .online, provider: "LRCLIB", maximumLogicalBytes: maximumLogicalBytes, maximumWords: maximumWords) ?? synced }
         }
         guard let lyrics else { return nil }
+        _ = try lyrics.checkedFootprint()
         return PlayerLyricsCandidate(id: "lrclib:\(value.id ?? 0)", title: value.trackName ?? "", artist: value.artistName ?? "", album: value.albumName ?? "", duration: value.duration, lyrics: lyrics)
     }
 
@@ -258,10 +301,14 @@ public actor PlayerLyricsClient {
 
     private func decodeSearch(_ data: Data) throws -> [PlayerLyricsCandidate] {
         do {
-            let values = try JSONDecoder().decode([LRCLIB].self, from: data)
+            let values = try JSONDecoder().decode(LRCLIBSearch.self, from: data).values
             var result: [PlayerLyricsCandidate] = []
+            var budget = PlayerLyricsCandidateBudget()
             for value in values.prefix(PlayerLyricsLimits.candidates) {
-                if let candidate = try candidate(value) { result.append(candidate) }
+                if let candidate = try candidate(value, maximumLogicalBytes: budget.remainingBytes, maximumWords: budget.remainingWords) {
+                    try budget.admit(candidate)
+                    result.append(candidate)
+                }
             }
             return result
         } catch let error as PlayerLyricsError { throw error }
@@ -278,7 +325,7 @@ public actor PlayerLyricsClient {
         let track: Track?; let meta: Meta?; let lines: [Line]?
     }
 
-    private func decodeFallback(_ data: Data, query: PlayerLyricsQuery) throws -> PlayerLyricsCandidate? {
+    private func decodeFallback(_ data: Data, query: PlayerLyricsQuery, maximumLogicalBytes: Int, maximumWords: Int) throws -> PlayerLyricsCandidate? {
         let value: LRCMUX
         do { value = try JSONDecoder().decode(LRCMUX.self, from: data) }
         catch { throw PlayerLyricsError.invalidResponse }
@@ -292,15 +339,18 @@ public actor PlayerLyricsClient {
             let synced = value.meta != nil && value.meta?.level != "none"
             var text = ""
             for line in raw {
+                let content = line.text ?? ""
+                guard content.utf8.count <= PlayerLyricsLimits.lineBytes else { throw PlayerLyricsError.responseTooLarge }
+                var prefix = ""
                 if synced {
                     guard let start = line.start, start.isFinite, start >= 0, start < 64_000_000 else { throw PlayerLyricsError.invalidResponse }
                     let milliseconds = Int64(start)
-                    text += String(format: "[%02lld:%02lld.%03lld]", milliseconds / 60_000, milliseconds / 1000 % 60, milliseconds % 1000)
+                    prefix = String(format: "[%02lld:%02lld.%03lld]", milliseconds / 60_000, milliseconds / 1000 % 60, milliseconds % 1000)
                 }
-                text += (line.text ?? "") + "\n"
-                guard text.utf8.count <= PlayerLyricsLimits.textBytes else { throw PlayerLyricsError.responseTooLarge }
+                guard prefix.utf8.count + content.utf8.count + 1 <= PlayerLyricsLimits.textBytes - text.utf8.count else { throw PlayerLyricsError.responseTooLarge }
+                text += prefix + content + "\n"
             }
-            guard let parsed = try PlayerLyricsDocument.parse(text, source: .online, provider: provider) else { return nil }
+            guard let parsed = try PlayerLyricsDocument.parse(text, source: .online, provider: provider, maximumLogicalBytes: maximumLogicalBytes, maximumWords: maximumWords) else { return nil }
             lyrics = parsed
         }
         let candidate = PlayerLyricsCandidate(id: "lrcmux", title: value.track?.title ?? query.title, artist: value.track?.artist ?? query.artist, album: value.track?.album ?? query.album, duration: value.track?.duration, lyrics: lyrics)
@@ -314,30 +364,48 @@ public actor PlayerLyricsClient {
         defer { try? file.close() }
         guard let data = try? file.read(upToCount: PlayerLyricsLimits.cacheBytes + 1), data.count <= PlayerLyricsLimits.cacheBytes,
               let archive = try? JSONDecoder().decode(Archive.self, from: data), archive.version == 1 else { return }
-        entries = archive.entries.filter { $0.lyrics.isValid && Date().timeIntervalSince($0.accessed) < 30 * 24 * 60 * 60 }.prefix(PlayerLyricsLimits.cacheEntries).map { entry in
-            CacheEntry(track: entry.track, lyrics: entry.lyrics, candidates: Array(entry.candidates.filter { $0.lyrics.isValid }.prefix(PlayerLyricsLimits.candidates)), accessed: entry.accessed)
+        var remaining = PlayerLyricsLimits.cacheBytes - 128
+        for entry in archive.overrides.prefix(PlayerLyricsLimits.overrideEntries) {
+            guard let cost = try? entry.encodedUpperBound(), cost <= remaining else { continue }
+            overrides.append(entry)
+            remaining -= cost
         }
-        overrides = Array(archive.overrides.filter { $0.value.offset.isFinite && ($0.value.lyrics?.isValid ?? true) }.prefix(PlayerLyricsLimits.overrideEntries))
+        for entry in archive.entries.prefix(PlayerLyricsLimits.cacheEntries) {
+            guard Date().timeIntervalSince(entry.accessed) < 30 * 24 * 60 * 60,
+                  let cost = try? entry.encodedUpperBound(), cost <= remaining else { continue }
+            entries.append(entry)
+            remaining -= cost
+        }
     }
 
     private func trimCache() {
-        entries = Array(entries.sorted { $0.accessed > $1.accessed }.prefix(PlayerLyricsLimits.cacheEntries))
-        let encoder = JSONEncoder()
-        while !entries.isEmpty, ((try? encoder.encode(entries).count) ?? Int.max) > PlayerLyricsLimits.cacheBytes {
-            entries.removeLast()
+        var remaining = PlayerLyricsLimits.cacheBytes - 128
+        for entry in overrides {
+            guard let cost = try? entry.encodedUpperBound(), cost <= remaining else { entries = []; return }
+            remaining -= cost
         }
+        var accepted: [CacheEntry] = []
+        for entry in entries.sorted(by: { $0.accessed > $1.accessed }).prefix(PlayerLyricsLimits.cacheEntries) {
+            guard let cost = try? entry.encodedUpperBound(), cost <= remaining else { continue }
+            accepted.append(entry)
+            remaining -= cost
+        }
+        entries = accepted
     }
 
     private func persist() throws {
-        guard let cacheURL else { return }
-        let encoder = JSONEncoder()
-        var archive = Archive(version: 1, entries: entries, overrides: overrides)
-        var data = try encoder.encode(archive)
-        while data.count > PlayerLyricsLimits.cacheBytes && !archive.entries.isEmpty {
-            archive.entries.removeLast()
-            data = try encoder.encode(archive)
+        // Preflight expanded documents and worst-case JSON size before encoding.
+        // A small LRC/HTTP input is not a bound on its expanded serialized cache.
+        var remaining = PlayerLyricsLimits.cacheBytes - 128
+        for entry in overrides {
+            let cost = try entry.encodedUpperBound()
+            guard cost <= remaining else { throw PlayerLyricsError.storage }
+            remaining -= cost
         }
-        // Never evict a user's selection merely to fit an automatic cache entry.
+        trimCache()
+        guard let cacheURL else { return }
+        let archive = Archive(version: 1, entries: entries, overrides: overrides)
+        let data = try JSONEncoder().encode(archive)
         guard data.count <= PlayerLyricsLimits.cacheBytes else { throw PlayerLyricsError.storage }
         try FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: cacheURL, options: .atomic)

@@ -7,6 +7,9 @@ public enum PlayerLyricsLimits {
     public static let lines = 4096
     public static let words = 32_768
     public static let candidates = 40
+    public static let candidateTextBytes = 524_288
+    public static let candidateWords = 65_536
+    public static let candidateLines = 8192
     public static let cacheEntries = 24
     public static let missingEntries = 128
     public static let overrideEntries = 64
@@ -82,13 +85,18 @@ public struct PlayerLyricsDocument: Codable, Equatable, Sendable {
     /// LRC offsets follow the original: a positive [offset:ms] makes a line
     /// earlier. A user delay is separate and never rewrites the provider's text.
     public static func parse(_ text: String, source: Source = .file, provider: String = "File") throws -> Self? {
+        try parse(text, source: source, provider: provider, maximumLogicalBytes: PlayerLyricsLimits.textBytes, maximumWords: PlayerLyricsLimits.words)
+    }
+
+    static func parse(_ text: String, source: Source, provider: String, maximumLogicalBytes: Int, maximumWords: Int) throws -> Self? {
         guard text.utf8.count <= PlayerLyricsLimits.textBytes else { throw PlayerLyricsError.responseTooLarge }
         let rows = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n")
         guard rows.count <= PlayerLyricsLimits.lines else { throw PlayerLyricsError.responseTooLarge }
         var timed: [(Int, Line)] = []
         var plain: [Line] = []
         var offset = 0.0
-        var wordCount = 0
+        var timedBudget = PlayerLyricsContentBudget(maximumBytes: min(PlayerLyricsLimits.textBytes, maximumLogicalBytes), maximumWords: min(PlayerLyricsLimits.words, maximumWords))
+        var plainBudget = PlayerLyricsContentBudget(maximumBytes: min(PlayerLyricsLimits.textBytes, maximumLogicalBytes), maximumWords: min(PlayerLyricsLimits.words, maximumWords))
         for row in rows {
             let row = row.trimmingCharacters(in: .whitespacesAndNewlines)
             guard row.utf8.count <= PlayerLyricsLimits.lineBytes else { throw PlayerLyricsError.responseTooLarge }
@@ -106,13 +114,16 @@ public struct PlayerLyricsDocument: Codable, Equatable, Sendable {
             }
             if !times.isEmpty {
                 let content = parseWords(String(remainder), offset: offset)
-                wordCount += content.words.count * times.count
-                guard timed.count + times.count <= PlayerLyricsLimits.lines, wordCount <= PlayerLyricsLimits.words else { throw PlayerLyricsError.responseTooLarge }
+                let wordBytes = content.words.reduce(0) { $0 + $1.text.utf8.count }
+                try timedBudget.admit(textBytes: content.text.utf8.count, wordTextBytes: wordBytes, words: content.words.count, repetitions: times.count)
                 for time in times {
                     timed.append((timed.count, Line(time: max(0, time - offset), text: content.text, words: content.words)))
                 }
             } else if !(row.hasPrefix("[") && row.hasSuffix("]") && row.contains(":")) {
-                if !row.isEmpty || plain.last?.text.isEmpty == false { plain.append(Line(time: nil, text: row)) }
+                if !row.isEmpty || plain.last?.text.isEmpty == false {
+                    try plainBudget.admit(textBytes: row.utf8.count, wordTextBytes: 0, words: 0)
+                    plain.append(Line(time: nil, text: row))
+                }
             }
         }
         if !timed.isEmpty {
@@ -194,20 +205,7 @@ public struct PlayerLyricsDocument: Codable, Equatable, Sendable {
     }
 
     var isValid: Bool {
-        guard lines.count <= PlayerLyricsLimits.lines, provider.utf8.count <= 512 else { return false }
-        var bytes = 0, words = 0
-        var previous = -Double.infinity
-        for line in lines {
-            guard line.text.utf8.count <= PlayerLyricsLimits.lineBytes else { return false }
-            bytes += line.text.utf8.count
-            words += line.words.count
-            if synced {
-                guard let time = line.time, time.isFinite, time >= 0, time >= previous, time < 64_000 else { return false }
-                previous = time
-            }
-            guard line.words.allSatisfy({ $0.time.isFinite && $0.time >= 0 && $0.time < 64_000 }) else { return false }
-        }
-        return bytes <= PlayerLyricsLimits.textBytes && words <= PlayerLyricsLimits.words && (instrumental || !lines.isEmpty)
+        (try? checkedFootprint()) != nil
     }
 }
 
@@ -321,17 +319,27 @@ public enum PlayerLyricsMatching {
     /// Original LRCMUX/LRCLIB punctuation alignment: four-token lookahead and
     /// >=90% matched words, while retaining provider timestamps and line breaks.
     public static func punctuate(timed: PlayerLyricsDocument, plain: PlayerLyricsDocument) -> PlayerLyricsDocument? {
+        guard timed.isValid, plain.isValid else { return nil }
         let tokens = plain.lines.flatMap { $0.text.split(whereSeparator: { $0.isWhitespace }).map(String.init) }.prefix(PlayerLyricsLimits.words)
         let pairs = tokens.map { ($0, words($0).joined()) }.filter { !$0.1.isEmpty }
         guard !pairs.isEmpty else { return nil }
         var position = 0, total = 0, matched = 0
         var lines: [PlayerLyricsDocument.Line] = []
+        var budget = PlayerLyricsContentBudget()
         for line in timed.lines {
             let tokens = line.text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
             var updated: [String] = []
+            var updatedBytes = 0
+            func append(_ token: String) -> Bool {
+                let bytes = token.utf8.count + (updated.isEmpty ? 0 : 1)
+                guard bytes <= PlayerLyricsLimits.lineBytes - updatedBytes else { return false }
+                updatedBytes += bytes
+                updated.append(token)
+                return true
+            }
             for token in tokens {
                 let key = words(token).joined()
-                if key.isEmpty { updated.append(token); continue }
+                if key.isEmpty { guard append(token) else { return nil }; continue }
                 total += 1
                 if let index = (position..<min(position + 4, pairs.count)).first(where: { pairs[$0].1 == key }) {
                     var replacement = pairs[index].0
@@ -339,11 +347,12 @@ public enum PlayerLyricsMatching {
                         let letter = String(replacement[first])
                         replacement.replaceSubrange(first...first, with: originalLetter.isUppercase ? letter.uppercased() : letter.lowercased())
                     }
-                    updated.append(replacement)
+                    guard append(replacement) else { return nil }
                     position = index + 1
                     matched += 1
-                } else { updated.append(token) }
+                } else { guard append(token) else { return nil } }
             }
+            do { try budget.admit(textBytes: updatedBytes, wordTextBytes: 0, words: 0) } catch { return nil }
             lines.append(.init(time: line.time, text: updated.joined(separator: " ")))
         }
         guard total > 0, Double(matched) >= Double(total) * 0.9 else { return nil }

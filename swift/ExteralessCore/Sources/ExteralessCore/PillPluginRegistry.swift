@@ -35,9 +35,11 @@ public final class PillPluginRegistry: @unchecked Sendable {
     }
     private let lock = NSLock()
     private let worker = DispatchQueue(label: "Exteraless.Pills.Plugins", qos: .utility)
+    private let deliveryTiming: PillPluginDeliveryTiming
     private var entries: [Int: Entry] = [:]
     private var observers: [UUID: @Sendable () -> Void] = [:]
-    public init() {}
+    public convenience init() { self.init(deliveryTiming: .live) }
+    init(deliveryTiming: PillPluginDeliveryTiming) { self.deliveryTiming = deliveryTiming }
 
     public var descriptors: [PillDescriptor] {
         lock.lock(); defer { lock.unlock() }
@@ -93,14 +95,17 @@ public final class PillPluginRegistry: @unchecked Sendable {
             guard let self, let entry else { return }
             self.lock.lock(); entry.subscriptions.removeValue(forKey: subscriptionId); self.lock.unlock()
         }
-        let delivery = PillPluginDelivery()
+        let identity = entry.identity
+        let delivery = PillPluginDelivery(timing: self.deliveryTiming, current: { [weak self] in
+            guard let self else { return false }
+            return lease.isValid && !token.isCancelled && self.contains(id: request.id, identity: identity)
+        }, update: update)
+        token.add { delivery.cancel() }
         worker.async { [weak self] in
             guard let self, lease.isValid, !token.isCancelled, self.contains(id: request.id, identity: entry.identity) else { return }
-            let child = entry.provider.start(request) { [weak self] model in
-                guard let self, lease.isValid, !token.isCancelled, model.id == request.id,
-                      self.contains(id: request.id, identity: entry.identity), (try? model.validate()) != nil,
-                      delivery.admit() else { return }
-                update(model)
+            let child = entry.provider.start(request) { model in
+                guard model.id == request.id, (try? model.validate()) != nil else { return }
+                delivery.submit(model)
             }
             // Some SDK implementations require release on their own worker; cancellation stays off render/main.
             token.add { self.worker.async { child.cancel() } }
@@ -119,14 +124,111 @@ public final class PillPluginRegistry: @unchecked Sendable {
     }
 }
 
+/// Internal timing seam lets the native-provider regression exercise the exact 250ms deadline.
+/// A scheduler must enqueue its callback, never invoke it inline while scheduling.
+struct PillPluginDeliveryTiming: Sendable {
+    let now: @Sendable () -> UInt64
+    let schedule: @Sendable (UInt64, @escaping @Sendable () -> Void) -> PillCancellation
+    private static let queue = DispatchQueue(label: "Exteraless.Pills.PluginDelivery", qos: .utility)
+    static let live = PillPluginDeliveryTiming(now: { DispatchTime.now().uptimeNanoseconds }, schedule: { deadline, callback in
+        let work = PillPluginScheduledDelivery(callback)
+        queue.asyncAfter(deadline: DispatchTime(uptimeNanoseconds: deadline), execute: work.item)
+        return PillCancellation { work.item.cancel() }
+    })
+}
+
+private final class PillPluginScheduledDelivery: @unchecked Sendable {
+    let item: DispatchWorkItem
+    init(_ callback: @escaping @Sendable () -> Void) { self.item = DispatchWorkItem(block: callback) }
+}
+
+/// One latest pending model and one trailing timer per subscription. No phase bypasses 4Hz.
 private final class PillPluginDelivery: @unchecked Sendable {
+    private static let interval: UInt64 = 250_000_000
     private let lock = NSLock()
-    private var last = -Double.greatestFiniteMagnitude
-    func admit() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        let time = ProcessInfo.processInfo.systemUptime
-        guard time - last >= 0.25 else { return false }
-        last = time
-        return true
+    private let timing: PillPluginDeliveryTiming
+    private var current: (@Sendable () -> Bool)?
+    private var update: (@Sendable (PillModel) -> Void)?
+    private var latest: PillModel?
+    private var last: UInt64?
+    private var delivering = false
+    private var cancelled = false
+    private var timer: PillCancellation?
+    private var timerId: UUID?
+
+    init(timing: PillPluginDeliveryTiming, current: @escaping @Sendable () -> Bool, update: @escaping @Sendable (PillModel) -> Void) {
+        self.timing = timing; self.current = current; self.update = update
+    }
+    private func isCurrent() -> Bool {
+        self.lock.lock(); let current = self.current; self.lock.unlock()
+        // Account/registry locks must not be acquired under the delivery lock.
+        return current?() == true
+    }
+    func submit(_ model: PillModel) {
+        guard self.isCurrent() else { self.cancel(); return }
+        self.lock.lock()
+        guard !self.cancelled else { self.lock.unlock(); return }
+        self.latest = model
+        guard !self.delivering, self.timerId == nil else { self.lock.unlock(); return }
+        let now = self.timing.now()
+        if let deadline = self.nextDeadline(), deadline > now {
+            self.scheduleLocked(deadline)
+            self.lock.unlock()
+        } else {
+            self.latest = nil; self.delivering = true
+            self.lock.unlock()
+            self.deliver(model)
+        }
+    }
+    private func nextDeadline() -> UInt64? {
+        guard let last else { return nil }
+        let sum = last.addingReportingOverflow(Self.interval)
+        return sum.overflow ? UInt64.max : sum.partialValue
+    }
+    private func scheduleLocked(_ deadline: UInt64) {
+        let id = UUID()
+        self.timerId = id
+        self.timer = self.timing.schedule(deadline) { [weak self] in self?.fire(id) }
+    }
+    private func fire(_ id: UUID) {
+        self.lock.lock()
+        guard !self.cancelled, self.timerId == id else { self.lock.unlock(); return }
+        let timer = self.timer
+        defer { timer?.cancel() }
+        self.timer = nil; self.timerId = nil
+        let now = self.timing.now()
+        if let deadline = self.nextDeadline(), deadline > now {
+            self.scheduleLocked(deadline)
+            self.lock.unlock()
+            return
+        }
+        guard let model = self.latest else { self.lock.unlock(); return }
+        self.latest = nil; self.delivering = true
+        self.lock.unlock()
+        self.deliver(model)
+    }
+    private func deliver(_ model: PillModel) {
+        guard self.isCurrent() else { self.cancel(); return }
+        self.lock.lock()
+        guard !self.cancelled, let update = self.update else { self.lock.unlock(); return }
+        self.last = self.timing.now()
+        self.lock.unlock()
+        update(model)
+        self.lock.lock()
+        self.delivering = false
+        if !self.cancelled, self.latest != nil, self.timerId == nil {
+            self.scheduleLocked(max(self.timing.now(), self.nextDeadline() ?? self.timing.now()))
+        }
+        self.lock.unlock()
+    }
+    func cancel() {
+        self.lock.lock()
+        let retained = (self.current, self.update, self.latest)
+        self.cancelled = true; self.latest = nil; self.current = nil; self.update = nil
+        self.timerId = nil
+        let timer = self.timer; self.timer = nil
+        self.lock.unlock()
+        // Releasing a client closure or cancelling a scheduler can run deinit/client code.
+        withExtendedLifetime(retained) { timer?.cancel() }
     }
 }

@@ -31,6 +31,7 @@ private final class SettingsTestSecrets: ClientSecretStore, @unchecked Sendable 
     let writeCount = SettingsTestBox(0)
     let failReads = SettingsTestBox(false)
     let failWrites = SettingsTestBox(false)
+    let failWriteKey = SettingsTestBox<String?>(nil)
 
     func data(for key: String) throws -> Data? {
         self.readCount.update { $0 += 1 }
@@ -40,7 +41,7 @@ private final class SettingsTestSecrets: ClientSecretStore, @unchecked Sendable 
 
     func set(_ data: Data?, for key: String) throws {
         self.writeCount.update { $0 += 1 }
-        if self.failWrites.value { throw SettingsTestSecretFailure() }
+        if self.failWrites.value || self.failWriteKey.value == key { throw SettingsTestSecretFailure() }
         self.values.update { $0[key] = data }
     }
 }
@@ -73,6 +74,11 @@ final class ClientSettingsTests: XCTestCase {
 
     private func document(_ url: URL) throws -> [String: ClientSettingValue] {
         return try JSONDecoder().decode([String: ClientSettingValue].self, from: Data(contentsOf: url))
+    }
+
+    private func rawSecret(_ key: String, in secrets: SettingsTestSecrets) throws -> ClientSettingValue {
+        let data = try secrets.data(for: key)
+        return try ClientSettingValue.decodeJSON(XCTUnwrap(data))
     }
 
     /// An intended forward state, constructed before any write/observer runs.
@@ -1239,6 +1245,131 @@ final class ClientSettingsTests: XCTestCase {
         try store.setPublic(.array([]), for: closed.key)
         XCTAssertEqual(store.value(closed.key), .array([]))
         XCTAssertFalse(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("LEGACY-SHAPE-CREDENTIAL"))
+    }
+
+    func testSCF01TwoFailedAliasesCompleteTogetherOnNativeRetry() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let renames = SettingsTestBox(0)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets, afterFileReplace: { renames.update { $0 += 1 } })
+        let a = ClientSettingDefinition(key: "a.new", title: "A", section: "Follow-up", defaultValue: .bool(false), isSecret: true)
+        let b = ClientSettingDefinition(key: "b.new", title: "B", section: "Follow-up", defaultValue: .bool(false), isSecret: true)
+        let flag = self.definition("follow.flag", .bool(false))
+        let definitions = [self.definition("a.old", .bool(false)), self.definition("b.old", .bool(false)), a, b, flag]
+        try store.register(definitions)
+        try store.set(.bool(true), for: "a.old")
+        try store.set(.bool(true), for: "b.old")
+        let original = try Data(contentsOf: url)
+        secrets.failWrites.update { $0 = true }
+        XCTAssertThrowsError(try store.migrateKey(from: "a.old", to: a.key))
+        XCTAssertThrowsError(try store.migrateKey(from: "b.old", to: b.key))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        for key in ["a.old", "b.old"] {
+            XCTAssertNil(store.snapshot()[key])
+            XCTAssertTrue(store.readSnapshot().secretKeys.contains(key))
+            XCTAssertThrowsError(try store.setPublic(.bool(false), for: key))
+        }
+        XCTAssertThrowsError(try store.applyPublic([flag.key: .bool(true)]))
+        secrets.failWrites.update { $0 = false }
+        let previousRenames = renames.value
+        try store.migrateKey(from: "a.old", to: a.key)
+        XCTAssertEqual(renames.value, previousRenames + 1, "The whole pending cohort has one JSON cleanup commit")
+        try store.migrateKey(from: "b.old", to: b.key)
+        try store.migrateKey(from: "a.old", to: a.key)
+        XCTAssertEqual(renames.value, previousRenames + 1)
+        XCTAssertTrue(store.bool(a.key))
+        XCTAssertTrue(store.bool(b.key))
+        XCTAssertEqual(try self.rawSecret(a.key, in: secrets), .bool(true))
+        XCTAssertEqual(try self.rawSecret(b.key, in: secrets), .bool(true))
+        guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+        XCTAssertNil(values["a.old"])
+        XCTAssertNil(values["b.old"])
+        let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+        try reopened.register(definitions)
+        try reopened.applyPublic([flag.key: .bool(true)])
+        XCTAssertTrue(reopened.bool(flag.key))
+        XCTAssertTrue(reopened.bool(a.key))
+        XCTAssertTrue(reopened.bool(b.key))
+        let exported = String(decoding: try reopened.exportJSON(), as: UTF8.self)
+        for key in ["a.old", "b.old", a.key, b.key] {
+            XCTAssertFalse(exported.contains(key))
+            XCTAssertThrowsError(try reopened.setPublic(.bool(false), for: key))
+        }
+    }
+
+    func testSCF02InvalidLegacySecretStringsAllowPerKeyResetThenSet() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let original = Data("{\"a\":false,\"b\":false,\"future\":17}".utf8)
+        try original.write(to: url)
+        let a = ClientSettingDefinition(key: "a", title: "A", section: "Follow-up", defaultValue: .string(""), isSecret: true)
+        let b = ClientSettingDefinition(key: "b", title: "B", section: "Follow-up", defaultValue: .string(""), isSecret: true)
+        let flag = self.definition("follow.flag", .bool(false))
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        XCTAssertThrowsError(try store.register([a, b, flag]))
+        XCTAssertThrowsError(try store.setPublic(.bool(true), for: flag.key))
+        XCTAssertThrowsError(try store.applyPublic([:], resetting: [a.key, b.key]))
+        XCTAssertEqual(secrets.writeCount.value, 0, "Public calls cannot quarantine or repair credentials")
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertThrowsError(try store.reset(a.key)) { error in
+            XCTAssertEqual(error as? ClientSettingsError, .invalidValue(key: b.key, reason: .type))
+        }
+        XCTAssertNil(try secrets.data(for: a.key))
+        XCTAssertEqual(try self.rawSecret(b.key, in: secrets), .bool(false), "The unrequested legacy value is preserved securely")
+        XCTAssertEqual(store.value(a.key), .string(""))
+        XCTAssertNil(store.value(b.key), "An invalid raw value is not published as a typed credential")
+        XCTAssertNotNil(store.lastError)
+        guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+        XCTAssertEqual(values, ["future": .integer(17)])
+        let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+        XCTAssertThrowsError(try reopened.register([a, b, flag]), "The quarantined raw value still requires native repair")
+        XCTAssertFalse(String(decoding: try reopened.exportJSON(), as: UTF8.self).contains("\"b\""))
+        try reopened.set(.string("REPAIRED-B-FIXTURE"), for: b.key)
+        XCTAssertEqual(reopened.string(b.key), "REPAIRED-B-FIXTURE")
+        XCTAssertFalse(reopened.readSnapshot().storedKeys.contains(a.key))
+        XCTAssertNil(reopened.lastError)
+        try reopened.applyPublic([flag.key: .bool(true)])
+        XCTAssertTrue(reopened.bool(flag.key))
+    }
+
+    func testSCF02ShapeInvalidLegacySecretsKeepRawValuesAcrossFailedRepairRetry() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let shape = ClientSettingShape.object(["allowed": .string], required: [])
+        let a = ClientSettingDefinition(key: "a", title: "A", section: "Follow-up", defaultValue: .object([:]), isSecret: true, valueShape: shape)
+        let b = ClientSettingDefinition(key: "b", title: "B", section: "Follow-up", defaultValue: .object([:]), isSecret: true, valueShape: shape)
+        let rawA: ClientSettingValue = .object(["obsolete": .string("A-LEGACY-FIXTURE")])
+        let rawB: ClientSettingValue = .object(["obsolete": .string("B-LEGACY-FIXTURE")])
+        let original = try JSONEncoder().encode([a.key: rawA, b.key: rawB])
+        try original.write(to: url)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        // B is staged first: its raw copy succeeds, then A's requested write fails.
+        XCTAssertThrowsError(try store.register([b, a]))
+        let repaired: ClientSettingValue = .object(["allowed": .string("REPAIRED-A-FIXTURE")])
+        secrets.failWriteKey.update { $0 = a.key }
+        XCTAssertThrowsError(try store.set(repaired, for: a.key))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertNil(try secrets.data(for: a.key))
+        XCTAssertEqual(try self.rawSecret(b.key, in: secrets), rawB)
+        secrets.failWriteKey.update { $0 = nil }
+        XCTAssertThrowsError(try store.set(repaired, for: a.key), "B's raw shape error remains, but A must make progress")
+        XCTAssertEqual(store.value(a.key), repaired)
+        XCTAssertNil(store.value(b.key))
+        XCTAssertNotNil(store.lastError)
+        XCTAssertEqual(try self.rawSecret(b.key, in: secrets), rawB)
+        let json = String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        XCTAssertFalse(json.contains("A-LEGACY-FIXTURE"))
+        XCTAssertFalse(json.contains("B-LEGACY-FIXTURE"))
+        XCTAssertFalse(String(decoding: try store.exportJSON(), as: UTF8.self).contains("LEGACY-FIXTURE"))
+        try store.reset(b.key)
+        XCTAssertNil(try secrets.data(for: b.key))
+        XCTAssertEqual(store.value(a.key), repaired)
+        XCTAssertNil(store.lastError)
+        let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+        try reopened.register([b, a])
+        XCTAssertEqual(reopened.value(a.key), repaired)
+        XCTAssertTrue(reopened.readSnapshot().storedKeys.contains(a.key))
+        XCTAssertFalse(reopened.readSnapshot().storedKeys.contains(b.key))
     }
 
     #if !canImport(Security)

@@ -20,7 +20,7 @@ public struct AITranslationPolicy: Sendable {
 
     public init(store: ClientSettings = .shared) {
         showMessageTranslate = store.bool("ai.showTranslate")
-        showTextTranslate = store.bool("ai.showTextTranslate", default: true)
+        showTextTranslate = ChatFormattingPolicy.translationActionEnabled(in: store)
         showLLMTranslate = store.bool("ai.showTranslateMessageLLM")
         mode = store.integer("ai.translatorMode")
         autoEnabled = store.bool("ai.telegramUIAutoTranslate", default: true)

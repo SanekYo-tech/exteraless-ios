@@ -205,17 +205,26 @@ public struct AISettings: Sendable {
         let retained = services.filter { !ids.contains($0.id) }
         let metadata = try Self.serviceMetadata(retained + records.map { $0.0 })
         try store.register(records.map { try keyDefinition(for: $0.0) })
-        let previous = Dictionary(uniqueKeysWithValues: records.map { ($0.0.keySetting, store.string($0.0.keySetting)) })
-        let previousServices = store.value("ai.services") ?? .array([])
-        let previousSelection = store.value("ai.selectedServiceId") ?? .string("default")
+        // AICF-02: explicit defaults are overrides (SC-05). Snapshot presence as
+        // well as values, so rollback restores absence through reset, not set("").
+        let snapshot = store.readSnapshot()
+        let previous = records.map { (key: $0.0.keySetting, value: store.string($0.0.keySetting), stored: snapshot.storedKeys.contains($0.0.keySetting)) }
+        let publicKeys: Set<String> = ["ai.services", "ai.selectedServiceId"]
+        let previousPublic = snapshot.values.filter { publicKeys.contains($0.key) && snapshot.storedKeys.contains($0.key) }
+        let previouslyAbsentPublic = publicKeys.subtracting(snapshot.storedKeys)
         do {
-            for (service, key, _) in records { try store.set(.string(key), for: service.keySetting) }
+            for (service, key, _) in records {
+                if key.isEmpty { try store.reset(service.keySetting) }
+                else { try store.set(.string(key), for: service.keySetting) }
+            }
             let selected = records.first { $0.2 }?.0 ?? records[0].0
             try store.applyPublic(["ai.services": metadata, "ai.selectedServiceId": .string(selected.id)])
         } catch {
-            try? store.set(previousServices, for: "ai.services")
-            try? store.set(previousSelection, for: "ai.selectedServiceId")
-            for (key, value) in previous { try? store.set(.string(value), for: key) }
+            try? store.applyPublic(previousPublic, resetting: previouslyAbsentPublic)
+            for prior in previous {
+                if prior.stored { try? store.set(.string(prior.value), for: prior.key) }
+                else { try? store.reset(prior.key) }
+            }
             throw error
         }
     }

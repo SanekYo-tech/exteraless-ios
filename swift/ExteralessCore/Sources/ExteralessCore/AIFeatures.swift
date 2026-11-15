@@ -36,7 +36,6 @@ public enum AIFeatures {
             string("translateToLang", "Translate messages to", translation, explanation: "Language code. Empty uses the app language."),
             string("translateInputLang", "Translate drafts to", translation, "en"),
             boolean("showTranslate", "Show message translation", false, translation),
-            boolean("showTextTranslate", "Show selected-text translation", true, translation),
             boolean("showTranslateMessageLLM", "Show separate LLM translation action", false, translation),
             .init(key: "ai.translatorMode", title: "Keep original with translation", section: translation, defaultValue: .integer(0), options: [.init(value: .integer(0), title: "Never"), .init(value: .integer(1), title: "Manual translations"), .init(value: .integer(2), title: "Manual and automatic")], androidSymbols: ["NaConfig.translatorMode", "MessageHelper.shouldKeepOriginalForDisplay"]),
             boolean("translatorModeWithOriginalMigrated", "Translation-mode migration completed", false, "AI state"),

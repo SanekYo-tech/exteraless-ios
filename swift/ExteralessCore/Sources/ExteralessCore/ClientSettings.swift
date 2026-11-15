@@ -598,13 +598,30 @@ public final class ClientSettings: @unchecked Sendable {
                 let definition = try Self.definition(key, in: definitions)
                 guard !original.secretKeys.contains(oldKey) || original.secretAliases[oldKey] == key else { throw ClientSettingsError.secretAccessDenied }
                 if definition.isSecret {
-                    // The real destination is Keychain, not document.values.
-                    // A valid existing destination wins without validating the
-                    // discarded source (which can have an obsolete/wrong type).
-                    let destination = try self.readSecret(key, definition: definition)
-                    loadedSecrets[key] = (destination, destination != nil)
-                    if let old = document.values.removeValue(forKey: oldKey), destination == nil, document.values[key] == nil {
-                        document.values[key] = try definition.validatedValue(old)
+                    // Complete the whole learned cohort in one candidate. Leaving
+                    // another sensitive source behind would prevent every retry
+                    // from passing the unchanged plaintext-secret write guard.
+                    let requestedDestination = try self.readSecret(key, definition: definition)
+                    loadedSecrets[key] = (requestedDestination, requestedDestination != nil)
+                    for source in document.secretAliases.keys.sorted() where document.values[source] != nil {
+                        guard let target = document.secretAliases[source] else { continue }
+                        guard !original.secretKeys.contains(source) || original.secretAliases[source] == target else {
+                            throw ClientSettingsError.secretAccessDenied
+                        }
+                        let targetDefinition = try Self.definition(target, in: definitions)
+                        guard targetDefinition.isSecret else { throw ClientSettingsError.secretAccessDenied }
+                        let destination: ClientSettingValue?
+                        if let loaded = loadedSecrets[target] {
+                            destination = loaded.value
+                        } else {
+                            destination = try self.readSecret(target, definition: targetDefinition)
+                            loadedSecrets[target] = (destination, destination != nil)
+                        }
+                        // Existing Keychain/plaintext destination wins before
+                        // validating a losing source, including an obsolete type.
+                        if let old = document.values.removeValue(forKey: source), destination == nil, document.values[target] == nil {
+                            document.values[target] = try targetDefinition.validatedValue(old)
+                        }
                     }
                 } else {
                     guard !document.secretKeys.contains(oldKey), !document.secretKeys.contains(key) else { throw ClientSettingsError.secretAccessDenied }
@@ -649,6 +666,13 @@ public final class ClientSettings: @unchecked Sendable {
                     // is unreadable. Keep the other failure visible; do not
                     // publish a guessed credential or report an all-clear.
                     next.error = next.error ?? Self.secretError(error)
+                    // A prior quarantine copy may have succeeded before another
+                    // backend/file step failed. It is safe to finish scrubbing
+                    // this duplicate; different/unreadable raw data is retained.
+                    if let plaintext = document.values[key],
+                       (try? self.hasStoredRawSecret(plaintext, for: key)) == true {
+                        document.values.removeValue(forKey: key)
+                    }
                     continue
                 }
                 let plaintext = document.values.removeValue(forKey: key)
@@ -660,7 +684,17 @@ public final class ClientSettings: @unchecked Sendable {
                     if let previous {
                         desired = previous
                     } else if let plaintext {
-                        desired = try definition.validatedValue(plaintext)
+                        do {
+                            desired = try definition.validatedValue(plaintext)
+                        } catch where !requestedSecrets.isEmpty {
+                            // Only an explicit native secret repair may quarantine
+                            // another invalid legacy value. Preserve its raw JSON
+                            // in the absent Keychain slot before any JSON cleanup;
+                            // omit it from the cache and keep its error visible.
+                            secretWrites.append((key, try Self.encodeSecret(plaintext)))
+                            next.error = next.error ?? Self.storageError(error, operation: "validate legacy secret")
+                            continue
+                        }
                     } else {
                         desired = nil
                     }
@@ -668,12 +702,7 @@ public final class ClientSettings: @unchecked Sendable {
                 if desired != previous || requestedSecrets[key] != nil {
                     let data: Data?
                     if let desired {
-                        do {
-                            let encoded = try JSONEncoder().encode(desired)
-                            _ = try ClientSettingValue.decodeJSON(encoded)
-                            data = encoded
-                        }
-                        catch { throw ClientSettingsError.invalidSecret }
+                        data = try Self.encodeSecret(desired)
                     } else {
                         data = nil
                     }
@@ -754,6 +783,26 @@ public final class ClientSettings: @unchecked Sendable {
         } catch {
             throw ClientSettingsError.invalidSecret
         }
+    }
+
+    private static func encodeSecret(_ value: ClientSettingValue) throws -> Data {
+        do {
+            let encoded = try JSONEncoder().encode(value)
+            _ = try ClientSettingValue.decodeJSON(encoded)
+            return encoded
+        } catch {
+            throw ClientSettingsError.invalidSecret
+        }
+    }
+
+    /// Used only by native repair after a typed read failed. Raw equality proves
+    /// that removing the JSON duplicate loses no unrequested legacy value.
+    private func hasStoredRawSecret(_ value: ClientSettingValue, for key: String) throws -> Bool {
+        let data: Data?
+        do { data = try self.secretStore.data(for: key) }
+        catch { throw Self.secretError(error) }
+        guard let data, let stored = try? ClientSettingValue.decodeJSON(data) else { return false }
+        return stored.isSameJSONValue(as: value)
     }
 
     private static func definition(_ key: String, in definitions: [ClientSettingDefinition]) throws -> ClientSettingDefinition {
