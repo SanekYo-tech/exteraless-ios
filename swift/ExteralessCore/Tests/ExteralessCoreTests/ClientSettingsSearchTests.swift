@@ -200,6 +200,9 @@ final class ClientSettingsSearchTests: XCTestCase {
         XCTAssertThrowsError(try index.resolve(.original(page: "appearance", className: nil, row: "avatarCorners"))) {
             guard case .unavailable? = $0 as? ClientSettingsRouteError else { return XCTFail("known row without provider was not explicit") }
         }
+        try index.refresh(definitions: [], secretKeys: [], actions: [action("general.settingsReset")])
+        XCTAssertEqual(try index.resolve(.original(page: "other", className: nil, row: "resetSettings")).route,
+                       .action("general.settingsReset"))
     }
 
     func testQueryResultAndCatalogBoundsFailClosed() throws {

@@ -312,7 +312,7 @@ public enum ClientSettingsSourceRoutes {
         key("other", "contentCapture|contentCaptureRow", "privacy.contentCapture"),
         action("other", "localPremium|localPremiumRow", "identity.account"),
         action("other", "exportEtgSettings|exportEtgRow|importEtgSettings|importEtgRow", "tools.backup"),
-        absent("other", "resetSettings|resetSettingsRow", "Reset all Android settings", "The Original all-domain reset/restart action has no native provider. Individual controls have Reset to default."),
+        action("other", "resetSettings|resetSettingsRow", "general.settingsReset"),
         absent("other", "deleteAccount|deleteAccountRow", "Delete account", "Use Telegram's native Delete Account settings. Account deletion is not a client action-registry route."),
         absent("other", "sensitiveDisableFiltering|SensitiveDisableFiltering|sensitiveContentRow", "Sensitive content", "Use native Data and Storage. Server-sensitive-content consent is not the local restriction-display preference."),
 
