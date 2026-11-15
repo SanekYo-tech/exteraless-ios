@@ -68,3 +68,13 @@ Passing `.single(nil)` selected the signal-initialization overload without its
 required label. A lazy `initializeOnFirstAccess` nil signal would also overwrite
 an already-attached live zoom stream at the first subscriber; the value initializer
 preserves that stream and retains the intended initial unavailable state.
+
+## Composer pass from 43749522967 / e766b61e
+
+The compiler reached ChatTextInputPanelNode. Placeholder invalidation now reads
+the prior `presentationInterfaceState` before it is assigned, rather than a local
+`previousState` declared later in a nested scope. The inline-math button uses iOS15
+`UIButton.Configuration` content insets, font attributes and title wrapping instead
+of deprecated `contentEdgeInsets`; its14-point horizontal insets and Dynamic Type
+subheadline remain explicit. The normal native frame-size/tap logic remains in place.
+The UIKit frame gate must inspect the actual suggestion control.

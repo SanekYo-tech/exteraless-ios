@@ -1967,7 +1967,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         var updatedPlaceholder: String?
         let placeholderOptions = (ClientSettings.shared.bool("chats.typeMessageHintUseGroupName"), ClientSettings.shared.bool("chats.showSendAsUnderMessageHint"))
-        if self.exteralessPlaceholderOptions?.0 != placeholderOptions.0 || self.exteralessPlaceholderOptions?.1 != placeholderOptions.1 || previousState?.currentSendAsPeerId != interfaceState.currentSendAsPeerId {
+        if self.exteralessPlaceholderOptions?.0 != placeholderOptions.0 || self.exteralessPlaceholderOptions?.1 != placeholderOptions.1 || self.presentationInterfaceState?.currentSendAsPeerId != interfaceState.currentSendAsPeerId {
             self.initializedPlaceholder = false
             self.exteralessPlaceholderOptions = placeholderOptions
         }
@@ -3219,8 +3219,16 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             } else {
                 button = UIButton(type: .system)
                 button.contentHorizontalAlignment = .leading
-                button.contentEdgeInsets = UIEdgeInsets(top: 0, left: 14, bottom: 0, right: 14)
-                button.titleLabel?.font = UIFont.preferredFont(forTextStyle: .subheadline)
+                var configuration = UIButton.Configuration.plain()
+                configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14)
+                configuration.titleAlignment = .leading
+                configuration.titleLineBreakMode = .byWordWrapping
+                configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                    var attributes = attributes
+                    attributes.font = UIFont.preferredFont(forTextStyle: .subheadline)
+                    return attributes
+                }
+                button.configuration = configuration
                 button.titleLabel?.adjustsFontForContentSizeCategory = true
                 button.titleLabel?.numberOfLines = 0
                 button.titleLabel?.lineBreakMode = .byWordWrapping
@@ -3230,7 +3238,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 self.exteralessMathButton = button
             }
             button.tintColor = interfaceState.theme.chat.inputPanel.panelControlAccentColor
-            button.setTitle("= \(suggestion.value)  ·  Insert", for: .normal)
+            var configuration = button.configuration ?? .plain()
+            configuration.title = "= \(suggestion.value)  ·  Insert"
+            configuration.baseForegroundColor = interfaceState.theme.chat.inputPanel.panelControlAccentColor
+            button.configuration = configuration
             button.accessibilityLabel = "Insert calculated result \(suggestion.value)"
             let titleHeight = button.titleLabel?.sizeThatFits(CGSize(width: max(1, textInputWidth - 28), height: .greatestFiniteMagnitude)).height ?? 20
             let resultHeight = max(44, ceil(titleHeight) + 12)
