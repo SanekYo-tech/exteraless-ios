@@ -45,3 +45,17 @@ its NSObject initialization and always-created log context. Legacy method
 nullability remains unspecified. The credential-safe failure mirror now supplies
 `KeyValuePairs<String, Any>` to Mirror's labelled-child overload; raw RPC error
 contents remain outside the reflection children.
+
+## Downstream pass from 43744733589 / 5a4a6287
+
+TelegramCore compiled after the explicit prepared-Network return types.
+Four downstream diagnostics required these local corrections:
+
+- Camera's secondary native-resolution factors already are `[CGFloat]`; append
+  them directly. Explicit numeric mapping closures disambiguate lens-stop types.
+- The Rust adapter uses the imported `NSNotification.Name` resolver-change name,
+  as the native resolver consumers already do.
+- Map snapshots import legacy SwiftSignalKit with `@preconcurrency`. Its captured
+  `Atomic<UInt64>`, `MetaDisposable` and `Subscriber<Data?, NoError>` use their
+  existing pthread locks; emissions are serialized on the subscription queue and
+  guarded by generation/cancellation. No own state or warning policy was widened.

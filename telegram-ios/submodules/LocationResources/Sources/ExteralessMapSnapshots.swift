@@ -2,7 +2,7 @@ import ExteralessCore
 import Foundation
 import ImageIO
 import MapKit
-import SwiftSignalKit
+@preconcurrency import SwiftSignalKit
 import UIKit
 
 func exteralessMapSnapshotData(accountId: Int64, resource: MapSnapshotMediaResource, adjustedLatitude: Double) -> Signal<Data?, NoError> {

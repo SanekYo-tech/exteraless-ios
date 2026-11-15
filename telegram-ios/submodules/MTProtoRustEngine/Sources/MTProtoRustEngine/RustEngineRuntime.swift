@@ -176,7 +176,7 @@ final class RustEngineRuntime: NSObject, MTNetworkAvailabilityDelegate {
     }
 
     private func start() {
-        appResolverObserver = NotificationCenter.default.addObserver(forName: MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
+        appResolverObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name.MTAppNetworkResolverDidChange, object: nil, queue: nil) { [weak self] _ in
             guard let self else { return }
             self.networkQueue.async {
                 if let engine = self.engine { mt_engine_reset_connections(engine) }

@@ -23,8 +23,8 @@ public extension Camera {
             self.value = min(self.maximum, max(self.minimum, device.videoZoomFactor))
             var values = [self.minimum, self.neutral]
             values.append(contentsOf: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat($0.doubleValue) })
-            if #available(iOS 16.0, *) { values.append(contentsOf: device.activeFormat.secondaryNativeResolutionZoomFactors.map { CGFloat($0.doubleValue) }) }
-            self.stops = ToolsCameraPolicy.lensStops(minimum: Double(self.minimum), maximum: Double(self.maximum), optical: values.map(Double.init)).map(CGFloat.init)
+            if #available(iOS 16.0, *) { values.append(contentsOf: device.activeFormat.secondaryNativeResolutionZoomFactors) }
+            self.stops = ToolsCameraPolicy.lensStops(minimum: Double(self.minimum), maximum: Double(self.maximum), optical: values.map { Double($0) }).map { CGFloat($0) }
         }
     }
 }
