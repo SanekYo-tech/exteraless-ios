@@ -62,6 +62,8 @@ enum CloudLegacyRules {
         func add(_ id: String, _ key: String, _ conversion: Conversion) { rules[id] = Rule(key: key, conversion: conversion) }
         add("neko.typeface", CoreAppearanceFontFamilyPolicy.key, .boolean)
         add("neko.tabletMode", "appearance.tabletMode", .options([0: 0, 1: 1, 2: 2]))
+        add("appearance.monetStyle", AppearanceMonetPolicy.settingKey, .options([0: 0, 1: 1]))
+        add("nagram.performanceClass", ToolsPerformancePolicy.key, .options([0: 0, 1: 1, 2: 2, 3: 3]))
         booleans("chats", "chats", "hdrPhotos translateInSheet")
         booleans("nagram", "chats", "disableInAppBrowserGestures sendMp4DocumentAsVideo showSmallGIF")
         booleans("neko", "chats", "autoPauseVideo takeGIFasVideo")

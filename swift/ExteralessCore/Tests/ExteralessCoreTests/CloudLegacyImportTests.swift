@@ -304,6 +304,26 @@ final class CloudLegacyImportTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(settings.integer("appearance.tabletMode"), 1)
     }
 
+    func testMonetAndPerformanceModesImportOnlyTheirTypedPublicChoices() throws {
+        let settings = try target()
+        try settings.register(ToolsPerformancePolicy.definitions)
+        let preview = try inspect(["nkmrcfg": .object([
+            "OEAppearanceMonetStyle": .integer(1), "PerformanceClass": .integer(2)
+        ])], settings: settings)
+        XCTAssertEqual(preview.publicInspection.settings, [
+            "appearance.monetStyle": .integer(1), "tools.performanceClass": .integer(2)
+        ])
+        try CloudPublicRestoreProjection.validate(preview.publicInspection)
+        _ = try CloudLegacySettingsArchive.apply(preview, settings: settings, includeApiKeys: false, credentials: CloudFixtureSecrets())
+        XCTAssertEqual(settings.integer("appearance.monetStyle"), 1)
+        XCTAssertEqual(settings.integer("tools.performanceClass"), 2)
+        let invalid = try inspect(["nkmrcfg": .object([
+            "OEAppearanceMonetStyle": .integer(2), "PerformanceClass": .bool(true)
+        ])], settings: settings)
+        XCTAssertEqual(invalid.settingCount, 0)
+        XCTAssertEqual(invalid.skipped.count, 2)
+    }
+
     func testChatLegacyHighestQualityBecomesExplicitAutoPlusOriginalQuality() throws {
         let settings = try target()
         try settings.applyPublic(["chats.defaultHlsVideoQuality": .integer(4), "chats.preferOriginalQuality": .bool(false)])

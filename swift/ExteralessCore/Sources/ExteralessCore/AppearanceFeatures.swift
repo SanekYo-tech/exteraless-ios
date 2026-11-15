@@ -237,6 +237,7 @@ public enum AppearanceFeatures {
         )
     ] + headerDefinitions + AppearanceAdditionalFeatures.definitions + AppearanceAdditionalFeatures.settingsSectionDefinitions
         + CoreAppearanceFontFamilyPolicy.definitions + AppearanceLayoutModePolicy.definitions
+        + AppearanceMonetPolicy.definitions
 
     private static let headerDefinitions: [ClientSettingDefinition] = [
         ClientSettingDefinition(key: "appearance.titleText", title: "Chat-list title", section: "Appearance · Header", defaultValue: .integer(0), options: [
