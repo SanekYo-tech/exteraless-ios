@@ -4,6 +4,12 @@ public enum ToolsFeatures {
     /// Only definitions with real consumers belong here. Nothing Glyph, Android
     /// Camera1/2/X selectors and compatibility-storage fields are not iOS toggles.
     public static let definitions: [ClientSettingDefinition] = [
+        .init(key: "tools.skipAutoDownloadArchives", title: "Skip automatic archive downloads", section: "Downloads", defaultValue: .bool(true),
+              explanation: "Applies the original APK/ZIP/7z/TAR/GZ/ZST/ISO/XZ/LHA/LZH filename list to automatic fetch and prefetch. Manual downloads remain explicit.", androidSymbols: ["NekoConfig.disableAutoDownloadingArchive"]),
+        .init(key: "tools.skipAutoDownloadExecutables", title: "Skip automatic Windows executable downloads", section: "Downloads", defaultValue: .bool(true),
+              explanation: "Skips automatic fetch/prefetch for the original executable/script extension list. It does not prevent manually saving a document.", androidSymbols: ["NekoConfig.disableAutoDownloadingWin32Executable"]),
+        .init(key: "tools.uploadBoost", title: "Larger upload chunks", section: "Downloads", defaultValue: .bool(false),
+              explanation: "Uses a 512-KiB floor for complete, unencrypted uploads above 256 KiB without delayed headers. Native streaming, parallelism and larger chunks are preserved.", androidSymbols: ["NekoConfig.uploadBoost", "FileUploadOperation.uploadChunkSize"]),
         .init(key: "tools.customSavePath", title: "Folder inside Files destination", section: "Downloads", defaultValue: .string("exteraless"),
               explanation: "A single folder name inside the selected Files destination. Empty uses that destination directly.", androidSymbols: ["NekoConfig.customSavePath"]),
         .init(key: "tools.saveToChatSubfolder", title: "Save into per-chat folders", section: "Downloads", defaultValue: .bool(false),
@@ -12,13 +18,13 @@ public enum ToolsFeatures {
               defaultValue: .integer(0), options: [.init(value: .integer(0), title: "Native iOS"),
                   .init(value: .integer(1), title: "Larger · 512 KiB / 8"), .init(value: .integer(2), title: "Maximum · 1 MiB / 12")],
               explanation: "Applies to new large, unencrypted Telegram downloads. Native story/small-file handling and transport limits are retained; this does not promise a particular speed.",
-              androidSymbols: ["GeneralConfig.downloadSpeedBoost", "FileLoadOperation.updateParams"]),
+              androidSymbols: ["GeneralConfig.downloadSpeedBoost", "FileLoadOperation.updateParams", "NekoConfig.enhancedFileLoader"]),
         .init(key: "tools.quickToggles", title: "Home-screen quick toggles", section: "Tools",
               defaultValue: .bool(false), explanation: "Show Ghost mode and Plugin safe mode in the app icon's quick actions. Search and Compose remain available.",
               androidSymbols: ["QuickToggleActivity.ACTION_GHOST_MODE", "QuickToggleActivity.ACTION_SAFE_MODE"]),
         .init(key: "tools.crashReports", title: "Keep local system diagnostics", section: "Tools",
               defaultValue: .bool(false), explanation: "Cache system-delivered MetricKit crash and energy reports for manual export. iOS adaptation of crash reporting; no automatic upload.",
-              androidSymbols: ["GeneralConfig.crashReports", "CrashLog"]),
+              androidSymbols: ["GeneralConfig.crashReports", "CrashLog", "NaConfig.disableCrashlyticsCollection"]),
         .init(key: "tools.autoUpdateChannel", title: "Update channel", section: "Updates",
               defaultValue: .integer(0), options: [
                 .init(value: .integer(0), title: "Manual checks"),
@@ -47,16 +53,29 @@ public enum ToolsFeatures {
         .init(key: "tools.rememberLastUsedCamera", title: "Remember video-message camera", section: "Camera",
               defaultValue: .bool(false), explanation: "Reopen video-message recording with the last front or rear camera.",
               androidSymbols: ["ChatsConfig.rememberLastUsedCamera"]),
+        .init(key: "tools.videoMessageCameraFacing", title: "Video-message starting camera", section: "Camera", defaultValue: .integer(0),
+              options: [.init(value: .integer(0), title: "Front"), .init(value: .integer(1), title: "Rear"), .init(value: .integer(2), title: "Ask before recording")],
+              explanation: "Chooses the real front/rear camera before video-message recording. Ask shows a native choice over the preview and starts hands-free only after the chosen camera is ready; remembering does not overwrite Ask.",
+              androidSymbols: ["NaConfig.cameraInVideoMessages", "NekoConfig.rearVideoMessages"]),
         .init(key: "tools.flashWarmth", title: "Video-message flash warmth", section: "Camera",
               defaultValue: .integer(50), minimum: 0, maximum: 100, step: 1,
               explanation: "Default screen flash: blue at 0, white at 50, warm at 100.", androidSymbols: ["ChatsConfig.flashWarmth", "FlashViews.getColor"]),
         .init(key: "tools.flashIntensity", title: "Video-message flash intensity", section: "Camera",
               defaultValue: .integer(100), minimum: 0, maximum: 100, step: 1,
               explanation: "Screen brightness and flash opacity during front-camera recording.", androidSymbols: ["ChatsConfig.flashIntensity"])
-    ]
+    ] + [ToolsNativeModePolicy.videoBitrateDefinition,
+         ToolsNativeModePolicy.voiceEnhancementDefinition,
+         ToolsNativeModePolicy.groupAudioBitrateDefinition,
+         ToolsNativeModePolicy.rpcErrorsDefinition]
 }
 
 public enum ToolsCameraPolicy {
+    public static func initialCameraIsFront(facing: Int, explicitFacing: Bool, remember: Bool, lastFront: Bool?) -> Bool {
+        if facing == 2 { return true } // Preview only; the native start gate asks before recording.
+        if !explicitFacing && remember, let lastFront { return lastFront }
+        return facing != 1
+    }
+
     public static func flashColor(warmth: Int) -> (red: Double, green: Double, blue: Double) {
         let value = Double(min(100, max(0, warmth))) / 100
         let from: (Double, Double, Double) = value < 0.5 ? (140.0 / 255, 223.0 / 255, 1) : (1, 1, 1)

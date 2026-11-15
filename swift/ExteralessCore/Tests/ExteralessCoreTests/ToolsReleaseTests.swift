@@ -8,11 +8,11 @@ import XCTest
 final class ToolsReleaseTests: XCTestCase, @unchecked Sendable {
     private let repository = try! ToolsReleaseRepository(owner: "fixture", name: "ios")
 
-    private func client() -> ToolsReleaseClient {
+    private func client(hooks: ToolsReleaseTransferHooks = .init()) -> ToolsReleaseClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ToolsReleaseFixtureProtocol.self]
         configuration.httpAdditionalHeaders = ["Authorization": "must-not-be-forwarded"]
-        return ToolsReleaseClient(repository: repository, configuration: configuration)
+        return ToolsReleaseClient(repository: repository, configuration: configuration, transferHooks: hooks)
     }
 
     private func response(asset: Data = Data([0x50, 0x4b, 3, 4, 5, 6]), digest: String? = nil, prerelease: Bool = false) throws -> Data {
@@ -110,6 +110,94 @@ final class ToolsReleaseTests: XCTestCase, @unchecked Sendable {
         XCTAssertFalse(ToolsUpdateSchedule.shouldCheck(channel: 1, lastAttempt: now.addingTimeInterval(-60), now: now))
         XCTAssertTrue(ToolsUpdateSchedule.shouldCheck(channel: 2, lastAttempt: now.addingTimeInterval(-21_600), now: now))
     }
+
+    func testTB05CancellationDrainsAcceptedHeadersBeforeCallerReturns() async throws {
+        let bytes = Data([0x50, 0x4b, 3, 4, 5, 6])
+        let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+        let root = try releaseDirectory()
+        let accepted = expectation(description: "actual response delegate entered")
+        let cleaned = expectation(description: "serial file owner drained")
+        let gate = DispatchSemaphore(value: 0)
+        let progress = ToolsReleaseProgress()
+        let hooks = ToolsReleaseTransferHooks(afterResponseValidation: {
+            accepted.fulfill()
+            _ = gate.wait(timeout: .now() + 2)
+        }, afterCleanup: { cleaned.fulfill() })
+        ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: bytes, chunks: [Data(bytes.prefix(4)), Data(bytes.suffix(2))]))
+        let client = client(hooks: hooks)
+        let task = Task { try await client.download(release, directory: root) { progress.append($0, $1) } }
+        await fulfillment(of: [accepted], timeout: 2)
+        task.cancel()
+        gate.signal()
+        do { _ = try await task.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
+        await fulfillment(of: [cleaned], timeout: 2)
+        XCTAssertNil(progress.last())
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    func testTB05CancellationAfterFirstWriteClosesAndUnlinksBeforeReturn() async throws {
+        let bytes = Data([0x50, 0x4b, 3, 4] + Array(repeating: UInt8(7), count: 128))
+        let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+        let root = try releaseDirectory(), cancel = ToolsReleaseCancellation()
+        let wrote = expectation(description: "actual first partial-file write")
+        let cleaned = expectation(description: "open partial closed and unlinked")
+        let progress = ToolsReleaseProgress()
+        let hooks = ToolsReleaseTransferHooks(afterChunkWrite: { wrote.fulfill(); cancel.cancel() }, afterCleanup: { cleaned.fulfill() })
+        ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: bytes, chunks: [Data(bytes.prefix(4)), Data(bytes.dropFirst(4))]))
+        let client = client(hooks: hooks)
+        let task = Task { try await client.download(release, directory: root) { progress.append($0, $1) } }
+        cancel.install { task.cancel() }
+        await fulfillment(of: [wrote], timeout: 2)
+        task.cancel() // Also bounds a regression that never reaches the write hook.
+        do { _ = try await task.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
+        await fulfillment(of: [cleaned], timeout: 2)
+        XCTAssertNil(progress.last(), "No progress may be delivered after cancellation admission closes")
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+
+    #if canImport(Darwin)
+    func testTB05ProviderCallbacksQueuedAfterStopCannotRecreateOutput() async throws {
+        let bytes = Data([0x50, 0x4b, 3, 4, 5, 6])
+        let release = try XCTUnwrap(ToolsReleaseClient.decodeReleases(response(asset: bytes), repository: repository, includePrereleases: false))
+        let root = try releaseDirectory()
+        let began = expectation(description: "provider waiting before headers")
+        let late = expectation(description: "provider enqueued late headers/body after stopLoading")
+        let cleaned = expectation(description: "file owner drained")
+        let progress = ToolsReleaseProgress()
+        let hooks = ToolsReleaseTransferHooks(afterCleanup: { cleaned.fulfill() })
+        ToolsReleaseFixtureProtocol.set(release.asset.url, fixture: .init(data: Data(), began: { began.fulfill() },
+            afterStopData: bytes, afterStopDelivery: { late.fulfill() }, stallBeforeHeaders: true))
+        let client = client(hooks: hooks)
+        let task = Task { try await client.download(release, directory: root) { progress.append($0, $1) } }
+        await fulfillment(of: [began], timeout: 2)
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") } catch { XCTAssertTrue(error is CancellationError) }
+        await fulfillment(of: [late, cleaned], timeout: 2)
+        XCTAssertNil(progress.last())
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    }
+    #endif
+
+    private func releaseDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tools-release-cancel-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+}
+
+private final class ToolsReleaseCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+    private var action: (@Sendable () -> Void)?
+    func install(_ action: @escaping @Sendable () -> Void) {
+        lock.lock(); self.action = action; let requested = requested; lock.unlock()
+        if requested { action() }
+    }
+    func cancel() {
+        lock.lock(); requested = true; let action = action; lock.unlock()
+        action?()
+    }
 }
 
 private final class ToolsReleaseProgress: @unchecked Sendable {
@@ -127,11 +215,18 @@ private final class ToolsReleaseFixtureProtocol: URLProtocol, @unchecked Sendabl
         var stall = false
         var began: (@Sendable () -> Void)?
         var stopped: (@Sendable () -> Void)?
+        var chunks: [Data]?
+        var afterStopData: Data?
+        var afterStopDelivery: (@Sendable () -> Void)?
+        var stallBeforeHeaders = false
     }
     private static let lock = NSLock()
     nonisolated(unsafe) private static var fixtures: [URL: Fixture] = [:]
     nonisolated(unsafe) private static var captured: [URLRequest] = []
     private var stopCallback: (@Sendable () -> Void)?
+    private let instanceLock = NSLock()
+    private var lateData: Data?
+    private var lateDelivery: (@Sendable () -> Void)?
 
     static func set(_ url: URL, fixture: Fixture) { lock.lock(); fixtures[url] = fixture; lock.unlock() }
     static func requests() -> [URLRequest] { lock.lock(); defer { lock.unlock() }; return captured }
@@ -147,13 +242,34 @@ private final class ToolsReleaseFixtureProtocol: URLProtocol, @unchecked Sendabl
             client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
             return
         }
+        instanceLock.lock()
         stopCallback = fixture.stopped
+        lateData = fixture.afterStopData
+        lateDelivery = fixture.afterStopDelivery
+        instanceLock.unlock()
         fixture.began?()
+        if fixture.stallBeforeHeaders { return }
         let response = HTTPURLResponse(url: url, statusCode: fixture.status, httpVersion: "HTTP/1.1", headerFields: fixture.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         if fixture.stall { return }
-        client?.urlProtocol(self, didLoad: fixture.data)
+        for chunk in fixture.chunks ?? [fixture.data] { client?.urlProtocol(self, didLoad: chunk) }
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() { stopCallback?(); stopCallback = nil }
+    override func stopLoading() {
+        instanceLock.lock()
+        let stopped = stopCallback, data = lateData, delivered = lateDelivery
+        stopCallback = nil; lateData = nil; lateDelivery = nil
+        instanceLock.unlock()
+        stopped?()
+        if let data {
+            DispatchQueue.global().async { [self] in
+                if let url = request.url, let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Length": "\(data.count)"]) {
+                    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                }
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+                delivered?()
+            }
+        }
+    }
 }

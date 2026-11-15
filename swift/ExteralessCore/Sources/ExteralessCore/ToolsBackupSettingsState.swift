@@ -39,5 +39,6 @@ public enum ToolsBackupWriteFailure: Error, LocalizedError, Sendable {
 }
 
 public enum ToolsBackupFaultPoint: Sendable {
-    case afterPrepared, beforeClientCommit, afterClientCommit, beforeCommitMarker, beforeRollback
+    case afterPrepared, beforeClientCommit, afterClientPending, afterClientCommit, beforeCommitMarker, beforeRollback
+    case afterClientRollback, beforeRollbackMarker
 }

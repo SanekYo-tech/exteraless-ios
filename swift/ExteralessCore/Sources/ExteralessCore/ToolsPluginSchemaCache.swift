@@ -30,8 +30,10 @@ public struct ToolsPluginSettingsSchema: Sendable {
     }
     public let publicFields: [String: Field]
     public let unclassifiedCount: Int
-    public init(publicFields: [String: Field], unclassifiedCount: Int = 0) {
+    public let renderedJSONSHA256: String?
+    public init(publicFields: [String: Field], unclassifiedCount: Int = 0, renderedJSONSHA256: String? = nil) {
         self.publicFields = publicFields; self.unclassifiedCount = unclassifiedCount
+        self.renderedJSONSHA256 = renderedJSONSHA256
     }
 
     public func validate(_ values: [String: ClientSettingValue]) throws {
@@ -46,7 +48,12 @@ public struct ToolsPluginSettingsSchema: Sendable {
 /// operation. This cache never requests get_settings, loads Python, retains secret
 /// values, or infers exportability for unknown widget types.
 public final class ToolsPluginSchemaCache: @unchecked Sendable {
-    private struct Entry { let owner: String; let schema: ToolsPluginSettingsSchema }
+    private struct Entry {
+        let owner: String
+        let schema: ToolsPluginSettingsSchema
+        let evidence: ToolsPluginSchemaEvidence?
+        let generation: UUID
+    }
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
     public init() {}
@@ -62,15 +69,20 @@ public final class ToolsPluginSchemaCache: @unchecked Sendable {
         return pluginId + "-" + pluginId.utf8.map { String(format: "%02x", $0) }.joined() + ".json"
     }
 
-    public func record(fileName: String, owner: String, cachedNativeSettingsJSON: Data) throws {
+    public func record(fileName: String, owner: String, cachedNativeSettingsJSON: Data,
+                       evidence: ToolsPluginSchemaEvidence? = nil) throws {
         try ToolsBackupPolicy.validatePluginPath(fileName)
         guard !owner.isEmpty, owner.utf8.count <= 512 else { throw ToolsError.invalidArchive("Invalid cached-schema owner.") }
         do {
             let schema = try Self.decode(cachedNativeSettingsJSON)
+            if let evidence {
+                try evidence.validate()
+                guard evidence.owner == owner, evidence.schemaSHA256 == schema.renderedJSONSHA256 else { throw ToolsError.invalidArchive("Schema evidence does not match the native response/owner.") }
+            }
             lock.lock()
             defer { lock.unlock() }
             guard entries[fileName] != nil || entries.count < ToolsBackupPolicy.maximumPluginFiles else { throw ToolsError.sizeLimit }
-            entries[fileName] = Entry(owner: owner, schema: schema)
+            entries[fileName] = Entry(owner: owner, schema: schema, evidence: evidence, generation: UUID())
         } catch {
             invalidate(fileName: fileName)
             throw error
@@ -80,14 +92,48 @@ public final class ToolsPluginSchemaCache: @unchecked Sendable {
     public func invalidate(fileName: String) { lock.lock(); entries.removeValue(forKey: fileName); lock.unlock() }
     public func clear() { lock.lock(); entries.removeAll(); lock.unlock() }
 
-    public func location(directory: URL, activeOwners: [String: String]) throws -> ToolsBackupPluginLocation {
+    public func location(directory: URL, activeOwners: [String: String],
+                         validity: (any ToolsPluginSchemaValidity)? = nil) throws -> ToolsBackupPluginLocation {
         lock.lock()
-        let schemas = entries.filter { activeOwners[$0.key] == $0.value.owner }.mapValues(\.schema)
+        let eligible = entries.filter {
+            activeOwners[$0.key] == $0.value.owner && $0.value.evidence?.guarantee == .nativeImmutable && validity != nil
+        }
         lock.unlock()
+        let schemas = eligible.mapValues(\.schema)
+        let guardValue = validity.map { CacheValidity(cache: self, generations: eligible.mapValues(\.generation), base: $0) }
         let location = ToolsBackupPluginLocation(directory: directory,
-            exportableFields: schemas.mapValues { Set($0.publicFields.keys) }, schemas: schemas)
+            exportableFields: schemas.mapValues { Set($0.publicFields.keys) }, schemas: schemas,
+            evidence: eligible.compactMapValues(\.evidence), validity: guardValue)
         try ToolsBackupPolicy.validateLocation(location)
         return location
+    }
+
+    private func requireCurrent(_ generations: [String: UUID]) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard generations.allSatisfy({ entries[$0.key]?.generation == $0.value }) else { throw ToolsError.invalidArchive("Captured plugin schema was replaced or invalidated.") }
+    }
+
+    private final class CacheValidity: ToolsPluginSchemaValidity, @unchecked Sendable {
+        private weak var cache: ToolsPluginSchemaCache?
+        private let generations: [String: UUID]
+        private let base: any ToolsPluginSchemaValidity
+        init(cache: ToolsPluginSchemaCache, generations: [String: UUID], base: any ToolsPluginSchemaValidity) {
+            self.cache = cache; self.generations = generations; self.base = base
+        }
+        func withCurrent<T>(evidence: [String: ToolsPluginSchemaEvidence], use: ToolsPluginSchemaUse,
+                            _ body: () throws -> T) throws -> T {
+            try base.withCurrent(evidence: evidence, use: use) {
+                guard let cache else { throw ToolsError.invalidArchive("Schema cache is no longer available.") }
+                let selected = generations.filter { evidence[$0.key] != nil }
+                try cache.requireCurrent(selected)
+                let result = try body()
+                // Own restore writes invalidate later permissions. The native pin
+                // still excludes other writers; do not mistake our own invalidation
+                // for a missing atomic write receipt (TB-01/02 retain those separately).
+                if case .export = use { try cache.requireCurrent(selected) }
+                return result
+            }
+        }
     }
 
     private struct Row: Decodable {
@@ -144,6 +190,6 @@ public final class ToolsPluginSchemaCache: @unchecked Sendable {
             }
         }
         try visit(rows, depth: 0)
-        return ToolsPluginSettingsSchema(publicFields: fields, unclassifiedCount: unknown)
+        return ToolsPluginSettingsSchema(publicFields: fields, unclassifiedCount: unknown, renderedJSONSHA256: ToolsSHA256.hex(data))
     }
 }

@@ -61,7 +61,24 @@ public enum StickerCollectionPolicy {
     public static let maximumRecentCount = 200
     public static let maximumLocalGifCount = 10_000
 
-    /// Local order wins; fresh cloud references replace matching old metadata.
+    /// Recents follow the newest server order, then retain only local extras
+    /// (Android MediaDataController:2205-2233). A full local tail must not hide
+    /// newly used stickers from another client. Cloud metadata wins by identity.
+    public static func recent<Item, Id: Hashable>(local: [Item], cloud: [Item], limit: Int, id: (Item) -> Id) -> [Item] {
+        guard limit > 0 else { return [] }
+        var seen = Set<Id>()
+        var result: [Item] = []
+        for items in [cloud, local] {
+            for item in items where seen.insert(id(item)).inserted {
+                result.append(item)
+                if result.count == limit { return result }
+            }
+        }
+        return result
+    }
+
+    /// The independent local GIF shelf keeps local order; fresh cloud references
+    /// replace matching metadata. This is deliberately not the recents policy.
     /// Truncation only affects this projection, never the supplied collections.
     public static func merged<Item, Id: Hashable>(local: [Item], cloud: [Item], limit: Int, id: (Item) -> Id) -> [Item] {
         let fresh = Dictionary(cloud.map { (id($0), $0) }, uniquingKeysWith: { first, _ in first })

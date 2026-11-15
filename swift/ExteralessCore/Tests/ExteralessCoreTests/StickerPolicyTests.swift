@@ -14,7 +14,26 @@ final class StickerPolicyTests: XCTestCase {
         XCTAssertEqual(large.stickerSide(stock: 180, available: -.infinity, isTablet: false), 0)
     }
 
-    func testRecentsMergeKeepsLocalOrderAndRefreshesReferencesWithoutMutatingCloud() {
+    func testRecentsKeepFreshCloudOrderThenLocalOnlyTail() {
+        struct Item: Equatable { let id: Int; let reference: String }
+        let local = [Item(id: 3, reference: "old"), Item(id: 1, reference: "local")]
+        let cloud = [Item(id: 2, reference: "cloud"), Item(id: 3, reference: "fresh")]
+        let merged = StickerCollectionPolicy.recent(local: local, cloud: cloud, limit: 3, id: { $0.id })
+        XCTAssertEqual(merged, [.init(id: 2, reference: "cloud"), .init(id: 3, reference: "fresh"), .init(id: 1, reference: "local")])
+        XCTAssertEqual(StickerCollectionPolicy.recent(local: local, cloud: cloud, limit: 1, id: { $0.id }).map(\.id), [2])
+        XCTAssertEqual(cloud.map(\.id), [2, 3])
+        XCTAssertEqual(local.map(\.reference), ["old", "local"])
+    }
+
+    func testFullRecentTailCannotDisplaceCrossDeviceUseAt20_21_200() {
+        let local = Array(1...200)
+        let cloud = [999] + Array(1...19)
+        for count in [20, 21, 200] {
+            XCTAssertEqual(StickerCollectionPolicy.recent(local: local, cloud: cloud, limit: count, id: { $0 }), [999] + Array(1..<count))
+        }
+    }
+
+    func testGifShelfStillKeepsLocalOrderAndRefreshesReferences() {
         struct Item: Equatable { let id: Int; let reference: String }
         let local = [Item(id: 3, reference: "old"), Item(id: 1, reference: "local")]
         let cloud = [Item(id: 2, reference: "cloud"), Item(id: 3, reference: "fresh")]

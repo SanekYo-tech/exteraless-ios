@@ -3,6 +3,17 @@ import XCTest
 @testable import ExteralessCore
 
 final class EmojiPackTests: XCTestCase, @unchecked Sendable {
+    func testMixedGlyphReviewFixturesRetainStrictAdmissionAndSourcePins() throws {
+        XCTAssertEqual(EmojiFontFixture.mixed.count, 968)
+        XCTAssertEqual(EmojiFontFixture.mixedThumb.count, 980)
+        let mixed = try EmojiFontInspection.inspect(EmojiFontFixture.mixed, fileExtension: "ttf", expectedSHA256: EmojiFontFixture.mixedSHA256)
+        let thumb = try EmojiFontInspection.inspect(EmojiFontFixture.mixedThumb, fileExtension: "ttf", expectedSHA256: EmojiFontFixture.mixedThumbSHA256)
+        XCTAssertEqual(mixed.postScriptName, "ExteralessEmojiFixture")
+        XCTAssertEqual(thumb.license, mixed.license)
+        XCTAssertEqual(EmojiFontFixture.checksum(EmojiFontFixture.mixed), 0xb1b0afba)
+        XCTAssertEqual(EmojiFontFixture.checksum(EmojiFontFixture.mixedThumb), 0xb1b0afba)
+    }
+
     func testLicensedFixtureAndNativeFormatAdmission() throws {
         let font = try EmojiFontInspection.inspect(EmojiFontFixture.data, fileExtension: "ttf", expectedSHA256: EmojiFontFixture.sha256)
         XCTAssertEqual(font.byteCount, 936)

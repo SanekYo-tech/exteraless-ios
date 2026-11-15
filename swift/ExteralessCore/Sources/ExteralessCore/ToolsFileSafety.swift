@@ -26,7 +26,7 @@ public enum ToolsError: Error, LocalizedError, Equatable, Sendable {
         case .invalidRelease: return "The release does not contain a supported iOS IPA asset."
         case .checksumMismatch: return "The SHA-256 checksum does not match. The file was not applied."
         case .incompleteDownload: return "The downloaded file is incomplete or has an unexpected size."
-        case .rollbackFailed: return "Restore could not be rolled back. Plugins must remain paused until recovery succeeds. A recovery record remains on this device."
+        case .rollbackFailed: return "Recovery needs review. Current state and recovery records have been retained. Open Configuration backup → Review recovery before plugins resume."
         }
     }
 }
@@ -44,7 +44,7 @@ public enum ToolsFileSafety {
 
     public static func checkedChild(_ name: String, root: URL) throws -> URL {
         guard root.isFileURL, isComponent(name) else { throw ToolsError.unsafePath }
-        let base = root.standardizedFileURL.resolvingSymlinksInPath()
+        let base = canonicalFileURL(root)
         let child = base.appendingPathComponent(name)
         guard child.resolvingSymlinksInPath().standardizedFileURL.pathComponents == child.pathComponents else {
             throw ToolsError.unsafePath
@@ -52,23 +52,24 @@ public enum ToolsFileSafety {
         return child
     }
 
-    public static func read(_ url: URL, maximumBytes: Int) throws -> Data {
+    static func canonicalFileURL(_ url: URL) -> URL {
+        let url = url.standardizedFileURL
+        #if canImport(Darwin)
+        // Fixed OS aliases only, never a resolution of caller-controlled ancestors.
+        for alias in ["/var", "/tmp", "/etc"] where url.path == alias || url.path.hasPrefix(alias + "/") {
+            return URL(fileURLWithPath: "/private" + url.path, isDirectory: url.hasDirectoryPath)
+        }
+        #endif
+        return url
+    }
+
+    public static func read(_ url: URL, maximumBytes: Int, hooks: ToolsFileOperationHooks = .init()) throws -> Data {
         guard url.isFileURL, maximumBytes > 0 else { throw ToolsError.unsafePath }
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        guard attributes[.type] as? FileAttributeType == .typeRegular else { throw ToolsError.unsafePath }
-        guard let size = attributes[.size] as? NSNumber, size.int64Value <= Int64(maximumBytes) else {
-            throw ToolsError.sizeLimit
-        }
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var data = Data()
-        while true {
-            let chunk = try handle.read(upToCount: min(65_536, maximumBytes - data.count + 1)) ?? Data()
-            if chunk.isEmpty { break }
-            guard chunk.count <= maximumBytes - data.count else { throw ToolsError.sizeLimit }
-            data.append(chunk)
-        }
-        return data
+        #if canImport(Darwin) || canImport(Glibc)
+        return try ToolsReadDescriptor(url, maximumBytes: Int64(maximumBytes), hooks: hooks).readAll(maximumBytes: maximumBytes, hooks: hooks)
+        #else
+        throw ToolsError.unavailable("Descriptor-bound file access is unavailable on this platform.")
+        #endif
     }
 
     /// Reject excessive nesting before Foundation's JSON decoder builds any objects.

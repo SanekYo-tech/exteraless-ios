@@ -98,10 +98,24 @@ public struct ToolsFavoriteStickerArchive: Codable, Equatable, Sendable {
     private struct Envelope: Codable { let format: String; let payload: Data; let sha256: String }
     public func encode() throws -> Data {
         try validate()
-        let payload = try ToolsFileSafety.encode(self)
-        let result = try ToolsFileSafety.encode(Envelope(format: "exteraless.local-favorite-stickers", payload: payload, sha256: ToolsSHA256.hex(payload)))
-        guard result.count <= Self.maximumBytes else { throw ToolsError.sizeLimit }
-        return result
+        var payload = ToolsBoundedJSONWriter(maximumBytes: (Self.maximumBytes / 4) * 3 - 256)
+        try payload.literal("{\"version\":1,\"accounts\":{")
+        for (index, account) in accounts.keys.sorted().enumerated() {
+            if index != 0 { try payload.literal(",") }
+            try payload.string(account); try payload.literal(":[")
+            for (index, sticker) in (accounts[account] ?? []).enumerated() {
+                if index != 0 { try payload.literal(",") }
+                try ToolsFavoriteStickerStorage.append(sticker, to: &payload)
+            }
+            try payload.literal("]")
+        }
+        try payload.literal("}}")
+        var envelope = ToolsBoundedJSONWriter(maximumBytes: Self.maximumBytes)
+        try envelope.literal("{\"format\":\"exteraless.local-favorite-stickers\",\"sha256\":")
+        try envelope.string(ToolsSHA256.hex(payload.data)); try envelope.literal(",\"payload\":\"")
+        guard ((payload.data.count + 2) / 3) * 4 <= envelope.remaining - 2 else { throw ToolsError.sizeLimit }
+        try envelope.append(payload.data.base64EncodedData()); try envelope.literal("\"}")
+        return envelope.data
     }
     public static func decode(_ data: Data) throws -> Self {
         try ToolsFileSafety.checkJSON(data, maximumBytes: maximumBytes)

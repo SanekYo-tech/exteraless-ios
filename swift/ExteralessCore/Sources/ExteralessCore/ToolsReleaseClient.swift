@@ -9,15 +9,29 @@ public struct ToolsDownloadedUpdate: Equatable, Sendable {
     public let size: Int64
 }
 
+public struct ToolsReleaseTransferHooks: Sendable {
+    let afterResponseValidation: @Sendable () -> Void
+    let afterChunkWrite: @Sendable () -> Void
+    let afterCleanup: @Sendable () -> Void
+    public init(afterResponseValidation: @escaping @Sendable () -> Void = {},
+                afterChunkWrite: @escaping @Sendable () -> Void = {}, afterCleanup: @escaping @Sendable () -> Void = {}) {
+        self.afterResponseValidation = afterResponseValidation
+        self.afterChunkWrite = afterChunkWrite; self.afterCleanup = afterCleanup
+    }
+}
+
 /// Public GitHub Releases only. This client never authenticates, installs, signs,
 /// publishes a release, or executes an asset. The caller owns the downloaded IPA.
 public final class ToolsReleaseClient: @unchecked Sendable {
     public let repository: ToolsReleaseRepository
     private let configuration: URLSessionConfiguration
+    private let transferHooks: ToolsReleaseTransferHooks
     public static let maximumAssetBytes: Int64 = 1_024 * 1_024 * 1_024
 
-    public init(repository: ToolsReleaseRepository = .application, configuration: URLSessionConfiguration = .ephemeral) {
+    public init(repository: ToolsReleaseRepository = .application, configuration: URLSessionConfiguration = .ephemeral,
+                transferHooks: ToolsReleaseTransferHooks = .init()) {
         self.repository = repository
+        self.transferHooks = transferHooks
         let configuration = configuration.copy() as! URLSessionConfiguration
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 900
@@ -37,7 +51,8 @@ public final class ToolsReleaseClient: @unchecked Sendable {
     }
 
     public func download(_ release: ToolsGitHubRelease, directory: URL,
-                         progress: @escaping @Sendable (Int64, Int64) -> Void) async throws -> ToolsDownloadedUpdate {
+                          progress: @escaping @Sendable (Int64, Int64) -> Void) async throws -> ToolsDownloadedUpdate {
+        try Task.checkCancellation()
         let asset = release.asset
         guard repository.acceptsAssetURL(asset.url), ToolsFileSafety.isComponent(asset.name),
               asset.name.utf8.count <= 200, asset.name.lowercased().hasSuffix(".ipa"),
@@ -51,13 +66,15 @@ public final class ToolsReleaseClient: @unchecked Sendable {
         let complete = try ToolsFileSafety.checkedChild(asset.name, root: folder)
         do {
             let transfer = ToolsReleaseTransfer(configuration: configuration, maximumBytes: asset.size,
-                                                output: partial, expectedSize: asset.size, progress: progress)
+                                                output: partial, expectedSize: asset.size, progress: progress, hooks: transferHooks)
             let result = try await transfer.run(Self.request(asset.url, json: false))
             try Task.checkCancellation()
             guard result.count == asset.size else { throw ToolsError.incompleteDownload }
             guard result.digest == checksum else { throw ToolsError.checksumMismatch }
             guard result.data.prefix(4) == Data([0x50, 0x4b, 0x03, 0x04]) else { throw ToolsError.invalidRelease }
+            try Task.checkCancellation()
             try FileManager.default.moveItem(at: partial, to: complete)
+            try Task.checkCancellation()
             return ToolsDownloadedUpdate(url: complete, sha256: result.digest, size: result.count)
         } catch {
             try? FileManager.default.removeItem(at: folder)
@@ -133,25 +150,38 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
     private let output: URL?
     private let expectedSize: Int64?
     private let progress: (@Sendable (Int64, Int64) -> Void)?
-    private let lock = NSLock()
+    // Recursive only so a progress callback can cancel its own task. The serial
+    // delegate owns the handle; cancellation shares the lock at each I/O admission.
+    private let lock = NSRecursiveLock()
+    private let queue: OperationQueue
+    private let hooks: ToolsReleaseTransferHooks
+    private var session: URLSession?
     private var task: URLSessionDataTask?
     private var cancelled = false
     // The remaining fields are confined to the serial URLSession delegate queue.
     private var continuation: CheckedContinuation<Result, Error>?
-    private var handle: FileHandle?
+    private var handle: ToolsReleaseOutput?
     private var data = Data()
     private var count: Int64 = 0
     private var contentHash = ToolsSHA256()
     private var failure: Error?
     private var previousPercent = -1
+    private var finished = false
+    private var createdOutput = false
+    private var cleanupFailure: Error?
 
     init(configuration: URLSessionConfiguration, maximumBytes: Int64, output: URL? = nil,
-         expectedSize: Int64? = nil, progress: (@Sendable (Int64, Int64) -> Void)? = nil) {
+         expectedSize: Int64? = nil, progress: (@Sendable (Int64, Int64) -> Void)? = nil,
+         hooks: ToolsReleaseTransferHooks = .init()) {
         self.configuration = configuration
         self.maximumBytes = maximumBytes
         self.output = output
         self.expectedSize = expectedSize
         self.progress = progress
+        self.hooks = hooks
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        self.queue = queue
     }
 
     func run(_ request: URLRequest) async throws -> Result {
@@ -164,9 +194,8 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
                     return
                 }
                 self.continuation = continuation
-                let queue = OperationQueue()
-                queue.maxConcurrentOperationCount = 1
                 let session = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
+                self.session = session
                 let task = session.dataTask(with: request)
                 self.task = task
                 lock.unlock()
@@ -179,17 +208,17 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
         lock.lock()
         cancelled = true
         let task = task
-        let continuation = self.continuation
-        self.continuation = nil
         lock.unlock()
         task?.cancel()
-        // Do not depend on a provider/delegate sending another event to release
-        // the caller. The serial delegate still closes its file on completion.
-        continuation?.resume(throwing: CancellationError())
+        // Do not wait for a provider completion, but DO drain the current delegate
+        // operation and close/unlink its file before resuming the caller.
+        queue.addOperation { self.finish(error: CancellationError()) }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled, !finished else { completionHandler(nil); return }
         guard let url = request.url, url.scheme == "https", url.user == nil, url.password == nil,
               url.port == nil || url.port == 443,
               ["api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "github-releases.githubusercontent.com"].contains(url.host?.lowercased() ?? "") else {
@@ -206,6 +235,10 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
+        lock.lock()
+        let admitted = !cancelled && !finished
+        lock.unlock()
+        guard admitted else { completionHandler(.cancel); return }
         guard let http = response as? HTTPURLResponse else {
             failure = ToolsError.invalidRelease
             completionHandler(.cancel)
@@ -230,12 +263,13 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
             completionHandler(.cancel)
             return
         }
+        hooks.afterResponseValidation()
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled, !finished else { completionHandler(.cancel); return }
         if let output {
             do {
-                guard FileManager.default.createFile(atPath: output.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
-                    throw ToolsError.unavailable("Could not create the update file.")
-                }
-                handle = try FileHandle(forWritingTo: output)
+                handle = try ToolsReleaseOutput(output)
+                createdOutput = true
             } catch {
                 failure = error
                 completionHandler(.cancel)
@@ -246,7 +280,8 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive chunk: Data) {
-        guard failure == nil else { return }
+        lock.lock(); defer { lock.unlock() }
+        guard !cancelled, !finished, failure == nil else { return }
         guard Int64(chunk.count) <= maximumBytes - count else {
             failure = ToolsError.sizeLimit
             dataTask.cancel()
@@ -259,6 +294,8 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
             } else { data.append(chunk) }
             count += Int64(chunk.count)
             contentHash.update(chunk)
+            hooks.afterChunkWrite()
+            guard !cancelled else { return }
             if let expectedSize, expectedSize > 0 {
                 let percent = Int(count * 100 / expectedSize)
                 if percent != previousPercent {
@@ -273,20 +310,76 @@ private final class ToolsReleaseTransfer: NSObject, URLSessionDataDelegate, @unc
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        do { try handle?.synchronize(); try handle?.close() }
-        catch { if failure == nil { failure = error } }
-        handle = nil
-        lock.lock()
+        finish(error: error)
+        session.finishTasksAndInvalidate()
+    }
+
+    func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        lock.lock(); defer { lock.unlock() }
+        if cancelled || failure != nil || cleanupFailure != nil { removePartial() }
+    }
+
+    private func finish(error: Error?) {
+        lock.lock(); defer { lock.unlock() }
+        guard !finished else {
+            // A final provider drain retries cleanup after any transient unlink error.
+            if cancelled || failure != nil { removePartial() }
+            return
+        }
+        finished = true
+        if let expectedSize, count != expectedSize, error == nil, failure == nil, !cancelled { failure = ToolsError.incompleteDownload }
+        if !cancelled && failure == nil && error == nil {
+            do { try handle?.synchronize() } catch { failure = error }
+        }
+        do { try handle?.close() } catch { if failure == nil { failure = error } }
+        if cancelled || failure != nil || error != nil { removePartial() }
+        else { handle = nil }
         let continuation = self.continuation
         self.continuation = nil
         let wasCancelled = cancelled
         self.task = nil
-        lock.unlock()
-        session.finishTasksAndInvalidate()
-        if wasCancelled { continuation?.resume(throwing: CancellationError()) }
+        let session = self.session
+        self.session = nil
+        session?.invalidateAndCancel()
+        hooks.afterCleanup()
+        if let cleanupFailure { continuation?.resume(throwing: cleanupFailure) }
+        else if wasCancelled { continuation?.resume(throwing: CancellationError()) }
         else if let failure { continuation?.resume(throwing: failure) }
         else if let error { continuation?.resume(throwing: error) }
         else if let expectedSize, count != expectedSize { continuation?.resume(throwing: ToolsError.incompleteDownload) }
         else { continuation?.resume(returning: Result(data: data, count: count, digest: contentHash.hexDigest())) }
     }
+
+    private func removePartial() {
+        guard createdOutput, let handle else { return }
+        do {
+            try handle.remove()
+            createdOutput = false
+            self.handle = nil
+            cleanupFailure = nil
+        } catch {
+            cleanupFailure = ToolsError.unavailable("The cancelled update file could not be removed (code \((error as NSError).code)).")
+        }
+    }
+}
+
+/// The delegate retains this owner through final drain, even after the fd closes.
+/// Unlink is relative to the pinned parent and restricted to the created inode.
+private final class ToolsReleaseOutput {
+    #if canImport(Darwin) || canImport(Glibc)
+    private let writer: ToolsWriteDescriptor
+    init(_ url: URL) throws {
+        writer = try ToolsWriteDescriptor(parent: ToolsDirectoryDescriptor.open(url.deletingLastPathComponent()), name: url.lastPathComponent)
+    }
+    func write(contentsOf data: Data) throws { try writer.write(data) }
+    func synchronize() throws { try writer.synchronize() }
+    func close() throws { try writer.close() }
+    func remove() throws { try writer.discardChecked() }
+    #else
+    init(_ url: URL) throws { throw ToolsError.unavailable("Descriptor-bound update downloads are unavailable on this platform.") }
+    func write(contentsOf data: Data) throws { throw ToolsError.unsafePath }
+    func synchronize() throws { throw ToolsError.unsafePath }
+    func close() throws {}
+    func remove() throws {}
+    #endif
 }

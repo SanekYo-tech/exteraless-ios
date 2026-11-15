@@ -28,8 +28,8 @@ public enum AppearanceFeatures {
             androidSymbols: ["AppearanceConfig.senderMiniAvatars", "DialogCell.addSenderAvatar"]
         ),
         ClientSettingDefinition(
-            key: "appearance.centerActionBarTitle", title: "Center chat-list title", section: "Appearance · Header",
-            defaultValue: .bool(false), explanation: "Aligns the chat-list title within the space left by the navigation buttons.",
+            key: "appearance.centerActionBarTitle", title: "Center appearance headers", section: "Appearance · Header",
+            defaultValue: .bool(false), explanation: "Centers titles inside the native action-safe lane on the surfaces chosen by Centered header scope.",
             androidSymbols: ["NaConfig.centerActionBarTitle", "AppearanceConfig.setCenterTitle"]
         ),
         ClientSettingDefinition(
@@ -106,12 +106,12 @@ public enum AppearanceFeatures {
                 ClientSettingOption(value: .integer(2), title: "Names with icons"),
                 ClientSettingOption(value: .integer(0), title: "Names only"),
                 ClientSettingOption(value: .integer(1), title: "Icons only")
-            ], explanation: "Uses a folder’s leading emoji, or the native folder symbol. VoiceOver keeps the full folder name.",
+            ], explanation: "Uses a folder’s leading emoji, or the native folder symbol. Icons-only mode puts the selected folder name in the chat-list header; VoiceOver keeps full tab names.",
             androidSymbols: ["NekoConfig.tabsTitleType", "OpenExteraAppearanceActivity.TAB_TITLE_ORDER"]
         ),
         ClientSettingDefinition(
             key: "appearance.ignoreUnreadCount", title: "Folder unread counters", section: "Appearance · Folders",
-            defaultValue: .integer(0), options: [
+            defaultValue: .integer(1), options: [
                 ClientSettingOption(value: .integer(0), title: "All"),
                 ClientSettingOption(value: .integer(1), title: "Unmuted"),
                 ClientSettingOption(value: .integer(2), title: "Off")
@@ -180,7 +180,7 @@ public enum AppearanceFeatures {
         ClientSettingDefinition(
             key: "appearance.predictiveBackIntensity", title: "Navigation parallax intensity", section: "Appearance · Navigation",
             defaultValue: .integer(100), minimum: 0, maximum: 200, step: 1,
-            explanation: "iOS adaptation: scales the background screen’s parallax in standard push/back transitions. 100% preserves stock geometry. Gesture thresholds, springs, flat modals and profile expansions remain native.", androidSymbols: ["UtilsConfig.predictiveBackIntensity"]
+            explanation: "iOS adaptation: scales background parallax in standard push/back transitions; Paired slide uses full-width translation. 100% preserves stock parallax. Gesture thresholds, flat modals and profile expansions remain native.", androidSymbols: ["UtilsConfig.predictiveBackIntensity"]
         ),
         ClientSettingDefinition(
             key: "appearance.mainMenuLayout", title: "Main menu layout", section: "Appearance · Navigation",
@@ -204,7 +204,7 @@ public enum AppearanceFeatures {
                 ClientSettingOption(value: .integer(0), title: "Hidden"),
                 ClientSettingOption(value: .integer(1), title: "Lines"),
                 ClientSettingOption(value: .integer(2), title: "Separate cards")
-            ], explanation: "Applied to Exteraless appearance and main-menu lists.",
+            ], explanation: "Card styling applies to Exteraless lists. Hidden also suppresses native list and context-menu separators through a reversible presentation palette.",
             androidSymbols: ["AppearanceConfig.dividerStyle"]
         ),
         ClientSettingDefinition(
@@ -235,7 +235,7 @@ public enum AppearanceFeatures {
             defaultValue: .string(""), explanation: "Pack opened by Edit Selected Icon Pack. Empty turns editing off.",
             androidSymbols: ["IconPacksConfig.editingPackId"]
         )
-    ] + headerDefinitions
+    ] + headerDefinitions + AppearanceAdditionalFeatures.definitions + AppearanceAdditionalFeatures.settingsSectionDefinitions
 
     private static let headerDefinitions: [ClientSettingDefinition] = [
         ClientSettingDefinition(key: "appearance.titleText", title: "Chat-list title", section: "Appearance · Header", defaultValue: .integer(0), options: [

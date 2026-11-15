@@ -37,6 +37,19 @@ public struct ToolsBackupInspection: Sendable {
     public let ignoredKeys: [String]
     public var settingCount: Int { settings.count + resetting.count }
     public var pluginFileCount: Int { payload.pluginSettings.count }
+    public var admittedKeys: Set<String> { Set(settings.keys).union(resetting) }
+
+    /// The inspected write set is authoritative. Raw ignored payload fields cannot
+    /// become admitted simply because more definitions exist later.
+    public func admittedPayload(includePluginSettings: Bool = true) throws -> ToolsBackupPayload {
+        guard Set(settings.keys).isDisjoint(with: resetting) else { throw ToolsError.invalidArchive("Conflicting admitted writes/resets.") }
+        var values = settings.filter { ToolsBackupPolicy.isPortableClientKey($0.key) }
+        let resets = resetting.filter(ToolsBackupPolicy.isPortableClientKey)
+        for key in resets { values[key] = payload.clientSettings[key] ?? .null }
+        return ToolsBackupPayload(createdAt: payload.createdAt, appVersion: payload.appVersion, clientSettings: values,
+            pluginSettings: includePluginSettings ? payload.pluginSettings : [],
+            clientStoredKeys: Set(settings.keys).intersection(values.keys))
+    }
 }
 
 /// The caller pins this location for an operation. Only already-known, non-secret
@@ -46,11 +59,42 @@ public struct ToolsBackupPluginLocation: Sendable {
     public let directory: URL
     public let exportableFields: [String: Set<String>]
     public let schemas: [String: ToolsPluginSettingsSchema]
+    public let evidence: [String: ToolsPluginSchemaEvidence]
+    public let validity: (any ToolsPluginSchemaValidity)?
 
-    public init(directory: URL, exportableFields: [String: Set<String>], schemas: [String: ToolsPluginSettingsSchema] = [:]) {
+    public init(directory: URL, exportableFields: [String: Set<String>], schemas: [String: ToolsPluginSettingsSchema] = [:],
+                evidence: [String: ToolsPluginSchemaEvidence] = [:], validity: (any ToolsPluginSchemaValidity)? = nil) {
         self.directory = directory
         self.exportableFields = exportableFields
         self.schemas = schemas
+        self.evidence = evidence
+        self.validity = validity
+    }
+
+    func withSchemaAuthority<T>(files: Set<String>, use: ToolsPluginSchemaUse, _ body: () throws -> T) throws -> T {
+        if files.isEmpty { return try body() }
+        guard let validity else { throw ToolsError.invalidArchive("Plugin backup requires current native schema evidence.") }
+        var selected: [String: ToolsPluginSchemaEvidence] = [:]
+        for file in files {
+            guard let evidence = evidence[file], evidence.guarantee == .nativeImmutable,
+                  let schema = schemas[file], schema.renderedJSONSHA256 == evidence.schemaSHA256,
+                  exportableFields[file] == Set(schema.publicFields.keys) else {
+                throw ToolsError.invalidArchive("Dynamic or unproven plugin schemas cannot authorize backup fields.")
+            }
+            try evidence.validate()
+            selected[file] = evidence
+        }
+        return try validity.withCurrent(evidence: selected, use: use, body)
+    }
+
+    /// Called inside withSchemaAuthority, using hashes of the same fd-bound bytes
+    /// that are read/staged. It does not reread or materialize every settings file.
+    func validateSnapshot(file: String, settingsSHA256: String?) throws {
+        guard let evidence = evidence[file], evidence.settingsSHA256 == settingsSHA256 else {
+            throw ToolsError.invalidArchive("Plugin settings changed after the schema snapshot.")
+        }
+        let source = try ToolsFileSafety.read(evidence.sourceURL, maximumBytes: 1_024 * 1_024)
+        guard ToolsSHA256.hex(source) == evidence.sourceSHA256 else { throw ToolsError.invalidArchive("Plugin source changed after the schema snapshot.") }
     }
 }
 
@@ -59,6 +103,13 @@ public enum ToolsBackupPolicy {
     public static let maximumPayloadBytes = 16 * 1_024 * 1_024
     public static let maximumPluginFileBytes = 1_024 * 1_024
     public static let maximumPluginFiles = 256
+
+    /// Native-owned identity tuples/pins and key-export consent must never be
+    /// reconstructed from a public archive. Apply this after alias resolution too.
+    public static func isPortableClientKey(_ canonicalKey: String) -> Bool {
+        let key = canonicalKey.lowercased()
+        return key != "clientapi" && !key.hasPrefix("clientapi.") && key != "cloud.includeapikeys"
+    }
 
     public static func isSensitiveKey(_ key: String) -> Bool {
         let normalized = key.lowercased().filter { $0.isASCII && $0.isLetter }
@@ -100,7 +151,7 @@ public enum ToolsBackupPolicy {
     public static func validateLocation(_ location: ToolsBackupPluginLocation) throws {
         // Deliberately refuse the service root (which also holds executable plugins),
         // account directories and a symlinked settings directory.
-        let root = location.directory.standardizedFileURL
+        let root = ToolsFileSafety.canonicalFileURL(location.directory)
         guard root.isFileURL, root.lastPathComponent == "settings",
               root.resolvingSymlinksInPath().pathComponents == root.pathComponents else {
             throw ToolsError.unsafePath
@@ -144,52 +195,107 @@ public enum ToolsBackupArchive {
     }
 
     public static func export(snapshot: ClientSettingsSnapshot, appVersion: String,
-                              plugins: ToolsBackupPluginLocation? = nil, date: Date = Date()) throws -> Data {
+                              plugins: ToolsBackupPluginLocation? = nil, date: Date = Date(),
+                              limits: ToolsBackupLimits = .init(), fileHooks: ToolsFileOperationHooks = .init()) throws -> Data {
         let snapshot = try ToolsBackupSettingsSnapshot(snapshot)
         return try export(settings: snapshot.values, definitions: snapshot.definitions, appVersion: appVersion, plugins: plugins,
-                          date: date, storedKeys: snapshot.storedKeys)
+                          date: date, storedKeys: snapshot.storedKeys, limits: limits, fileHooks: fileHooks)
     }
 
     public static func export(settings: [String: ClientSettingValue], definitions: [ClientSettingDefinition],
                               appVersion: String, plugins: ToolsBackupPluginLocation? = nil, date: Date = Date(),
-                              storedKeys: Set<String>? = nil) throws -> Data {
+                              storedKeys: Set<String>? = nil, limits: ToolsBackupLimits = .init(),
+                              fileHooks: ToolsFileOperationHooks = .init()) throws -> Data {
+        try limits.validate()
         var values: [String: ClientSettingValue] = [:]
-        for definition in definitions where !definition.isSecret {
+        for definition in definitions where !definition.isSecret && ToolsBackupPolicy.isPortableClientKey(definition.key) {
             if let value = settings[definition.key] {
                 values[definition.key] = try definition.validatedValue(value)
             }
         }
-        var files: [ToolsBackupPluginSettings] = []
+        let payload = ToolsBackupPayload(createdAt: ISO8601DateFormatter().string(from: date), appVersion: appVersion,
+            clientSettings: values, clientStoredKeys: (storedKeys ?? Set(values.keys)).intersection(values.keys))
+        var writer = try payloadPrefix(payload, limits: limits)
+        var first = true
+        var sourceBytes = 0
         if let plugins {
             try ToolsBackupPolicy.validateLocation(plugins)
-            for path in plugins.exportableFields.keys.sorted() {
-                let url = try ToolsFileSafety.checkedChild(path, root: plugins.directory)
-                guard FileManager.default.fileExists(atPath: url.path) else { continue }
-                let data = try ToolsFileSafety.read(url, maximumBytes: ToolsBackupPolicy.maximumPluginFileBytes)
-                let object = try decodeSettings(data)
-                let keys = plugins.exportableFields[path] ?? []
-                let safe = ToolsBackupPolicy.safeValues(object.filter { keys.contains($0.key) })
-                try plugins.schemas[path]?.validate(safe)
-                if !safe.isEmpty { files.append(.init(path: path, values: safe)) }
+            try plugins.withSchemaAuthority(files: Set(plugins.exportableFields.keys), use: .export) {
+            #if canImport(Darwin) || canImport(Glibc)
+            if FileManager.default.fileExists(atPath: plugins.directory.path) {
+                let directory = try ToolsDirectoryDescriptor.open(plugins.directory)
+                for path in plugins.exportableFields.keys.sorted() {
+                    let url = try ToolsFileSafety.checkedChild(path, root: plugins.directory)
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        try plugins.validateSnapshot(file: path, settingsSHA256: nil)
+                        continue
+                    }
+                    // Charge the remaining aggregate budget BEFORE opening/reading
+                    // or materializing this JSON. No array of all source files exists.
+                    let available = min(limits.pluginFileBytes, min(writer.remaining - path.utf8.count - 32, limits.payloadBytes - sourceBytes))
+                    guard available > 0 else { throw ToolsError.sizeLimit }
+                    let input = try ToolsReadDescriptor(url, maximumBytes: Int64(available), hooks: fileHooks, parent: directory)
+                    sourceBytes += Int(input.size)
+                    let data = try input.readAll(maximumBytes: available, hooks: fileHooks)
+                    try plugins.validateSnapshot(file: path, settingsSHA256: ToolsSHA256.hex(data))
+                    let object = try decodeSettings(data)
+                    let keys = plugins.exportableFields[path] ?? []
+                    let safe = ToolsBackupPolicy.safeValues(object.filter { keys.contains($0.key) })
+                    try plugins.schemas[path]?.validate(safe)
+                    if !safe.isEmpty {
+                        try appendPlugin(.init(path: path, values: safe), to: &writer, first: first, limits: limits)
+                        first = false
+                    }
+                    try input.verify()
+                }
+                try directory.verify()
+            } else {
+                for path in plugins.exportableFields.keys { try plugins.validateSnapshot(file: path, settingsSHA256: nil) }
+            }
+            #else
+            throw ToolsError.unavailable("Descriptor-bound plugin export is unavailable on this platform.")
+            #endif
             }
         }
-        let payload = ToolsBackupPayload(createdAt: ISO8601DateFormatter().string(from: date),
-                                         appVersion: appVersion, clientSettings: values, pluginSettings: files,
-                                         clientStoredKeys: (storedKeys ?? Set(values.keys)).intersection(Set(values.keys)))
-        return try encode(payload)
+        try writer.literal("]}")
+        return try envelope(writer.data, limits: limits)
     }
 
-    public static func encode(_ payload: ToolsBackupPayload) throws -> Data {
-        let payload = ToolsBackupPayload(createdAt: payload.createdAt, appVersion: payload.appVersion, clientSettings: payload.clientSettings,
-                                         pluginSettings: payload.pluginSettings, clientStoredKeys: payload.clientStoredKeys ?? Set(payload.clientSettings.keys))
+    public static func encode(_ payload: ToolsBackupPayload, limits: ToolsBackupLimits = .init()) throws -> Data {
+        try limits.validate()
+        guard payload.clientSettings.keys.allSatisfy(ToolsBackupPolicy.isPortableClientKey) else {
+            throw ToolsError.invalidArchive("API identity and key-export permission belong to their native editors.")
+        }
+        return try envelope(encodedPayload(payload, limits: limits), limits: limits)
+    }
+
+    public static func revalidate(_ inspection: ToolsBackupInspection, definitions: [ClientSettingDefinition],
+                                  secretKeys: Set<String> = []) throws -> ToolsBackupInspection {
+        let payload = try inspection.admittedPayload()
         try validatePayload(payload)
-        let bytes = try ToolsFileSafety.encode(payload)
-        guard bytes.count <= ToolsBackupPolicy.maximumPayloadBytes else { throw ToolsError.sizeLimit }
-        try ToolsFileSafety.checkJSON(bytes, maximumBytes: ToolsBackupPolicy.maximumPayloadBytes)
-        let envelope = Envelope(format: "exteraless.settings", version: 2, payload: bytes, sha256: ToolsSHA256.hex(bytes))
-        let data = try ToolsFileSafety.encode(envelope)
-        guard data.count <= ToolsBackupPolicy.maximumArchiveBytes else { throw ToolsError.sizeLimit }
-        return data
+        let checked = try self.inspection(payload, origin: inspection.origin, definitions: definitions, secretKeys: secretKeys)
+        guard checked.admittedKeys.isSubset(of: inspection.admittedKeys),
+              checked.resetting.isSubset(of: inspection.resetting),
+              Set(checked.settings.keys).isSubset(of: Set(inspection.settings.keys)) else {
+            throw ToolsError.invalidArchive("Revalidation expanded the admitted write set.")
+        }
+        let ignored = Set(inspection.ignoredKeys).union(checked.ignoredKeys)
+            .union(inspection.payload.clientSettings.keys.filter { !checked.admittedKeys.contains($0) })
+        return ToolsBackupInspection(origin: checked.origin, payload: checked.payload, settings: checked.settings,
+                                     resetting: checked.resetting, ignoredKeys: ignored.sorted())
+    }
+
+    private static func envelope(_ bytes: Data, limits: ToolsBackupLimits) throws -> Data {
+        try ToolsFileSafety.checkJSON(bytes, maximumBytes: limits.payloadBytes)
+        var writer = ToolsBoundedJSONWriter(maximumBytes: limits.archiveBytes)
+        try writer.literal("{\"format\":\"exteraless.settings\",\"version\":2,\"sha256\":")
+        try writer.string(ToolsSHA256.hex(bytes))
+        try writer.literal(",\"payload\":\"")
+        let encodedCount = ((bytes.count + 2) / 3) * 4
+        guard encodedCount <= writer.remaining - 2 else { throw ToolsError.sizeLimit }
+        try writer.append(bytes.base64EncodedData())
+        try writer.literal("\"}")
+        return writer.data
     }
 
     public static func inspect(_ data: Data, definitions: [ClientSettingDefinition], secretKeys: Set<String> = []) throws -> ToolsBackupInspection {
@@ -241,6 +347,7 @@ public enum ToolsBackupArchive {
         var resetting = Set<String>()
         var ignored: [String] = []
         for (key, value) in payload.clientSettings {
+            guard ToolsBackupPolicy.isPortableClientKey(key) else { ignored.append(key); continue }
             guard !secretKeys.contains(key) else { throw ToolsError.invalidArchive("Secret settings cannot be restored from a configuration backup.") }
             guard let definition = known[key] else { ignored.append(key); continue }
             guard !definition.isSecret else {
@@ -256,6 +363,10 @@ public enum ToolsBackupArchive {
     }
 
     static func validatePayload(_ payload: ToolsBackupPayload) throws {
+        _ = try encodedPayload(payload, limits: .init())
+    }
+
+    private static func payloadPrefix(_ payload: ToolsBackupPayload, limits: ToolsBackupLimits) throws -> ToolsBoundedJSONWriter {
         guard payload.appVersion.utf8.count <= 128, payload.createdAt.utf8.count <= 64,
               ISO8601DateFormatter().date(from: payload.createdAt) != nil,
               payload.clientSettings.count <= 4_096,
@@ -268,21 +379,47 @@ public enum ToolsBackupArchive {
         if let stored = payload.clientStoredKeys, !stored.isSubset(of: Set(payload.clientSettings.keys)) {
             throw ToolsError.invalidArchive("Stored-key metadata names an absent setting.")
         }
+        var writer = ToolsBoundedJSONWriter(maximumBytes: limits.payloadBytes)
+        try writer.literal("{\"appVersion\":"); try writer.string(payload.appVersion)
+        try writer.literal(",\"createdAt\":"); try writer.string(payload.createdAt)
+        try writer.literal(",\"clientSettings\":"); try writer.value(.object(payload.clientSettings))
+        try writer.literal(",\"clientStoredKeys\":[")
+        for (index, key) in (payload.clientStoredKeys ?? Set(payload.clientSettings.keys)).sorted().enumerated() {
+            if index != 0 { try writer.literal(",") }
+            try writer.string(key)
+        }
+        try writer.literal("],\"pluginSettings\":[")
+        return writer
+    }
+
+    private static func encodedPayload(_ payload: ToolsBackupPayload, limits: ToolsBackupLimits) throws -> Data {
+        var writer = try payloadPrefix(payload, limits: limits)
         var paths = Set<String>()
-        for file in payload.pluginSettings {
+        for (index, file) in payload.pluginSettings.enumerated() {
             try ToolsBackupPolicy.validatePluginPath(file.path)
             guard paths.insert(file.path.lowercased()).inserted else {
                 throw ToolsError.invalidArchive("Duplicate plugin settings path.")
             }
-            guard file.values.count <= 4_096,
-                  file.values.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 && !$0.contains("\0") }),
-                  ToolsBackupPolicy.safeValues(file.values) == file.values else {
+            try appendPlugin(file, to: &writer, first: index == 0, limits: limits)
+        }
+        try writer.literal("]}")
+        return writer.data
+    }
+
+    private static func appendPlugin(_ file: ToolsBackupPluginSettings, to writer: inout ToolsBoundedJSONWriter,
+                                     first: Bool, limits: ToolsBackupLimits) throws {
+        try ToolsBackupPolicy.validatePluginPath(file.path)
+        guard writer.remaining > file.path.utf8.count + 32 else { throw ToolsError.sizeLimit }
+        guard file.values.count <= 4_096,
+                  file.values.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 256 && !$0.contains("\0") }) else {
                 throw ToolsError.invalidArchive("Invalid or secret plugin settings.")
             }
-            guard try ToolsFileSafety.encode(file.values).count <= ToolsBackupPolicy.maximumPluginFileBytes else {
-                throw ToolsError.sizeLimit
-            }
-        }
+        var object = ToolsBoundedJSONWriter(maximumBytes: min(limits.pluginFileBytes, writer.remaining - file.path.utf8.count - 32))
+        try object.value(.object(file.values))
+        guard ToolsBackupPolicy.safeValues(file.values) == file.values else { throw ToolsError.invalidArchive("Secret plugin settings.") }
+        if !first { try writer.literal(",") }
+        try writer.literal("{\"path\":"); try writer.string(file.path)
+        try writer.literal(",\"values\":"); try writer.append(object.data); try writer.literal("}")
     }
 
     static func decodeSettings(_ data: Data) throws -> [String: ClientSettingValue] {
@@ -349,18 +486,26 @@ public enum ToolsLegacyBackup {
         "showResultsBeforeVoting", "cameraStabilization", "cameraMirrorMode", "rememberLastUsedCamera",
         "startWithWideAngleCamera", "staticZoom", "extendedFramesPerSecond", "alwaysSendInHD", "hideCameraTile",
         "preferOriginalQuality", "swipeToPip", "unmuteWithVolumeButtons", "pauseOnMinimizeVoice", "pauseOnMinimizeRound",
-        "titleText", "downloadSpeedBoost", "glassOutlineStyle", "stickerShape", "doubleTapSeekDuration",
+        "titleText", "downloadSpeedBoost", "uploadBoost", "glassOutlineStyle", "stickerShape", "doubleTapSeekDuration",
         "avatarCorners", "sectionRadius", "stickerSize", "hideReactionsInChannels", "hideReactionsInGroups",
         "bottomButton", "dividerStyle", "infiniteScrolling"
     ]
 
     private enum Conversion: Sendable {
-        case identity, inverted, percent, counter, pills, folderName
+        case identity, inverted, percent, counter, pills, folderName, rearCamera, legacyLoader, legacyCrashOptOut
         case integerMap([Int64: Int64])
 
         func importing(_ value: ClientSettingValue) throws -> ClientSettingValue? {
             switch self {
             case .identity: return value
+            case .legacyLoader, .legacyCrashOptOut:
+                guard case let .bool(value) = value else { throw ToolsError.invalidArchive("Expected a legacy migration flag.") }
+                guard value else { return nil }
+                if case .legacyLoader = self { return .integer(1) }
+                return .bool(false)
+            case .rearCamera:
+                guard case let .bool(value) = value else { throw ToolsError.invalidArchive("Expected a legacy camera-facing boolean.") }
+                return .integer(value ? 1 : 0)
             case .folderName:
                 guard case let .string(value) = value else { throw ToolsError.invalidArchive("Expected a legacy folder name.") }
                 return .string(try ToolsSavePathPolicy.customFolder(value))
@@ -402,6 +547,8 @@ public enum ToolsLegacyBackup {
         func exporting(_ value: ClientSettingValue) -> ClientSettingValue? {
             switch self {
             case .identity: return value
+            case .legacyLoader, .legacyCrashOptOut: return nil
+            case .rearCamera: return nil // Migration input only; export the current facing field.
             case .folderName:
                 guard case let .string(value) = value, !value.isEmpty else { return nil }
                 return try? importing(.string(value))
@@ -438,6 +585,11 @@ public enum ToolsLegacyBackup {
         result += [
             Rule(field: "formatTimeWithSeconds", key: "appearance.showSeconds"),
             Rule(field: "customSavePath", key: "tools.customSavePath", conversion: .folderName),
+            Rule(field: "rearVideoMessages", key: "tools.videoMessageCameraFacing", conversion: .rearCamera),
+            Rule(field: "cameraInVideoMessages", key: "tools.videoMessageCameraFacing", conversion: .integerMap([0: 0, 1: 1, 2: 2])),
+            Rule(field: "enhancedFileLoader", key: "tools.downloadSpeedBoost", conversion: .legacyLoader),
+            Rule(field: "disableCrashlyticsCollection", key: "tools.crashReports", conversion: .legacyCrashOptOut),
+            Rule(field: "disableInstantCamera", key: "chats.hideCameraTile"),
             Rule(field: "hidePhoneNumber", key: "privacy.hidePhone"),
             Rule(field: "sectionsSeparatedHeaders", key: "appearance.separateHeaders"),
             Rule(field: "hideSendAsPeer", key: "chats.hideSendAsChannel"),
@@ -474,6 +626,10 @@ public enum ToolsLegacyBackup {
         var known: [String: ClientSettingDefinition] = [:]
         for definition in definitions where !definition.isSecret { known[definition.key] = definition }
         for rule in rules(definitions) {
+            guard ToolsBackupPolicy.isPortableClientKey(rule.key) else { continue }
+            if rule.field == "rearVideoMessages", root[rule.section]?["cameraInVideoMessages"] != nil { continue }
+            if rule.field == "enhancedFileLoader", let explicit = root[rule.section]?["downloadSpeedBoost"], explicit != .integer(0) { continue }
+            if rule.field == "disableInstantCamera", root[rule.section]?["hideCameraTile"] != nil { continue }
             guard let definition = known[rule.key], let value = root[rule.section]?[rule.field],
                   let converted = try rule.conversion.importing(value) else { continue }
             settings[rule.key] = try definition.validatedValue(converted)
@@ -487,8 +643,9 @@ public enum ToolsLegacyBackup {
     public static func export(settings: [String: ClientSettingValue], definitions: [ClientSettingDefinition]) throws -> Data {
         var legacy: [String: [String: ClientSettingValue]] = ["exteraconfig": [:]]
         var known: [String: ClientSettingDefinition] = [:]
-        for definition in definitions where !definition.isSecret { known[definition.key] = definition }
+        for definition in definitions where !definition.isSecret && ToolsBackupPolicy.isPortableClientKey(definition.key) { known[definition.key] = definition }
         for rule in rules(definitions) {
+            guard ToolsBackupPolicy.isPortableClientKey(rule.key) else { continue }
             guard let definition = known[rule.key], let value = settings[rule.key],
                   let converted = rule.conversion.exporting(try definition.validatedValue(value)) else { continue }
             legacy[rule.section, default: [:]][rule.field] = converted

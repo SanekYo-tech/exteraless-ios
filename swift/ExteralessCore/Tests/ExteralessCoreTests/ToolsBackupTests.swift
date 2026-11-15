@@ -83,11 +83,12 @@ final class ToolsBackupTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         let values: [String: ClientSettingValue] = ["style": .string("blue"), "preferences": .object(["density": .integer(2), "api_key": .string("fixture-secret")]), "unknown": .string("private")]
         try ToolsFileSafety.encode(values).write(to: root.appendingPathComponent("fixture.json"))
-        let location = ToolsBackupPluginLocation(directory: root, exportableFields: ["fixture.json": ["style", "preferences"]])
+        let location = try ToolsSchemaFixture.location(directory: root, fields: ["fixture.json": ["style"]])
         let data = try ToolsBackupArchive.export(settings: [:], definitions: definitions, appVersion: "13.1.1", plugins: location)
         let result = try ToolsBackupArchive.inspect(data, definitions: definitions)
         XCTAssertEqual(result.pluginFileCount, 1)
-        XCTAssertEqual(result.payload.pluginSettings[0].values, ["style": .string("blue"), "preferences": .object(["density": .integer(2)])])
+        XCTAssertEqual(result.payload.pluginSettings[0].values, ["style": .string("blue")])
+        XCTAssertEqual(ToolsBackupPolicy.safeValues(values)["preferences"], .object(["density": .integer(2)]))
     }
 
     func testFileReadBoundsAndSymlinkContainment() throws {
@@ -152,7 +153,7 @@ final class ToolsBackupTests: XCTestCase {
         XCTAssertEqual(try ToolsBackupArchive.inspect(bytes, definitions: definitions).settings["privacy.secretChatPreview"], .bool(true))
     }
 
-    func testDurabilityFailureRetainsJournalUntilCASRecovery() throws {
+    func testDurabilityFailureRetainsJournalUntilExplicitKeepCurrentReview() throws {
         let root = try temporaryDirectory()
         let directory = root.appendingPathComponent("settings")
         let settings = TestSettings(definitions: definitions, values: ["tools.cameraStabilization": .bool(false)])
@@ -163,9 +164,16 @@ final class ToolsBackupTests: XCTestCase {
         XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(true))
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("tools-settings-restore.json").path))
-        try ToolsBackupRestorer().recover(settings: settings.access, plugins: .init(directory: directory, exportableFields: [:]))
-        XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(false))
+        let restorer = ToolsBackupRestorer()
+        let location = ToolsBackupPluginLocation(directory: directory, exportableFields: [:])
+        XCTAssertThrowsError(try restorer.recover(settings: settings.access, plugins: location)) { XCTAssertEqual($0 as? ToolsError, .rollbackFailed) }
+        let review = try XCTUnwrap(restorer.inspectRecovery(settings: settings.access, plugins: location))
+        XCTAssertEqual(review.classification, .ambiguous)
+        let decision = try restorer.reconcileKeepingCurrent(review, settings: settings.access, plugins: location)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: decision.evidenceURL.path))
+        XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(true))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("tools-settings-restore.json").path))
+        try restorer.recover(settings: settings.access, plugins: location)
     }
 
     func testClientOnlyJournalRecoveryDoesNotRequirePluginBackup() throws {
@@ -176,7 +184,9 @@ final class ToolsBackupTests: XCTestCase {
             "target": ["values": ["tools.cameraStabilization": true], "storedKeys": ["tools.cameraStabilization"]],
             "phase": "clientPending", "clientWrite": "uncertain"]
         try JSONSerialization.data(withJSONObject: journal).write(to: root.appendingPathComponent("tools-settings-restore.json"))
-        let settings = TestSettings(definitions: definitions, values: ["tools.cameraStabilization": .bool(true)])
+        // This fixture is specifically an already-before readonly confirmation.
+        // Pending + target has no authorship proof (covered by the real-Core cases).
+        let settings = TestSettings(definitions: definitions, values: [:])
         try ToolsBackupRestorer().recover(settings: settings.access, plugins: .init(directory: directory, exportableFields: [:]))
         XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(false))
         XCTAssertFalse(try settings.access.snapshot().storedKeys.contains("tools.cameraStabilization"))
@@ -184,7 +194,7 @@ final class ToolsBackupTests: XCTestCase {
     }
 
     #if canImport(Darwin)
-    func testInterruptedRestoreJournalRecoversBeforeRuntimeResumes() throws {
+    func testInterruptedPluginRestoreDoesNotInferSwapOwnershipFromTargetHashes() throws {
         let root = try temporaryDirectory()
         let directory = root.appendingPathComponent("settings")
         let id = UUID()
@@ -202,10 +212,10 @@ final class ToolsBackupTests: XCTestCase {
             "phase": "clientPending", "clientWrite": "uncertain"]
         try JSONSerialization.data(withJSONObject: journal).write(to: root.appendingPathComponent("tools-settings-restore.json"))
         let settings = TestSettings(definitions: definitions, values: ["tools.cameraStabilization": .bool(true)])
-        try ToolsBackupRestorer().recover(settings: settings.access, plugins: .init(directory: directory, exportableFields: ["fixture.json": ["style"]]))
-        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("fixture.json")), original)
-        XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(false))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: backup.path))
+        XCTAssertThrowsError(try ToolsBackupRestorer().recover(settings: settings.access, plugins: .init(directory: directory, exportableFields: ["fixture.json": ["style"]])))
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("fixture.json")), changed)
+        XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(true))
+        XCTAssertEqual(try Data(contentsOf: backup.appendingPathComponent("fixture.json")), original)
     }
 
     func testPluginSwapFailureRollsBackEntireConfigurationAndPreservesOtherFiles() throws {
@@ -217,7 +227,8 @@ final class ToolsBackupTests: XCTestCase {
         let settings = TestSettings(definitions: definitions, values: ["tools.cameraStabilization": .bool(false)])
         let archive = try ToolsBackupArchive.inspect(ToolsBackupArchive.encode(payload(files: [.init(path: "fixture.json", values: ["style": .string("new")])])), definitions: definitions)
         let restorer = ToolsBackupRestorer(beforeSettingsCommit: { throw ToolsError.unavailable("injected write failure") })
-        XCTAssertThrowsError(try restorer.restore(archive, settings: settings.access, plugins: .init(directory: directory, exportableFields: ["fixture.json": ["style"]])))
+        let location = try ToolsSchemaFixture.location(directory: directory, fields: ["fixture.json": ["style"]])
+        XCTAssertThrowsError(try restorer.restore(archive, settings: settings.access, plugins: location))
         XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("fixture.json")), original)
         XCTAssertEqual(try settings.access.snapshot().values["tools.cameraStabilization"], .bool(false))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("tools-settings-restore.json").path))
@@ -230,7 +241,8 @@ final class ToolsBackupTests: XCTestCase {
         try ToolsFileSafety.encode(["style": ClientSettingValue.string("old"), "token": .string("local-only")]).write(to: directory.appendingPathComponent("fixture.json"))
         let settings = TestSettings(definitions: definitions, values: ["tools.cameraStabilization": .bool(false)])
         let archive = try ToolsBackupArchive.inspect(ToolsBackupArchive.encode(payload(files: [.init(path: "fixture.json", values: ["style": .string("new")])])), definitions: definitions)
-        let result = try ToolsBackupRestorer().restore(archive, settings: settings.access, plugins: .init(directory: directory, exportableFields: ["fixture.json": ["style"]]))
+        let location = try ToolsSchemaFixture.location(directory: directory, fields: ["fixture.json": ["style"]])
+        let result = try ToolsBackupRestorer().restore(archive, settings: settings.access, plugins: location)
         let values = try ToolsBackupArchive.decodeSettings(Data(contentsOf: directory.appendingPathComponent("fixture.json")))
         XCTAssertEqual(values["style"], .string("new"))
         XCTAssertEqual(values["token"], .string("local-only"))
@@ -387,6 +399,9 @@ private final class TestSettings: @unchecked Sendable {
     func nativeEdit(_ key: String, value: ClientSettingValue?) { lock.lock(); values[key] = value; lock.unlock() }
     var access: ToolsBackupSettingsAccess {
         .init(snapshot: {
+            self.lock.lock(); defer { self.lock.unlock() }
+            return ToolsBackupSettingsSnapshot(definitions: self.definitions, values: self.values, storedKeys: Set(self.values.keys))
+        }, readCurrent: {
             self.lock.lock(); defer { self.lock.unlock() }
             return ToolsBackupSettingsSnapshot(definitions: self.definitions, values: self.values, storedKeys: Set(self.values.keys))
         }, applyAtomically: { values, resetting, expected in

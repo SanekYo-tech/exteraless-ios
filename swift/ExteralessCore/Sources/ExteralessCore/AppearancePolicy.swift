@@ -68,6 +68,10 @@ public enum AppearanceTabPolicy {
 }
 
 public enum AppearanceFolderPolicy {
+    /// NaConfig.getIgnoreUnreadCount defaults IgnoreMutedCount to true even on a
+    /// fresh install. Explicit mode 0 is still All, never a migration sentinel.
+    public static let defaultUnreadMode = 1
+
     public static func unreadCount(all: Int, unmuted: Int, mode: Int) -> Int {
         switch mode {
         case 1: return min(max(0, all), max(0, unmuted))

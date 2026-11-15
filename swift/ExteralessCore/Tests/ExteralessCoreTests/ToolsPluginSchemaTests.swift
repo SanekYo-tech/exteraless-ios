@@ -17,7 +17,8 @@ final class ToolsPluginSchemaTests: XCTestCase {
         let bytes = Data("[{\"type\":\"switch\",\"key\":\"enabled\"}]".utf8)
         try cache.record(fileName: "fixture.json", owner: "generation-1", cachedNativeSettingsJSON: bytes)
         XCTAssertTrue(try cache.location(directory: root, activeOwners: ["fixture.json": "generation-2"]).exportableFields.isEmpty)
-        XCTAssertEqual(try cache.location(directory: root, activeOwners: ["fixture.json": "generation-1"]).exportableFields["fixture.json"], ["enabled"])
+        XCTAssertTrue(try cache.location(directory: root, activeOwners: ["fixture.json": "generation-1"]).exportableFields.isEmpty,
+                      "Epoch matching without native evidence/validity is not export permission")
         XCTAssertThrowsError(try cache.record(fileName: "fixture.json", owner: "generation-1", cachedNativeSettingsJSON: Data("[]not-json".utf8)))
         XCTAssertTrue(try cache.location(directory: root, activeOwners: ["fixture.json": "generation-1"]).exportableFields.isEmpty)
     }
