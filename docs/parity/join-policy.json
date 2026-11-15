@@ -1,5 +1,33 @@
 {
   "schema_version": 1,
+  "individual_manifests": [
+    {"kind":"sdk","owner":"core-api","path":"docs/wave-2/sdk-symbols/core-api.json","sha256":"27d04bd9b7d39fff971842592982445f2d39e3cf5bda4996eca9ba0b6ee6c783","expected_count":249,"captured_revision":"e16f380836c10de3fb1d08f468f1242788eb245d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Code/source/test lines are captured Git e16; inventory is Git 9bf; owner boundary remains authoritative."},
+    {"kind":"sdk","owner":"utilities","path":"docs/wave-2/sdk-symbols/utilities.json","sha256":"2ac21bccf6e5ca7046bd7a6060c15b1bcebcc44fe4403dd1d39a75af018f16a0","expected_count":267,"captured_revision":"9bfce05f708fba472ca942bcfe355914847a347d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Mixed worktree read; each author's raw hash, not HEAD alone, defines the captured bytes."},
+    {"kind":"sdk","owner":"elyx","path":"docs/wave-2/sdk-symbols/elyx.json","sha256":"f4e52c05d14eda15c8278c972fdbca16aecd320637e3f19b586db4ed5853ae95","expected_count":262,"captured_revision":"9bfce05f708fba472ca942bcfe355914847a347d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Mixed worktree read; later archive/gen/dev fixes do not replace these captured claims."},
+    {"kind":"sdk","owner":"newui","path":"docs/wave-2/sdk-symbols/newui.json","sha256":"2d07544d4806b466d6d3969191ccb88148d4efc027c6cd07210d6a247d41e400","expected_count":147,"captured_revision":"9bfce05f708fba472ca942bcfe355914847a347d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Mixed worktree read; Manager Custom/alias remediation is a later source follow-up."},
+    {"kind":"module","owner":"module-general","module_id":"module.general","path":"docs/wave-2/module-routes/general.json","sha256":"53a522771fede9455b8d4a8c02f063cfae2604f2ad7542f1c94b77aee69fcae7","expected_count":14,"captured_revision":"d7d499f70ee9c564d089b362c28d26423291c3b8","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Frozen coordinator JSON supplies d7 source boundary and no raw source pin table. Separately derived d7 Git pins are labelled in the input audit; no MD is required."},
+    {"kind":"module","owner":"module-settings","module_id":"module.settings","path":"docs/wave-2/module-routes/settings.json","sha256":"ffc974596dbabdc71a4667e6673eca21dfd0a7eb0ab283832e6984daef1e406f","expected_count":102,"expected_named_routes":102,"expected_action_routes":55,"captured_revision":"9bfce05f708fba472ca942bcfe355914847a347d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"92 author raw pins include the late secret-label edit; 55 actions + 47 named flows/row groups, not a live registry count."},
+    {"kind":"module","owner":"module-plugins","module_id":"module.plugins","path":"docs/wave-2/module-routes/plugins.json","sha256":"1b8c2b1bb167248a741bf27bbdbb082f1dbc51f37254d686ad3385c331a3574c","expected_count":666,"expected_member_routes":666,"captured_revision":"9bfce05f708fba472ca942bcfe355914847a347d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"125 author raw pins and structured identities remain authoritative; provider-null and counterpart-only routes are explicit."}
+  ],
+  "individual_context": {
+    "history":"docs/parity/cohorts/9bfce05f.json",
+    "source_audit":"docs/parity/individual-source-input-audit.json",
+    "captured_revision_candidates":["9bfce05f708fba472ca942bcfe355914847a347d","e16f380836c10de3fb1d08f468f1242788eb245d","d7d499f70ee9c564d089b362c28d26423291c3b8"],
+    "assigned_followups":[
+      "ELYX-GAP-01 archive admission and ELYX-P2-01/P2-02 gen/dev handoff, plus utilities-P2-001 daemon lifecycle: assigned; not closed by data merge.",
+      "PLUGINS-P2-01 direct hook ledger and CORE-API-F02 send priority: assigned; no closure overlay selected.",
+      "CORE-API-F01/F03/F04/F05 omission, class existence, callback containment and named-queue cancellation: assigned; no closure overlay selected.",
+      "PLUGINS-P2-02/P2-03 Manager Custom and original alias/link routes: assigned; no closure overlay selected.",
+      "PLUGINS-P2-04 TrustLevel and MS-ROUTE-01 Settings search: assigned; no closure overlay selected.",
+      "GeneralHelper.resetSettings, GeneralHelper.resetAllSettings and GeneralConfig.reset: three explicit partial routes remain assigned. GENERAL-SCALAR-01 is only the separate owner-reported d7 scalar-reader fix."
+    ],
+    "execution_evidence":[{"label":"Independent Mac20","run_id":"43743252038","commit":"e16f380836c10de3fb1d08f468f1242788eb245d","status":"PASS within runtime/component gate","report":"docs/wave-2/runtime-native-acceptance-20.md","scope":"680 Core including 9 Ghost, 180 Host, 30 Hooks, 23 HNS, Java7, 3 real SDK children, C219/169 baseline/41 bound and 2/2 terminal payload cleanup. Foundation/standalone evidence precedes d7 and does not verify individual routes, production Telegram network or UIKit."}],
+    "latest_ipa":{"run_id":"43749522967","commit":"e766b61e241598dccc8017bcd205bfe8b7c792ce","status_at_handoff":"in-progress"},
+    "native_ui_plan":"36 labels / 85 sources / 88 classes / 410 native methods and eight recording scenarios remain source-provided, not executed/visually accepted by this join.",
+    "general_scalar_fix":{"commit":"d7d499f70ee9c564d089b362c28d26423291c3b8","report":"docs/wave-2/sdk-general-scalar-readers.md","reported_python_tests_each":30,"bindings":508,"config_counts":[276,0,32],"native_execution_boundary":"Mac20 e16 precedes this fix"},
+    "coordinator_core_context":"1af: 670 Core / 180 Host / 30 Hooks / 363 pytest, supplied context only",
+    "pin_drift_policy":"Preserve captured hashes/lines; authorized later source fixes are precise follow-up inputs, never silently rehashed as tested or rejected as whole-map ID collisions. Coordinator owns any moving Root/SDK manifest refresh."
+  },
   "required_counts": {"features":567,"modules":30,"sdk_symbols":925,"compatibility_apis":308,"pill_settings":20,"pill_types":15},
   "owner_precedence": {
     "nagram.showTextTranslate":"chat",

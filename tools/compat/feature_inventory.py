@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 import re
 
-from . import corpus
+from . import corpus, individual_routes
 
 
 JAVA_ROOT = os.path.join(corpus.REPO, "TMessagesProj", "src", "main", "java")
@@ -1137,16 +1137,19 @@ def merge_parity(payload, previous=None, fragments=()):
                     current[key] = deepcopy(old[key])
                 elif explicit:
                     current.pop(key, None)
+            individual_routes.preserve_record(current, old)
     for document in previous_documents:
         orphaned.update({r["id"]: r for r in document.get("orphaned_parity", [])})
     if orphaned:
         result["orphaned_parity"] = [orphaned[k] for k in sorted(orphaned)]
     for document in previous_documents:
-        for key in ("source_reconciliation", "pill_types"):
+        for key in ("source_reconciliation", "pill_types", "individual_source_reconciliation"):
             if key in document:
                 result[key] = deepcopy(document[key])
     if "features" in result:
         _totals(result)
+    if "symbols" in result and result.get("individual_source_reconciliation"):
+        individual_routes.refresh_sdk_counts(result)
     return result
 
 
@@ -1307,6 +1310,8 @@ def join_source_receipts(client, sdk, documents, policy):
     named = {f"sdk.{module}.{name}" for module, names in policy.get("sdk_exact_claims", {}).items() for name in names}
     excluded = {f"sdk.{module}.{name}" for module, names in policy.get("sdk_exact_exclusions", {}).items() for name in names}
     for row in sdk_result["symbols"]:
+        if row.get("individual_source"):
+            continue  # An older class-level policy cannot erase exact owner routes.
         fid = row["id"]
         forwarding = (row["module"] == "client_utils" and row["name"].startswith("AccountClient.")
                       and "sdk.client_utils." + row["name"].split(".")[-1] in named)
@@ -1402,9 +1407,10 @@ def validate_source_join(client, sdk, report, policy):
         for row in sdk["symbols"]:
             if row["id"] not in report["sdk_symbol_partition"].get(row["native_relation"]["status"], []):
                 raise ValueError(f"reconciliation SDK relation differs: {row['id']}")
+    individual_checks = individual_routes.validate(client, sdk)
     return {"features": len(selected), "modules": len(client["modules"]), "sdk_symbols": len(sdk["symbols"]),
             "compatibility_apis": len(client["compatibility_apis"]), "pill_types": len(types),
-            "verified_before": before, "verified_after": after, "result": "passed-data-only"}
+            "verified_before": before, "verified_after": after, "result": "passed-data-only", **individual_checks}
 
 
 class SourceSnapshot:
@@ -2021,10 +2027,19 @@ def render_index(payload, sdk):
               "The lexical scanner cannot prove reflection reachability or local-variable dataflow. Review",
               "`ui-only`, `storage-or-migration`, `unresolved`, proposed-key collisions and conditional defaults.",
               "Independent implementer fragments preserve verified statuses on regeneration; see [schema.md](schema.md).", ""]
+    individual = sdk.get("individual_source_reconciliation")
+    if individual:
+        counts = individual["counts"]
+        lines[8:8] = [
+            f"**Individual source routes:** {counts['sdk_symbols']} SDK symbols and {counts['module_maps']} module maps / {counts['module_members']} original member identities.",
+            "[Exact individual join](individual-source-join.json) · [Captured-input audit](individual-source-input-audit.json) · [Previous fac6 cohort](cohorts/9bfce05f.json).",
+            "Source dispositions retain partial/unsupported operations and active findings; route completeness grants no native/visual verification.", ""]
     return "\n".join(lines)
 
 
 def render_reconciliation(client, sdk, report):
+    if report.get("individual_source_reconciliation"):
+        return render_individual_reconciliation(client, sdk, report)
     counts = report["counts"]
     lines = ["# Wave 2 — final DATA join", "",
              f"**{counts['features']}/567 Original IDs имеют source receipt; receipt gaps: {counts['missing_feature_receipts']}. Verified/ported promotions: 0.**", "",
@@ -2083,6 +2098,54 @@ def render_reconciliation(client, sdk, report):
     return "\n".join(lines)
 
 
+def render_individual_reconciliation(client, sdk, report):
+    joined = report["individual_source_reconciliation"]
+    counts = joined["counts"]
+    context = joined.get("context", {})
+    apis = Counter(row["implementation"]["status"] for row in client["compatibility_apis"])
+    lines = ["# Individual source-route reconciliation", "",
+             f"**{counts['sdk_symbols']}/{len(sdk['symbols'])} SDK symbols; {counts['module_maps']} module maps; {counts['module_members']} exact Original member identities. Verification promotions: 0.**", "",
+             "[Individual JSON](individual-source-join.json) · [Client inventory](client-features.json) · [SDK925](sdk-surface.json)",
+             "[Captured-source audit](individual-source-input-audit.json) · [fac6 history at 9bfce05f](cohorts/9bfce05f.json) · [Handoff](../wave-2/individual-source-join.md)", "",
+             f"The retained feature cohort has {len(client['features'])} IDs, {len(client['modules'])} modules, {len(client['compatibility_apis'])} Config overloads and {len(client.get('pill_types', []))} separate Pill types.",
+             f"Config remains {apis['implemented']} implemented / {apis['blocked']} blocked / {apis['unsupported']} unsupported. Original SDK signatures and module method indexes are unchanged.", "",
+             "## Captured author maps", "",
+             "| Owner | Records | Raw map SHA-256 | Captured pin fields | Dispositions |", "|---|---:|---|---:|---|"]
+    for manifest in joined["manifests"]:
+        lines.append(f"| [{manifest['owner']}](../../{manifest['path']}) | {manifest['records']} | `{manifest['sha256']}` | {manifest['source_pin_field_count']} | `{json.dumps(manifest['dispositions'], sort_keys=True)}` |")
+    lines += ["", "Every SDK row carries its exact ordered route, contract, limitations and evidence in `individual_source.reported`.",
+              "`native_relation.status=source-route-<disposition>` is source attribution, never a ported/native test result.",
+              "Module `individual_source.reported` retains all structured members, Settings actions/flows and Plugins provider/lifecycle routes; module implementation statuses stay partial.",
+              "The old three missing authorship maps are supplied. Their partial/unsupported operations remain visible; a missing provider never becomes implemented.", "",
+              "## Mixed source boundaries", "",
+              "Raw map hashes and each author's source boundary/pins are retained verbatim. Shared paths may have different hashes in different captured maps.",
+              "Route lines remain captured lines; current source changes are listed separately in the input audit. Matching a later Git blob does not make it tested.",
+              "General supplies a d7d499f7 boundary without an author pin table. Its raw map is pinned; separately derived Git pins are labelled in the audit.", "",
+              "## Findings retained for follow-up", "",
+              "| Receipt owner | Finding | Reported state |", "|---|---|---|"]
+    for finding in joined["findings"]:
+        value = finding["reported"]
+        lines.append(f"| {finding['receipt']['owner']} | `{value.get('id', 'unnamed')}` | {value.get('status', 'source finding; no closure supplied by join')} |")
+    lines += [""]
+    lines.extend("- " + item for item in context.get("assigned_followups", []))
+    lines += ["",
+              "A new production edit or remediation report is not automatically a closure overlay. This data join creates no new behavior finding or review verdict.", "",
+              "## Execution evidence boundary", ""]
+    for evidence in context.get("execution_evidence", []):
+        lines.append(f"- **{evidence['label']} {evidence['run_id']} / {evidence['commit']}**: {evidence['status']}. {evidence['scope']} [{Path(evidence['report']).name}](../../{evidence['report']}).")
+    if context.get("latest_ipa"):
+        ipa = context["latest_ipa"]
+        lines.append(f"- Full IPA **{ipa['run_id']} / {ipa['commit']}**: {ipa['status_at_handoff']}; not queried or promoted to success by this join.")
+    if context.get("native_ui_plan"):
+        lines.append("- " + context["native_ui_plan"])
+    lines += ["",
+              "## Integrity", "",
+              "The optional explicit `individual_manifests` policy is consumed by ordinary generation and by `--individual-only --docs-only`.",
+              "Exact IDs, original signatures, typed module identities, raw owner hashes and false promotion flags are checked before writing. `--check-data` validates the materialized layer without reading moving production sources.",
+              "The handoff records executed integrity tests and the scoped SDK manifest check; source-only checks cannot establish runtime/provider/visual parity.", ""]
+    return "\n".join(lines)
+
+
 def _json_text(value):
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
@@ -2100,6 +2163,8 @@ def main(argv=None):
     parser.add_argument("--receipts", type=Path, help="published receipt directory (default docs/wave-2)")
     parser.add_argument("--docs-only", action="store_true", help="write only docs/parity, without build/compat outputs")
     parser.add_argument("--check-data", action="store_true", help="validate materialized ID/status partitions only; no source/SDK regeneration")
+    parser.add_argument("--individual-policy", type=Path, help="optional explicit individual_manifests policy (default: project docs/parity/join-policy.json)")
+    parser.add_argument("--individual-only", action="store_true", help="join individual source maps to materialized inventories without rescanning source")
     args = parser.parse_args(argv)
     if args.check_data:
         policy = _load_json(args.docs / "join-policy.json")
@@ -2107,6 +2172,13 @@ def main(argv=None):
         checked = validate_source_join(_load_json(args.docs / "client-features.json"), _load_json(args.docs / "sdk-surface.json"), report, policy)
         print(json.dumps(checked, sort_keys=True))
         return 0
+    if args.individual_only and (args.source_join or args.parity):
+        parser.error("--individual-only uses the materialized feature cohort; do not combine with feature receipt regeneration")
+    individual_policy_path = args.individual_policy or args.source_join or args.project_root / "docs/parity/join-policy.json"
+    individual_policy = _load_json(individual_policy_path) or {}
+    individual_manifests = individual_routes.load_manifests(args.project_root, individual_policy)
+    if args.individual_only and not individual_manifests:
+        parser.error("--individual-only requires an explicit nonempty individual_manifests policy")
     documents, sources = {}, {}
     if args.source_join:
         policy = _load_json(args.source_join)
@@ -2130,9 +2202,14 @@ def main(argv=None):
     client_path, sdk_path = args.docs / "client-features.json", args.docs / "sdk-surface.json"
     previous = [_load_json(args.out / "features.json") or {}, _load_json(client_path) or {}]
     client_fragments = [{k: v for k, v in f.items() if k != "symbols"} for f in fragments]
-    payload = merge_parity(build_client_inventory(args.android_root, args.project_root), previous, client_fragments)
-    sdk = merge_parity(build_sdk_inventory(args.android_root, args.project_root), _load_json(sdk_path),
-                       [{"symbols": f["symbols"]} for f in fragments if "symbols" in f])
+    if args.individual_only:
+        payload, sdk = _load_json(client_path), _load_json(sdk_path)
+        if payload is None or sdk is None:
+            parser.error("materialized client and SDK inventories are required")
+    else:
+        payload = merge_parity(build_client_inventory(args.android_root, args.project_root), previous, client_fragments)
+        sdk = merge_parity(build_sdk_inventory(args.android_root, args.project_root), _load_json(sdk_path),
+                           [{"symbols": f["symbols"]} for f in fragments if "symbols" in f])
     reconciliation = None
     if args.source_join:
         old_client, old_sdk = _load_json(client_path), _load_json(sdk_path)
@@ -2148,8 +2225,16 @@ def main(argv=None):
         reconciliation["input_sdk_surface_sha256"] = _sha(sdk_path.read_bytes())
         reconciliation["policy_sha256"] = _sha(args.source_join.read_bytes())
         reconciliation["receipt_read_mode"] = "replayed retained normalized source claims; original read-time hashes retained" if args.replay_source_join else "published files read once and hash-pinned"
+    individual = None
+    if individual_manifests:
+        payload, sdk, individual = individual_routes.join(payload, sdk, individual_manifests, individual_policy.get("individual_context"))
+        reconciliation = individual_routes.reconcile(reconciliation or _load_json(args.docs / "wave-2-reconciliation.json"), payload, sdk, individual)
+        if reconciliation.get("original_id_sets"):
+            reconciliation["data_checks"] = validate_source_join(payload, sdk, reconciliation, individual_policy)
     outputs = {client_path: _json_text(payload), sdk_path: _json_text(sdk),
                args.docs / "index.md": render_index(payload, sdk)}
+    if individual is not None:
+        outputs[args.docs / "individual-source-join.json"] = _json_text(individual)
     if not args.docs_only:
         outputs.update({args.out / "features.json": _json_text(payload), args.out / "features-report.md": render_index(payload, sdk)})
     if reconciliation is not None:

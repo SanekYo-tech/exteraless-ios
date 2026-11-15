@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "kind": "individual-source-integrity-check-report",
+  "date": "2026-11-15",
+  "result": "passed-exact-source-data-join; coordinator SDK source-pin refresh separately required",
+  "previous_cohort": "9bfce05f708fba472ca942bcfe355914847a347d",
+  "source_audit_observed_head": "897e3106618ab62a779ed26cfc3661115c0caff9",
+  "materialized_outputs": {
+    "docs/parity/individual-source-join.json": "69046f796cff7e506264d3c62aaf8a04d0c6f4650b2897868fc85354e8f2c85f",
+    "docs/parity/individual-source-input-audit.json": "fc6c688332b1f7fd73103156796885a66953992c12019de1d9e4d1c83c879f55",
+    "docs/parity/client-features.json": "7ba48aebbf35153217f0e24f6b4842cb21e908065d850b54b40483535efee081",
+    "docs/parity/sdk-surface.json": "3b7c5d0aa69c62fc96bf48a8406b1f0af938aafab97cf48c813bf5d0ee60b99e",
+    "docs/parity/wave-2-reconciliation.json": "41c63db4a34b0e4966484cae79e4a23fb5b3585091af6edae67eedfbfb124c28"
+  },
+  "exact_identity_checks": {
+    "sdk_symbols": 925,
+    "sdk_partitions": [249, 267, 262, 147],
+    "module_maps": 3,
+    "module_member_partitions": [14, 102, 666],
+    "settings_action_routes": 55,
+    "settings_other_named_routes": 47,
+    "plugins_member_routes": 666,
+    "unknown_duplicate_missing_ids": [0, 0, 0],
+    "original_features_unchanged": 567,
+    "original_module_indexes_unchanged": 30,
+    "original_public_method_bodies_unchanged": 2614,
+    "original_sdk_signatures_unchanged": 925,
+    "config_overloads_unchanged": 308,
+    "pill_settings_and_types_unchanged": [20, 15],
+    "verified_before": 0,
+    "verified_after": 0,
+    "module_implementation_states": {"general":"partial","settings":"partial","plugins":"partial"}
+  },
+  "dispositions": {
+    "sdk": {"metadata":481,"native-adapter":79,"partial":105,"plugin-contract":50,"pure-sdk":180,"unsupported":30},
+    "module_members": {"equivalent-platform-role":26,"member-body":134,"native-adaptation":3,"native-adapter":3,"native-flow":8,"native-lifecycle-adaptation":2,"partial":355,"platform-lifecycle":89,"platform-renderer":40,"source-routed":28,"unsupported":94},
+    "meaning": "Exact source routes/constraints; neither metadata nor provider names confer runtime parity"
+  },
+  "executed_data_checks": {
+    "individual_only_check": "passed: python -B -m tools.compat.feature_inventory --individual-only --docs-only --check",
+    "materialized_check_data": "passed: 567/30/925/308, Pills20+15, individual925/3/782, verified0->0",
+    "ordinary_regeneration": {
+      "result": "passed",
+      "receipt": "docs/parity/checks/individual-regeneration-check.json",
+      "sha256": "379e04bf74c05f60189b6990388657bbb644108040a6e754870d47e6a6c3efbe",
+      "elapsed_seconds": 21.297,
+      "scope": "Actual inventory builders -> merge_parity -> explicit individual join, in memory; all 925 routes and three module maps retained. No generated source or SDK file write."
+    },
+    "new_integrity_tests": {
+      "passed": 34,
+      "failed": 0,
+      "interpreter": "CPython 3.12.10",
+      "pytest_elapsed_seconds": 0.35,
+      "junit": "docs/parity/checks/individual-routes-tests.xml",
+      "sha256": "e486c67ea31ab7af6fe441e3c2864a74e31c7e72800210bcabc9787336b3a2df",
+      "scope": "Exact SDK/method identities, same-arity overloads, original-signature drift, typed null/missing providers, promotion refusal, captured-payload corruption, optional/missing/changed/duplicate manifests, bounds, shared-path snapshots, legacy/ordinary/individual-only regeneration with no source files"
+    },
+    "existing_inventory_regressions": {
+      "passed": 42,
+      "failed": 0,
+      "pytest_elapsed_seconds": 0.81,
+      "junit": "docs/parity/checks/individual-inventory-regressions.xml",
+      "sha256": "ff479d5149a14dccb584e845afbc698238ab3d672a3c49623056c25d37d43658"
+    },
+    "initial_integrity_failure": "The first new-suite run found second-regeneration reconciliation metadata drift. The pure reconcile helper was corrected; final 34-case suite and actual ordinary regeneration passed. No owner map/code was altered to make it pass.",
+    "external_pytest_plugin_autoload": false,
+    "runtime_or_sdk_imports": false,
+    "maximum_shell_timeout_seconds": 30
+  },
+  "captured_input_audit": {
+    "owner_maps": 7,
+    "supplied_source_pin_fields": 459,
+    "distinct_captured_paths": 323,
+    "matching_current_pin_fields": 395,
+    "changed_pin_fields_recovered_from_git": 64,
+    "unavailable_captured_bytes": 0,
+    "later_changed_source_paths": 18,
+    "general_author_source_pin_fields": 0,
+    "general_separately_derived_d7_git_pins": 18,
+    "captured_line_bounds_checked": 7404,
+    "references_without_authored_line": 120,
+    "invalid_captured_line_bounds": 0,
+    "owner_hashes_or_lines_replaced_with_current": false,
+    "boundary": "Captured bytes and line bounds, not unique-symbol/dynamic reachability or provider execution proof. Source differences are follow-up inputs, not whole-map ID failures."
+  },
+  "sdk_config_check": {
+    "command": "python -B -m tools.compat.sdk_config_manifest --check",
+    "result": "coordinator-refresh-required: one authorized late source pin changed",
+    "exit_code": 1,
+    "artifact": "python/exteraless_runtime/_config_manifest.py",
+    "changed_field": "SOURCES['telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift']",
+    "stored": "6998d97a25376dcdc8f9b965ef5fcc4f1a3309b309b30fd74e9c90ed13f019ee",
+    "expected_at_check": "ba0330321b86bb8a112193d50fc8b5368b5335c9065230fd8402677956baf1ad",
+    "diagnostic_changes_truncated": false,
+    "other_manifest_value_changes_reported": 0,
+    "canonical_inventory_contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+    "bindings": 508,
+    "config_counts": {"implemented":276,"blocked":0,"unsupported":32},
+    "manifest_or_ten_input_receipts_edited": false,
+    "boundary": "The bounded diagnostic reported only a raw Runtime source-pin difference. Original canonical Config inputs remain identical; this is not a broken Catalog/route finding and is left to the coordinator after owner source completion."
+  },
+  "open_followup_scope": {
+    "reported_findings_without_closure_overlay": 14,
+    "general_partial_reset_routes": 3,
+    "owner_reported_source_fixed": ["GENERAL-SCALAR-01 at d7d499f7"],
+    "closed_by_this_join": [],
+    "finding_details": "docs/parity/individual-source-input-audit.json:findings_ready_for_followup",
+    "future_overlay": "Owner remediation and current source pins must be joined separately; no background change is automatically a closure"
+  },
+  "execution_evidence_read": {
+    "path": "docs/wave-2/runtime-native-acceptance-20.md",
+    "sha256": "e8657e9f7d654a0e0fb24f62f73e9085cca378f1a112bb53172c9388f4345358",
+    "run_id": "43743252038",
+    "commit": "e16f380836c10de3fb1d08f468f1242788eb245d",
+    "verdict": "independent runtime/component PASS",
+    "counts": {"Core":680,"Ghost_in_Core":9,"Host":180,"Hooks":30,"HNS":23,"Java_codec_cases":7,"SDK_children":3,"C_callbacks":219,"C_baseline":169,"C_bound":41},
+    "artifact_verification_repeated": false,
+    "boundary": "Component/Foundation/standalone gate precedes d7 scalar readers and the source follow-ups. Not 925-symbol execution, UIKit, Telegram network/state or full-IPA evidence."
+  },
+  "latest_ipa_context": {"run_id":"43749522967","commit":"e766b61e241598dccc8017bcd205bfe8b7c792ce","status_at_handoff":"in-progress","queried_or_polled":false},
+  "scope": "Source-only materialization, data integrity, captured-source trace and existing test fixtures. No CI, commits, pushes, network, foreign plugins or native execution."
+}

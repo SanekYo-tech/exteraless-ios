@@ -206,3 +206,86 @@ review prose. The final Markdown reconciliation is an explicitly reviewed docs
 projection; `--check-data` checks the materialized identity/status joins, and the
 SDK `--check` checks the canonical consumed contract. Scanner/tool source is not
 modified by this final reconciliation.
+
+## Individual SDK and module source routes
+
+The current projection is `individual-source-join.json`; the first fac6 join is
+retained at Git `9bfce05f708fba472ca942bcfe355914847a347d`, with exact object/hash
+locators in `cohorts/9bfce05f.json`. `final-source-join.json` and the older checksum
+receipt describe that historical cohort, not the subsequently extended files.
+
+```text
+python -B -m tools.compat.feature_inventory --individual-only --docs-only
+python -B -m tools.compat.feature_inventory --individual-only --docs-only --check
+python -B -m tools.compat.feature_inventory --check-data
+```
+
+Ordinary `feature_inventory` generation also consumes the optional, explicit
+`individual_manifests` list in `docs/parity/join-policy.json`. An alternate policy
+can be supplied with `--individual-policy`. No directory glob chooses these maps.
+Each descriptor has `kind`, `owner`, repository-relative `path`, raw `sha256`,
+`expected_count`, and (for a module) `module_id`; optional route-count and captured
+revision fields document the selected cohort. Missing policy/list is valid for
+fixture projects without source or map files. A listed missing or changed map
+requires an explicit policy/cohort update.
+
+`--individual-only` reads materialized inventories and JSON maps. It does not
+rescan moving production source, regenerate SDK Config or import SDK/plugins.
+The ordinary path still rebuilds the lexical inventory, then preserves and
+reapplies the individual layer. Older class-level source claims cannot overwrite
+that layer. Both paths validate the same pure-data join before writing.
+
+### Exact identity and attribution
+
+- SDK: all **925** original IDs in four disjoint module partitions
+  (**249 + 267 + 262 + 147**). Original `name`, `kind`, lines, parameters/defaults,
+  return annotation and origin remain unchanged. SDK-copy/Android-original paths
+  are accepted only for the corresponding declaration. Captured Original SDK
+  file pins are compared to the scanner's original-file metadata.
+- Module members: **14 General + 102 Settings + 666 Plugins**, each addressed by
+  the structured `(file, name, ordered parameter_types, line)` tuple. A string
+  display key cannot collapse same-arity overloads or repair unusual type tokens.
+  The full **30-module / 2614-method** Original index remains intact.
+- Settings additionally retains **55 actions + 47 named flows/row groups**.
+  Plugins retains **666** exact `member_routes`, with explicit nullable native
+  operation/provider, admission/lifecycle, evidence and unavailable reason.
+- `individual_source` on each SDK symbol/module contains the raw owner receipt
+  identity, original-declaration/index fingerprint, reported-payload fingerprint
+  and verbatim `reported` route/member data. `individual_source_reconciliation`
+  retains raw map size/hash, source boundary, captured pin fields and findings.
+- SDK `native_relation.status` is `source-route-<disposition>`: `pure-sdk`,
+  `native-adapter`, `plugin-contract`, `metadata`, `partial` or `unsupported`.
+  These are source relationships, not native execution or `ported` statuses.
+  New unverified implementation states are only partial/unsupported; existing
+  independent verification is preserved without new promotions. The three
+  module implementation states stay partial.
+- Duplicate/unknown/omitted IDs, changed original signatures, malformed route
+  shapes, missing partial limitations, invalid provider/null combinations and
+  verification/native-execution promotion flags fail. Captured payload mutation
+  also fails materialized-data validation. Exact repeated source references are
+  allowed and never treated as duplicate record identities.
+
+### Captured bytes and later source drift
+
+The maps have mixed read boundaries. Core API pins Git `e16f3808`; other authors
+record 9bf-era working-tree hashes. General supplies a d7 source boundary and
+zero author raw-source pin fields. The captured boundaries are not silently
+replaced by the latest worktree or by a component test's commit.
+
+`individual-source-input-audit.json` is a separate read-time audit, not an input
+to ordinary generation. It compares the **459** supplied pin fields per receipt,
+retains each captured hash and records later current hashes separately. Matching
+Git bytes recover old line bounds; no nearest-line/symbol guess is made. General's
+**18** Git-derived d7 code pins are explicitly additional data-join evidence, not
+new owner claims or execution evidence. Shared paths at different captured hashes
+remain separate; later authorized source fixes do not invalidate an entire map.
+
+Map findings remain owner-reported source findings until a separately supplied
+follow-up overlay resolves them. Metadata declarations, native counterpart roles,
+partial routes and missing providers never become implemented through a data
+merge. Mac20 `43743252038/e16f3808` is independent component evidence and precedes
+d7 scalar readers; it does not prove all 925 routes, native UI or the pending IPA.
+
+All manifest reads are bounded (16 maps, 16 MiB/map, 12,000 rows, 2,048 pin fields,
+64 steps/evidence entries per route); duplicate JSON object keys are rejected.
+The final check report is `checks/individual-integrity.json`.

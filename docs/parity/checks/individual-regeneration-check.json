@@ -1,0 +1,34 @@
+{
+  "canonical_sdk_contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+  "code_sha256": {
+    "tools/compat/feature_inventory.py": "0ba0385045168db54ef5591ce04ecb0db40415709ddd6139b2b2955f3ca71a39",
+    "tools/compat/individual_routes.py": "d834ca70c12de3f3dab5ab3b3f09a542167221e548e18e8052b260faf6a7efbb",
+    "tools/compat/tests/test_feature_inventory_individual.py": "5c39ed39f8649b85eb27481291bcbbe6587ff67f8e7233464d4bc119af550655"
+  },
+  "config_overloads_unchanged": 308,
+  "elapsed_seconds": 21.297,
+  "features_unchanged": 567,
+  "native_verification_promotions": 0,
+  "ordinary_regeneration": "Actual build_client_inventory/build_sdk_inventory -> merge_parity -> explicit individual-manifest join, in memory",
+  "original_cohort": "9bfce05f708fba472ca942bcfe355914847a347d",
+  "original_method_bodies_unchanged": 2614,
+  "original_module_indexes_unchanged": 30,
+  "original_sdk_declarations_signatures_unchanged": 925,
+  "pill_settings_and_types_unchanged": [
+    20,
+    15
+  ],
+  "result": "passed-source-dataflow-only",
+  "retained_module_identities": [
+    14,
+    102,
+    666
+  ],
+  "retained_module_maps": 3,
+  "retained_sdk_routes": 925,
+  "runtime_imports": false,
+  "schema_version": 1,
+  "source_files_configs_ui_index_unchanged": true,
+  "source_only_mode": "The existing --individual-only --docs-only --check also passed",
+  "source_writes": false
+}

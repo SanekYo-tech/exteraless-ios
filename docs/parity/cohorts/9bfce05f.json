@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "kind": "immutable-first-final-source-join-history",
+  "retained_in_commit": "9bfce05f708fba472ca942bcfe355914847a347d",
+  "source_request_head": "fac6cf26be9f622dc1c5eec8cf7cf165fff6200c",
+  "materialization_head": "16c23a99449eba704885a83982e35a079054f815",
+  "retrieval": "git show 9bfce05f708fba472ca942bcfe355914847a347d:<path>; complete original bytes remain in these immutable Git objects",
+  "boundary": "First fac6 source-only join. Its 567/30/925/308, Pills20+15, zero receipt gaps/promotions, run19 evidence and then-pending Ghost/compile follow-ups retain their original meaning. Later individual maps do not rewrite this cohort.",
+  "artifacts": {
+    "docs/parity/client-features.json": {"git_blob":"22b059fbb46b1c7d08c4443ec4843bd4a5e21c6e","sha256":"ee82f6d3f53c1ff2ccc9785305b63553ea504abdb5274c11fa9148144d5fc240","bytes":7073617},
+    "docs/parity/sdk-surface.json": {"git_blob":"5c66b9dc63f441eb63b37f4a25ca33994c1dacd4","sha256":"ce7b067fdcffc440ba3640ac194c2eef8a68192a80410cbcb3a593e0d9cf64d8","bytes":982175},
+    "docs/parity/wave-2-reconciliation.json": {"git_blob":"81fd944a2f44206ad4ebb89ac1c4008b792b93a3","sha256":"65c940cbd72d5ebcd50e5e12c87950ab9fc1b56694336cbb1d361cd4a3a5c593","bytes":834248},
+    "docs/parity/wave-2-reconciliation.md": {"git_blob":"6749b4dafff663471aa37d16830cc022e9b423f3","sha256":"8f470c46722f93ee7666b35b934a217ac35138c75be4947b7a8dd92444d334bf","bytes":19887},
+    "docs/parity/join-policy.json": {"git_blob":"90305847eca824d4418e787ac5d597957b1d76ce","sha256":"bbf70cfe5318bf0fe8f4a4e170a9fab9b21bb8c721dda5ed18c808aea397e30e","bytes":37440},
+    "docs/parity/final-source-join.json": {"git_blob":"58b46f0ea110aa0d10f987b79324f1075ce058f2","sha256":"917b7cf57698ed116a84a2b2f15dad79bf77649f38a0cbdb927c46e72b5e6100","bytes":21003},
+    "docs/parity/index.md": {"git_blob":"09e1a3725c50f122933b8f3de92ddcda8c3c2e4f","sha256":"f384e7c24871c8b712265ec3997578a5dec022e31bc08cad4f3d7a4a5c2ef294","bytes":288567},
+    "docs/parity/schema.md": {"git_blob":"a63078983f0df2a7569c46f54c67b19148e0616f","sha256":"192927ae992bac53a2dac7e0b147f62827ec0dc2e027d6dd9dae28eaa922aef5","bytes":12614},
+    "docs/parity/checks/final-source-output.sha256": {"git_blob":"4776ee3efde14363073b83de60116d728e8e113b","sha256":"d752039dc2c619dbe3351916d084ce99f120ade0f606ca4e365d930df3628f67","bytes":1241}
+  },
+  "original_handoff": "docs/wave-2/parity-final-source-join.md at the same retained commit",
+  "earlier_history": "docs/parity/cohorts/93a1badc.json",
+  "sdk_relation_at_that_time": {"published-source-subset":127,"unsupported":4,"not-individually-reconciled":794},
+  "module_authorship_at_that_time": ["module.general","module.settings","module.plugins"],
+  "config_contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40"
+}
