@@ -60,9 +60,7 @@ public struct AITranslationConfiguration: Sendable {
         deepLKey = store.string("ai.deepLTranslateKey")
         deepLFormality = store.integer("ai.deepLFormality")
         llmService = settings.llmService()
-        let preset = AILLMPreset(rawValue: store.integer("ai.llmProviderPreset")) ?? .custom
-        var seen = Set<String>()
-        llmKeys = store.string(preset.keySetting).split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && seen.insert($0).inserted }
+        llmKeys = settings.llmAPIKeys(for: llmService)
         llmTemperature = store.double("ai.llmTemperature", default: 0.7)
         llmSystemPrompt = store.string("ai.llmSystemPrompt")
         llmUserPrompt = store.string("ai.llmUserPrompt")
@@ -111,12 +109,15 @@ public actor AITranslationClient {
     private let transport: any AIHTTPTransport
     private let ai: AIClient
     private let bingCache: AIBingSessionCache
+    private let retryDelay: @Sendable (Int) async throws -> Void
     private var keyIndex = 0
 
-    public init(transport: any AIHTTPTransport = AIURLSessionTransport(), settings: AISettings = AISettings(), bingCache: AIBingSessionCache? = nil) {
+    public init(transport: any AIHTTPTransport = AIURLSessionTransport(), settings: AISettings = AISettings(), bingCache: AIBingSessionCache? = nil,
+                retryDelay: @escaping @Sendable (Int) async throws -> Void = { attempt in try await Task.sleep(nanoseconds: UInt64(1 << attempt) * 1_000_000_000) }) {
         self.transport = transport
         self.ai = AIClient(transport: transport)
         self.bingCache = bingCache ?? AIBingSessionCache(transport: transport, store: settings.store)
+        self.retryDelay = retryDelay
     }
 
     public func cancelSessionRequests() async { await bingCache.cancelAll() }
@@ -197,8 +198,16 @@ public actor AITranslationClient {
             do { return (try await ai.generate(service: config.llmService, apiKey: key, request: request).text, .llm) }
             catch {
                 let error = AIError.sanitized(error)
-                guard error == .network || error == .timeout || error == .http(429) else { throw error }
-                if attempt < 2 { try await Task.sleep(nanoseconds: UInt64(1 << attempt) * 1_000_000_000) }
+                // Original LLMTranslator maps 5xx and empty/malformed successful
+                // responses to recoverable provider failures. These rounds are
+                // non-streaming: no partial generation has been published.
+                switch error {
+                case .network, .timeout, .http(429), .invalidResponse, .emptyResponse: break
+                case let .http(status) where (500 ..< 600).contains(status): break
+                default: throw error
+                }
+                try Task.checkCancellation()
+                if attempt < 2 { try await retryDelay(attempt) }
             }
         }
         try Task.checkCancellation()

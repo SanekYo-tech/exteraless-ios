@@ -50,7 +50,7 @@ final class AILifecycleTests: XCTestCase {
         for (url, service, key) in [(a, serviceA, "fixture-key-a"), (b, serviceB, "fixture-key-b")] {
             let settings = AISettings(store: try ClientSettings(storageURL: url, secretStore: secrets))
             try settings.register()
-            try settings.save(service: service, apiKey: key)
+            try settings.save(service: service, credential: .replace(key))
         }
         let store = try ClientSettings(storageURL: a, secretStore: secrets)
         let settings = AISettings(store: store)
@@ -78,7 +78,7 @@ final class AILifecycleTests: XCTestCase {
         backend.failReads = false
         try recovery.prepare(accountId: "1")
         XCTAssertNil(recovery.errorDescription)
-        try settings.save(service: .default, apiKey: "fixture-only-key")
+        try settings.save(service: .default, credential: .replace("fixture-only-key"))
         XCTAssertEqual(settings.apiKey(for: .default), "fixture-only-key")
     }
 }

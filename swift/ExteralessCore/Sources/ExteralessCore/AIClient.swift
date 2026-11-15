@@ -41,8 +41,13 @@ public final class AIClient: Sendable {
                 return try await generateWithTools(service: service, apiKey: apiKey, input: request, tools: tools, onEvent: onEvent)
             }
             let built = try AIRequestBuilder.generation(service: service, apiKey: apiKey, request: request)
-            do { return try await receive(built, streaming: request.streaming && service.wireProtocol == .openAI, wire: service.wireProtocol, onEvent: onEvent) }
-            catch AIError.http(400) where service.wireProtocol == .openAI {
+            let progress = AIGenerationProgress()
+            let emit: @Sendable (AIGenerationEvent) async -> Void = { event in
+                progress.record()
+                await onEvent(event)
+            }
+            do { return try await receive(built, streaming: request.streaming && service.wireProtocol == .openAI, wire: service.wireProtocol, onEvent: emit) }
+            catch AIError.http(400) where service.wireProtocol == .openAI && !progress.hasOutput {
                 // LlmTransport.executeWithOptionalParameters: one retry only,
                 // after a rejected request, never replay a partially generated response.
                 try Task.checkCancellation()
@@ -154,12 +159,15 @@ public final class AIClient: Sendable {
                 return AIResponse(text: response.text, reasoning: allReasoning, finishReason: response.finishReason)
             }
             guard calls.count <= AILimits.toolCallsPerRound else { throw AIError.toolLimit }
+            let continuation = try AIReasoningContinuation(message: message)
             await onEvent(.thinking)
             let reasoning = AIResponseParser.reasoning(message)
             guard allReasoning.utf16.count + reasoning.utf16.count <= AILimits.responseUTF16 else { throw AIError.responseTooLarge }
             allReasoning += reasoning
             if !reasoning.isEmpty { await onEvent(.reasoning(reasoning)) }
-            messages.append(["role": "assistant", "content": message["content"] ?? NSNull(), "tool_calls": calls])
+            var assistant: [String: Any] = ["role": "assistant", "content": message["content"] ?? NSNull(), "tool_calls": calls]
+            try continuation.apply(to: &assistant)
+            messages.append(assistant)
             for call in calls {
                 try Task.checkCancellation()
                 guard let id = call["id"] as? String, !id.isEmpty,
@@ -177,4 +185,11 @@ public final class AIClient: Sendable {
         }
         throw AIError.toolLimit
     }
+}
+
+private final class AIGenerationProgress: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generated = false
+    var hasOutput: Bool { lock.lock(); defer { lock.unlock() }; return generated }
+    func record() { lock.lock(); generated = true; lock.unlock() }
 }

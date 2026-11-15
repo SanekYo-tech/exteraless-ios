@@ -266,7 +266,8 @@ final class ClientSettingsTests: XCTestCase {
                                            options: [.init(value: .string("one"), title: "One")])
         XCTAssertThrowsError(try second.register([mode]))
         XCTAssertEqual(try Data(contentsOf: secondURL), malformed)
-        XCTAssertEqual(second.definitions(), [])
+        XCTAssertEqual(second.definitions(), [mode], "Valid schemas stay addressable for explicit native repair")
+        XCTAssertNil(second.value(mode.key))
     }
 
     func testConcurrentInstancesMergeUpdatesAndReloadExplicitly() throws {
@@ -837,10 +838,10 @@ final class ClientSettingsTests: XCTestCase {
         try JSONEncoder().encode(root).write(to: url)
         try store.applyPublic(["fixture.value": .integer(Int64.max)], expected: before)
         let exactInteger = store.readSnapshot()
-        try store.set(.number(Double(Int64.max)), for: "fixture.value")
-        XCTAssertThrowsError(try store.applyPublic(["fixture.value": .null], expected: exactInteger)) {
-            XCTAssertEqual($0 as? ClientSettingsError, .concurrentModification)
+        XCTAssertThrowsError(try store.set(.number(Double(Int64.max)), for: "fixture.value")) {
+            XCTAssertEqual($0 as? ClientSettingsError, .unsupportedNumber)
         }
+        XCTAssertEqual(store.snapshot(), exactInteger.values)
         try store.set(.bool(true), for: "fixture.value")
         let boolean = store.readSnapshot()
         try store.set(.integer(1), for: "fixture.value")
@@ -855,6 +856,389 @@ final class ClientSettingsTests: XCTestCase {
         }
         XCTAssertEqual(store.value("fixture.value"), .null)
         XCTAssertTrue(store.readSnapshot().storedKeys.contains("fixture.value"))
+    }
+
+    func testSC01FailedSecretRenameProtectsSourceAndAllowsNativeRetry() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        let old = self.definition("review.old", .string(""))
+        let secure = ClientSettingDefinition(key: "review.secure", title: "Secure", section: "Review", defaultValue: .string(""), isSecret: true)
+        let flag = self.definition("review.flag", .bool(false))
+        try store.register([old, secure, flag])
+        try store.set(.string("ALIAS-CREDENTIAL-FIXTURE"), for: old.key)
+        let original = try Data(contentsOf: url)
+        secrets.failWrites.update { $0 = true }
+        XCTAssertThrowsError(try store.migrateKey(from: old.key, to: secure.key))
+        XCTAssertNil(store.snapshot()[old.key])
+        XCTAssertTrue(store.readSnapshot().secretKeys.contains(old.key))
+        XCTAssertFalse(String(decoding: try store.exportJSON(), as: UTF8.self).contains("ALIAS-CREDENTIAL-FIXTURE"))
+        XCTAssertThrowsError(try store.setPublic(.string("denied"), for: old.key))
+        XCTAssertThrowsError(try store.applyPublic([flag.key: .bool(true)]))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        secrets.failWrites.update { $0 = false }
+        try store.migrateKey(from: old.key, to: secure.key)
+        try store.migrateKey(from: old.key, to: secure.key)
+        XCTAssertEqual(store.string(secure.key), "ALIAS-CREDENTIAL-FIXTURE")
+        XCTAssertFalse(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("ALIAS-CREDENTIAL-FIXTURE"))
+        let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+        try reopened.register([old, secure, flag])
+        XCTAssertFalse(reopened.definitions().contains(where: { $0.key == old.key }))
+        XCTAssertThrowsError(try reopened.setPublic(.string("denied"), for: old.key))
+        XCTAssertFalse(String(decoding: try reopened.exportJSON(), as: UTF8.self).contains(old.key))
+        try reopened.applyPublic([flag.key: .bool(true)])
+        XCTAssertEqual(reopened.string(secure.key), "ALIAS-CREDENTIAL-FIXTURE")
+    }
+
+    func testSC08SecretDestinationWinsBeforeLosingSourceValidation() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let secure = ClientSettingDefinition(key: "review.secure", title: "Secure", section: "Review", defaultValue: .string(""), isSecret: true)
+        let raw = Data("{\"review.old\":{\"obsolete\":true}}".utf8)
+        try raw.write(to: url)
+        try secrets.set(try JSONEncoder().encode(ClientSettingValue.string("DESTINATION-FIXTURE")), for: secure.key)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        try store.register([secure])
+        let writes = secrets.writeCount.value
+        try store.migrateKey(from: "review.old", to: secure.key)
+        try store.migrateKey(from: "review.old", to: secure.key)
+        XCTAssertEqual(store.string(secure.key), "DESTINATION-FIXTURE")
+        XCTAssertEqual(secrets.writeCount.value, writes)
+        guard case let .object(values) = try self.document(url)["values"] else { return XCTFail("Missing values") }
+        XCTAssertNil(values["review.old"])
+
+        let absentURL = try self.storageURL()
+        try raw.write(to: absentURL)
+        let absent = try ClientSettings(storageURL: absentURL, secretStore: SettingsTestSecrets())
+        try absent.register([secure])
+        let before = try Data(contentsOf: absentURL)
+        XCTAssertThrowsError(try absent.migrateKey(from: "review.old", to: secure.key))
+        XCTAssertEqual(try Data(contentsOf: absentURL), before)
+        XCTAssertFalse(absent.readSnapshot().storedKeys.contains(secure.key))
+    }
+
+    func testSC02StrictRawNumbersAndBridgeRequestValuesNeverRoundIntegers() throws {
+        let unsupported = ["18446744073709551614", "18446744073709551615", "-9223372036854775809",
+                           "18446744073709551615.0", "1.8446744073709551615e19", "0.1000000000000000000001"]
+        for token in unsupported {
+            for json in [token, "{\"nested\":[\(token)]}",
+                         "{\"op\":\"call\",\"fqcn\":\"exteraless.ios.Runtime\",\"member\":\"getClientSetting\",\"args\":[\"unknown\",\(token)]}",
+                         "{\"op\":\"call\",\"fqcn\":\"exteraless.ios.Runtime\",\"member\":\"setClientSetting\",\"args\":[\"review.value\",\(token)]}"] {
+                XCTAssertThrowsError(try ClientSettingValue.decodeJSON(json))
+            }
+        }
+        for token in unsupported.prefix(3) {
+            XCTAssertThrowsError(try JSONDecoder().decode(ClientSettingValue.self, from: Data(token.utf8)))
+        }
+        XCTAssertEqual(try ClientSettingValue.decodeJSON("\"18446744073709551615\""), .string("18446744073709551615"))
+        XCTAssertEqual(try ClientSettingValue.decodeJSON("9223372036854775807"), .integer(Int64.max))
+        XCTAssertEqual(try ClientSettingValue.decodeJSON("-9223372036854775808"), .integer(Int64.min))
+        XCTAssertEqual(try ClientSettingValue.decodeJSON("1.250e2"), .integer(125))
+        XCTAssertEqual(try ClientSettingValue.decodeJSON("0.1250"), .number(0.125))
+        let exact = Double(9_007_199_254_740_994 as Int64)
+        XCTAssertEqual(try ClientSettingValue.decodeJSON(JSONEncoder().encode(ClientSettingValue.number(exact))), .integer(9_007_199_254_740_994))
+    }
+
+    func testSC02UnsupportedUnknownValuesAndMetadataPreserveTheEntireFile() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        try store.register([self.definition("review.flag", .bool(false))])
+        try store.set(.bool(false), for: "review.flag")
+        let expected = store.readSnapshot()
+        for token in ["18446744073709551614", "18446744073709551615"] {
+            for extra in ["\"future\":\(token)", "\"future\":{\"nested\":[\(token)]}"] {
+                let documents = [
+                    "{\"$format\":\"exteraless.client-settings\",\"version\":1,\"values\":{\"review.flag\":false,\(extra)},\"secretKeys\":[]}",
+                    "{\"$format\":\"exteraless.client-settings\",\"version\":1,\"values\":{\"review.flag\":false},\"secretKeys\":[],\(extra)}"
+                ]
+                for document in documents {
+                    let raw = Data(document.utf8)
+                    try raw.write(to: url)
+                    XCTAssertThrowsError(try store.reload())
+                    XCTAssertThrowsError(try store.setPublic(.bool(true), for: "review.flag"))
+                    XCTAssertThrowsError(try store.applyPublic(["review.flag": .bool(true)], expected: expected))
+                    XCTAssertEqual(try Data(contentsOf: url), raw)
+                }
+            }
+        }
+    }
+
+    func testSC03StructuredAndNullableEnumsUseRecursiveJSONEquivalence() throws {
+        let url = try self.storageURL()
+        let option: ClientSettingValue = .object(["n": .array([.number(1.0), .bool(true)])])
+        let definition = ClientSettingDefinition(key: "review.enum", title: "Enum", section: "Review", defaultValue: option,
+                                                 options: [.init(value: option, title: "One")])
+        let nullable = ClientSettingDefinition(key: "review.nullable", title: "Nullable", section: "Review", defaultValue: .null,
+                                               options: [.init(value: .null, title: "None"), .init(value: .number(1.0), title: "One")])
+        let store = try ClientSettings(storageURL: url)
+        try store.register([definition, nullable])
+        try store.set(option, for: definition.key)
+        try store.set(.integer(1), for: nullable.key)
+        let reopened = try ClientSettings(storageURL: url)
+        try reopened.register([definition, nullable])
+        XCTAssertEqual(reopened.value(definition.key), option)
+        XCTAssertEqual(reopened.value(nullable.key), .number(1.0))
+        try Data("{\"review.enum\":{\"n\":[1,true]},\"review.nullable\":1}".utf8).write(to: url)
+        try reopened.reload()
+        XCTAssertEqual(reopened.value(definition.key), option)
+        XCTAssertThrowsError(try reopened.set(.object(["n": .array([.integer(1), .integer(1)])]), for: definition.key))
+        let duplicate = ClientSettingDefinition(key: "review.duplicate", title: "Duplicate", section: "Review", defaultValue: option,
+                                                options: [.init(value: option, title: "A"), .init(value: .object(["n": .array([.integer(1), .bool(true)])]), title: "B")])
+        XCTAssertThrowsError(try reopened.register([duplicate]))
+    }
+
+    func testSC04IntegerBoundsAreExactAboveDoubleIntegerPrecision() throws {
+        let bound: Int64 = 9_007_199_254_740_992
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        let definition = ClientSettingDefinition(key: "review.integer", title: "Integer", section: "Review", defaultValue: .integer(0),
+                                                 minimum: -Double(bound), maximum: Double(bound), step: 1)
+        try store.register([definition])
+        for value in [bound - 1, bound, -bound, -bound + 1] { try store.set(.integer(value), for: definition.key) }
+        let before = try Data(contentsOf: url)
+        for value in [bound + 1, -bound - 1] {
+            XCTAssertThrowsError(try store.set(.integer(value), for: definition.key))
+            XCTAssertEqual(try Data(contentsOf: url), before)
+        }
+        let stepped = ClientSettingDefinition(key: "review.step", title: "Step", section: "Review", defaultValue: .integer(bound),
+                                              minimum: Double(bound), maximum: Double(bound + 4), step: 2)
+        try store.register([stepped])
+        try store.set(.integer(bound + 2), for: stepped.key)
+        XCTAssertThrowsError(try store.set(.integer(bound + 1), for: stepped.key))
+    }
+
+    func testSC05SecretExplicitDefaultsKeepPresenceUntilReset() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        try Data("{\"review.flag\":false,\"review.count\":0}".utf8).write(to: url)
+        func definitions(flag: Bool, count: Int64) -> [ClientSettingDefinition] {
+            return [
+                .init(key: "review.flag", title: "Flag", section: "Review", defaultValue: .bool(flag), isSecret: true),
+                .init(key: "review.count", title: "Count", section: "Review", defaultValue: .integer(count), isSecret: true),
+                .init(key: "review.empty", title: "Empty", section: "Review", defaultValue: .array([]), isSecret: true)
+            ]
+        }
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        try store.register(definitions(flag: false, count: 0))
+        try store.set(.array([]), for: "review.empty")
+        XCTAssertEqual(store.readSnapshot().storedKeys, Set(["review.flag", "review.count", "review.empty"]))
+        try store.register(definitions(flag: true, count: 9))
+        XCTAssertFalse(store.bool("review.flag"))
+        XCTAssertEqual(store.integer("review.count"), 0)
+        let reopened = try ClientSettings(storageURL: url, secretStore: secrets)
+        try reopened.register(definitions(flag: true, count: 9))
+        XCTAssertFalse(reopened.bool("review.flag"))
+        XCTAssertEqual(reopened.integer("review.count"), 0)
+        try reopened.set(.bool(true), for: "review.flag")
+        try reopened.register(definitions(flag: false, count: 9))
+        XCTAssertTrue(reopened.bool("review.flag"), "An explicit default is still an override")
+        try reopened.reset("review.flag")
+        XCTAssertFalse(reopened.bool("review.flag"))
+        XCTAssertFalse(reopened.readSnapshot().storedKeys.contains("review.flag"))
+    }
+
+    func testSC06IdenticalRetriesConfirmDirectorySyncEvenInANewInstance() throws {
+        let url = try self.storageURL()
+        let fail = SettingsTestBox(false)
+        let syncs = SettingsTestBox(0)
+        let renames = SettingsTestBox(0)
+        let hooks = ClientSettingsFileHooks(beforeDirectorySync: { _, stage in
+            if stage == .settings {
+                syncs.update { $0 += 1 }
+                if fail.value { throw NSError(domain: NSPOSIXErrorDomain, code: 5) }
+            }
+        })
+        let store = try ClientSettings(storageURL: url, secretStore: SettingsTestSecrets(), afterFileReplace: { renames.update { $0 += 1 } }, fileHooks: hooks)
+        let definition = self.definition("review.flag", .bool(false))
+        try store.register([definition])
+        fail.update { $0 = true }
+        XCTAssertThrowsError(try store.applyPublic([definition.key: .bool(true)]))
+        XCTAssertTrue(store.bool(definition.key))
+        let intended = store.readSnapshot()
+        XCTAssertThrowsError(try store.applyPublic([definition.key: .bool(true)], expected: intended))
+        XCTAssertThrowsError(try store.set(.bool(true), for: definition.key))
+        XCTAssertEqual(renames.value, 1)
+        XCTAssertEqual(syncs.value, 3)
+        let reopened = try ClientSettings(storageURL: url, secretStore: SettingsTestSecrets(), afterFileReplace: nil, fileHooks: hooks)
+        try reopened.register([definition])
+        XCTAssertThrowsError(try reopened.applyPublic([definition.key: .bool(true)]))
+        XCTAssertEqual(syncs.value, 4)
+        fail.update { $0 = false }
+        try reopened.applyPublic([definition.key: .bool(true)])
+        XCTAssertEqual(syncs.value, 5)
+        XCTAssertNil(reopened.lastError)
+    }
+
+    func testSC07SecondCreatorPublishesAllAncestorsWhileFirstIsPaused() throws {
+        let root = try self.storageURL().deletingLastPathComponent().resolvingSymlinksInPath()
+        let one = root.appendingPathComponent("one", isDirectory: true)
+        let two = one.appendingPathComponent("two", isDirectory: true)
+        let three = two.appendingPathComponent("three", isDirectory: true)
+        let target = three.appendingPathComponent("client-settings.json")
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let paused = SettingsTestBox(false)
+        let faults = SettingsTestBox(0)
+        let firstHooks = ClientSettingsFileHooks(afterDirectoriesCreated: { directory in
+            guard directory.path == target.deletingLastPathComponent().path else { return }
+            var pause = false
+            paused.update { if !$0 { $0 = true; pause = true } }
+            if pause {
+                entered.signal()
+                guard release.wait(timeout: .now() + 3.0) == .success else { throw SettingsTestSecretFailure() }
+            }
+            throw SettingsTestSecretFailure()
+        })
+        let first = try ClientSettings(storageURL: root.appendingPathComponent("initial.json"), secretStore: SettingsTestSecrets(),
+                                       afterFileReplace: nil, durabilityRootURL: root, fileHooks: firstHooks)
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            do { try first.configure(storageURL: target, durabilityRootURL: root) }
+            catch { faults.update { $0 += 1 } }
+        }
+        defer { release.signal() }
+        XCTAssertEqual(entered.wait(timeout: .now() + 1.0), .success)
+        let synced = SettingsTestBox<Set<String>>([])
+        let secondHooks = ClientSettingsFileHooks(beforeDirectorySync: { directory, stage in
+            if stage == .ancestors { synced.update { $0.insert(directory.path) } }
+        })
+        let second = try ClientSettings(storageURL: target, secretStore: SettingsTestSecrets(), afterFileReplace: nil,
+                                        durabilityRootURL: root, fileHooks: secondHooks)
+        let definition = self.definition("review.flag", .bool(false))
+        try second.register([definition])
+        try second.applyPublic([definition.key: .bool(true)])
+        for directory in [root, one, two, three] {
+            XCTAssertTrue(synced.value.contains(directory.path))
+        }
+        release.signal()
+        XCTAssertEqual(group.wait(timeout: .now() + 2.0), .success)
+        XCTAssertEqual(faults.value, 1)
+        XCTAssertTrue(second.bool(definition.key))
+    }
+
+    func testSC07AncestorSyncFailureCannotBeSkippedOnVisibleDirectoryRetry() throws {
+        let root = try self.storageURL().deletingLastPathComponent().resolvingSymlinksInPath()
+        let parent = root.appendingPathComponent("new", isDirectory: true)
+        let child = parent.appendingPathComponent("child", isDirectory: true)
+        let target = child.appendingPathComponent("client-settings.json")
+        let fail = SettingsTestBox(false)
+        let visited = SettingsTestBox<[String]>([])
+        let hooks = ClientSettingsFileHooks(beforeDirectorySync: { directory, stage in
+            if stage == .ancestors {
+                visited.update { $0.append(directory.path) }
+                if fail.value && directory.path == root.path { throw NSError(domain: NSPOSIXErrorDomain, code: 5) }
+            }
+        })
+        let store = try ClientSettings(storageURL: root.appendingPathComponent("initial.json"), secretStore: SettingsTestSecrets(),
+                                       afterFileReplace: nil, durabilityRootURL: root, fileHooks: hooks)
+        let definition = self.definition("review.flag", .bool(false))
+        try store.register([definition])
+        fail.update { $0 = true }
+        XCTAssertThrowsError(try store.configure(storageURL: target, durabilityRootURL: root))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: target.deletingLastPathComponent().path))
+        let previousVisits = visited.value.count
+        XCTAssertThrowsError(try store.applyPublic([definition.key: .bool(true)]))
+        XCTAssertGreaterThan(visited.value.count, previousVisits)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+        fail.update { $0 = false }
+        try store.applyPublic([definition.key: .bool(true)])
+        XCTAssertTrue(visited.value.contains(parent.path))
+        XCTAssertTrue(visited.value.contains(target.deletingLastPathComponent().path))
+        XCTAssertTrue(store.bool(definition.key))
+    }
+
+    func testColdStartCorruptKeychainItemsRemainAddressableForNativeRepair() throws {
+        let url = try self.storageURL()
+        let secrets = SettingsTestSecrets()
+        let a = ClientSettingDefinition(key: "review.a", title: "A", section: "Review", defaultValue: .string(""), isSecret: true)
+        let b = ClientSettingDefinition(key: "review.b", title: "B", section: "Review", defaultValue: .string(""), isSecret: true)
+        try secrets.set(Data("invalid".utf8), for: a.key)
+        try secrets.set(Data("invalid".utf8), for: b.key)
+        let store = try ClientSettings(storageURL: url, secretStore: secrets)
+        XCTAssertThrowsError(try store.register([a, b]))
+        XCTAssertEqual(store.definitions(), [a, b])
+        XCTAssertThrowsError(try store.reset(a.key), "The other unreadable item remains an error")
+        XCTAssertNil(try secrets.data(for: a.key), "The explicitly targeted repair did complete")
+        try store.set(.string("REPAIRED-FIXTURE"), for: b.key)
+        XCTAssertEqual(store.string(b.key), "REPAIRED-FIXTURE")
+        XCTAssertNil(store.lastError)
+        XCTAssertThrowsError(try store.setPublic(.string("denied"), for: b.key))
+    }
+
+    private func serviceShape(maximumCount: Int = 1) -> ClientSettingShape {
+        return .array(.object(["id": .string, "name": .string, "url": .string, "model": .string,
+                               "reasoningEffort": .integer, "wireProtocol": .string],
+                              required: ["id", "name", "url", "model"]), maximumCount: maximumCount)
+    }
+
+    func testShapeClosedServicesRejectCredentialKeysWrongTypesAndOversizedArrays() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        let definition = ClientSettingDefinition(key: "review.services", title: "Services", section: "Review", defaultValue: .array([]), valueShape: self.serviceShape())
+        try store.register([definition])
+        let service: [String: ClientSettingValue] = ["id": .string("fixture"), "name": .string("Fixture"), "url": .string("https://example.invalid"),
+                                                   "model": .string("fixture-model"), "reasoningEffort": .integer(1), "wireProtocol": .string("openAI")]
+        try store.set(.array([.object(service)]), for: definition.key)
+        let original = try Data(contentsOf: url)
+        var credential = service; credential["apiKey"] = .string("SHAPE-CREDENTIAL-FIXTURE")
+        var wrongType = service; wrongType["reasoningEffort"] = .bool(true)
+        var missing = service; missing.removeValue(forKey: "id")
+        for value in [ClientSettingValue.array([.object(credential)]), .array([.object(wrongType)]), .array([.object(missing)]),
+                      .array([.object(service), .number(.nan)])] {
+            XCTAssertThrowsError(try store.applyPublic([definition.key: value])) { error in
+                XCTAssertEqual(error as? ClientSettingsError, .invalidValue(key: definition.key, reason: .shape))
+            }
+            XCTAssertEqual(try Data(contentsOf: url), original)
+        }
+        let reopened = try ClientSettings(storageURL: url)
+        try reopened.register([definition])
+        XCTAssertEqual(reopened.value(definition.key), .array([.object(service)]))
+        XCTAssertTrue(String(decoding: try reopened.exportJSON(), as: UTF8.self).contains("fixture-model"))
+        XCTAssertFalse(String(decoding: try reopened.exportJSON(), as: UTF8.self).contains("SHAPE-CREDENTIAL-FIXTURE"))
+    }
+
+    func testShapeSchemaDefaultOptionsAndDepthValidation() throws {
+        let store = try ClientSettings(storageURL: self.storageURL())
+        let invalidRequired = ClientSettingDefinition(key: "review.required", title: "Required", section: "Review", defaultValue: .object([:]),
+                                                      valueShape: .object(["id": .string], required: ["missing"]))
+        let invalidCount = ClientSettingDefinition(key: "review.count", title: "Count", section: "Review", defaultValue: .array([]),
+                                                   valueShape: .array(.any, maximumCount: -1))
+        let invalidDefault = ClientSettingDefinition(key: "review.default", title: "Default", section: "Review", defaultValue: .array([.bool(true)]),
+                                                     valueShape: .array(.integer, maximumCount: 1))
+        let invalidOption = ClientSettingDefinition(key: "review.option", title: "Option", section: "Review", defaultValue: .array([]),
+                                                    options: [.init(value: .array([.bool(true)]), title: "Wrong")], valueShape: .array(.number, maximumCount: 1))
+        var deep: ClientSettingShape = .any
+        for _ in 0..<62 { deep = .array(deep, maximumCount: 1) }
+        for definition in [invalidRequired, invalidCount, invalidDefault, invalidOption,
+                           .init(key: "review.deep", title: "Deep", section: "Review", defaultValue: .array([]), valueShape: deep)] {
+            XCTAssertThrowsError(try store.register([definition]))
+        }
+        XCTAssertTrue(store.definitions().isEmpty)
+        let numbers = ClientSettingDefinition(key: "review.numbers", title: "Numbers", section: "Review", defaultValue: .array([]),
+                                              valueShape: .array(.number, maximumCount: 2))
+        try store.register([numbers])
+        try store.set(.array([.integer(Int64.max), .number(0.125)]), for: numbers.key)
+        XCTAssertThrowsError(try store.set(.array([.bool(true)]), for: numbers.key))
+    }
+
+    func testShapeTighteningQuarantinesRejectedCachedValuesAndAllowsReplacement() throws {
+        let url = try self.storageURL()
+        let store = try ClientSettings(storageURL: url)
+        let loose = self.definition("review.services", .array([]))
+        try store.register([loose])
+        try store.set(.array([.object(["apiKey": .string("LEGACY-SHAPE-CREDENTIAL")])]), for: loose.key)
+        let original = try Data(contentsOf: url)
+        let closed = ClientSettingDefinition(key: loose.key, title: "Services", section: "Review", defaultValue: .array([]), valueShape: self.serviceShape())
+        XCTAssertThrowsError(try store.register([closed]))
+        XCTAssertEqual(store.definitions(), [closed])
+        XCTAssertNil(store.snapshot()[closed.key])
+        XCTAssertFalse(String(decoding: try store.exportJSON(), as: UTF8.self).contains("LEGACY-SHAPE-CREDENTIAL"))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        try store.setPublic(.array([]), for: closed.key)
+        XCTAssertEqual(store.value(closed.key), .array([]))
+        XCTAssertFalse(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("LEGACY-SHAPE-CREDENTIAL"))
     }
 
     #if !canImport(Security)

@@ -21,10 +21,14 @@ final class ClientFeatureCompositionTests: XCTestCase {
             + FeedFeatures.definitions + PlayerFeatures.definitions + PlayerFeatures.galleryDefinitions
             + PillFeatures.definitions + PrivacyFeatures.definitions + PrivacyExtrasFeatures.definitions
             + AIFeatures.definitions + ToolsFeatures.definitions
+            + NewNetworkFeatures.definitions + MapFeatures.definitions + DialogFeatures.definitions
+            + IdentityFeatures.definitions + StickerFeatures.definitions
         let keys = Set(definitions.map(\.key))
         XCTAssertEqual(keys.count, definitions.count, "Two domain providers must not claim the same setting key")
         XCTAssertTrue(keys.isDisjoint(with: Set(PrivacyExtrasFeatures.privateDefinitions.map(\.key))),
                       "App-lock credentials must never join the generic client settings schema")
+        XCTAssertTrue(keys.isDisjoint(with: Set(IdentityFeatures.accountDefinitions.map(\.key))),
+                      "Account-local identity data must not become app-global editable preferences")
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("feature-composition-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

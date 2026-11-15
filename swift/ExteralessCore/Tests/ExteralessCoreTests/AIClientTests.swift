@@ -185,6 +185,77 @@ final class AIClientTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(messages.last?["content"] as? String, "5")
     }
 
+    func testPartialStreamingGenerationNeverGetsOptionalParameterRetry() async throws {
+        let transport = AIScriptedTransport([
+            .init(body: "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n", type: "text/event-stream", failure: .http(400)),
+            .init(body: #"{"choices":[{"message":{"content":"replayed"}}]}"#)
+        ])
+        let events = AIEventFixture()
+        do {
+            _ = try await AIClient(transport: transport).generate(service: service, apiKey: "fixture", request: .init(messages: [.init(role: .user, content: "fixture")]), onEvent: { await events.append($0) })
+            XCTFail("Partial generation was replayed")
+        } catch { XCTAssertEqual(error as? AIError, .http(400)) }
+        let updates = await events.events
+        XCTAssertEqual(updates, [.text("partial")])
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
+    func testDeepSeekReasoningContinuationIsReplayedOnlyInAssistantToolRound() async throws {
+        let transport = AIScriptedTransport([
+            .init(body: #"{"choices":[{"message":{"content":null,"reasoning_content":"fixture-deepseek-continuation","private_unknown":"must-not-replay","tool_calls":[{"id":"read-1","type":"function","function":{"name":"fixture_read","arguments":"{}"}}]}}]}"#),
+            .init(body: #"{"choices":[{"message":{"content":"Review complete"},"finish_reason":"stop"}]}"#)
+        ])
+        let tools = AIToolHandler(definitions: [.init(name: "fixture_read", description: "Fixture read", parameters: .object([:]))]) { _, _ in "fixture source" }
+        let events = AIEventFixture()
+        let result = try await AIClient(transport: transport).generate(service: AIService(url: "https://deepseek.fixture.test/v1", model: "deepseek-reasoner", reasoningEffort: 2), apiKey: "fixture", request: .init(messages: [.init(role: .user, content: "Review fixture")]), tools: tools, onEvent: { await events.append($0) })
+        XCTAssertEqual(result.text, "Review complete")
+        XCTAssertEqual(result.reasoning, "fixture-deepseek-continuation")
+        let messages = try XCTUnwrap(try json(transport.requests[1])["messages"] as? [[String: Any]])
+        let assistant = try XCTUnwrap(messages.first { $0["role"] as? String == "assistant" })
+        XCTAssertEqual(assistant["reasoning_content"] as? String, "fixture-deepseek-continuation")
+        XCTAssertNil(assistant["private_unknown"])
+        XCTAssertEqual(messages.last?["role"] as? String, "tool")
+        XCTAssertNil(messages.last?["reasoning_content"])
+        let updates = await events.events
+        XCTAssertFalse(updates.contains(.text("fixture-deepseek-continuation")))
+        XCTAssertTrue(updates.contains(.reasoning("fixture-deepseek-continuation")))
+    }
+
+    func testStructuredContinuationKeepsOpaqueStateAndDropsUnknownFields() async throws {
+        let transport = AIScriptedTransport([
+            .init(body: #"{"choices":[{"message":{"content":null,"reasoning":{"content":"display fixture","signature":"object-signature","unknown":"omit"},"reasoning_details":[{"type":"reasoning.text","text":"detail fixture","signature":"signature-sentinel","id":"r1","format":"fixture-v1","index":0,"untrusted":"omit"},{"type":"reasoning.encrypted","data":"encrypted-sentinel","id":"r2","index":1}],"tool_calls":[{"id":"read-1","type":"function","function":{"name":"fixture_read","arguments":"{}"}}]}}]}"#),
+            .init(body: #"{"choices":[{"message":{"content":"Done"}}]}"#)
+        ])
+        let tools = AIToolHandler(definitions: [.init(name: "fixture_read", description: "Fixture read", parameters: .object([:]))]) { _, _ in "source" }
+        let result = try await AIClient(transport: transport).generate(service: service, apiKey: "fixture", request: .init(messages: [.init(role: .user, content: "Review fixture")]), tools: tools)
+        XCTAssertEqual(result.reasoning, "display fixture")
+        XCTAssertFalse(result.reasoning.contains("encrypted-sentinel"))
+        let messages = try XCTUnwrap(try json(transport.requests[1])["messages"] as? [[String: Any]])
+        let object = try XCTUnwrap(messages.first { $0["role"] as? String == "assistant" }?["reasoning"] as? [String: String])
+        XCTAssertEqual(object["signature"], "object-signature")
+        XCTAssertNil(object["unknown"])
+        let details = try XCTUnwrap(messages.first { $0["role"] as? String == "assistant" }?["reasoning_details"] as? [[String: Any]])
+        XCTAssertEqual(details.count, 2)
+        XCTAssertEqual(details[0]["signature"] as? String, "signature-sentinel")
+        XCTAssertEqual(details[0]["format"] as? String, "fixture-v1")
+        XCTAssertEqual(details[1]["data"] as? String, "encrypted-sentinel")
+        XCTAssertEqual(details[1]["index"] as? Int, 1)
+        XCTAssertNil(details[0]["untrusted"])
+    }
+
+    func testContinuationBudgetRejectsBeforeExecutingTools() async throws {
+        let call: [String: Any] = ["id": "read-1", "type": "function", "function": ["name": "fixture_read", "arguments": "{}"]]
+        let message: [String: Any] = ["content": NSNull(), "reasoning_details": [["type": "reasoning.encrypted", "data": String(repeating: "x", count: AILimits.eventBytes + 1)]], "tool_calls": [call]]
+        let body: [String: Any] = ["choices": [["message": message]]]
+        let transport = AIScriptedTransport([.init(body: String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self))])
+        let tools = AIToolHandler(definitions: [.init(name: "fixture_read", description: "Fixture read", parameters: .object([:]))]) { _, _ in XCTFail("Oversized continuation reached a tool"); return "" }
+        do {
+            _ = try await AIClient(transport: transport).generate(service: service, apiKey: "fixture", request: .init(messages: [.init(role: .user, content: "fixture")]), tools: tools)
+            XCTFail("Oversized continuation was accepted")
+        } catch { XCTAssertEqual(error as? AIError, .responseTooLarge) }
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     private func mockTransport() -> AIURLSessionTransport {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [AIMockURLProtocol.self]
@@ -210,7 +281,11 @@ final class AIScriptedTransport: AIHTTPTransport, @unchecked Sendable {
     struct Reply: Sendable {
         let status: Int
         let body: String
-        init(status: Int = 200, body: String) { self.status = status; self.body = body }
+        let type: String
+        let failure: AIError?
+        init(status: Int = 200, body: String = "", type: String = "application/json", failure: AIError? = nil) {
+            self.status = status; self.body = body; self.type = type; self.failure = failure
+        }
     }
     private let lock = NSLock()
     private var replies: [Reply]
@@ -224,9 +299,9 @@ final class AIScriptedTransport: AIHTTPTransport, @unchecked Sendable {
         lock.unlock()
         return AsyncThrowingStream { continuation in
             guard let reply else { continuation.finish(throwing: AIError.network); return }
-            continuation.yield(.response(status: reply.status, headers: ["content-type": "application/json"]))
+            continuation.yield(.response(status: reply.status, headers: ["content-type": reply.type]))
             continuation.yield(.data(Data(reply.body.utf8)))
-            continuation.finish()
+            continuation.finish(throwing: reply.failure)
         }
     }
 }

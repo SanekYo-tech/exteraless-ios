@@ -157,26 +157,68 @@ public struct AIManualTranslationState: Codable, Equatable, Sendable {
 
 public enum AIManualTranslations {
     private static let mutationLock = NSRecursiveLock()
+    public static let maximumRecords = 2048
+    private struct Record: Codable {
+        var language: String
+        var visible: Bool
+        var sequence: UInt64
+        private enum CodingKeys: String, CodingKey { case language, visible, sequence }
+
+        init(_ state: AIManualTranslationState, sequence: UInt64) {
+            language = state.language; visible = state.visible; self.sequence = sequence
+        }
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            language = try values.decode(String.self, forKey: .language)
+            visible = try values.decode(Bool.self, forKey: .visible)
+            sequence = try values.decodeIfPresent(UInt64.self, forKey: .sequence) ?? 0
+        }
+        var state: AIManualTranslationState { .init(language: language, visible: visible) }
+    }
     public static func messageKey(peerId: Int64, namespace: Int32, id: Int32) -> String { "\(peerId):\(namespace):\(id)" }
     public static func register(accountId: String, store: ClientSettings = .shared) throws {
         guard Int64(accountId) != nil else { throw AIError.configuration }
         try store.register([.init(key: "ai.manualTranslations." + accountId, title: "Manual translation state", section: "AI state", defaultValue: .string(""), isSecret: true)])
     }
     public static func state(accountId: String, messageKey: String, store: ClientSettings = .shared) -> AIManualTranslationState? {
-        records(accountId: accountId, store: store)[messageKey]
+        (try? records(accountId: accountId, store: store)[messageKey])?.state
     }
     public static func set(_ state: AIManualTranslationState?, accountId: String, messageKey: String, store: ClientSettings = .shared) throws {
         mutationLock.lock()
         defer { mutationLock.unlock() }
         try register(accountId: accountId, store: store)
-        var records = records(accountId: accountId, store: store)
-        records[messageKey] = state
-        guard records.count <= 2048 else { throw AIError.inputTooLarge }
+        var records = try records(accountId: accountId, store: store)
+        if let state {
+            // Refresh on a mutation, not every renderer read. Compact the sequence
+            // on overflow without changing its order; legacy records start at zero.
+            if records.values.contains(where: { $0.sequence == UInt64.max }) {
+                for (index, entry) in records.sorted(by: older).enumerated() { records[entry.key]?.sequence = UInt64(index + 1) }
+            }
+            let sequence = (records.values.map(\.sequence).max() ?? 0) + 1
+            records[messageKey] = Record(state, sequence: sequence)
+        } else { records.removeValue(forKey: messageKey) }
+        if records.count > maximumRecords {
+            // Hide is a reversible state, but hidden markers are the first eviction
+            // candidates. Always retain the just-written marker, then newest visible
+            // entries. Ties in a legacy dictionary use stable message-key order.
+            let candidates = records.filter { $0.key != messageKey }.sorted {
+                if $0.value.visible != $1.value.visible { return !$0.value.visible }
+                return older($0, $1)
+            }
+            for entry in candidates.prefix(records.count - maximumRecords) { records.removeValue(forKey: entry.key) }
+        }
         let data = try JSONEncoder().encode(records)
         try store.set(.string(String(decoding: data, as: UTF8.self)), for: "ai.manualTranslations." + accountId)
     }
-    private static func records(accountId: String, store: ClientSettings) -> [String: AIManualTranslationState] {
+    private static func older(_ lhs: (key: String, value: Record), _ rhs: (key: String, value: Record)) -> Bool {
+        lhs.value.sequence == rhs.value.sequence ? lhs.key < rhs.key : lhs.value.sequence < rhs.value.sequence
+    }
+    private static func records(accountId: String, store: ClientSettings) throws -> [String: Record] {
         let raw = store.string("ai.manualTranslations." + accountId)
-        return (try? JSONDecoder().decode([String: AIManualTranslationState].self, from: Data(raw.utf8))) ?? [:]
+        if raw.isEmpty { return [:] }
+        // A malformed secure item is preserved, rather than silently overwritten
+        // with a one-entry dictionary during the next successful translation.
+        guard let value = try? JSONDecoder().decode([String: Record].self, from: Data(raw.utf8)) else { throw AIError.configuration }
+        return value
     }
 }

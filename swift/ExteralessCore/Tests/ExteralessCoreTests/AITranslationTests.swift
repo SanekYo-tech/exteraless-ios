@@ -11,7 +11,7 @@ final class AITranslationTests: XCTestCase, @unchecked Sendable {
         defer { fixture.remove() }
         let settings = fixture.settings
         let service = AIService(id: "fixture-service", name: "Fixture", url: "https://fixture.test/v1", model: "fixture-model")
-        try settings.save(service: service, apiKey: "fixture-only-secret")
+        try settings.save(service: service, credential: .replace("fixture-only-secret"))
         try settings.save(role: AIRole(name: "Private role", prompt: "fixture-private-prompt"))
         try settings.appendHistory(accountId: "1", prompt: "fixture-private-message", response: "fixture-private-response")
         XCTAssertEqual(settings.apiKey(for: service), "fixture-only-secret")

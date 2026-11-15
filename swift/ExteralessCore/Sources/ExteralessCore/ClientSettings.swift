@@ -9,7 +9,7 @@ import Glibc
 /// Keychain data, underlying error descriptions or account paths.
 public enum ClientSettingsError: Error, Equatable, LocalizedError, Sendable {
     public enum ValidationReason: String, Sendable {
-        case type, option, range, step
+        case type, option, range, step, shape
     }
 
     case invalidKey
@@ -20,10 +20,12 @@ public enum ClientSettingsError: Error, Equatable, LocalizedError, Sendable {
     case conflictingChanges
     case concurrentModification
     case nonFiniteNumber
+    case unsupportedNumber
     case invalidJSON
     case unsupportedVersion(Int64)
     case notConfigured
     case invalidStorageURL
+    case invalidDurabilityRoot
     case storageFailure(operation: String, code: Int)
     case secretStorageUnavailable
     case secretAccessDenied
@@ -42,20 +44,41 @@ public enum ClientSettingsError: Error, Equatable, LocalizedError, Sendable {
             case .option: return "Choose one of the available options for \(key)."
             case .range: return "The value is outside the allowed range for \(key)."
             case .step: return "The value does not match the allowed step for \(key)."
+            case .shape: return "The value does not match the allowed structure for \(key)."
             }
         case .conflictingChanges: return "A setting cannot be updated and reset in the same batch."
         case .concurrentModification: return "The affected settings have changed. Refresh the snapshot before trying again."
         case .nonFiniteNumber: return "Settings cannot contain NaN or infinite numbers."
+        case .unsupportedNumber: return "The JSON number cannot be represented without loss."
         case .invalidJSON: return "The settings document is invalid. The existing file has been preserved."
         case let .unsupportedVersion(version): return "This settings document requires a newer client (version \(version))."
         case .notConfigured: return "The settings storage has not been configured."
         case .invalidStorageURL: return "Settings require a local file URL."
+        case .invalidDurabilityRoot: return "Configure an existing durable storage directory containing the settings file."
         case let .storageFailure(operation, code): return "Settings storage failed during \(operation) (code \(code))."
         case .secretStorageUnavailable: return "Persistent secret storage is unavailable on this platform."
         case .secretAccessDenied: return "This setting is managed by native credential services."
         case let .secretStorageFailure(status): return "Secure settings storage is unavailable (code \(status))."
         case .invalidSecret: return "A secure setting could not be read. Its stored value has been preserved."
         }
+    }
+}
+
+enum ClientSettingsDirectorySyncStage: Equatable, Sendable {
+    case ancestors
+    case settings
+}
+
+/// Bounded filesystem fault/ordering fixtures only. No hook is installed by the
+/// public initializers. Hooks run on the writer and must not re-enter that store.
+struct ClientSettingsFileHooks: Sendable {
+    var afterDirectoriesCreated: (@Sendable (URL) throws -> Void)?
+    var beforeDirectorySync: (@Sendable (URL, ClientSettingsDirectorySyncStage) throws -> Void)?
+
+    init(afterDirectoriesCreated: (@Sendable (URL) throws -> Void)? = nil,
+         beforeDirectorySync: (@Sendable (URL, ClientSettingsDirectorySyncStage) throws -> Void)? = nil) {
+        self.afterDirectoriesCreated = afterDirectoriesCreated
+        self.beforeDirectorySync = beforeDirectorySync
     }
 }
 
@@ -95,6 +118,7 @@ public final class ClientSettings: @unchecked Sendable {
         var values: [String: ClientSettingValue] = [:]
         var storedKeys: Set<String> = []
         var secretKeys: Set<String> = []
+        var secretAliases: [String: String] = [:]
         var error: ClientSettingsError?
     }
 
@@ -108,7 +132,7 @@ public final class ClientSettings: @unchecked Sendable {
     }
 
     private enum Operation {
-        case configure(URL, (any ClientSecretStore)?)
+        case configure(URL, (any ClientSecretStore)?, URL?)
         case register([ClientSettingDefinition])
         case reload
         case set(String, ClientSettingValue)
@@ -130,27 +154,33 @@ public final class ClientSettings: @unchecked Sendable {
     private var cache = Cache()
     private var observers: [UUID: ClientSettingsObserver] = [:]
     private var storageURL: URL?
+    private var durabilityRootURL: URL?
     private var secretStore: any ClientSecretStore
     private var registeredDefinitions: [ClientSettingDefinition] = []
+    private var learnedSecretAliases: [String: String] = [:]
     private let afterFileReplace: (@Sendable () throws -> Void)?
+    private let fileHooks: ClientSettingsFileHooks
 
     /// The initial file read is completed before this initializer returns.
     /// Inject a fake secretStore in tests; no production in-memory fallback exists.
-    public convenience init(storageURL: URL, secretStore: any ClientSecretStore = ClientSecrets.systemStore()) throws {
-        try self.init(storageURL: storageURL, secretStore: secretStore, afterFileReplace: nil)
+    public convenience init(storageURL: URL, secretStore: any ClientSecretStore = ClientSecrets.systemStore(), durabilityRootURL: URL? = nil) throws {
+        try self.init(storageURL: storageURL, secretStore: secretStore, afterFileReplace: nil, durabilityRootURL: durabilityRootURL)
     }
 
     /// Internal fault injection at the real post-rename/pre-directory-sync seam.
     /// Production initializers never supply a hook; fixtures must not re-enter.
-    init(storageURL: URL, secretStore: any ClientSecretStore, afterFileReplace: (@Sendable () throws -> Void)?) throws {
+    init(storageURL: URL, secretStore: any ClientSecretStore, afterFileReplace: (@Sendable () throws -> Void)?,
+         durabilityRootURL: URL? = nil, fileHooks: ClientSettingsFileHooks = ClientSettingsFileHooks()) throws {
         self.secretStore = secretStore
         self.afterFileReplace = afterFileReplace
-        try self.configure(storageURL: storageURL)
+        self.fileHooks = fileHooks
+        try self.perform(.configure(storageURL, nil, durabilityRootURL))
     }
 
     private init(defaultStorage: ()) {
         self.secretStore = ClientSecrets.systemStore()
         self.afterFileReplace = nil
+        self.fileHooks = ClientSettingsFileHooks()
         do {
             try self.configure(storageURL: Self.defaultStorageURL())
         } catch {
@@ -172,11 +202,18 @@ public final class ClientSettings: @unchecked Sendable {
     /// good cache, but subsequent writes target and revalidate the selected file.
     /// A corrupt new file can never cause a write to the previous/default path.
     public func configure(storageURL: URL) throws {
-        try self.perform(.configure(storageURL, nil))
+        try self.perform(.configure(storageURL, nil, nil))
     }
 
-    public func configure(storageURL: URL, secretStore: any ClientSecretStore) throws {
-        try self.perform(.configure(storageURL, secretStore))
+    /// The root is an already durable, caller-owned directory (for example the
+    /// existing app-group container). Every descendant link is synced, whether
+    /// created by this process, another creator, or an earlier failed attempt.
+    public func configure(storageURL: URL, durabilityRootURL: URL) throws {
+        try self.perform(.configure(storageURL, nil, durabilityRootURL))
+    }
+
+    public func configure(storageURL: URL, secretStore: any ClientSecretStore, durabilityRootURL: URL? = nil) throws {
+        try self.perform(.configure(storageURL, secretStore, durabilityRootURL))
     }
 
     /// Identical registrations are idempotent. Labels, options and defaults may
@@ -342,12 +379,15 @@ public final class ClientSettings: @unchecked Sendable {
             if case let .register(definitions) = operation {
                 learnedSecretKeys.formUnion(definitions.filter { $0.isSecret && ClientSettingDefinition.isValidKey($0.key) }.map(\.key))
             }
+            learnedSecretKeys.formUnion(self.learnedSecretAliases.keys)
+            learnedSecretKeys.formUnion(self.learnedSecretAliases.values)
             // Keychain and rename can commit before a later I/O failure. Re-read
             // on failure too, rather than reporting a fictitious rollback.
             var recovered: Cache?
-            if let url = self.storageURL {
-                recovered = try? ClientSettingsFile.withLock(at: url) {
-                    let document = try ClientSettingsFile.read(at: url)
+            if let url = self.storageURL, let root = self.durabilityRootURL {
+                recovered = try? ClientSettingsFile.withLock(at: url, durableRoot: root, hooks: self.fileHooks) {
+                    var document = try ClientSettingsFile.read(at: url)
+                    try self.mergeSecretAliases(into: &document)
                     learnedSecretKeys.formUnion(document.secretKeys)
                     if case .applyPublic = operation {
                         self.cacheLock.lock()
@@ -365,6 +405,21 @@ public final class ClientSettings: @unchecked Sendable {
             // Even a failed plaintext->secret migration must immediately stop
             // exposing that value through snapshots/export or later plain writes.
             next.secretKeys.formUnion(learnedSecretKeys)
+            let aliases = self.learnedSecretAliases
+            next.secretAliases = aliases
+            // A valid schema remains available after a load/backend failure so
+            // native set/reset can repair a cold-start corrupt item. An older
+            // cached value that violates a newly accepted shape is never exported.
+            next.definitions = self.registeredDefinitions.filter { aliases[$0.key] == nil }
+            let registeredKeys = Set(next.definitions.map(\.key))
+            next.values = next.values.filter { registeredKeys.contains($0.key) }
+            next.storedKeys.formIntersection(registeredKeys)
+            for definition in next.definitions {
+                if definition.isSecret { next.secretKeys.insert(definition.key) }
+                if let value = next.values[definition.key] {
+                    next.values[definition.key] = try? definition.validatedValue(value)
+                }
+            }
             next.error = safeError
             change = self.publish(next)
         }
@@ -378,14 +433,15 @@ public final class ClientSettings: @unchecked Sendable {
     /// locks have been released. This path cannot enter secret migration logic.
     private func runPublicBatchLocked(_ values: [String: ClientSettingValue], resetting: Set<String>,
                                       expected: ClientSettingsSnapshot?) throws -> (change: Change, failure: ClientSettingsError?) {
-        guard let url = self.storageURL else { throw ClientSettingsError.notConfigured }
+        guard let url = self.storageURL, let root = self.durabilityRootURL else { throw ClientSettingsError.notConfigured }
         let definitions = self.registeredDefinitions
         self.cacheLock.lock()
         let cached = self.cache
         self.cacheLock.unlock()
-        return try ClientSettingsFile.withLock(at: url) {
+        return try ClientSettingsFile.withLock(at: url, durableRoot: root, hooks: self.fileHooks) {
             let original = try ClientSettingsFile.read(at: url)
             var document = original
+            try self.mergeSecretAliases(into: &document)
             document.secretKeys.formUnion(cached.secretKeys)
             document.secretKeys.formUnion(definitions.filter(\.isSecret).map(\.key))
             let affected = Set(values.keys).union(resetting)
@@ -429,7 +485,9 @@ public final class ClientSettings: @unchecked Sendable {
             }
             var committed = try self.resolvePublic(document, definitions: definitions, cached: cached, validated: validated)
             if document != original || (document.legacy && !definitions.isEmpty) {
-                committed.error = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace)
+                committed.error = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace, hooks: self.fileHooks)
+            } else {
+                committed.error = ClientSettingsFile.confirmDurability(at: url, hooks: self.fileHooks)
             }
             return (self.publish(committed), committed.error)
         }
@@ -440,10 +498,12 @@ public final class ClientSettings: @unchecked Sendable {
     private func resolvePublic(_ document: ClientSettingsFile.Document, definitions: [ClientSettingDefinition],
                                cached: Cache, validated: [String: ClientSettingValue] = [:]) throws -> Cache {
         var result = Cache()
-        result.definitions = definitions
+        result.definitions = definitions.filter { document.secretAliases[$0.key] == nil }
+        result.secretAliases = document.secretAliases
         result.secretKeys = document.secretKeys.union(cached.secretKeys).union(definitions.filter(\.isSecret).map(\.key))
         for definition in definitions {
             let key = definition.key
+            if document.secretAliases[key] != nil { continue }
             if result.secretKeys.contains(key) {
                 result.values[key] = cached.values[key] ?? definition.defaultValue
                 if cached.storedKeys.contains(key) { result.storedKeys.insert(key) }
@@ -461,13 +521,16 @@ public final class ClientSettings: @unchecked Sendable {
 
     private func runLocked(_ operation: Operation) throws -> Cache {
         var definitions = self.registeredDefinitions
-        if case let .configure(url, secretStore) = operation {
+        if case let .configure(url, secretStore, requestedRoot) = operation {
             // Clear the previous target even for an invalid URL.
+            let previousRoot = self.durabilityRootURL
             self.storageURL = nil
+            self.durabilityRootURL = nil
             guard url.isFileURL, !url.hasDirectoryPath, !url.lastPathComponent.isEmpty else {
                 throw ClientSettingsError.invalidStorageURL
             }
             self.storageURL = url.standardizedFileURL
+            self.durabilityRootURL = try ClientSettingsFile.durabilityRoot(for: url, requested: requestedRoot, previous: previousRoot)
             if let secretStore { self.secretStore = secretStore }
         }
         if case let .register(additions) = operation {
@@ -480,41 +543,74 @@ public final class ClientSettings: @unchecked Sendable {
                     definitions.append(definition)
                 }
             }
+            // Schema validation is atomic; stored-value loading is separate.
+            // Keep valid declarations even if an individual persisted value is
+            // unreadable, otherwise no native repair API could address that key.
+            self.registeredDefinitions = definitions
         }
-        guard let url = self.storageURL else { throw ClientSettingsError.notConfigured }
+        guard let url = self.storageURL, let root = self.durabilityRootURL else { throw ClientSettingsError.notConfigured }
         self.cacheLock.lock()
         let protectedSecretKeys = self.cache.secretKeys
         self.cacheLock.unlock()
-        let result: Cache = try ClientSettingsFile.withLock(at: url) {
+        if case let .migrateKey(oldKey, key) = operation {
+            let destination = try Self.definition(key, in: definitions)
+            guard ClientSettingDefinition.isValidKey(oldKey), oldKey != key,
+                  !definitions.contains(where: { $0.key == oldKey && $0.isSecret }) else { throw ClientSettingsError.invalidKey }
+            if destination.isSecret {
+                guard !protectedSecretKeys.contains(oldKey) || self.learnedSecretAliases[oldKey] == key else { throw ClientSettingsError.secretAccessDenied }
+                if let previous = self.learnedSecretAliases[oldKey], previous != key { throw ClientSettingsError.conflictingChanges }
+                var aliases = self.learnedSecretAliases
+                aliases[oldKey] = key
+                guard Set(aliases.keys).isDisjoint(with: aliases.values) else { throw ClientSettingsError.conflictingChanges }
+                self.learnedSecretAliases = aliases
+            }
+        }
+        let result: Cache = try ClientSettingsFile.withLock(at: url, durableRoot: root, hooks: self.fileHooks) {
             var document = try ClientSettingsFile.read(at: url)
             let original = document
+            try self.mergeSecretAliases(into: &document)
             document.secretKeys.formUnion(protectedSecretKeys)
             var requestedSecrets: [String: SecretMutation] = [:]
+            var loadedSecrets: [String: (value: ClientSettingValue?, present: Bool)] = [:]
             switch operation {
             case let .set(key, value), let .setPublic(key, value):
                 let definition = try Self.definition(key, in: definitions)
+                guard document.secretAliases[key] == nil else { throw ClientSettingsError.secretAccessDenied }
                 if case .setPublic = operation, definition.isSecret || document.secretKeys.contains(key) {
                     throw ClientSettingsError.secretAccessDenied
                 }
                 let validated = try definition.validatedValue(value)
                 if definition.isSecret {
-                    requestedSecrets[key] = validated == definition.defaultValue ? .delete : .set(validated)
+                    requestedSecrets[key] = .set(validated)
                 } else {
                     document.values[key] = validated
                 }
             case let .reset(key):
                 let definition = try Self.definition(key, in: definitions)
+                guard document.secretAliases[key] == nil else { throw ClientSettingsError.secretAccessDenied }
                 document.values.removeValue(forKey: key)
                 if definition.isSecret { requestedSecrets[key] = .delete }
             case let .migrateKey(oldKey, key):
                 guard ClientSettingDefinition.isValidKey(oldKey), oldKey != key,
-                      !document.secretKeys.contains(oldKey),
                       !definitions.contains(where: { $0.key == oldKey && $0.isSecret }) else {
                     throw ClientSettingsError.invalidKey
                 }
                 let definition = try Self.definition(key, in: definitions)
-                if let old = document.values.removeValue(forKey: oldKey), document.values[key] == nil {
-                    document.values[key] = try definition.validatedValue(old)
+                guard !original.secretKeys.contains(oldKey) || original.secretAliases[oldKey] == key else { throw ClientSettingsError.secretAccessDenied }
+                if definition.isSecret {
+                    // The real destination is Keychain, not document.values.
+                    // A valid existing destination wins without validating the
+                    // discarded source (which can have an obsolete/wrong type).
+                    let destination = try self.readSecret(key, definition: definition)
+                    loadedSecrets[key] = (destination, destination != nil)
+                    if let old = document.values.removeValue(forKey: oldKey), destination == nil, document.values[key] == nil {
+                        document.values[key] = try definition.validatedValue(old)
+                    }
+                } else {
+                    guard !document.secretKeys.contains(oldKey), !document.secretKeys.contains(key) else { throw ClientSettingsError.secretAccessDenied }
+                    if let old = document.values.removeValue(forKey: oldKey), document.values[key] == nil {
+                        document.values[key] = try definition.validatedValue(old)
+                    }
                 }
             default:
                 break
@@ -522,10 +618,12 @@ public final class ClientSettings: @unchecked Sendable {
 
             // Validate every candidate before either backend is modified.
             var next = Cache()
-            next.definitions = definitions
+            next.definitions = definitions.filter { document.secretAliases[$0.key] == nil }
+            next.secretAliases = document.secretAliases
             var secretWrites: [(String, Data?)] = []
             for definition in definitions {
                 let key = definition.key
+                if document.secretAliases[key] != nil { continue }
                 if !definition.isSecret {
                     guard !document.secretKeys.contains(key) else {
                         // A build must not downgrade an older secret to plaintext.
@@ -537,11 +635,21 @@ public final class ClientSettings: @unchecked Sendable {
                 }
                 document.secretKeys.insert(key)
                 let previous: ClientSettingValue?
-                do { previous = try self.readSecret(key, definition: definition) }
+                do {
+                    if let loaded = loadedSecrets[key] { previous = loaded.value }
+                    else { previous = try self.readSecret(key, definition: definition) }
+                }
                 catch ClientSettingsError.invalidSecret where requestedSecrets[key] != nil {
                     // An explicit replacement/reset can repair a corrupt secure
                     // item; ordinary reads never discard it or invent a default.
                     previous = nil
+                }
+                catch where requestedSecrets[key] == nil && !requestedSecrets.isEmpty {
+                    // Repair an explicitly addressed item even if another item
+                    // is unreadable. Keep the other failure visible; do not
+                    // publish a guessed credential or report an all-clear.
+                    next.error = next.error ?? Self.secretError(error)
+                    continue
                 }
                 let plaintext = document.values.removeValue(forKey: key)
                 let desired: ClientSettingValue?
@@ -552,8 +660,7 @@ public final class ClientSettings: @unchecked Sendable {
                     if let previous {
                         desired = previous
                     } else if let plaintext {
-                        let validated = try definition.validatedValue(plaintext)
-                        desired = validated == definition.defaultValue ? nil : validated
+                        desired = try definition.validatedValue(plaintext)
                     } else {
                         desired = nil
                     }
@@ -561,7 +668,11 @@ public final class ClientSettings: @unchecked Sendable {
                 if desired != previous || requestedSecrets[key] != nil {
                     let data: Data?
                     if let desired {
-                        do { data = try JSONEncoder().encode(desired) }
+                        do {
+                            let encoded = try JSONEncoder().encode(desired)
+                            _ = try ClientSettingValue.decodeJSON(encoded)
+                            data = encoded
+                        }
                         catch { throw ClientSettingsError.invalidSecret }
                     } else {
                         data = nil
@@ -581,7 +692,15 @@ public final class ClientSettings: @unchecked Sendable {
             // Structural v0 -> v1 migration happens with registration/mutation.
             let upgrade = document.legacy && !definitions.isEmpty
             if document != original || upgrade {
-                next.error = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace)
+                let durabilityError = try ClientSettingsFile.write(document, at: url, afterReplace: self.afterFileReplace, hooks: self.fileHooks)
+                next.error = durabilityError ?? next.error
+            } else {
+                switch operation {
+                case .set, .setPublic, .reset, .migrateKey:
+                    next.error = ClientSettingsFile.confirmDurability(at: url, hooks: self.fileHooks) ?? next.error
+                default:
+                    break
+                }
             }
             return next
         }
@@ -592,9 +711,11 @@ public final class ClientSettings: @unchecked Sendable {
     /// Read-only error recovery: no migrations, deletion or writes.
     private func resolve(_ document: ClientSettingsFile.Document, definitions: [ClientSettingDefinition]) throws -> Cache {
         var result = Cache()
-        result.definitions = definitions
+        result.definitions = definitions.filter { document.secretAliases[$0.key] == nil }
+        result.secretAliases = document.secretAliases
         result.secretKeys = document.secretKeys.union(definitions.filter(\.isSecret).map(\.key))
         for definition in definitions {
+            if document.secretAliases[definition.key] != nil { continue }
             if definition.isSecret {
                 let secret = try self.readSecret(definition.key, definition: definition)
                 result.values[definition.key] = secret ?? definition.defaultValue
@@ -610,13 +731,26 @@ public final class ClientSettings: @unchecked Sendable {
         return result
     }
 
+    private func mergeSecretAliases(into document: inout ClientSettingsFile.Document) throws {
+        var aliases = self.learnedSecretAliases
+        for (source, destination) in document.secretAliases {
+            if let known = aliases[source], known != destination { throw ClientSettingsError.conflictingChanges }
+            aliases[source] = destination
+        }
+        guard Set(aliases.keys).isDisjoint(with: aliases.values) else { throw ClientSettingsError.conflictingChanges }
+        self.learnedSecretAliases = aliases
+        document.secretAliases = aliases
+        document.secretKeys.formUnion(document.secretAliases.keys)
+        document.secretKeys.formUnion(document.secretAliases.values)
+    }
+
     private func readSecret(_ key: String, definition: ClientSettingDefinition) throws -> ClientSettingValue? {
         let data: Data?
         do { data = try self.secretStore.data(for: key) }
         catch { throw Self.secretError(error) }
         guard let data else { return nil }
         do {
-            return try definition.validatedValue(JSONDecoder().decode(ClientSettingValue.self, from: data))
+            return try definition.validatedValue(ClientSettingValue.decodeJSON(data))
         } catch {
             throw ClientSettingsError.invalidSecret
         }
@@ -667,6 +801,7 @@ private enum ClientSettingsFile {
     struct Document: Equatable {
         var values: [String: ClientSettingValue] = [:]
         var secretKeys: Set<String> = []
+        var secretAliases: [String: String] = [:]
         var extra: [String: ClientSettingValue] = [:]
         var legacy = false
     }
@@ -689,7 +824,10 @@ private enum ClientSettingsFile {
         }
         guard data.count <= self.maximumBytes else { throw ClientSettingsError.invalidJSON }
         let root: [String: ClientSettingValue]
-        do { root = try JSONDecoder().decode([String: ClientSettingValue].self, from: data) }
+        do {
+            guard case let .object(values) = try ClientSettingValue.decodeJSON(data) else { throw ClientSettingsError.invalidJSON }
+            root = values
+        }
         catch { throw ClientSettingsError.invalidJSON }
         guard root["$format"] != nil else {
             return Document(values: root, legacy: true)
@@ -710,27 +848,46 @@ private enum ClientSettingsFile {
                 secretKeys.insert(key)
             }
         }
+        var secretAliases: [String: String] = [:]
+        if let encoded = root["secretAliases"] {
+            guard case let .object(aliases) = encoded else { throw ClientSettingsError.invalidJSON }
+            for (source, target) in aliases {
+                guard case let .string(destination) = target, source != destination,
+                      ClientSettingDefinition.isValidKey(source), ClientSettingDefinition.isValidKey(destination) else {
+                    throw ClientSettingsError.invalidJSON
+                }
+                secretAliases[source] = destination
+            }
+            guard Set(secretAliases.keys).isDisjoint(with: secretAliases.values) else { throw ClientSettingsError.invalidJSON }
+            secretKeys.formUnion(secretAliases.keys)
+            secretKeys.formUnion(secretAliases.values)
+        }
         // In a versioned file, marked secrets must never be in values, even when
         // this process has not registered the owning domain.
         guard secretKeys.isDisjoint(with: values.keys) else { throw ClientSettingsError.invalidJSON }
         var extra = root
-        for key in ["$format", "version", "values", "secretKeys"] { extra.removeValue(forKey: key) }
-        return Document(values: values, secretKeys: secretKeys, extra: extra, legacy: version == 0)
+        for key in ["$format", "version", "values", "secretKeys", "secretAliases"] { extra.removeValue(forKey: key) }
+        return Document(values: values, secretKeys: secretKeys, secretAliases: secretAliases, extra: extra, legacy: version == 0)
     }
 
     /// Returns a post-commit durability error separately so the caller still
     /// publishes the committed generation. Pre-rename failures throw normally.
-    static func write(_ document: Document, at url: URL, afterReplace: (@Sendable () throws -> Void)? = nil) throws -> ClientSettingsError? {
+    static func write(_ document: Document, at url: URL, afterReplace: (@Sendable () throws -> Void)? = nil,
+                      hooks: ClientSettingsFileHooks) throws -> ClientSettingsError? {
         guard document.secretKeys.isDisjoint(with: document.values.keys) else { throw ClientSettingsError.invalidJSON }
         var root = document.extra
         root["$format"] = .string(self.format)
         root["version"] = .integer(1)
         root["values"] = .object(document.values)
         root["secretKeys"] = .array(document.secretKeys.sorted().map { .string($0) })
+        if !document.secretAliases.isEmpty { root["secretAliases"] = .object(document.secretAliases.mapValues { .string($0) }) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data: Data
-        do { data = try encoder.encode(root) }
+        do {
+            data = try encoder.encode(root)
+            _ = try ClientSettingValue.decodeJSON(data)
+        }
         catch { throw ClientSettingsError.invalidJSON }
         guard data.count <= self.maximumBytes else { throw ClientSettingsError.invalidJSON }
 
@@ -764,10 +921,7 @@ private enum ClientSettingsFile {
         guard renamed == 0 else { throw self.posixError("replace") }
         do { try afterReplace?() }
         catch { return .storageFailure(operation: "sync directory", code: (error as NSError).code) }
-        let directoryDescriptor = directory.path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
-        guard directoryDescriptor >= 0 else { return self.posixError("open directory after replace") }
-        defer { _ = close(directoryDescriptor) }
-        do { try self.sync(directoryDescriptor, operation: "sync directory") }
+        do { try self.syncDirectory(directory, stage: .settings, hooks: hooks) }
         catch { return error as? ClientSettingsError ?? .storageFailure(operation: "sync directory", code: -1) }
         return nil
         #else
@@ -775,31 +929,60 @@ private enum ClientSettingsFile {
         #endif
     }
 
-    static func withLock<T>(at url: URL, _ body: () throws -> T) throws -> T {
-        let directory = url.deletingLastPathComponent()
-        var missingDirectories: [URL] = []
-        var ancestor = directory
-        while !FileManager.default.fileExists(atPath: ancestor.path) {
-            missingDirectories.append(ancestor)
-            let parent = ancestor.deletingLastPathComponent()
-            if parent.path == ancestor.path { break }
-            ancestor = parent
+    /// Defaults are stable OS-provided roots, never "the nearest directory that
+    /// currently exists". App-group/custom roots must be provided by composition.
+    static func durabilityRoot(for url: URL, requested: URL?, previous: URL?) throws -> URL {
+        let directory = url.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath()
+        let candidates: [URL]
+        if let requested {
+            candidates = [requested]
+        } else {
+            // Preserve an explicitly selected boundary. Prefer the stable home
+            // container over its temporary subdirectory when both contain the
+            // file; selection must not depend on which descendant just appeared.
+            candidates = [previous].compactMap { $0 } + [FileManager.default.homeDirectoryForCurrentUser, FileManager.default.temporaryDirectory]
         }
+        for candidate in candidates where candidate.isFileURL {
+            let root = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            var isDirectory: ObjCBool = false
+            if directory.pathComponents.starts(with: root.pathComponents),
+               FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                return root
+            }
+        }
+        throw ClientSettingsError.invalidDurabilityRoot
+    }
+
+    static func confirmDurability(at url: URL, hooks: ClientSettingsFileHooks) -> ClientSettingsError? {
+        #if canImport(Darwin) || canImport(Glibc)
+        do {
+            let descriptor = url.path.withCString { open($0, O_RDWR | O_CLOEXEC) }
+            if descriptor >= 0 {
+                defer { _ = close(descriptor) }
+                try self.sync(descriptor, operation: "sync existing file")
+            } else if errno != ENOENT {
+                throw self.posixError("open existing file for sync")
+            }
+            try self.syncDirectory(url.deletingLastPathComponent(), stage: .settings, hooks: hooks)
+            return nil
+        } catch {
+            return error as? ClientSettingsError ?? .storageFailure(operation: "sync directory", code: (error as NSError).code)
+        }
+        #else
+        return .storageFailure(operation: "unsupported durable filesystem", code: -1)
+        #endif
+    }
+
+    static func withLock<T>(at url: URL, durableRoot: URL, hooks: ClientSettingsFileHooks, _ body: () throws -> T) throws -> T {
+        let directory = url.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
         } catch {
             throw ClientSettingsError.storageFailure(operation: "create directory", code: (error as NSError).code)
         }
+        try hooks.afterDirectoriesCreated?(directory)
         #if canImport(Darwin) || canImport(Glibc)
-        // Sync newly created directory links too, not only the eventual file's
-        // immediate parent. Otherwise a first-ever save can lose its new folder.
-        for created in missingDirectories.reversed() {
-            let descriptor = created.deletingLastPathComponent().path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
-            guard descriptor >= 0 else { throw self.posixError("open new directory parent") }
-            defer { _ = close(descriptor) }
-            try self.sync(descriptor, operation: "sync new directory parent")
-        }
         let lockURL = url.appendingPathExtension("lock")
         let descriptor = lockURL.path.withCString { open($0, O_RDWR | O_CREAT | O_CLOEXEC, mode_t(0o600)) }
         guard descriptor >= 0 else { throw self.posixError("open lock") }
@@ -809,6 +992,19 @@ private enum ClientSettingsFile {
             throw self.posixError("lock")
         }
         defer { _ = flock(descriptor, LOCK_UN) }
+        var ancestors: [URL] = []
+        var ancestor = directory.standardizedFileURL.resolvingSymlinksInPath()
+        guard ancestor.pathComponents.starts(with: durableRoot.pathComponents) else { throw ClientSettingsError.invalidDurabilityRoot }
+        while true {
+            ancestors.append(ancestor)
+            if ancestor.path == durableRoot.path { break }
+            let parent = ancestor.deletingLastPathComponent()
+            guard parent.path != ancestor.path else { throw ClientSettingsError.invalidDurabilityRoot }
+            ancestor = parent
+        }
+        // Always help publish the entire chain, even if another creator has
+        // already made it visible or an earlier mkdir/sync attempt failed.
+        for ancestor in ancestors.reversed() { try self.syncDirectory(ancestor, stage: .ancestors, hooks: hooks) }
         return try body()
         #else
         throw ClientSettingsError.storageFailure(operation: "unsupported filesystem lock", code: -1)
@@ -818,6 +1014,15 @@ private enum ClientSettingsFile {
     #if canImport(Darwin) || canImport(Glibc)
     private static func posixError(_ operation: String) -> ClientSettingsError {
         return .storageFailure(operation: operation, code: Int(errno))
+    }
+
+    private static func syncDirectory(_ url: URL, stage: ClientSettingsDirectorySyncStage, hooks: ClientSettingsFileHooks) throws {
+        do { try hooks.beforeDirectorySync?(url, stage) }
+        catch { throw ClientSettingsError.storageFailure(operation: "sync directory", code: (error as NSError).code) }
+        let descriptor = url.path.withCString { open($0, O_RDONLY | O_CLOEXEC) }
+        guard descriptor >= 0 else { throw self.posixError("open directory for sync") }
+        defer { _ = close(descriptor) }
+        try self.sync(descriptor, operation: "sync directory")
     }
 
     private static func sync(_ descriptor: Int32, operation: String) throws {

@@ -41,23 +41,40 @@ public struct AISettings: Sendable {
     public var selectedRole: AIRole {
         roles.first { $0.name == store.string("ai.selectedRole", default: "Assistant") } ?? AIRole.suggestions[0]
     }
-    public func apiKey(for service: AIService) -> String { store.string(service.keySetting) }
+    public func apiKey(for service: AIService) -> String {
+        guard Self.validIdentifier(service.id),
+              let destination = try? AICredentialDestination(settingKey: service.keySetting, baseURL: service.url, wireProtocol: service.wireProtocol) else { return "" }
+        return AICredentialBinding.read(store.string(service.keySetting), destination: destination)
+    }
 
-    public func save(service: AIService, apiKey: String) throws {
+    public func save(service: AIService, credential: AICredentialUpdate, authorizeDestinationChange: Bool = false) throws {
+        Self.credentialMutationLock.lock()
+        defer { Self.credentialMutationLock.unlock() }
         var service = service
         service.url = try AIRequestBuilder.normalizedBaseURL(service.url).absoluteString
         try AIRequestBuilder.validateModel(service.model)
-        if !apiKey.isEmpty { _ = try AIRequestBuilder.validatedKey(apiKey) }
+        try register()
         try registerKey(for: service)
         var services = self.services
         if let index = services.firstIndex(where: { $0.id == service.id }) { services[index] = service }
         else { services.append(service) }
-        try store.set(.string(apiKey), for: service.keySetting)
-        try encode(services, key: "ai.services")
-        try store.set(.string(service.id), for: "ai.selectedServiceId")
+        let metadata = try Self.serviceMetadata(services)
+        let destination = try AICredentialDestination(settingKey: service.keySetting, baseURL: service.url, wireProtocol: service.wireProtocol)
+        let previous = store.string(service.keySetting)
+        let next = try AICredentialBinding.updated(credential, previous: previous, destination: destination, authorizeDestinationChange: authorizeDestinationChange)
+        if let next { try store.set(.string(next), for: service.keySetting) }
+        do { try store.applyPublic(["ai.services": metadata, "ai.selectedServiceId": .string(service.id)]) }
+        catch {
+            if next != nil { try? store.set(.string(previous), for: service.keySetting) }
+            throw error
+        }
     }
 
     public func remove(service: AIService) throws {
+        Self.credentialMutationLock.lock()
+        defer { Self.credentialMutationLock.unlock() }
+        try register()
+        try registerKey(for: service)
         let remaining = services.filter { $0.id != service.id }
         try store.set(.string(""), for: service.keySetting)
         try encode(remaining, key: "ai.services")
@@ -136,6 +153,8 @@ public struct AISettings: Sendable {
     /// Resolves the old Java hash against imported records BEFORE stripping keys
     /// and replacing absent IDs; the hash itself is never persisted on iOS.
     public func importAndroidServices(_ data: Data) throws {
+        Self.credentialMutationLock.lock()
+        defer { Self.credentialMutationLock.unlock() }
         guard data.count <= 2 * 1024 * 1024 else { throw AIError.inputTooLarge }
         struct LegacyService: Decodable {
             let id: String?
@@ -156,7 +175,7 @@ public struct AISettings: Sendable {
             guard JSONSerialization.isValidJSONObject(records) else { throw AIError.configuration }
             servicesData = try JSONSerialization.data(withJSONObject: records)
         }
-        guard let imported = try? JSONDecoder().decode([LegacyService].self, from: servicesData), !imported.isEmpty, imported.count <= 100 else { throw AIError.configuration }
+        guard let imported = try? JSONDecoder().decode([LegacyService].self, from: servicesData), !imported.isEmpty, imported.count <= AIFeatures.maximumServices else { throw AIError.configuration }
         let selectedId = envelope?["selectedServiceId"] as? String
         let effectiveId = selectedId.flatMap { id in imported.contains(where: { $0.id == id }) ? id : nil }
         let selectedHash = (envelope?["selectedService"] as? NSNumber)?.int32Value ?? Self.javaServiceHash(url: AIService.default.url, model: AIService.default.model, key: nil)
@@ -171,18 +190,21 @@ public struct AISettings: Sendable {
             guard ids.insert(id).inserted else { throw AIError.configuration }
             let service = AIService(id: id, name: legacy.name ?? "", url: url, model: legacy.model, reasoningEffort: legacy.reasoningEffort ?? (legacy.reasoningEnabled == true ? 2 : 0))
             let selected = effectiveId.map { $0 == legacy.id } ?? (selectedHash == Self.javaServiceHash(url: legacy.url, model: legacy.model, key: legacy.key))
-            records.append((service, key, selected))
+            let destination = try AICredentialDestination(settingKey: service.keySetting, baseURL: service.url, wireProtocol: service.wireProtocol)
+            let credential = try AICredentialBinding.updated(key.isEmpty ? .remove : .replace(key), previous: "", destination: destination, authorizeDestinationChange: false) ?? ""
+            records.append((service, credential, selected))
         }
+        try register()
+        let retained = services.filter { !ids.contains($0.id) }
+        let metadata = try Self.serviceMetadata(retained + records.map { $0.0 })
         try store.register(records.map { try keyDefinition(for: $0.0) })
         let previous = Dictionary(uniqueKeysWithValues: records.map { ($0.0.keySetting, store.string($0.0.keySetting)) })
         let previousServices = store.value("ai.services") ?? .array([])
         let previousSelection = store.value("ai.selectedServiceId") ?? .string("default")
         do {
             for (service, key, _) in records { try store.set(.string(key), for: service.keySetting) }
-            let retained = services.filter { !ids.contains($0.id) }
-            try encode(retained + records.map { $0.0 }, key: "ai.services")
             let selected = records.first { $0.2 }?.0 ?? records[0].0
-            try store.set(.string(selected.id), for: "ai.selectedServiceId")
+            try store.applyPublic(["ai.services": metadata, "ai.selectedServiceId": .string(selected.id)])
         } catch {
             try? store.set(previousServices, for: "ai.services")
             try? store.set(previousSelection, for: "ai.selectedServiceId")
@@ -198,6 +220,11 @@ public struct AISettings: Sendable {
     }
 
     private func historyKey(_ accountId: String) -> String { "ai.history." + accountId }
+    private static func serviceMetadata(_ services: [AIService]) throws -> ClientSettingValue {
+        guard services.count <= AIFeatures.maximumServices else { throw AIError.inputTooLarge }
+        let value = try JSONDecoder().decode(ClientSettingValue.self, from: JSONEncoder().encode(services))
+        return try AIFeatures.servicesDefinition.validatedValue(value)
+    }
     private static func validIdentifier(_ id: String) -> Bool {
         !id.isEmpty && id.count <= 100 && id.utf8.allSatisfy { (65 ... 90).contains($0) || (97 ... 122).contains($0) || (48 ... 57).contains($0) || [45, 46, 95].contains($0) }
     }

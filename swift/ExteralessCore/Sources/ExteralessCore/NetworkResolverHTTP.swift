@@ -105,7 +105,8 @@ public final class NetworkResolverURLSessionTransport: NSObject, NetworkResolver
                 let value = directive.trimmingCharacters(in: .whitespaces)
                 if value == "no-store" || value == "no-cache" { pending[dataTask.taskIdentifier]?.maximumTTL = 0 }
                 if value.hasPrefix("max-age="), let limit = Double(value.dropFirst(8)), limit.isFinite, limit >= 0 {
-                    pending[dataTask.taskIdentifier]?.maximumTTL = min(pending[dataTask.taskIdentifier]?.maximumTTL ?? 3600, limit)
+                    let maximumTTL = min(pending[dataTask.taskIdentifier]?.maximumTTL ?? 3600, limit)
+                    pending[dataTask.taskIdentifier]?.maximumTTL = maximumTTL
                 }
             }
             lock.unlock()

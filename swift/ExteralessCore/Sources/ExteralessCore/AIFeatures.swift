@@ -1,6 +1,15 @@
 import Foundation
 
 public enum AIFeatures {
+    public static let maximumServices = 100
+    public static let servicesDefinition = ClientSettingDefinition(
+        key: "ai.services", title: "Services", section: "AI", defaultValue: .array([]), androidSymbols: ["AiConfig.KEY_SERVICES"],
+        valueShape: .array(.object([
+            "id": .string, "name": .string, "url": .string, "model": .string,
+            "reasoningEffort": .integer, "wireProtocol": .string
+        ], required: ["id", "name", "url", "model", "reasoningEffort", "wireProtocol"]), maximumCount: maximumServices)
+    )
+
     public static let definitions: [ClientSettingDefinition] = {
         let ai = "AI"
         let translation = "Translation"
@@ -19,7 +28,7 @@ public enum AIFeatures {
             boolean("insertAsQuote", "Insert assistant result as a quote", true),
             .init(key: "ai.replaceTelegramEditor", title: "Replace Telegram AI editor", section: ai, defaultValue: .null, options: [.init(value: .null, title: "Automatic (non-Premium accounts)"), .init(value: .bool(true), title: "Enabled"), .init(value: .bool(false), title: "Disabled")], explanation: "Automatic matches Android's !isPremium default. Requires a configured AI service.", androidSymbols: ["AiConfig.getReplaceTelegramEditor"]),
             .init(key: "ai.replaceTelegramSummaries", title: "Replace Telegram summaries", section: ai, defaultValue: .null, options: [.init(value: .null, title: "Automatic (non-Premium accounts)"), .init(value: .bool(true), title: "Enabled"), .init(value: .bool(false), title: "Disabled")], explanation: "Automatic matches Android's !isPremium default. Requires a configured AI service.", androidSymbols: ["AiConfig.getReplaceTelegramSummaries"]),
-            .init(key: "ai.services", title: "Services", section: ai, defaultValue: .array([]), androidSymbols: ["AiConfig.KEY_SERVICES"]),
+            servicesDefinition,
             string("selectedServiceId", "Selected service", ai, "default"),
             .init(key: "ai.roles", title: "Custom roles", section: ai, defaultValue: .string(""), isSecret: true, androidSymbols: ["AiConfig.KEY_ROLES"]),
             string("selectedRole", "Selected role", ai, "Assistant"),

@@ -11,6 +11,7 @@ public enum AIReviewArchive {
     public static let inflatedLimit = 32 * 1024 * 1024
 
     public static func unpack(_ data: Data, maximumBytes: Int = inflatedLimit) throws -> Data {
+        guard maximumBytes >= 0, maximumBytes <= inflatedLimit, data.count <= inflatedLimit else { throw AIError.inputTooLarge }
         var result = data
         for _ in 0 ..< 3 {
             try Task.checkCancellation()
@@ -24,46 +25,72 @@ public enum AIReviewArchive {
                     start += 2 + length
                 }
                 for mask: UInt8 in [8, 16] where bytes[3] & mask != 0 {
-                    while start < end && bytes[start] != 0 { start += 1 }
+                    while start < end && bytes[start] != 0 {
+                        if start % 4096 == 0 { try Task.checkCancellation() }
+                        start += 1
+                    }
                     start += 1
                 }
                 if bytes[3] & 2 != 0 { start += 2 }
                 guard start <= end else { throw AIError.invalidResponse }
                 let output = try inflate(Data(bytes[start ..< end]), maximumBytes: maximumBytes)
-                guard crc32(output) == UInt32(try little(bytes, end, 4)), output.count == (try little(bytes, end + 4, 4)) else { throw AIError.invalidResponse }
+                guard try checkedCRC32(output, checkCancellation: { try Task.checkCancellation() }) == UInt32(little(bytes, end, 4)), output.count == (try little(bytes, end + 4, 4)) else { throw AIError.invalidResponse }
                 result = output
             } else if bytes.count >= 6 && bytes[0] & 15 == 8 && (Int(bytes[0]) * 256 + Int(bytes[1])) % 31 == 0 {
                 guard bytes[1] & 32 == 0 else { throw AIError.invalidResponse }
                 let output = try inflate(Data(bytes[2 ..< bytes.count - 4]), maximumBytes: maximumBytes)
                 let checksum = bytes.suffix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
-                guard adler32(output) == checksum else { throw AIError.invalidResponse }
+                guard try adler32(output) == checksum else { throw AIError.invalidResponse }
                 result = output
-            } else { return result }
+            } else {
+                guard result.count <= maximumBytes else { throw AIError.inputTooLarge }
+                return result
+            }
         }
         return result
     }
 
     public static func isZip(_ data: Data) -> Bool { data.starts(with: [0x50, 0x4b, 0x03, 0x04]) || data.starts(with: [0x50, 0x4b, 0x05, 0x06]) }
 
-    public static func entries(_ data: Data) throws -> [Entry] {
+    public static func entries(_ data: Data, maximumBytes: Int = inflatedLimit, maximumEntries: Int = 500, maximumEntryBytes: Int = entryLimit) throws -> [Entry] {
+        var output: [Entry] = []
+        try forEachEntry(data, maximumBytes: maximumBytes, maximumEntries: maximumEntries, maximumEntryBytes: maximumEntryBytes) {
+            output.append($0)
+            return true
+        }
+        return output
+    }
+
+    /// Enumerates without constructing an intermediate inflated entry array.
+    /// Each declared size is checked against the REMAINING aggregate budget before
+    /// copying compressed bytes or inflating. Returning false stops immediately.
+    public static func forEachEntry(_ data: Data, maximumBytes: Int = inflatedLimit, maximumEntries: Int = 500,
+                                    maximumEntryBytes: Int = entryLimit,
+                                    checkCancellation: () throws -> Void = { try Task.checkCancellation() },
+                                    visit: (Entry) throws -> Bool) throws {
+        try checkCancellation()
+        guard maximumBytes >= 0, maximumBytes <= inflatedLimit, (0 ... 500).contains(maximumEntries),
+              maximumEntryBytes >= 0, maximumEntryBytes <= entryLimit, data.count <= inflatedLimit else { throw AIError.inputTooLarge }
         let bytes = [UInt8](data)
         guard bytes.count >= 22 else { throw AIError.invalidResponse }
         let minimum = max(0, bytes.count - 65_557)
         var end: Int?
         for index in stride(from: bytes.count - 22, through: minimum, by: -1) {
-            if Array(bytes[index ..< index + 4]) == [0x50, 0x4b, 0x05, 0x06] { end = index; break }
+            if index % 4096 == 0 { try checkCancellation() }
+            if bytes[index] == 0x50, bytes[index + 1] == 0x4b, bytes[index + 2] == 0x05, bytes[index + 3] == 0x06,
+               index + 22 + (try little(bytes, index + 20, 2)) == bytes.count { end = index; break }
         }
         guard let end, try little(bytes, end + 4, 2) == 0, try little(bytes, end + 6, 2) == 0 else { throw AIError.invalidResponse }
         let count = try little(bytes, end + 10, 2)
-        guard count <= 500, try little(bytes, end + 8, 2) == count else { throw AIError.inputTooLarge }
+        guard count <= maximumEntries, try little(bytes, end + 8, 2) == count else { throw AIError.inputTooLarge }
         var position = try little(bytes, end + 16, 4)
         let directorySize = try little(bytes, end + 12, 4)
-        guard position <= end, directorySize <= end - position else { throw AIError.invalidResponse }
-        var output: [Entry] = []
+        guard position <= end, directorySize == end - position else { throw AIError.invalidResponse }
         var names = Set<String>()
         var total = 0
         for _ in 0 ..< count {
-            try Task.checkCancellation()
+            try checkCancellation()
+            guard position <= end, end - position >= 46 else { throw AIError.invalidResponse }
             guard try little(bytes, position, 4) == 0x02014b50 else { throw AIError.invalidResponse }
             let flags = try little(bytes, position + 8, 2)
             let method = try little(bytes, position + 10, 2)
@@ -76,7 +103,8 @@ public enum AIReviewArchive {
             let local = try little(bytes, position + 42, 4)
             guard flags & 1 == 0, [0, 8].contains(method), nameLength > 0, nameLength <= 1024,
                   position + 46 <= bytes.count, nameLength <= bytes.count - position - 46,
-                  uncompressed <= entryLimit, compressed <= data.count else { throw AIError.inputTooLarge }
+                  uncompressed <= maximumEntryBytes, uncompressed <= maximumBytes - total,
+                  compressed <= data.count else { throw AIError.inputTooLarge }
             guard let name = String(bytes: bytes[position + 46 ..< position + 46 + nameLength], encoding: .utf8),
                   !name.contains("\0"), !name.hasPrefix("/"), !name.contains("\\"),
                   !name.split(separator: "/").contains(".."), names.insert(name).inserted else { throw AIError.invalidResponse }
@@ -87,14 +115,18 @@ public enum AIReviewArchive {
             let start = local + 30 + localNameLength + localExtraLength
             guard start <= bytes.count, compressed <= bytes.count - start else { throw AIError.invalidResponse }
             if name.hasSuffix("/") { continue }
+            if method == 0, compressed != uncompressed { throw AIError.invalidResponse }
             let compressedData = Data(bytes[start ..< start + compressed])
-            let value: Data; if method == 0 { value = compressedData } else { value = try inflate(compressedData, maximumBytes: min(entryLimit, uncompressed)) }
-            guard value.count == uncompressed, crc32(value) == checksum else { throw AIError.invalidResponse }
+            let value: Data
+            if method == 0 {
+                value = compressedData
+            } else { value = try inflate(compressedData, maximumBytes: min(maximumBytes - total, uncompressed), checkCancellation: checkCancellation) }
+            try checkCancellation()
+            guard value.count == uncompressed, try checkedCRC32(value, checkCancellation: checkCancellation) == checksum else { throw AIError.invalidResponse }
             total += value.count
-            guard total <= inflatedLimit else { throw AIError.inputTooLarge }
-            output.append(Entry(name: name, data: value))
+            if try !visit(Entry(name: name, data: value)) { return }
         }
-        return output
+        guard position == end else { throw AIError.invalidResponse }
     }
 
     private static func little(_ bytes: [UInt8], _ position: Int, _ length: Int) throws -> Int {
@@ -108,16 +140,28 @@ public enum AIReviewArchive {
         return ~crc
     }
 
+    private static func checkedCRC32(_ data: Data, checkCancellation: () throws -> Void) throws -> UInt32 {
+        var crc: UInt32 = 0xffff_ffff
+        for (index, byte) in data.enumerated() {
+            if index % 4096 == 0 { try checkCancellation() }
+            crc = (crc >> 8) ^ crcTable[Int((crc ^ UInt32(byte)) & 255)]
+        }
+        return ~crc
+    }
+
     private static let crcTable: [UInt32] = (0 ..< 256).map { value in
         var crc = UInt32(value)
         for _ in 0 ..< 8 { crc = (crc >> 1) ^ (crc & 1 == 1 ? 0xedb8_8320 : 0) }
         return crc
     }
 
-    private static func adler32(_ data: Data) -> UInt32 {
+    private static func adler32(_ data: Data) throws -> UInt32 {
         var a: UInt32 = 1
         var b: UInt32 = 0
-        for byte in data { a = (a + UInt32(byte)) % 65521; b = (b + a) % 65521 }
+        for (index, byte) in data.enumerated() {
+            if index % 4096 == 0 { try Task.checkCancellation() }
+            a = (a + UInt32(byte)) % 65521; b = (b + a) % 65521
+        }
         return b << 16 | a
     }
 
@@ -171,7 +215,7 @@ public enum AIReviewArchive {
         }
     }
 
-    private static func inflate(_ data: Data, maximumBytes: Int) throws -> Data {
+    private static func inflate(_ data: Data, maximumBytes: Int, checkCancellation: () throws -> Void = { try Task.checkCancellation() }) throws -> Data {
         guard maximumBytes >= 0, maximumBytes <= inflatedLimit else { throw AIError.inputTooLarge }
         var bits = Bits(bytes: [UInt8](data))
         var output: [UInt8] = []
@@ -181,7 +225,7 @@ public enum AIReviewArchive {
         let distanceExtra = [0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13]
         var blocks = 0
         while true {
-            try Task.checkCancellation()
+            try checkCancellation()
             blocks += 1
             guard blocks <= 65_536 else { throw AIError.inputTooLarge }
             let final = try bits.read(1)
@@ -191,7 +235,10 @@ public enum AIReviewArchive {
                 let length = try bits.read(16)
                 let inverse = try bits.read(16)
                 guard length ^ inverse == 0xffff, output.count + length <= maximumBytes else { throw AIError.inputTooLarge }
-                for _ in 0 ..< length { output.append(UInt8(try bits.read(8))) }
+                for index in 0 ..< length {
+                    if index % 4096 == 0 { try checkCancellation() }
+                    output.append(UInt8(try bits.read(8)))
+                }
             } else {
                 guard kind == 1 || kind == 2 else { throw AIError.invalidResponse }
                 let literal: Huffman
@@ -240,7 +287,7 @@ public enum AIReviewArchive {
                 var operations = 0
                 while true {
                     operations += 1
-                    if operations % 1024 == 0 { try Task.checkCancellation() }
+                    if operations % 1024 == 0 { try checkCancellation() }
                     let symbol = try literal.decode(&bits)
                     if symbol < 256 {
                         guard output.count < maximumBytes else { throw AIError.inputTooLarge }

@@ -70,7 +70,7 @@ public struct AITranscriptionConfiguration: Sendable {
         geminiPrompt = store.string("ai.transcribeProviderGeminiPrompt")
         openAIBaseURL = store.string("ai.transcribeProviderOpenAiApiBase")
         openAIModel = store.string("ai.transcribeProviderOpenAiModel")
-        openAIKey = store.string("ai.transcribeProviderOpenAiApiKey")
+        openAIKey = settings.openAITranscriptionAPIKey(baseURL: openAIBaseURL)
         openAIPrompt = store.string("ai.transcribeProviderOpenAiPrompt")
     }
 
