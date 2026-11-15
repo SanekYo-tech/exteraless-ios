@@ -80,6 +80,7 @@ public struct ClientSettingsSearchIndex: Sendable {
 
     private struct Fingerprint: Equatable, Sendable {
         let definition: ClientSettingDefinition?
+        let definitionVersion: UUID?
         let action: ClientSettingsSearchAction?
         let route: ClientSettingsRoute
         let title: String
@@ -121,8 +122,11 @@ public struct ClientSettingsSearchIndex: Sendable {
 
     /// Publication is all-or-nothing. A failed refresh invalidates old tickets;
     /// the caller cannot continue navigating a plausible but stale catalog.
+    /// Store-backed callers pass snapshot.definitionVersions so an unobserved
+    /// intermediate schema publication still invalidates its retained selections.
     public mutating func refresh(definitions: [ClientSettingDefinition], secretKeys: Set<String>,
                                  actions: [ClientSettingsSearchAction],
+                                 definitionVersions: [String: UUID] = [:],
                                  localize: (String, String) -> String = { _, fallback in fallback }) throws {
         guard isActive else { throw ClientSettingsRouteError.retired }
         do {
@@ -146,7 +150,8 @@ public struct ClientSettingsSearchIndex: Sendable {
                 guard next[id] == nil else { throw ClientSettingsRouteError.ambiguous }
                 let aliases = ClientSettingsSourceRoutes.aliases(for: route)
                 let terms = Array(([id] + aliases).prefix(64)).map { clipped($0, limit: 256) }
-                let fingerprint = Fingerprint(definition: definition, action: action, route: route, title: title,
+                let fingerprint = Fingerprint(definition: definition,
+                    definitionVersion: definition.flatMap { definitionVersions[$0.key] }, action: action, route: route, title: title,
                     section: section, explanation: explanation, terms: terms, unavailable: unavailable)
                 let version: UInt64
                 if let previous = previousRecords[id], previous.fingerprint == fingerprint {

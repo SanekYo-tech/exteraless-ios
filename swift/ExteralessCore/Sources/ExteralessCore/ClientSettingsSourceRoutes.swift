@@ -404,13 +404,15 @@ public enum ClientSettingsSourceRoutes {
             throw ClientSettingsRouteError.invalidLink
         }
         var pages: Set<String>?
+        var classPages: Set<String>?
         var classDefault: String?
         if let className {
             let matches = classes.filter { $0.names.contains(className) }
             guard matches.count == 1, let match = matches.first else {
                 throw matches.isEmpty ? ClientSettingsRouteError.notFound : ClientSettingsRouteError.ambiguous
             }
-            pages = Set(match.pages)
+            classPages = Set(match.pages)
+            pages = classPages
             classDefault = match.pages.first
         }
         if let inputPage {
@@ -425,9 +427,13 @@ public enum ClientSettingsSourceRoutes {
                 candidates.insert(entry.route)
             }
             // SettingsHelper.NAGRAM_ROWS moves these exact original aliases.
+            // A legacy page redirect never discards an explicit class constraint.
             if inputPage?.hasPrefix("nasettings/") == true, candidates.isEmpty,
                ["HidePremiumSection", "HideHelpSection", "HideStoriesFromHeader", "DisableStories", "MainTabsHideTitles", "MainTabsHideContacts", "MainTabsHideCallsSettings", "MainTabsHideProfile", "AlwaysShowDownloadIcon", "VideoPlayerDecoder"].contains(row) {
-                candidates.formUnion(rows.filter { $0.names.contains(row) }.map(\.route))
+                candidates.formUnion(rows.filter { entry in
+                    entry.names.contains(row)
+                        && (classPages.map { !$0.isDisjoint(with: [entry.page] + entry.previousPages) } ?? true)
+                }.map(\.route))
             }
             guard candidates.count == 1, let candidate = candidates.first else {
                 throw candidates.isEmpty ? ClientSettingsRouteError.notFound : ClientSettingsRouteError.ambiguous

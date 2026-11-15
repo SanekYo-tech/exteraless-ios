@@ -89,6 +89,10 @@ struct ClientSettingsFileHooks: Sendable {
 /// unregistered values are retained on disk but never included in this view.
 public struct ClientSettingsSnapshot: Sendable {
     public let definitions: [ClientSettingDefinition]
+    /// Process-local schema identities, minted at cache publication (including
+    /// intermediate changes observers have not delivered yet). Only currently
+    /// registered definitions are retained. These are not persisted or CAS data.
+    public let definitionVersions: [String: UUID]
     public let values: [String: ClientSettingValue]
     /// Known stored overrides, including invalid secret items with no typed value.
     /// Unavailable secret reads retain last known presence; an omitted typed value
@@ -100,11 +104,14 @@ public struct ClientSettingsSnapshot: Sendable {
     /// Also allows a journal to reconstruct an expected CAS state. Construction
     /// grants no write access: applyPublic rechecks the live schema and file.
     public init(definitions: [ClientSettingDefinition], values: [String: ClientSettingValue],
-                storedKeys: Set<String>, secretKeys: Set<String> = [], lastError: ClientSettingsError? = nil) {
+                storedKeys: Set<String>, secretKeys: Set<String> = [], lastError: ClientSettingsError? = nil,
+                definitionVersions: [String: UUID] = [:]) {
         let secretKeys = secretKeys.union(definitions.filter(\.isSecret).map(\.key))
         var values = values
         for key in secretKeys where values[key] != nil { values[key] = .null }
         self.definitions = definitions
+        let registeredKeys = Set(definitions.map(\.key))
+        self.definitionVersions = definitionVersions.filter { registeredKeys.contains($0.key) }
         self.values = values
         self.storedKeys = storedKeys
         self.secretKeys = secretKeys
@@ -121,6 +128,7 @@ public final class ClientSettings: @unchecked Sendable {
 
     private struct Cache {
         var definitions: [ClientSettingDefinition] = []
+        var definitionVersions: [String: UUID] = [:]
         var values: [String: ClientSettingValue] = [:]
         var storedKeys: Set<String> = []
         var secretKeys: Set<String> = []
@@ -330,7 +338,7 @@ public final class ClientSettings: @unchecked Sendable {
         defer { self.cacheLock.unlock() }
         return ClientSettingsSnapshot(definitions: self.cache.definitions, values: self.cache.values,
                                       storedKeys: self.cache.storedKeys, secretKeys: self.cache.secretKeys,
-                                      lastError: self.cache.error)
+                                      lastError: self.cache.error, definitionVersions: self.cache.definitionVersions)
     }
 
     /// Portable, registered settings only. Secret keys are omitted entirely.
@@ -890,8 +898,20 @@ public final class ClientSettings: @unchecked Sendable {
     private func publish(_ next: Cache) -> Change {
         self.cacheLock.lock()
         let old = self.cache
+        var next = next
+        // Version the published schema under the cache lock, before asynchronous
+        // consumers can coalesce A -> B -> A into a single read of A. Values,
+        // override presence and backend errors do not change schema identity.
+        next.definitionVersions = [:]
         var keys = Set(old.values.keys).union(next.values.keys).filter { old.values[$0] != next.values[$0] }
-        for definition in next.definitions where !old.definitions.contains(definition) { keys.insert(definition.key) }
+        for definition in next.definitions {
+            let key = definition.key
+            let unchanged = old.definitions.contains(definition)
+                && old.secretKeys.contains(key) == next.secretKeys.contains(key)
+            next.definitionVersions[key] = unchanged ? (old.definitionVersions[key] ?? UUID()) : UUID()
+            if next.definitionVersions[key] != old.definitionVersions[key] { keys.insert(key) }
+        }
+        keys.formUnion(Set(old.definitionVersions.keys).subtracting(next.definitionVersions.keys))
         keys.formUnion(old.storedKeys.symmetricDifference(next.storedKeys))
         keys.formUnion(old.secretKeys.symmetricDifference(next.secretKeys))
         self.cache = next
