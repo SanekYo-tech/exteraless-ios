@@ -130,7 +130,7 @@ extension AISettings {
         try register()
         switch credential {
         case .unchanged: break
-        case .remove: try store.set(.string(""), for: preset.keySetting)
+        case .remove: try store.reset(preset.keySetting)
         case let .replace(value):
             // A custom endpoint must be supplied from the native form's displayed
             // snapshot to saveCustomLLM, never looked up from mutable public state
@@ -147,6 +147,7 @@ extension AISettings {
         try register()
         let url = baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : try AIRequestBuilder.normalizedBaseURL(baseURL).absoluteString
         let previous = store.string(keySetting)
+        let previouslyStored = store.readSnapshot().storedKeys.contains(keySetting)
         let next: String?
         if credential == .remove { next = "" }
         else if url.isEmpty, credential == .unchanged { next = nil }
@@ -154,10 +155,16 @@ extension AISettings {
             let destination = try AICredentialDestination(settingKey: keySetting, baseURL: url, wireProtocol: .openAI)
             next = try AICredentialBinding.updated(credential, previous: previous, destination: destination, authorizeDestinationChange: authorizeDestinationChange, multiple: multiple)
         }
-        if let next { try store.set(.string(next), for: keySetting) }
+        if let next {
+            if next.isEmpty { try store.reset(keySetting) }
+            else { try store.set(.string(next), for: keySetting) }
+        }
         do { try store.set(.string(url), for: urlSetting) }
         catch {
-            if next != nil { try? store.set(.string(previous), for: keySetting) }
+            if next != nil {
+                if previouslyStored { try? store.set(.string(previous), for: keySetting) }
+                else { try? store.reset(keySetting) }
+            }
             throw error
         }
     }

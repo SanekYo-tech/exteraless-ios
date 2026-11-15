@@ -44,6 +44,20 @@ public final class PluginServiceStorage: @unchecked Sendable {
         return try directory(["settings"])
     }
 
+    /// Resolve the settings location without creating any directory. Backup
+    /// inspection/freeze and recovery must acquire their maintenance lease before
+    /// performing filesystem mutations, including creating a missing root.
+    public func settingsDirectoryURL() throws -> URL {
+        lock.lock(); defer { lock.unlock() }
+        guard let root, root.isFileURL else {
+            throw BridgeFailure.storage("Application Support/exteraless is unavailable")
+        }
+        let base = root.standardizedFileURL.resolvingSymlinksInPath()
+        let target = base.appendingPathComponent("settings", isDirectory: true)
+        try checkContained(target, in: base)
+        return target
+    }
+
     public func filesDirectory(pluginId: String) throws -> URL {
         try Self.validatePluginId(pluginId)
         lock.lock()

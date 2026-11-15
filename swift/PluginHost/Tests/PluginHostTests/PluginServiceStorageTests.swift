@@ -33,6 +33,17 @@ final class PluginServiceStorageTests: XCTestCase {
         XCTAssertEqual(files.first?.hasSuffix(".json"), true)
     }
 
+    func testBackupLocationResolutionDoesNotCreateStorageBeforeItsLease() throws {
+        let parent = try directory()
+        let root = parent.appendingPathComponent("not-created", isDirectory: true)
+        let storage = PluginServiceStorage(rootDirectory: root)
+        let location = try storage.settingsDirectoryURL()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+        XCTAssertEqual(location.lastPathComponent, "settings")
+        XCTAssertEqual(try storage.settingsDirectory(), location)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: location.path))
+    }
+
     func testCorruptJSONIsNotOverwrittenBySetOrRemove() throws {
         let storage = PluginServiceStorage(rootDirectory: try directory())
         try storage.setSetting(pluginId: "alpha", key: "k", value: .null)

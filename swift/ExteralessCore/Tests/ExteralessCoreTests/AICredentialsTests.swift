@@ -117,6 +117,13 @@ final class AICredentialsTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(settings.llmAPIKeys(for: settings.llmService()), ["fixture-one", "fixture-two"])
         try settings.saveOpenAITranscription(baseURL: "https://new-audio.fixture.test/v1", credential: .unchanged, authorizeDestinationChange: true)
         XCTAssertEqual(AITranscriptionConfiguration(settings: settings).openAIKey, "fixture-audio")
+        try settings.saveCustomLLM(baseURL: "https://new-llm.fixture.test/v1", credential: .remove)
+        try settings.saveOpenAITranscription(baseURL: "https://new-audio.fixture.test/v1", credential: .remove)
+        try settings.saveLLMKey(preset: .openAI, credential: .remove)
+        let stored = store.readSnapshot().storedKeys
+        XCTAssertFalse(stored.contains(AILLMPreset.custom.keySetting))
+        XCTAssertFalse(stored.contains("ai.transcribeProviderOpenAiApiKey"))
+        XCTAssertFalse(stored.contains(AILLMPreset.openAI.keySetting))
     }
 
     func testUnboundLegacyKeysSurvivePreparationButRequireExplicitNativeBinding() throws {

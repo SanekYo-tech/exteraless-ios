@@ -61,11 +61,18 @@ public struct AISettings: Sendable {
         let metadata = try Self.serviceMetadata(services)
         let destination = try AICredentialDestination(settingKey: service.keySetting, baseURL: service.url, wireProtocol: service.wireProtocol)
         let previous = store.string(service.keySetting)
+        let previouslyStored = store.readSnapshot().storedKeys.contains(service.keySetting)
         let next = try AICredentialBinding.updated(credential, previous: previous, destination: destination, authorizeDestinationChange: authorizeDestinationChange)
-        if let next { try store.set(.string(next), for: service.keySetting) }
+        if let next {
+            if next.isEmpty { try store.reset(service.keySetting) }
+            else { try store.set(.string(next), for: service.keySetting) }
+        }
         do { try store.applyPublic(["ai.services": metadata, "ai.selectedServiceId": .string(service.id)]) }
         catch {
-            if next != nil { try? store.set(.string(previous), for: service.keySetting) }
+            if next != nil {
+                if previouslyStored { try? store.set(.string(previous), for: service.keySetting) }
+                else { try? store.reset(service.keySetting) }
+            }
             throw error
         }
     }
@@ -76,7 +83,7 @@ public struct AISettings: Sendable {
         try register()
         try registerKey(for: service)
         let remaining = services.filter { $0.id != service.id }
-        try store.set(.string(""), for: service.keySetting)
+        try store.reset(service.keySetting)
         try encode(remaining, key: "ai.services")
         if store.string("ai.selectedServiceId") == service.id {
             try store.set(.string(remaining.first?.id ?? "default"), for: "ai.selectedServiceId")

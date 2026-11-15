@@ -53,8 +53,9 @@ public struct IdentityDatePolicy: Equatable, Sendable {
     /// caller's native formatter. Telegram's entire Int32 timestamp range fits.
     public static func components(at date: Date, timeZone: TimeZone) -> IdentityCalendarDate? {
         guard isCivilDate(date) else { return nil }
-        let components = calendar(timeZone: timeZone).dateComponents([.era, .year, .month, .day, .hour, .minute, .second], from: date)
-        guard components.era == 1, let year = components.year, (1...9378).contains(year),
+        // The Persian calendar has one era; it is not Gregorian AD (era 1).
+        let components = calendar(timeZone: timeZone).dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        guard let year = components.year, (1...9378).contains(year),
               let month = components.month, (1...12).contains(month), let day = components.day, (1...31).contains(day),
               let hour = components.hour, let minute = components.minute, let second = components.second else { return nil }
         return IdentityCalendarDate(year: year, month: month, day: day, hour: hour, minute: minute, second: second)
@@ -67,7 +68,7 @@ public struct IdentityDatePolicy: Equatable, Sendable {
               (0...23).contains(value.hour), (0...59).contains(value.minute), (0...59).contains(value.second) else { return nil }
         let calendar = calendar(timeZone: timeZone)
         var components = DateComponents()
-        components.era = 1; components.year = value.year; components.month = value.month; components.day = value.day
+        components.year = value.year; components.month = value.month; components.day = value.day
         components.hour = value.hour; components.minute = value.minute; components.second = value.second
         guard let date = calendar.date(from: components), Self.components(at: date, timeZone: timeZone) == value else { return nil }
         return date
