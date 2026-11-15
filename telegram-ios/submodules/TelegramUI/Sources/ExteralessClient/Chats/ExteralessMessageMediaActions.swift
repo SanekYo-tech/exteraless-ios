@@ -7,7 +7,7 @@ import ImageIO
 import PeerInfoScreen
 import PresentationDataUtils
 import SaveToCameraRoll
-import SwiftSignalKit
+@preconcurrency import SwiftSignalKit
 import TelegramCore
 import UIKit
 
@@ -17,9 +17,9 @@ enum ExteralessChatImageAction: Equatable { case copy, copySticker, createSticke
 /// reselects the first effectiveMedia entry, including for mixed rich media.
 @MainActor
 func exteralessMessageImageAction(context: AccountContext, access: ExteralessChatExportAccess, action: ExteralessChatImageAction, reference: @escaping (EngineMessage) -> AnyMediaReference?, timestamp: Double?, presenter: ViewController, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void) -> Disposable {
-    weak var sourcePresenter = presenter
+    let sourcePresenter = Weak(presenter)
     func show(_ controller: ViewController, pushing: Bool = false, operation: ExteralessContentExportPermit.Operation = .presentation, beforePresentation: @escaping () -> Void = {}) {
-        guard let presenter = sourcePresenter, access.own(controller) else { return }
+        guard let presenter = sourcePresenter.value, access.own(controller) else { return }
         access.permit.presentWhenReady(controller, accountId: context.account.id.int64, from: presenter, requiresExport: true, present: { controller in
             access.perform(operation: operation) { _ in
                 guard access.own(controller, presented: true) else { return }

@@ -1,5 +1,16 @@
 # TelegramUI compiler cohort — 43761767575 / f05473ea
 
+## Follow-up: 43769738884 / 31287b92
+
+The76 prior diagnostics passed. The next compiler result identified two sites in
+`ExteralessMessageMediaActions`: legacy SwiftSignalKit Sendable metadata and the
+never-mutated local weak presenter. The import now uses `@preconcurrency` for its
+existing mutex-backed Atomic/Subscriber handoffs. The presenter is held by the
+existing `Weak` box as a constant; its value is still resolved at presentation.
+Decode cancellation and export/presentation admission retain their existing order.
+
+## Initial coordinated slice
+
 The full compiler reached the main TelegramUI library and reported76 source
 diagnostics. The coordinated33-file correction covers actual imports/overloads,
 native enum/resource types, UIKit member-name conflicts, actor/capture boundaries,
