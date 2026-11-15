@@ -87,6 +87,7 @@ final class CloudArchiveTests: XCTestCase {
         try CloudFixture.installBoundAssistantKey("cloud-fixture-key", settings: source)
         let targetSecrets = CloudFixtureSecrets()
         let target = try cloudSettings(secrets: targetSecrets)
+        try target.applyPublic(["cloud.includeApiKeys": .bool(true)])
         let preview = try plan(prepare(source, secrets: sourceSecrets, keys: true), target: target)
         try target.applyPublic(["appearance.fixtureCount": .integer(77)])
         XCTAssertThrowsError(try CloudSettingsArchive.apply(preview, settings: target, includeApiKeys: true, credentials: targetSecrets)) {
@@ -104,6 +105,7 @@ final class CloudArchiveTests: XCTestCase {
         try source.set(.string("remote-deepl-fixture"), for: "ai.deepLTranslateKey")
         let targetSecrets = CloudFixtureSecrets()
         let target = try cloudSettings(secrets: targetSecrets)
+        try target.applyPublic(["cloud.includeApiKeys": .bool(true)])
         let preview = try plan(prepare(source, secrets: sourceSecrets, keys: true), target: target)
         try target.set(.string("new-local-fixture"), for: "ai.serviceKey.default")
         let result = try CloudSettingsArchive.apply(preview, settings: target, includeApiKeys: true, credentials: targetSecrets)
@@ -121,6 +123,7 @@ final class CloudArchiveTests: XCTestCase {
         try CloudFixture.installBoundAssistantKey("remote-fixture", settings: source)
         let targetSecrets = CloudFixtureSecrets()
         let target = try cloudSettings(secrets: targetSecrets)
+        try target.applyPublic(["cloud.includeApiKeys": .bool(true)])
         let preview = try plan(prepare(source, secrets: sourceSecrets, keys: true), target: target)
         targetSecrets.failInserts(true)
         XCTAssertThrowsError(try CloudSettingsArchive.apply(preview, settings: target, includeApiKeys: true, credentials: targetSecrets)) {
@@ -132,6 +135,7 @@ final class CloudArchiveTests: XCTestCase {
 
     func testUnregisteredAssistantCredentialAndWrongAccountCannotBeRestored() throws {
         let source = try cloudSettings()
+        try source.applyPublic(["cloud.includeApiKeys": .bool(true)])
         let prepared = try prepare(source, secrets: CloudFixtureSecrets())
         let envelope = try JSONDecoder().decode(CloudBackupEnvelope.self, from: prepared.data)
         let forged = CloudBackupEnvelope(format: envelope.format, version: envelope.version, owner: envelope.owner,

@@ -3,9 +3,22 @@ import Foundation
 /// Destination metadata is carried by the opted-in credential, never made a
 /// blanket portable public preference. An existing local token keeps its account.
 enum CloudCloudflareMetadata {
+    /// Immutable permission from the confirmed preview, independent of later
+    /// changes to the public write set or Keychain presence.
+    enum Admission: Sendable {
+        case excluded
+        case add
+        case retain
+    }
+
     static let accountKey = "ai.transcribeProviderCfAccountID"
     static let tokenKey = "ai.transcribeProviderCfApiToken"
     static let credential = CloudCredentialID.translation(.cloudflareAudio)
+
+    static func admission(entries: [CloudCredentialEntry], includeApiKeys: Bool, expected: ClientSettingsSnapshot) -> Admission {
+        guard includeApiKeys, entries.contains(where: { $0.id == credential }) else { return .excluded }
+        return expected.storedKeys.contains(tokenKey) ? .retain : .add
+    }
 
     static func validated(_ value: String) throws -> String {
         guard value.utf8.count == 32, value.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else {
@@ -30,13 +43,14 @@ enum CloudCloudflareMetadata {
     }
 
     static func publicInspection(_ inspection: ToolsBackupInspection, entries: [CloudCredentialEntry],
-                                 metadata: [String: ClientSettingValue], expected: ClientSettingsSnapshot) throws -> ToolsBackupInspection {
+                                 metadata: [String: ClientSettingValue], expected: ClientSettingsSnapshot,
+                                 admission: Admission) throws -> ToolsBackupInspection {
         var values = inspection.settings
         var resetting = inspection.resetting
         var ignored = inspection.ignoredKeys
         values.removeValue(forKey: accountKey)
         resetting.remove(accountKey)
-        if entries.contains(where: { $0.id == credential }), !expected.storedKeys.contains(tokenKey) {
+        if case .add = admission {
             let source = try account(in: metadata)
             guard let definition = expected.definitions.first(where: { $0.key == accountKey }), !definition.isSecret,
                   !expected.secretKeys.contains(accountKey) else { throw CloudError.invalidCredential }
@@ -52,11 +66,36 @@ enum CloudCloudflareMetadata {
             resetting: resetting, ignoredKeys: ignored.sorted())
     }
 
-    /// Recheck real secure presence before public commit, not just the preview's
-    /// cached presence. A token installed since preview requires a new review.
-    static func verifyTarget(inspection: ToolsBackupInspection, includeApiKeys: Bool,
+    /// Recheck the captured presence decision, including present -> absent.
+    /// Opt-out is not a credential operation and must perform no secure read.
+    static func verifyTarget(admission: Admission, includeApiKeys: Bool,
                              storage: any CloudCredentialStorage) throws {
-        guard inspection.settings[accountKey] != nil else { return }
-        guard includeApiKeys, try storage.read(credential) == nil else { throw CloudError.settingsChanged }
+        switch admission {
+        case .excluded: return
+        case .add:
+            guard includeApiKeys, try storage.read(credential) == nil else { throw CloudError.settingsChanged }
+        case .retain:
+            guard includeApiKeys else { return }
+            guard try storage.read(credential) != nil else { throw CloudError.settingsChanged }
+        }
+    }
+
+    /// Called at the actual key-phase boundary. Retain never calls insertion,
+    /// even if another native operation removes the key just after the check.
+    static func restore(_ entry: CloudCredentialEntry, admission: Admission,
+                        storage: any CloudCredentialStorage) throws -> CloudCredentialInsertResult {
+        guard entry.id == credential else { return try storage.insertIfAbsent(entry) }
+        switch admission {
+        case .excluded:
+            throw CloudError.settingsChanged
+        case .retain:
+            try verifyTarget(admission: admission, includeApiKeys: true, storage: storage)
+            return .alreadyPresent
+        case .add:
+            try verifyTarget(admission: admission, includeApiKeys: true, storage: storage)
+            let result = try storage.insertIfAbsent(entry)
+            guard case .inserted = result else { throw CloudError.settingsChanged }
+            return result
+        }
     }
 }

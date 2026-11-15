@@ -39,6 +39,7 @@ final class CloudReviewRemediationTests: XCTestCase, @unchecked Sendable {
         try settings.register(AIFeatures.definitions.filter {
             ["ai.transcribeProvider", "ai.transcribeProviderCfAccountID", "ai.transcribeProviderCfApiToken"].contains($0.key)
         })
+        try settings.applyPublic(["cloud.includeApiKeys": .bool(true)])
         return settings
     }
 

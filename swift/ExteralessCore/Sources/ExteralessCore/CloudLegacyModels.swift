@@ -59,6 +59,7 @@ public struct CloudLegacyRestorePlan: Sendable, CustomStringConvertible, CustomR
     let expectedSettings: ClientSettingsSnapshot
     let credentials: [CloudCredentialEntry]
     let credentialMetadata: [String: ClientSettingValue]
+    let cloudflareAdmission: CloudCloudflareMetadata.Admission
 
     public var mapped: [CloudLegacyFieldReport] { fields.filter { $0.disposition == .mapped } }
     public var skipped: [CloudLegacyFieldReport] { fields.filter { $0.disposition == .skipped } }
@@ -74,7 +75,7 @@ public struct CloudLegacyRestorePlan: Sendable, CustomStringConvertible, CustomR
     }
 
     public func verifyCredentialTarget(includeApiKeys: Bool, storage: any CloudCredentialStorage) throws {
-        try CloudCloudflareMetadata.verifyTarget(inspection: publicInspection, includeApiKeys: includeApiKeys && includedApiKeys, storage: storage)
+        try CloudCloudflareMetadata.verifyTarget(admission: cloudflareAdmission, includeApiKeys: includeApiKeys && includedApiKeys, storage: storage)
     }
 
     public var description: String { "CloudLegacyRestorePlan(mapped: \(mapped.count), skipped: \(skipped.count), keys: \(credentialCount))" }

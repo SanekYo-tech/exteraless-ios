@@ -78,10 +78,12 @@ public struct CloudRestorePlan: Sendable, CustomStringConvertible, CustomReflect
     public let settingCount: Int
     public let credentialCount: Int
     public let ignoredCount: Int
-    let envelope: CloudBackupEnvelope
+    public let includedApiKeys: Bool
     let inspection: ToolsBackupInspection
     let expectedSettings: ClientSettingsSnapshot
     let credentialMetadata: [String: ClientSettingValue]
+    let credentials: [CloudCredentialEntry]
+    let cloudflareAdmission: CloudCloudflareMetadata.Admission
 
     /// The public-only shared archive inspection; credentials stay in this plan's
     /// separate typed envelope and never enter the Tools filesystem journal.
@@ -102,7 +104,7 @@ public struct CloudRestorePlan: Sendable, CustomStringConvertible, CustomReflect
     }
 
     public func verifyCredentialTarget(includeApiKeys: Bool, storage: any CloudCredentialStorage) throws {
-        try CloudCloudflareMetadata.verifyTarget(inspection: inspection, includeApiKeys: includeApiKeys, storage: storage)
+        try CloudCloudflareMetadata.verifyTarget(admission: cloudflareAdmission, includeApiKeys: includeApiKeys && includedApiKeys, storage: storage)
     }
 
     public var description: String { "CloudRestorePlan(settings: \(settingCount), credentials: \(credentialCount))" }
@@ -162,10 +164,14 @@ public enum CloudSettingsArchive {
               envelope.protection == "telegram-mtproto-transport" else { throw CloudError.unsupportedVersion }
         guard envelope.owner == owner, revision.owner == owner else { throw CloudError.wrongAccount }
         guard envelope.includesApiKeys || envelope.credentials.isEmpty else { throw CloudError.malformedRemote }
+        let includeApiKeys = CloudSyncPolicy(snapshot: snapshot).includeApiKeys && envelope.includesApiKeys
+        let credentials = includeApiKeys ? envelope.credentials : []
+        let cloudflareAdmission = CloudCloudflareMetadata.admission(entries: credentials, includeApiKeys: includeApiKeys, expected: snapshot)
         let portable = try CloudArchivePolicy.snapshot(snapshot)
         let originalInspection = try ToolsBackupArchive.inspect(envelope.archive, definitions: portable.definitions, secretKeys: snapshot.secretKeys)
-        let credentialMetadata = try CloudCloudflareMetadata.sourceMetadata(entries: envelope.credentials, metadata: originalInspection.payload.clientSettings)
-        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: envelope.credentials, metadata: credentialMetadata, expected: snapshot)
+        let credentialMetadata = try CloudCloudflareMetadata.sourceMetadata(entries: credentials, metadata: originalInspection.payload.clientSettings)
+        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: envelope.credentials, metadata: credentialMetadata,
+            expected: snapshot, admission: cloudflareAdmission)
         let inspection = try CloudPublicRestoreProjection.make(candidate, expected: snapshot)
         guard inspection.payload.pluginSettings.isEmpty else { throw CloudError.malformedRemote }
         // Never let an imported archive smuggle an API identity/history key through
@@ -174,11 +180,11 @@ public enum CloudSettingsArchive {
             throw CloudError.malformedRemote
         }
         if let services = originalInspection.payload.clientSettings["ai.services"] { _ = try CloudArchivePolicy.services(services) }
-        try CloudCredentials.validate(envelope.credentials, publicValues: credentialMetadata)
+        try CloudCredentials.validate(credentials, publicValues: credentialMetadata)
         return CloudRestorePlan(revision: revision, expectedHeads: heads, settingCount: inspection.settingCount,
-            credentialCount: envelope.credentials.count, ignoredCount: inspection.ignoredKeys.count,
-            envelope: envelope, inspection: inspection, expectedSettings: snapshot,
-            credentialMetadata: credentialMetadata)
+            credentialCount: credentials.count, ignoredCount: inspection.ignoredKeys.count, includedApiKeys: includeApiKeys,
+            inspection: inspection, expectedSettings: snapshot,
+            credentialMetadata: credentialMetadata, credentials: credentials, cloudflareAdmission: cloudflareAdmission)
     }
 
     /// One public file CAS, then add-only Keychain restoration. This deliberately
@@ -187,7 +193,7 @@ public enum CloudSettingsArchive {
     public static func apply(_ plan: CloudRestorePlan, settings: ClientSettings, includeApiKeys: Bool,
                              credentials: any CloudCredentialStorage) throws -> CloudRestoreResult {
         try Task.checkCancellation()
-        let entries = includeApiKeys ? plan.envelope.credentials : []
+        let entries = includeApiKeys && plan.includedApiKeys ? plan.credentials : []
         if !entries.isEmpty { try CloudCredentials.register(entries, settings: settings) }
         try plan.verifyCredentialTarget(includeApiKeys: includeApiKeys, storage: credentials)
         do {
@@ -204,7 +210,8 @@ public enum CloudSettingsArchive {
     public static func restoreMissingCredentials(_ plan: CloudRestorePlan, settings: ClientSettings,
                                                  includeApiKeys: Bool, credentials: any CloudCredentialStorage,
                                                  permitKeys: @Sendable () -> Bool = { true }) throws -> CloudRestoreResult {
-        let entries = includeApiKeys ? plan.envelope.credentials : []
+        let entries = includeApiKeys && plan.includedApiKeys ? plan.credentials : []
+        guard !entries.isEmpty else { return CloudRestoreResult(settings: plan.settingCount, addedCredentials: 0, retainedCredentials: 0) }
         var inserted = 0
         var retained = 0
         do {
@@ -214,7 +221,7 @@ public enum CloudSettingsArchive {
             for entry in entries {
                 guard permitKeys() else { throw CloudError.restorePartiallyApplied }
                 try CloudAICredentialBridge.validate(entry, metadata: plan.credentialMetadata)
-                switch try credentials.insertIfAbsent(entry) {
+                switch try CloudCloudflareMetadata.restore(entry, admission: plan.cloudflareAdmission, storage: credentials) {
                 case .inserted: inserted += 1
                 case .alreadyPresent: retained += 1
                 }

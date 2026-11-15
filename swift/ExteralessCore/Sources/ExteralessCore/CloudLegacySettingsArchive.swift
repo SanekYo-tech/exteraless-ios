@@ -204,7 +204,9 @@ public enum CloudLegacySettingsArchive {
             clientSettings: patch, clientStoredKeys: Set(patch.keys))
         let originalInspection = try ToolsBackupArchive.inspect(ToolsBackupArchive.encode(payload), definitions: snapshot.definitions, secretKeys: snapshot.secretKeys)
         let credentialMetadata = try CloudCloudflareMetadata.sourceMetadata(entries: credentials, metadata: patch)
-        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: credentials, metadata: credentialMetadata, expected: snapshot)
+        let cloudflareAdmission = CloudCloudflareMetadata.admission(entries: credentials, includeApiKeys: includeApiKeys, expected: snapshot)
+        let candidate = try CloudCloudflareMetadata.publicInspection(originalInspection, entries: credentials, metadata: credentialMetadata,
+            expected: snapshot, admission: cloudflareAdmission)
         let inspection = try CloudPublicRestoreProjection.make(candidate, expected: snapshot)
         if patch[CloudCloudflareMetadata.accountKey] != nil, inspection.settings[CloudCloudflareMetadata.accountKey] == nil {
             reports = reports.map { item in
@@ -215,7 +217,8 @@ public enum CloudLegacySettingsArchive {
         }
         return CloudLegacyRestorePlan(owner: remote.owner, remoteFingerprint: remote.fingerprint,
             reportedUpdatedAtMilliseconds: remote.reportedUpdatedAtMilliseconds, fields: reports,
-            includedApiKeys: includeApiKeys, publicInspection: inspection, expectedSettings: snapshot, credentials: credentials, credentialMetadata: credentialMetadata)
+            includedApiKeys: includeApiKeys, publicInspection: inspection, expectedSettings: snapshot, credentials: credentials,
+            credentialMetadata: credentialMetadata, cloudflareAdmission: cloudflareAdmission)
     }
 
     public static func apply(_ plan: CloudLegacyRestorePlan, settings: ClientSettings,
@@ -229,13 +232,14 @@ public enum CloudLegacySettingsArchive {
     public static func restoreMissingCredentials(_ plan: CloudLegacyRestorePlan, settings: ClientSettings,
         includeApiKeys: Bool, credentials: any CloudCredentialStorage, permitKeys: @Sendable () -> Bool = { true }) throws -> CloudRestoreResult {
         let entries = includeApiKeys && plan.includedApiKeys ? plan.credentials : []
+        guard !entries.isEmpty else { return CloudRestoreResult(settings: plan.settingCount, addedCredentials: 0, retainedCredentials: 0) }
         var added = 0, retained = 0
         do {
             try CloudCredentials.validate(entries, publicValues: plan.credentialMetadata)
             if !entries.isEmpty { try CloudCredentials.register(entries, settings: settings) }
             for entry in entries {
                 guard permitKeys() else { throw CloudError.restorePartiallyApplied }
-                switch try credentials.insertIfAbsent(entry) {
+                switch try CloudCloudflareMetadata.restore(entry, admission: plan.cloudflareAdmission, storage: credentials) {
                 case .inserted: added += 1
                 case .alreadyPresent: retained += 1
                 }
