@@ -35,7 +35,9 @@ public struct ChatFeedConfiguration: Equatable, Sendable {
     }
 
     public mutating func includeAll(_ channels: Set<Int64>) {
-        excludedChannels.subtract(channels)
+        // FeedConfig.includeAll clears stale exclusions too; the complete channel snapshot
+        // is used separately to make channels known when automatic additions are disabled.
+        excludedChannels.removeAll()
         if !addNewChannels { knownChannels.formUnion(channels) }
     }
 }
@@ -56,14 +58,19 @@ public struct ChatFeedIdentity: Hashable, Sendable {
 public struct ChatFeedPosition: Comparable, Hashable, Sendable {
     public let timestamp: Int32
     public let identity: ChatFeedIdentity
+    /// Android stores a channel's uid as -channelId. Native PeerId encoding is kept for
+    /// identity, but must not reverse the original tie order when two channels post at once.
+    public let orderingPeerId: Int64
 
-    public init(timestamp: Int32, identity: ChatFeedIdentity) {
+    public init(timestamp: Int32, identity: ChatFeedIdentity, orderingPeerId: Int64? = nil) {
         self.timestamp = timestamp
         self.identity = identity
+        self.orderingPeerId = orderingPeerId ?? identity.peerId
     }
 
     public static func < (lhs: ChatFeedPosition, rhs: ChatFeedPosition) -> Bool {
         if lhs.timestamp != rhs.timestamp { return lhs.timestamp < rhs.timestamp }
+        if lhs.orderingPeerId != rhs.orderingPeerId { return lhs.orderingPeerId < rhs.orderingPeerId }
         if lhs.identity.peerId != rhs.identity.peerId { return lhs.identity.peerId < rhs.identity.peerId }
         if lhs.identity.messageId != rhs.identity.messageId { return lhs.identity.messageId < rhs.identity.messageId }
         return lhs.identity.namespace < rhs.identity.namespace
@@ -95,6 +102,7 @@ public enum ChatFeedPolicy {
 
     private struct Album: Hashable {
         let peerId: Int64
+        let namespace: Int32
         let groupId: Int64
     }
 
@@ -109,7 +117,6 @@ public enum ChatFeedPolicy {
         guard limit > 0 else { return [] }
         var unique: [ChatFeedIdentity: ChatFeedEntry] = [:]
         for entry in entries where allowedPeers.contains(entry.identity.peerId) {
-            if let lowerBound, entry.position < lowerBound { continue }
             if let previous = unique[entry.identity], previous.version > entry.version { continue }
             unique[entry.identity] = entry
         }
@@ -117,18 +124,22 @@ public enum ChatFeedPolicy {
         var albums: [Album: [ChatFeedEntry]] = [:]
         for entry in sorted {
             if let groupId = entry.groupId {
-                albums[Album(peerId: entry.identity.peerId, groupId: groupId), default: []].append(entry)
+                albums[Album(peerId: entry.identity.peerId, namespace: entry.identity.namespace, groupId: groupId), default: []].append(entry)
             }
         }
         var appended = Set<Album>()
         var result: [ChatFeedEntry] = []
         for entry in sorted {
+            if let lowerBound, entry.position < lowerBound { continue }
             if let groupId = entry.groupId {
-                let album = Album(peerId: entry.identity.peerId, groupId: groupId)
+                let album = Album(peerId: entry.identity.peerId, namespace: entry.identity.namespace, groupId: groupId)
                 if appended.contains(album) { continue }
                 let group = albums[album] ?? [entry]
                 if !result.isEmpty && result.count + group.count > limit { break }
                 appended.insert(album)
+                // The native page completes its trailing album. Keep its tail even if the
+                // cross-channel frontier falls inside it; consuming by IDs keeps the next
+                // window from skipping a post interleaved with that tail.
                 result.append(contentsOf: group)
             } else {
                 if result.count >= limit { break }

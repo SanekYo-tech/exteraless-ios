@@ -12,6 +12,10 @@
  * и все семь операций Backend используют тот же native transport. pluginId
  * в запросе заменяется ID из state. Ответ {ok:true,value:...} разворачивается
  * в raw значение/теги; {ok:false,error:{kind,message}} — JavaMemberError.
+ * xt_set_owner_token(str) после pluginId связывает immutable opaque epoch
+ * (1..256 UTF-8 bytes, без NUL). Хост генерирует random UUID на поколение и
+ * связывает его ДО SDK bind_owner_json/load. Native request.ownerToken всегда
+ * берётся из C-state; пока epoch не bound, поле из request удаляется.
  * Необходимая привязка классов — xt_bind, как и для legacy-сервисов ниже.
  * Native marshal транзакционен: ошибочный вызов освобождает только новые
  * positive handles, не опубликованные успешным вызовом. Вложенный успешный
@@ -209,6 +213,7 @@ typedef int (*xt_set_instance_fn)(int64_t handle, const char *fqcn,
 #define XT_SERVICE_NAME_MAX 160
 #define XT_MAX_REALMS 32
 #define XT_MOCK_LOG_CAP 4096
+#define XT_OWNER_TOKEN_MAX_UTF8 256
 #define XT_STATE_CAPSULE "exteraless.bridge.state"
 #define XT_STATE_DICT_KEY "_exteraless_bridge_state"
 
@@ -393,12 +398,14 @@ struct xt_state {
     HandleRealm realms[XT_MAX_REALMS];
     int64_t active_key;
     size_t native_transactions; /* GIL-protected, pins the active test-realm. */
+    int closed; /* Terminal module clear: reject reentry before any DECREF. */
     xt_anchor *anchor;
 
     PyObject *JavaInstance;
     PyObject *JavaMemberError;
     PyObject *backend_type;
     PyObject *plugin_id;
+    PyObject *owner_token; /* Exact str, immutable for this interpreter generation. */
     PyObject *json_dumps;
     PyObject *json_loads;
     PyObject *dumps_kw;
@@ -406,6 +413,16 @@ struct xt_state {
     int64_t mock_next_handle;   /* хостовые id < 0 */
     char *default_manifest;
 };
+
+static xt_state *state_require_open(xt_state *st)
+{
+    if (st != NULL && st->closed) {
+        /* Do not instantiate the user-bound JavaMemberError during teardown. */
+        PyErr_SetString(PyExc_RuntimeError, "bridge: interpreter state is closed");
+        return NULL;
+    }
+    return st;
+}
 
 /* =========================================================================
  * реестр сервисов
@@ -584,7 +601,7 @@ static xt_state *xt_state_get(void)
         PyErr_SetString(PyExc_RuntimeError, "bridge: interpreter state was cleared");
         return NULL;
     }
-    return anchor->state;
+    return state_require_open(anchor->state);
 }
 
 static xt_state *state_from_module(PyObject *module)
@@ -593,7 +610,7 @@ static xt_state *state_from_module(PyObject *module)
     if (module != NULL && PyModule_Check(module)) {
         st = (xt_state *)PyModule_GetState(module);
         if (st != NULL)
-            return st;
+            return state_require_open(st);
         PyErr_Clear();
     }
     return xt_state_get();
@@ -601,7 +618,7 @@ static xt_state *state_from_module(PyObject *module)
 
 static xt_state *state_of_backend(PyObject *self)
 {
-    return (xt_state *)PyType_GetModuleState(Py_TYPE(self));
+    return state_require_open((xt_state *)PyType_GetModuleState(Py_TYPE(self)));
 }
 
 /* --- поднятие JavaMemberError ------------------------------------------- */
@@ -684,17 +701,27 @@ static HandleRealm *realm_current(xt_state *st)
 
 static void realm_drop_entries(HandleRealm *realm)
 {
-    if (realm->handles != NULL) {
-        for (size_t i = 0; i < realm->handle_cap; i++)
-            Py_XDECREF(realm->handles[i].obj);
-        free(realm->handles);
-        realm->handles = NULL;
-    }
-    free(realm->rev);
+    HandleSlot *handles = realm->handles;
+    RevSlot *rev = realm->rev;
+    size_t capacity = realm->handle_cap;
+    PyObject *exception;
+    /* Publish an empty live table before decref can run Python. A finalizer
+     * may register into a fresh table, clear it recursively, or select another
+     * realm. This call owns ONLY the detached arrays and never resets the live
+     * table again. next_handle stays monotonic, including across nested clears. */
+    realm->handles = NULL;
     realm->rev = NULL;
     realm->handle_cap = realm->rev_cap = 0;
     realm->handle_used = realm->rev_used = 0;
-    /* next_handle не сбрасываем: id не переиспользуются после clear */
+    exception = PyErr_GetRaisedException();
+    for (size_t i = 0; i < capacity; i++) {
+        PyObject *obj = handles[i].obj;
+        handles[i].obj = NULL;
+        Py_XDECREF(obj);
+    }
+    free(handles);
+    free(rev);
+    PyErr_SetRaisedException(exception);
 }
 
 static int ht_grow(HandleRealm *realm)
@@ -1303,7 +1330,17 @@ typedef struct {
     PyObject *service;
     PyObject *fields;
     PyObject *classes;
+    int cleared;
 } BridgeBackendObject;
+
+static int bb_require_ready(BridgeBackendObject *self)
+{
+    if (self->cleared || self->service == NULL || self->fields == NULL || self->classes == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "bridge: backend is cleared or uninitialized");
+        return 0;
+    }
+    return 1;
+}
 
 static int bb_load_manifest(xt_state *st, BridgeBackendObject *self,
                             PyObject *path_obj)
@@ -1916,7 +1953,54 @@ done:
     return out;
 }
 
-/* request is already marshalled; this function owns the identity injection.
+/* Make a private context-bearing envelope. Normalize ONLY its top-level keys
+ * to exact strings, without str-subclass equality/hash hooks: a forged key
+ * must not survive as a duplicate pluginId/ownerToken in serialized JSON.
+ * Snapshot items before a non-string key's __str__ can reenter Python. The
+ * supplied identity VALUES are discarded before any value marshalling. */
+static PyObject *native_request_context(xt_state *st, PyObject *request)
+{
+    PyObject *items = PyDict_Items(request);
+    PyObject *out = NULL;
+    if (items == NULL)
+        return NULL;
+    out = PyDict_New();
+    if (out == NULL)
+        goto fail;
+    for (Py_ssize_t i = 0; i < PyList_GET_SIZE(items); i++) {
+        PyObject *pair = PyList_GET_ITEM(items, i);
+        PyObject *key = PyTuple_GET_ITEM(pair, 0);
+        PyObject *text = PyUnicode_Check(key) ? PyUnicode_FromObject(key) : PyObject_Str(key);
+        int reserved;
+        int rc;
+        if (text == NULL)
+            goto fail;
+        if (!PyUnicode_CheckExact(text)) {
+            PyObject *plain = PyUnicode_FromObject(text);
+            Py_DECREF(text);
+            text = plain;
+            if (text == NULL)
+                goto fail;
+        }
+        reserved = PyUnicode_CompareWithASCIIString(text, "pluginId") == 0 ||
+                   PyUnicode_CompareWithASCIIString(text, "ownerToken") == 0;
+        rc = reserved ? 0 : PyDict_SetItem(out, text, PyTuple_GET_ITEM(pair, 1));
+        Py_DECREF(text);
+        if (rc < 0)
+            goto fail;
+    }
+    if (PyDict_SetItemString(out, "pluginId", st->plugin_id) < 0 ||
+        (st->owner_token != NULL && PyDict_SetItemString(out, "ownerToken", st->owner_token) < 0))
+        goto fail;
+    Py_DECREF(items);
+    return out;
+fail:
+    Py_XDECREF(out);
+    Py_DECREF(items);
+    return NULL;
+}
+
+/* request is already marshalled; this function owns the final identity injection.
  * All Python references here belong to, and stay in, the current interpreter. */
 static PyObject *native_dispatch_request(xt_state *st, BridgeBackendObject *backend,
                                           PyObject *request)
@@ -1936,8 +2020,8 @@ static PyObject *native_dispatch_request(xt_state *st, BridgeBackendObject *back
         return NULL;
     }
     plugin_id = Py_NewRef(st->plugin_id);
-    owned_request = PyDict_Copy(request);
-    if (owned_request == NULL || PyDict_SetItemString(owned_request, "pluginId", plugin_id) < 0)
+    owned_request = native_request_context(st, request);
+    if (owned_request == NULL)
         goto done;
     text = json_dumps_obj(st, owned_request);
     if (text == NULL)
@@ -2131,7 +2215,7 @@ static PyObject *bb_construct(BridgeBackendObject *self,
     const char *fqcn_c;
     char *res = NULL;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (n != 2) {
         PyErr_SetString(PyExc_TypeError,
@@ -2211,7 +2295,7 @@ static PyObject *bb_call(BridgeBackendObject *self,
     char *res = NULL;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (kwnames != NULL || n != 4) {
         PyErr_SetString(PyExc_TypeError,
@@ -2291,7 +2375,7 @@ static PyObject *bb_call_instance(BridgeBackendObject *self,
     char *res = NULL;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (kwnames != NULL || n != 4) {
         PyErr_SetString(PyExc_TypeError,
@@ -2366,7 +2450,7 @@ static PyObject *bb_get(BridgeBackendObject *self,
     char *res = NULL;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (n != 2) {
         PyErr_SetString(PyExc_TypeError,
@@ -2424,7 +2508,7 @@ static PyObject *bb_get_instance(BridgeBackendObject *self,
     char *res = NULL;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (n != 2) {
         PyErr_SetString(PyExc_TypeError,
@@ -2491,7 +2575,7 @@ static PyObject *bb_set(BridgeBackendObject *self,
     const char *member_c;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (n != 3) {
         PyErr_SetString(PyExc_TypeError,
@@ -2560,7 +2644,7 @@ static PyObject *bb_set_instance(BridgeBackendObject *self,
     const char *member_c;
     int rc;
     int bad;
-    if (st == NULL)
+    if (st == NULL || !bb_require_ready(self))
         return NULL;
     if (n != 3) {
         PyErr_SetString(PyExc_TypeError,
@@ -2625,12 +2709,14 @@ static PyObject *bb_set_instance(BridgeBackendObject *self,
 }
 
 static PyObject *bb_member_kind(BridgeBackendObject *self,
-                                PyObject *const *fast, Py_ssize_t n)
+                                 PyObject *const *fast, Py_ssize_t n)
 {
     PyObject *fqcn;
     PyObject *member;
     PyObject *fset;
     int contains;
+    if (state_of_backend((PyObject *)self) == NULL || !bb_require_ready(self))
+        return NULL;
     if (n != 2) {
         PyErr_SetString(PyExc_TypeError,
                         "member_kind(fqcn, member) takes 2 arguments");
@@ -2651,9 +2737,11 @@ static PyObject *bb_member_kind(BridgeBackendObject *self,
 }
 
 static PyObject *bb_class_exists(BridgeBackendObject *self,
-                                 PyObject *const *fast, Py_ssize_t n)
+                                  PyObject *const *fast, Py_ssize_t n)
 {
     int known;
+    if (state_of_backend((PyObject *)self) == NULL || !bb_require_ready(self))
+        return NULL;
     if (n != 1) {
         PyErr_SetString(PyExc_TypeError,
                         "class_exists(fqcn) takes 1 argument");
@@ -2678,6 +2766,10 @@ static int bb_init(BridgeBackendObject *self, PyObject *args, PyObject *kwds)
     xt_state *st = state_of_backend((PyObject *)self);
     if (st == NULL)
         return -1;
+    if (self->cleared) {
+        PyErr_SetString(PyExc_RuntimeError, "bridge: backend was cleared");
+        return -1;
+    }
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|OO", kwlist,
                                      &service, &manifest_path))
         return -1;
@@ -2695,13 +2787,38 @@ static int bb_init(BridgeBackendObject *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
-static void bb_dealloc(PyObject *self)
+static int bb_traverse(PyObject *self, visitproc visit, void *arg)
 {
     BridgeBackendObject *bb = (BridgeBackendObject *)self;
-    PyTypeObject *tp = Py_TYPE(self);
+    /* Heap type -> module -> handle table -> JavaInstance -> backend is a
+     * real ownership cycle. The implicit heap-type reference is an edge too. */
+    Py_VISIT(Py_TYPE(self));
+    Py_VISIT(bb->service);
+    Py_VISIT(bb->fields);
+    Py_VISIT(bb->classes);
+    return 0;
+}
+
+static int bb_clear(PyObject *self)
+{
+    BridgeBackendObject *bb = (BridgeBackendObject *)self;
+    PyObject *exception;
+    if (bb->cleared)
+        return 0;
+    bb->cleared = 1;
+    exception = PyErr_GetRaisedException();
     Py_CLEAR(bb->service);
     Py_CLEAR(bb->fields);
     Py_CLEAR(bb->classes);
+    PyErr_SetRaisedException(exception);
+    return 0;
+}
+
+static void bb_dealloc(PyObject *self)
+{
+    PyTypeObject *tp = Py_TYPE(self);
+    PyObject_GC_UnTrack(self);
+    bb_clear(self);
     tp->tp_free(self);
     Py_DECREF(tp);
 }
@@ -2738,6 +2855,8 @@ static PyType_Slot bb_slots[] = {
     {Py_tp_new, PyType_GenericNew},
     {Py_tp_init, bb_init},
     {Py_tp_dealloc, bb_dealloc},
+    {Py_tp_traverse, bb_traverse},
+    {Py_tp_clear, bb_clear},
     {Py_tp_methods, bb_methods},
     {0, NULL}
 };
@@ -2746,7 +2865,7 @@ static PyType_Spec bb_spec = {
     .name = "_exteraless_bridge.BridgeBackend",
     .basicsize = (int)sizeof(BridgeBackendObject),
     .itemsize = 0,
-    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,
     .slots = bb_slots,
 };
 
@@ -3080,6 +3199,56 @@ static PyObject *py_xt_set_plugin_id(PyObject *self, PyObject *arg)
     Py_RETURN_NONE;
 }
 
+static PyObject *py_xt_set_owner_token(PyObject *self, PyObject *arg)
+{
+    xt_state *st = state_from_module(self);
+    PyObject *token;
+    const char *bytes;
+    Py_ssize_t count;
+    if (st == NULL)
+        return NULL;
+    if (st->plugin_id == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "xt_set_owner_token requires xt_set_plugin_id first");
+        return NULL;
+    }
+    if (!PyUnicode_Check(arg)) {
+        PyErr_SetString(PyExc_TypeError, "xt_set_owner_token expects str");
+        return NULL;
+    }
+    /* Bound copying/UTF-8 cache allocation too. Unicode length access and
+     * PyUnicode_FromObject do not call a subclass's __len__/__str__/__eq__. */
+    count = PyUnicode_GET_LENGTH(arg);
+    if (count == 0 || count > XT_OWNER_TOKEN_MAX_UTF8) {
+        PyErr_SetString(PyExc_ValueError, "xt_set_owner_token requires 1..256 UTF-8 bytes without NUL");
+        return NULL;
+    }
+    token = PyUnicode_FromObject(arg);
+    if (token == NULL)
+        return NULL;
+    bytes = PyUnicode_AsUTF8AndSize(token, &count);
+    if (bytes == NULL) {
+        Py_DECREF(token);
+        return NULL; /* Invalid surrogate: preserve UnicodeEncodeError. */
+    }
+    if (count > XT_OWNER_TOKEN_MAX_UTF8 || memchr(bytes, 0, (size_t)count) != NULL) {
+        Py_DECREF(token);
+        PyErr_SetString(PyExc_ValueError, "xt_set_owner_token requires 1..256 UTF-8 bytes without NUL");
+        return NULL;
+    }
+    if (st->owner_token != NULL) {
+        int equal = PyUnicode_Compare(st->owner_token, token) == 0;
+        Py_DECREF(token);
+        if (!equal) {
+            if (!PyErr_Occurred())
+                PyErr_SetString(PyExc_RuntimeError, "bridge: owner token is already bound to this interpreter");
+            return NULL;
+        }
+    }
+    else
+        st->owner_token = token;
+    Py_RETURN_NONE;
+}
+
 static PyObject *py_xt_call_host(PyObject *self, PyObject *arg)
 {
     xt_state *st = state_from_module(self);
@@ -3099,12 +3268,8 @@ static PyObject *py_xt_call_host(PyObject *self, PyObject *arg)
     }
     if (native_tx_begin(st, &tx) < 0)
         return NULL;
-    request = PyDict_Copy(arg);
+    request = native_request_context(st, arg);
     if (request == NULL)
-        goto done;
-    /* Do not even marshal the untrusted pluginId value; it may be any Python
-     * object. native_dispatch_request overwrites the marshalled key again. */
-    if (PyDict_SetItemString(request, "pluginId", st->plugin_id) < 0)
         goto done;
     marshalled = marshal_value(st, request, &tx);
     if (marshalled == NULL)
@@ -3122,7 +3287,8 @@ static PyObject *py_xt_register_service(PyObject *self, PyObject *args)
     const char *name;
     PyObject *ptr;
     void *fn;
-    (void)self;
+    if (state_from_module(self) == NULL)
+        return NULL;
     if (!PyArg_ParseTuple(args, "sO", &name, &ptr))
         return NULL;
     fn = PyLong_AsVoidPtr(ptr);
@@ -3140,7 +3306,8 @@ static PyObject *py_xt_register_service(PyObject *self, PyObject *args)
 static PyObject *py_xt_unregister_service(PyObject *self, PyObject *args)
 {
     const char *name;
-    (void)self;
+    if (state_from_module(self) == NULL)
+        return NULL;
     if (!PyArg_ParseTuple(args, "s", &name))
         return NULL;
     return PyBool_FromLong(registry_remove(name));
@@ -3149,7 +3316,8 @@ static PyObject *py_xt_unregister_service(PyObject *self, PyObject *args)
 static PyObject *py_xt_service_ptr(PyObject *self, PyObject *args)
 {
     const char *name;
-    (void)self;
+    if (state_from_module(self) == NULL)
+        return NULL;
     if (!PyArg_ParseTuple(args, "s", &name))
         return NULL;
     return PyLong_FromVoidPtr(registry_find(name));
@@ -3173,7 +3341,8 @@ static PyObject *py_xt_install_mock_service(PyObject *self, PyObject *args,
         {"set", (void *)mock_set},
         {"set_instance", (void *)mock_set_instance},
     };
-    (void)self;
+    if (state_from_module(self) == NULL)
+        return NULL;
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|s", kwlist, &prefix))
         return NULL;
     for (size_t i = 0; i < sizeof(entries) / sizeof(entries[0]); i++) {
@@ -3188,7 +3357,8 @@ static PyObject *py_xt_builtin_ptr(PyObject *self, PyObject *args)
 {
     const char *op;
     void *fn = NULL;
-    (void)self;
+    if (state_from_module(self) == NULL)
+        return NULL;
     if (!PyArg_ParseTuple(args, "s", &op))
         return NULL;
     if (strcmp(op, "construct") == 0)
@@ -3354,8 +3524,10 @@ static PyObject *py_xt_bind(PyObject *self, PyObject *args)
 static PyMethodDef module_methods[] = {
     {"xt_set_plugin_id", py_xt_set_plugin_id, METH_O,
      "xt_set_plugin_id(str) -> None — bind an interpreter owner once; same ID is idempotent"},
+    {"xt_set_owner_token", py_xt_set_owner_token, METH_O,
+     "xt_set_owner_token(str) -> None — immutable epoch after plugin ID; 1..256 UTF-8 bytes, no NUL; same token is idempotent"},
     {"xt_call_host", py_xt_call_host, METH_O,
-     "xt_call_host(dict) -> Any — native JSON dispatcher with authoritative interpreter pluginId"},
+     "xt_call_host(dict) -> Any — native dispatcher with C-owned pluginId and optional ownerToken"},
     {"xt_register_service", py_xt_register_service, METH_VARARGS,
      "xt_register_service(name, callback_ptr) — зарегистрировать C-колбэк "
      "(int-адрес) под именем '<prefix>.<op>'. Сигнатуры — см. шапку "
@@ -3447,6 +3619,7 @@ static int module_traverse(PyObject *module, visitproc visit, void *arg)
     Py_VISIT(st->JavaMemberError);
     Py_VISIT(st->backend_type);
     Py_VISIT(st->plugin_id);
+    Py_VISIT(st->owner_token);
     Py_VISIT(st->json_dumps);
     Py_VISIT(st->json_loads);
     Py_VISIT(st->dumps_kw);
@@ -3463,6 +3636,11 @@ static int module_traverse(PyObject *module, visitproc visit, void *arg)
 
 static void state_release_objects(xt_state *st)
 {
+    PyObject *exception;
+    if (st->closed)
+        return;
+    st->closed = 1;
+    exception = PyErr_GetRaisedException();
     if (st->anchor != NULL) {
         st->anchor->state = NULL;
         st->anchor = NULL;
@@ -3477,12 +3655,14 @@ static void state_release_objects(xt_state *st)
     Py_CLEAR(st->JavaMemberError);
     Py_CLEAR(st->backend_type);
     Py_CLEAR(st->plugin_id);
+    Py_CLEAR(st->owner_token);
     Py_CLEAR(st->json_dumps);
     Py_CLEAR(st->json_loads);
     Py_CLEAR(st->dumps_kw);
     Py_CLEAR(st->mock_log);
     free(st->default_manifest);
     st->default_manifest = NULL;
+    PyErr_SetRaisedException(exception);
 }
 
 static int module_clear(PyObject *module)
@@ -3506,7 +3686,7 @@ static int module_exec(PyObject *module)
     PyInterpreterState *interp;
     int64_t interp_id;
     PyObject *type;
-    if (st == NULL)
+    if (state_require_open(st) == NULL)
         return -1;
     json_mod = PyImport_ImportModule("json");
     if (json_mod == NULL)

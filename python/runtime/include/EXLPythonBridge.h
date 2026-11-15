@@ -38,8 +38,16 @@ void EXLPythonBridgeBufferFree(EXLPythonBridgeBuffer *buffer);
  *
  * plugin_id is taken from per-interpreter xt_set_plugin_id state. The bridge
  * also overwrites request["pluginId"] with that ID before serialization.
+ * request["ownerToken"] is supplied ONLY from per-interpreter C state, bound
+ * by Python xt_set_owner_token(str) after xt_set_plugin_id: 1..256 UTF-8 bytes,
+ * no NUL, immutable (the same value is idempotent). If unbound, the request has
+ * NO ownerToken, even if Python supplied one. The coordinator binds a random
+ * UUID per interpreter generation before SDK bind_owner_json/load; Swift must
+ * validate that epoch against its captured owner before admitting work/effects.
+ * This JSON field adds no callback ABI argument. An old interpreter keeps its
+ * own old token; there is no lookup of another interpreter's current token.
  * Neither input may be retained. Python callbacks must be scheduled by the
- * host to their owner's worker using pluginId/handle; do not enter Python on
+ * host to their captured owner's worker using pluginId/epoch/handle; do not enter Python on
  * main, acquire the main GIL, or use PyGILState_Ensure for reverse calls. */
 typedef int (*EXLPythonBridgeDispatcher)(void *context,
                                        const char *request, size_t request_count,
