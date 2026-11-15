@@ -177,6 +177,11 @@ open class NavigationController: UINavigationController, ContainableController, 
     private var previousContentLayoutMode: Int = 0
     private var previousContentLayoutOwners: NavigationContentLayoutOwners?
     private var contentLayoutUpdateScheduled = false
+    private var contentLayoutAdoptionGeneration: UInt64 = 0
+    private var contentLayoutAdoptions: [ObjectIdentifier: NavigationContentLayoutAdoption] = [:]
+    private var contentLayoutInputState: NavigationContentLayoutInputState?
+    private var needsContentLayoutInputReconciliation = false
+    private var isReconcilingContentLayoutInput = false
     private var theme: NavigationControllerTheme
     private let isFlat: Bool
     
@@ -344,7 +349,7 @@ open class NavigationController: UINavigationController, ContainableController, 
         guard self.contentLayoutRole == .applicationRoot, AppearanceLayoutModePolicy.Mode(rawValue: rawValue) != nil else { return false }
         guard self.contentLayoutMode != rawValue else { return true }
         self.contentLayoutMode = rawValue
-        if self.isUpdatingContainers {
+        if self.isUpdatingContainers || self.isReconcilingContentLayoutInput {
             if !self.contentLayoutUpdateScheduled {
                 self.contentLayoutUpdateScheduled = true
                 DispatchQueue.main.async { [weak self] in
@@ -357,6 +362,49 @@ open class NavigationController: UINavigationController, ContainableController, 
             self.requestLayout(transition: .immediate)
         }
         return true
+    }
+
+    func takeContentLayoutAdoption(for controller: ViewController) -> NavigationContentLayoutAdoption? {
+        guard self.contentLayoutRole == .applicationRoot,
+              let adoption = self.contentLayoutAdoptions.removeValue(forKey: ObjectIdentifier(controller)), adoption.isCurrent else { return nil }
+        return adoption
+    }
+
+    func isCurrentContentLayoutAdoption(_ adoption: NavigationContentLayoutAdoption, controller: ViewController) -> Bool {
+        return self.contentLayoutAdoptionGeneration == adoption.generation && self._viewControllers.contains(where: { $0 === controller })
+    }
+
+    func contentLayoutAdoptionDidAttach(_ adoption: NavigationContentLayoutAdoption) {
+        guard adoption.isCurrent else { return }
+        self.needsContentLayoutInputReconciliation = true
+        self.reconcileContentLayoutInput()
+    }
+
+    private func reconcileContentLayoutInput() {
+        guard self.needsContentLayoutInputReconciliation, !self.isUpdatingContainers, !self.isReconcilingContentLayoutInput else { return }
+        self.needsContentLayoutInputReconciliation = false
+        self.isReconcilingContentLayoutInput = true
+        let generation = self.contentLayoutAdoptionGeneration
+        defer { self.isReconcilingContentLayoutInput = false }
+        if let inputState = self.contentLayoutInputState {
+            if let controller = inputState.controller, self._viewControllers.contains(where: { $0 === controller }) {
+                switch inputState.restore(in: self.displayNode.view) {
+                case .waiting:
+                    break
+                case .restored, .superseded:
+                    if self.contentLayoutAdoptionGeneration == generation && self.contentLayoutInputState === inputState {
+                        self.contentLayoutInputState = nil
+                    }
+                }
+            } else {
+                self.contentLayoutInputState = nil
+            }
+        }
+        // Focus and reparenting may affect native keyboard handling. Deliver the
+        // current physical viewport now, including when no new notification fires.
+        if let layout = self.validLayout {
+            self.updateContainers(layout: layout, transition: .immediate)
+        }
     }
     
     public override init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
@@ -649,7 +697,7 @@ open class NavigationController: UINavigationController, ContainableController, 
         let contentLayout = navigationContentLayout(role: self.contentLayoutRole, rawMode: appliedContentLayoutMode, layout: layout, hasMaster: self._viewControllers.contains { if case .master = $0.navigationPresentation { return true }; return false }, hasMinimizedStack: self.minimizedContainer != nil)
         let navigationLayout = makeNavigationLayout(mode: self.mode, layout: layout, controllers: self._viewControllers, contentLayout: contentLayout)
         var retiredContentContainers: [ASDisplayNode] = []
-        var contentFirstResponder: UIView?
+        var adoptionGeneration: UInt64?
         var contentHandoff = false
         if self.contentLayoutRole == .applicationRoot {
             let owners = NavigationContentLayoutOwners(navigationLayout)
@@ -657,7 +705,14 @@ open class NavigationController: UINavigationController, ContainableController, 
                (self.previousContentLayoutMode != 0 || appliedContentLayoutMode != 0),
                (self.previousContentLayoutMode != appliedContentLayoutMode || owners.needsHandoff(from: previous)) {
                 contentHandoff = true
-                contentFirstResponder = getFirstResponderAndAccessoryHeight(self.displayNode.view).0
+                self.contentLayoutAdoptionGeneration &+= 1
+                adoptionGeneration = self.contentLayoutAdoptionGeneration
+                self.contentLayoutInputState = NavigationContentLayoutInputState(rootView: self.displayNode.view, controllers: self._viewControllers) ?? self.contentLayoutInputState
+                self.contentLayoutAdoptions = [:]
+                for controller in self._viewControllers where previous.contains(controller) {
+                    self.contentLayoutAdoptions[ObjectIdentifier(controller)] = NavigationContentLayoutAdoption(navigation: self, controller: controller, generation: self.contentLayoutAdoptionGeneration, preservesInputFocus: self.contentLayoutInputState?.belongs(to: controller) == true)
+                }
+                self.needsContentLayoutInputReconciliation = true
                 if let root = self.rootContainer {
                     switch root {
                     case let .flat(container):
@@ -1542,9 +1597,12 @@ open class NavigationController: UINavigationController, ContainableController, 
         self.isUpdatingContainers = false
 
         for container in retiredContentContainers { container.removeFromSupernode() }
-        if let responder = contentFirstResponder, !responder.isFirstResponder, responder.window != nil, responder.isDescendant(of: self.displayNode.view) {
-            let _ = responder.becomeFirstResponder()
+        if adoptionGeneration == self.contentLayoutAdoptionGeneration {
+            // Pending children own their taken token; hidden stack members must
+            // not inherit adoption behavior on a later, ordinary push/pop.
+            self.contentLayoutAdoptions.removeAll()
         }
+        self.reconcileContentLayoutInput()
         
         if notifyGlobalOverlayControllersUpdated {
             self.internalGlobalOverlayControllersUpdated()
@@ -1804,6 +1862,12 @@ open class NavigationController: UINavigationController, ContainableController, 
             } else {
                 assert(true)
             }
+        }
+
+        if self.contentLayoutRole == .applicationRoot && self._viewControllers.map(ObjectIdentifier.init) != viewControllers.map(ObjectIdentifier.init) {
+            self.contentLayoutAdoptions.removeAll()
+            self.contentLayoutInputState = nil
+            self.needsContentLayoutInputReconciliation = false
         }
         
         for i in 0 ..< viewControllers.count {

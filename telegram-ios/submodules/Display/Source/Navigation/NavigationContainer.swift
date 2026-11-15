@@ -7,10 +7,12 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
     private final class Child {
         let value: ViewController
         var layout: ContainerViewLayout
+        var contentLayoutAdoption: NavigationContentLayoutAdoption?
         
-        init(value: ViewController, layout: ContainerViewLayout) {
+        init(value: ViewController, layout: ContainerViewLayout, contentLayoutAdoption: NavigationContentLayoutAdoption? = nil) {
             self.value = value
             self.layout = layout
+            self.contentLayoutAdoption = contentLayoutAdoption
         }
     }
     
@@ -646,6 +648,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
                 if controllers.last !== self.state.pending?.value.value {
                     self.state.pending = nil
                     if let last = controllers.last {
+                        let adoption = (last.navigationController as? NavigationController)?.takeContentLayoutAdoption(for: last)
                         let transitionType: PendingChild.TransitionType
                         if !previousControllers.contains(where: { $0 === last }) {
                             transitionType = .push
@@ -653,12 +656,16 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
                             transitionType = .pop
                         }
                         var updatedLayout = layout
-                        if last.view.disableAutomaticKeyboardHandling.isEmpty {
+                        if adoption == nil && last.view.disableAutomaticKeyboardHandling.isEmpty {
                             updatedLayout = updatedLayout.withUpdatedInputHeight(nil)
                         }
-                        self.state.pending = PendingChild(value: self.makeChild(layout: updatedLayout, value: last), transitionType: transitionType, transition: transition, update: { [weak self] pendingChild in
+                        let child = self.makeChild(layout: updatedLayout, value: last, adoption: adoption)
+                        guard self.controllers.last === last else { return }
+                        let pending = PendingChild(value: child, transitionType: transitionType, transition: adoption == nil ? transition : .immediate, update: { [weak self] pendingChild in
                             self?.pendingChildIsReady(pendingChild)
                         })
+                        guard self.controllers.last === last else { return }
+                        self.state.pending = pending
                     }
                 }
             }
@@ -667,21 +674,26 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
         var statusBarTransition = transition
         
         var ignoreInputHeight = false
+        var adoptedChild: Child?
         if let pending = self.state.pending {
             if pending.isReady {
+                guard self.controllers.last === pending.value.value else { return }
+                if let adoption = pending.value.contentLayoutAdoption, !adoption.isCurrent { return }
+                let isAdoption = pending.value.contentLayoutAdoption != nil
                 self.state.pending = nil
                 let previous = self.state.top
                 previous?.value.isInFocus = false
                 self.state.top = pending.value
                 var updatedLayout = layout
-                if pending.value.value.view.disableAutomaticKeyboardHandling.isEmpty {
+                if !isAdoption && pending.value.value.view.disableAutomaticKeyboardHandling.isEmpty {
                     updatedLayout = updatedLayout.withUpdatedInputHeight(nil)
                 }
-                if case .regular = layout.metrics.widthClass, pending.value.layout.inputHeight == nil {
+                if !isAdoption, case .regular = layout.metrics.widthClass, pending.value.layout.inputHeight == nil {
                     ignoreInputHeight = true
                 }
                 self.topTransition(from: previous, to: pending.value, transitionType: pending.transitionType, layout: updatedLayout, transition: pending.transition)
                 self.state.top?.value.isInFocus = self.isInFocus
+                if isAdoption { adoptedChild = pending.value }
                 statusBarTransition = pending.transition
                 if !self.isReady {
                     self.isReady = true
@@ -743,6 +755,12 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
         if self.statusBarStyle != updatedStatusBarStyle {
             self.statusBarStyle = updatedStatusBarStyle
             self.statusBarStyleUpdated?(statusBarTransition)
+        }
+        if let adoptedChild, self.state.top === adoptedChild, let adoption = adoptedChild.contentLayoutAdoption {
+            // Complete after this update's final applyLayout. A root may now
+            // restore focus and reconcile, including from a delayed ready event.
+            adoptedChild.contentLayoutAdoption = nil
+            adoption.didAttach()
         }
     }
     
@@ -1026,19 +1044,20 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
         self.ignoreInputHeight = false
     }
     
-    private func makeChild(layout: ContainerViewLayout, value: ViewController) -> Child {
+    private func makeChild(layout: ContainerViewLayout, value: ViewController, adoption: NavigationContentLayoutAdoption? = nil) -> Child {
         var updatedLayout = layout
-        if value.view.disableAutomaticKeyboardHandling.isEmpty {
+        if adoption == nil && value.view.disableAutomaticKeyboardHandling.isEmpty {
             updatedLayout = updatedLayout.withUpdatedInputHeight(nil)
         }
         value.containerLayoutUpdated(updatedLayout, transition: .immediate)
-        return Child(value: value, layout: updatedLayout)
+        return Child(value: value, layout: updatedLayout, contentLayoutAdoption: adoption)
     }
     
     private func applyLayout(layout: ContainerViewLayout, to child: Child, isMaster: Bool, transition: ContainedViewLayoutTransition) {
         var childFrame = CGRect(origin: CGPoint(), size: layout.size)
         
         var updatedLayout = layout
+        let adoptingFocusedInput = child.contentLayoutAdoption?.preservesInputFocus == true
         
         var shouldSyncKeyboard = false
         if let transition = self.state.transition {
@@ -1052,7 +1071,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
                 break
             }
             if updatedLayout.inputHeight != nil {
-                if !self.canHaveKeyboardFocus && child.value.view.disableAutomaticKeyboardHandling.isEmpty {
+                if !self.canHaveKeyboardFocus && !adoptingFocusedInput && child.value.view.disableAutomaticKeyboardHandling.isEmpty {
                     updatedLayout = updatedLayout.withUpdatedInputHeight(nil)
                 }
             }
@@ -1062,7 +1081,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
             }
             
             if updatedLayout.inputHeight != nil && child.value.view.disableAutomaticKeyboardHandling.isEmpty {
-                if !self.canHaveKeyboardFocus || self.ignoreInputHeight {
+                if (!self.canHaveKeyboardFocus || self.ignoreInputHeight) && !adoptingFocusedInput {
                     updatedLayout = updatedLayout.withUpdatedInputHeight(nil)
                 }
             }
@@ -1091,6 +1110,7 @@ public final class NavigationContainer: ASDisplayNode, ASGestureRecognizerDelega
     
     private func pendingChildIsReady(_ child: PendingChild) {
         if let pending = self.state.pending, pending === child {
+            if let adoption = pending.value.contentLayoutAdoption, !adoption.isCurrent { return }
             pending.isReady = true
             self.performUpdate(transition: .immediate)
         }

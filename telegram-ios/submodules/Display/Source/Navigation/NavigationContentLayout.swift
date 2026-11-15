@@ -76,4 +76,84 @@ struct NavigationContentLayoutOwners {
         if self.split != previous.split { return true }
         return self.owners.contains { id, owner in previous.owners[id].map { $0 != owner } ?? false }
     }
+
+    func contains(_ controller: ViewController) -> Bool {
+        return self.owners[ObjectIdentifier(controller)] != nil
+    }
+}
+
+/// A handoff preserves the actual responder, not an invented keyboard flag.
+/// Offsets refer to the same UITextInput document; no text is copied or changed.
+final class NavigationContentLayoutInputState {
+    enum Restoration {
+        case waiting, restored, superseded
+    }
+
+    weak var controller: ViewController?
+    private weak var responder: UIView?
+    private weak var window: UIWindow?
+    private let selection: NSRange?
+    private let documentLength: Int?
+
+    init?(rootView: UIView, controllers: [ViewController]) {
+        guard let responder = getFirstResponderAndAccessoryHeight(rootView).0,
+              let controller = controllers.first(where: { $0.isViewLoaded && responder.isDescendant(of: $0.view) }) else { return nil }
+        self.controller = controller
+        self.responder = responder
+        self.window = responder.window
+        if let input = responder as? UITextInput, let range = input.selectedTextRange {
+            let start = input.offset(from: input.beginningOfDocument, to: range.start)
+            let end = input.offset(from: input.beginningOfDocument, to: range.end)
+            self.selection = start >= 0 && end >= start ? NSRange(location: start, length: end - start) : nil
+            self.documentLength = input.offset(from: input.beginningOfDocument, to: input.endOfDocument)
+        } else {
+            self.selection = nil
+            self.documentLength = nil
+        }
+    }
+
+    func belongs(to controller: ViewController) -> Bool { self.controller === controller }
+
+    func restore(in rootView: UIView) -> Restoration {
+        guard let controller = self.controller, let responder = self.responder else { return .superseded }
+        guard controller.isInFocus, responder.isDescendant(of: rootView), let window = responder.window else { return .waiting }
+        guard window === self.window else { return .superseded }
+        if let current = getFirstResponderAndAccessoryHeight(rootView).0, current !== responder {
+            return .superseded
+        }
+        if !responder.isFirstResponder && !responder.becomeFirstResponder() { return .waiting }
+        if let input = responder as? UITextInput, let selection = self.selection,
+           self.documentLength == input.offset(from: input.beginningOfDocument, to: input.endOfDocument),
+           let start = input.position(from: input.beginningOfDocument, offset: selection.location),
+           let end = input.position(from: start, offset: selection.length), let range = input.textRange(from: start, to: end) {
+            input.selectedTextRange = range
+        }
+        return .restored
+    }
+}
+
+/// Taken once by a new container and retained by its pending child until ready.
+/// It supplies an adoption contract, never a cached size or keyboard height.
+final class NavigationContentLayoutAdoption {
+    private weak var navigation: NavigationController?
+    private weak var controller: ViewController?
+    let generation: UInt64
+    let preservesInputFocus: Bool
+
+    init(navigation: NavigationController, controller: ViewController, generation: UInt64, preservesInputFocus: Bool) {
+        self.navigation = navigation
+        self.controller = controller
+        self.generation = generation
+        self.preservesInputFocus = preservesInputFocus
+    }
+
+    var isCurrent: Bool {
+        guard let navigation = self.navigation, let controller = self.controller else { return false }
+        return navigation.isCurrentContentLayoutAdoption(self, controller: controller)
+    }
+
+    func didAttach() {
+        guard self.isCurrent else { return }
+        self.navigation?.contentLayoutAdoptionDidAttach(self)
+    }
 }

@@ -5,7 +5,7 @@ import UIKit
 import XCTest
 @testable import Display
 
-private final class LayoutModeController: ViewController {
+private class LayoutModeController: ViewController {
     let readiness: Promise<Bool>
     var layouts: [ContainerViewLayout] = []
     var draft = "retained local editor state"
@@ -24,6 +24,118 @@ private final class LayoutModeController: ViewController {
         super.containerLayoutUpdated(layout, transition: transition)
     }
     override func preferredContentSizeForLayout(_ layout: ContainerViewLayout) -> CGSize? { self.preferredSize }
+}
+
+private final class LayoutModeTextInputController: LayoutModeController {
+    enum Kind: CaseIterable { case field, view }
+
+    let editor: UIView & UITextInput
+    let keyboard = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 500))
+    var resignInputOnNextLayout = false
+
+    init(kind: Kind, ready: Bool = true) {
+        switch kind {
+        case .field:
+            let field = UITextField()
+            field.text = "retained editing selection"
+            field.autocorrectionType = .no
+            field.autocapitalizationType = .none
+            self.editor = field
+        case .view:
+            let view = UITextView()
+            view.text = "retained editing selection"
+            view.autocorrectionType = .no
+            view.autocapitalizationType = .none
+            self.editor = view
+        }
+        super.init(ready: ready)
+        if let field = self.editor as? UITextField { field.inputView = self.keyboard }
+        if let view = self.editor as? UITextView { view.inputView = self.keyboard }
+    }
+
+    required init(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func loadDisplayNode() {
+        super.loadDisplayNode()
+        self.displayNode.view.addSubview(self.editor)
+    }
+
+    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+        self.editor.frame = CGRect(x: 20, y: (layout.statusBarHeight ?? 0) + 24, width: max(44, layout.size.width - 40), height: self.editor is UITextView ? 96 : 44)
+        if self.resignInputOnNextLayout {
+            self.resignInputOnNextLayout = false
+            let _ = self.editor.resignFirstResponder()
+        }
+    }
+
+    func select(_ selection: NSRange) throws {
+        let start = try XCTUnwrap(self.editor.position(from: self.editor.beginningOfDocument, offset: selection.location))
+        let end = try XCTUnwrap(self.editor.position(from: start, offset: selection.length))
+        self.editor.selectedTextRange = try XCTUnwrap(self.editor.textRange(from: start, to: end))
+    }
+
+    func selection() throws -> NSRange {
+        let range = try XCTUnwrap(self.editor.selectedTextRange)
+        let start = self.editor.offset(from: self.editor.beginningOfDocument, to: range.start)
+        let end = self.editor.offset(from: self.editor.beginningOfDocument, to: range.end)
+        return NSRange(location: start, length: end - start)
+    }
+}
+
+@MainActor
+private final class LayoutModeInputFixture {
+    let window: UIWindow
+    let navigation: NavigationController
+    let master = LayoutModeController(master: true)
+    let input: LayoutModeTextInputController
+    private weak var previousKeyWindow: UIWindow?
+
+    init(kind: LayoutModeTextInputController.Kind, theme: NavigationControllerTheme) throws {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+        self.previousKeyWindow = scene?.windows.first(where: { $0.isKeyWindow })
+        let window: UIWindow
+        if let scene {
+            window = UIWindow(windowScene: scene)
+            window.frame = CGRect(x: 0, y: 0, width: 1024, height: 1366)
+        } else {
+            window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1024, height: 1366))
+        }
+        self.window = window
+        self.navigation = NavigationController(mode: .automaticMasterDetail, theme: theme, contentLayoutRole: .applicationRoot)
+        self.input = LayoutModeTextInputController(kind: kind)
+        var initialized = false
+        defer { if !initialized { self.tearDown() } }
+        self.navigation.setViewControllers([self.master, self.input], animated: false)
+        self.window.rootViewController = self.navigation
+        self.window.makeKeyAndVisible()
+        self.window.layoutIfNeeded()
+        self.navigation.view.frame = self.window.bounds
+        self.navigation.containerLayoutUpdated(self.physicalLayout(keyboard: nil), transition: .immediate)
+        XCTAssertTrue(self.input.editor.becomeFirstResponder(), "fixture needs a real UIKit responder")
+        XCTAssertEqual(self.input.keyboard.bounds.height, 500)
+        // Establish the pre-handoff physical keyboard layout on the already
+        // presented child. No layout call is made to repair a mode switch in tests.
+        self.navigation.containerLayoutUpdated(self.physicalLayout(), transition: .immediate)
+        try self.input.select(NSRange(location: 3, length: 8))
+        XCTAssertEqual(self.input.layouts.last?.inputHeight, 500)
+        initialized = true
+    }
+
+    func physicalLayout(keyboard: CGFloat? = 500) -> ContainerViewLayout {
+        // Regular is the tested native layout input. UIWindow bounds and scene
+        // orientation are read from this fixture's real window; traits/device
+        // idiom and the keyboard-handling flags are never overridden.
+        let size = self.window.bounds.size
+        return ContainerViewLayout(size: size, metrics: LayoutMetrics(widthClass: .regular, heightClass: .regular, orientation: self.window.windowScene?.interfaceOrientation, windowSize: size), deviceMetrics: .iPhoneDuo, intrinsicInsets: UIEdgeInsets(top: 0, left: 0, bottom: 20, right: 0), safeInsets: UIEdgeInsets(top: 24, left: 20, bottom: 20, right: 32), reservedCorners: .none, division: nil, additionalInsets: UIEdgeInsets(), statusBarHeight: 24, inputHeight: keyboard, inputHeightIsInteractivellyChanging: false, inVoiceOver: false, presentedInFormSheet: false)
+    }
+
+    func tearDown() {
+        let _ = self.input.editor.resignFirstResponder()
+        self.window.isHidden = true
+        self.window.rootViewController = nil
+        self.previousKeyWindow?.makeKey()
+    }
 }
 
 @MainActor
@@ -195,5 +307,95 @@ final class AppearanceLayoutModeTests: XCTestCase {
         let retiredProgress = modal.dismissProgress
         modal.scrollViewDidEndDragging(UIScrollView(), willDecelerate: false)
         XCTAssertEqual(modal.dismissProgress, retiredProgress, "retired gesture callbacks cannot start another dismissal")
+    }
+
+    func testPNP01TextInputAdoptionKeeps500AndSelectionImmediately() throws {
+        for kind in LayoutModeTextInputController.Kind.allCases {
+            let fixture = try LayoutModeInputFixture(kind: kind, theme: theme())
+            defer { fixture.tearDown() }
+            let selection = try fixture.input.selection()
+            let identities = fixture.navigation.viewControllers.map(ObjectIdentifier.init)
+            for mode in [2, 1, 0] {
+                let before = fixture.input.layouts.count
+                // Exercise both a surviving responder and actual focus recovery.
+                fixture.input.resignInputOnNextLayout = mode == 1
+                XCTAssertTrue(fixture.navigation.updateContentLayoutMode(mode))
+                let delivered = Array(fixture.input.layouts.dropFirst(before))
+                XCTAssertFalse(delivered.isEmpty)
+                XCTAssertTrue(delivered.allSatisfy { $0.inputHeight == 500 }, "adoption must never deliver the fresh-push nil layout")
+                XCTAssertEqual(fixture.input.layouts.last?.inputHeight, 500, "check before another notification/runloop turn")
+                XCTAssertTrue(fixture.input.editor.isFirstResponder)
+                XCTAssertEqual(try fixture.input.selection(), selection)
+                XCTAssertEqual(fixture.navigation.validLayout, fixture.physicalLayout())
+                XCTAssertEqual(fixture.navigation.viewControllers.map(ObjectIdentifier.init), identities)
+                XCTAssertTrue(fixture.navigation.topViewController === fixture.input)
+            }
+        }
+    }
+
+    func testPNP01DelayedReadyAdoptsCurrentViewportBeforeReadyReturns() throws {
+        for kind in LayoutModeTextInputController.Kind.allCases {
+            let fixture = try LayoutModeInputFixture(kind: kind, theme: theme())
+            defer { fixture.tearDown() }
+            let identities = fixture.navigation.viewControllers.map(ObjectIdentifier.init)
+            for mode in [2, 1] {
+                try fixture.input.select(NSRange(location: 5, length: 6))
+                let selection = try fixture.input.selection()
+                let oldOwner = try XCTUnwrap(fixture.input.displayNode.supernode as? NavigationContainer)
+                fixture.input.readiness.set(.single(false))
+                let before = fixture.input.layouts.count
+                fixture.navigation.updateContentLayoutMode(mode)
+                XCTAssertEqual(fixture.input.layouts.last?.inputHeight, 500, "initial adoption layout is already physical, even while ready is delayed")
+                XCTAssertTrue(fixture.input.layouts.dropFirst(before).allSatisfy { $0.inputHeight == 500 })
+                XCTAssertTrue(oldOwner.controllers.isEmpty)
+                if mode == 2 {
+                    fixture.navigation.updateContentLayoutMode(1)
+                    fixture.navigation.updateContentLayoutMode(2)
+                    XCTAssertTrue(fixture.input.layouts.dropFirst(before).allSatisfy { $0.inputHeight == 500 }, "pending Phone-Tablet-Phone adopts the latest generation")
+                }
+
+                // A real window resize while readiness is pending must win over
+                // the old pane's geometry. This is not a keyboard notification.
+                fixture.window.frame = CGRect(x: 0, y: 0, width: mode == 2 ? 1000 : 960, height: 1300)
+                fixture.navigation.view.frame = fixture.window.bounds
+                let current = fixture.physicalLayout()
+                fixture.navigation.containerLayoutUpdated(current, transition: .immediate)
+                let beforeReady = fixture.input.layouts.count
+                fixture.input.readiness.set(.single(true))
+
+                // No wait, layout repair or extra keyboard event after ready.
+                let final = try XCTUnwrap(fixture.input.layouts.last)
+                XCTAssertEqual(final.inputHeight, 500)
+                XCTAssertTrue(fixture.input.layouts.dropFirst(beforeReady).allSatisfy { $0.inputHeight == 500 })
+                XCTAssertEqual(final.metrics, current.metrics)
+                XCTAssertEqual(final.deviceMetrics, current.deviceMetrics)
+                let masterWidth = navigationContentLayout(role: .applicationRoot, rawMode: mode, layout: current, hasMaster: true)?.masterWidth ?? 0
+                XCTAssertEqual(final.size.width, current.size.width - masterWidth)
+                XCTAssertTrue(fixture.input.editor.isFirstResponder)
+                XCTAssertEqual(try fixture.input.selection(), selection)
+                XCTAssertEqual(fixture.navigation.viewControllers.map(ObjectIdentifier.init), identities)
+                XCTAssertFalse(fixture.input.displayNode.supernode === oldOwner)
+                oldOwner.controllerRemoved(fixture.input)
+                oldOwner.interactivePopEnded(translation: 900, velocity: 2000, isCancelled: false, time: 1)
+                XCTAssertTrue(fixture.navigation.topViewController === fixture.input)
+            }
+        }
+    }
+
+    func testPNP01FreshPushAndSupersededReadyKeepTheirNativeOwnership() throws {
+        let fixture = try LayoutModeInputFixture(kind: .field, theme: theme())
+        defer { fixture.tearDown() }
+        fixture.navigation.updateContentLayoutMode(2)
+        let pending = LayoutModeTextInputController(kind: .view, ready: false)
+        fixture.navigation.pushViewController(pending, animated: false)
+        XCTAssertNil(pending.layouts.first?.inputHeight, "a genuinely fresh push keeps native keyboard suppression")
+        fixture.navigation.updateContentLayoutMode(1)
+        XCTAssertTrue(fixture.navigation.popViewController(animated: false) === pending)
+        let retained = fixture.navigation.viewControllers.map(ObjectIdentifier.init)
+        pending.readiness.set(.single(true))
+        XCTAssertEqual(fixture.navigation.viewControllers.map(ObjectIdentifier.init), retained)
+        XCTAssertTrue(fixture.navigation.topViewController === fixture.input)
+        XCTAssertNil(pending.displayNode.supernode, "old ready must not mount a popped controller")
+        XCTAssertFalse(pending.editor.isFirstResponder)
     }
 }
