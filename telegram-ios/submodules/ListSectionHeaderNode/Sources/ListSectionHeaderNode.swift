@@ -5,9 +5,6 @@ import Display
 import TelegramPresentationData
 import ImageBlur
 
-private let titleFont = Font.regular(13.0)
-private let actionFont = Font.regular(13.0)
-
 public enum ListSectionHeaderActionType {
     case generic
     case destructive
@@ -20,13 +17,13 @@ public final class ListSectionHeaderNode: ASDisplayNode {
     private var actionButtonLabel: ImmediateTextNode?
     private var actionButton: HighlightableButtonNode?
     private var theme: PresentationTheme
+    private var textFont: UIFont?
     
     private var validLayout: (size: CGSize, leftInset: CGFloat, rightInset: CGFloat)?
     
     public var title: String? {
         didSet {
-            self.label.attributedText = NSAttributedString(string: self.title ?? "", font: titleFont, textColor: self.theme.chatList.sectionHeaderTextColor)
-            self.label.accessibilityLabel = self.title
+            self.updateText(font: Font.regular(13.0))
             
             if let (size, leftInset, rightInset) = self.validLayout {
                 self.updateLayout(size: size, leftInset: leftInset, rightInset: rightInset)
@@ -69,10 +66,10 @@ public final class ListSectionHeaderNode: ASDisplayNode {
             }
         }
         if let action = self.action {
-            self.updateActionTitle()
             self.actionButton?.accessibilityLabel = action
             self.actionButton?.accessibilityTraits = [.button]
         }
+        self.updateText(font: Font.regular(13.0))
         
         if let (size, leftInset, rightInset) = self.validLayout {
             self.updateLayout(size: size, leftInset: leftInset, rightInset: rightInset)
@@ -113,7 +110,14 @@ public final class ListSectionHeaderNode: ASDisplayNode {
         return super.hitTest(point, with: event)
     }
     
-    private func updateActionTitle() {
+    private func updateText(font: UIFont) {
+        self.textFont = font
+        self.label.attributedText = NSAttributedString(string: self.title ?? "", font: font, textColor: self.theme.chatList.sectionHeaderTextColor)
+        self.label.accessibilityLabel = self.title
+        self.updateActionTitle(font: font)
+    }
+
+    private func updateActionTitle(font: UIFont) {
         guard let action = self.action else {
             return
         }
@@ -124,7 +128,7 @@ public final class ListSectionHeaderNode: ASDisplayNode {
             case .destructive:
                 actionColor = self.theme.list.itemDestructiveColor
         }
-        let attributedText = NSMutableAttributedString(string: action, font: actionFont, textColor: actionColor)
+        let attributedText = NSMutableAttributedString(string: action, font: font, textColor: actionColor)
         if let range = attributedText.string.range(of: "<"), let arrowImage = UIImage(bundleImageName: "Item List/HeaderContextDisclosureArrow") {
             attributedText.addAttribute(.attachment, value: arrowImage, range: NSRange(range, in: attributedText.string))
             attributedText.addAttribute(.baselineOffset, value: 2.0, range: NSRange(range, in: attributedText.string))
@@ -137,14 +141,13 @@ public final class ListSectionHeaderNode: ASDisplayNode {
     }
     
     public func updateTheme(theme: PresentationTheme) {
-        if self.theme !== theme {
+        let font = Font.regular(13.0)
+        if self.theme !== theme || self.textFont !== font {
             self.theme = theme
                         
             //self.backgroundLayer.backgroundColor = theme.chatList.sectionHeaderFillColor.cgColor
             
-            self.label.attributedText = NSAttributedString(string: self.title ?? "", font: titleFont, textColor: self.theme.chatList.sectionHeaderTextColor)
-
-            self.updateActionTitle()
+            self.updateText(font: font)
             
             if let (size, leftInset, rightInset) = self.validLayout {
                 self.updateLayout(size: size, leftInset: leftInset, rightInset: rightInset)
@@ -154,6 +157,13 @@ public final class ListSectionHeaderNode: ASDisplayNode {
     
     public func updateLayout(size: CGSize, leftInset: CGFloat, rightInset: CGFloat, showBackground: Bool = true) {
         self.validLayout = (size, leftInset, rightInset)
+        // A layout can arrive with the same theme after a font-family change.
+        // Font's family-keyed cache keeps this lookup cheap while old layouts
+        // retain their original immutable UIFont/CTLine instances.
+        let font = Font.regular(13.0)
+        if self.textFont !== font {
+            self.updateText(font: font)
+        }
         let labelSize = self.label.updateLayout(CGSize(width: max(0.0, size.width - leftInset - rightInset - 18.0), height: size.height))
         let labelFrame = CGRect(origin: CGPoint(x: leftInset + 16.0, y: 6.0 + UIScreenPixel), size: CGSize(width: labelSize.width, height: labelSize.height))
         self.label.frame = labelFrame

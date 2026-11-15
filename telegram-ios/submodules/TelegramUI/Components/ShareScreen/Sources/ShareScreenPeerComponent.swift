@@ -12,7 +12,7 @@ import EmojiStatusComponent
 import PeerListItemComponent
 import MultilineTextComponent
 
-private let shareScreenPeerTitleFont = Font.medium(11.0)
+private var shareScreenPeerTitleFont: UIFont { return Font.medium(11.0) }
 private let shareScreenCommunityShadowImage = UIImage(bundleImageName: "Components/CommunityShadow")?.withRenderingMode(.alwaysTemplate)
 
 final class ShareScreenPeerComponent: Component {

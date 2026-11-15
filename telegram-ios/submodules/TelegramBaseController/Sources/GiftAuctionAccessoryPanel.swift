@@ -14,8 +14,8 @@ import ButtonComponent
 import GiftItemComponent
 import AnimatedTextComponent
 
-private let titleFont = Font.semibold(15.0)
-private let subtitleFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
+private var subtitleFont: UIFont { return Font.regular(14.0) }
 
 final class GiftAuctionAccessoryPanel: ASDisplayNode {
     private let context: AccountContext

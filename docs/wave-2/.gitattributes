@@ -1,0 +1,3 @@
+# Unified patch context lines preserve the original source's significant spacing.
+# Whitespace checks run on the applied source, not the serialized diff envelope.
+*.patch -whitespace

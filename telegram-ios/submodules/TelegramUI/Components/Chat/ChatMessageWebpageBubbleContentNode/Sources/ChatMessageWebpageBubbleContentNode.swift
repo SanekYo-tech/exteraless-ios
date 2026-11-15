@@ -20,7 +20,7 @@ import ChatMessageInteractiveMediaNode
 import ChatMessageAttachedContentNode
 import ChatControllerInteraction
 
-private let titleFont: UIFont = Font.semibold(15.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
 
 public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContentNode {
     private var webPage: TelegramMediaWebpage?

@@ -9,8 +9,8 @@ import AppBundle
 import ManagedAnimationNode
 import ComponentFlow
 
-private let titleFont = Font.regular(15.0)
-private let subtitleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.regular(15.0) }
+private var subtitleFont: UIFont { return Font.regular(13.0) }
 
 private let smallScale: CGFloat = 0.48
 private let smallIconScale: CGFloat = 0.69

@@ -58,7 +58,7 @@ public class ItemListPlaceholderItem: ListViewItem, ItemListItem {
     public let selectable = false
 }
 
-private let textFont = Font.regular(15.0)
+private var textFont: UIFont { return Font.regular(15.0) }
 
 public class ItemListPlaceholderItemNode: ListViewItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

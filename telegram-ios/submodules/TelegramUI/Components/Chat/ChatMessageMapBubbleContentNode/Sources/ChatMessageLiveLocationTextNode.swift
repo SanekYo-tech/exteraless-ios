@@ -6,7 +6,7 @@ import TelegramPresentationData
 import TelegramUIPreferences
 import TelegramStringFormatting
 
-private let textFont: UIFont = Font.regular(14.0)
+private var textFont: UIFont { return Font.regular(14.0) }
 
 private class ChatMessageLiveLocationTextNodeParams: NSObject {
     let color: UIColor

@@ -229,7 +229,7 @@ private struct Month: Equatable {
     }
 }
 
-private let durationFont = Font.semibold(11.0)
+private var durationFont: UIFont { return Font.semibold(11.0) }
 private let minDurationImage: UIImage = {
     let image = generateImage(CGSize(width: 20.0, height: 20.0), rotatedContext: { size, context in
         context.clear(CGRect(origin: CGPoint(), size: size))

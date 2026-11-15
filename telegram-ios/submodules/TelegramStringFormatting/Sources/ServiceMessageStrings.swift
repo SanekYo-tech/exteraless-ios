@@ -8,8 +8,8 @@ import LocalizedPeerData
 import Display
 import Markdown
 
-private let titleFont = Font.regular(13.0)
-private let titleBoldFont = Font.bold(13.0)
+private var titleFont: UIFont { return Font.regular(13.0) }
+private var titleBoldFont: UIFont { return Font.bold(13.0) }
 
 private func spoilerAttributes(primaryTextColor: UIColor) -> MarkdownAttributeSet {
     return MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [TelegramTextAttributes.Spoiler: true])

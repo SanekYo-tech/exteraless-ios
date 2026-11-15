@@ -45,8 +45,8 @@ public enum ChatMessageDateAndStatusType: Equatable {
     case FreeOutgoing(ChatMessageDateAndStatusOutgoingType)
 }
 
-private let reactionCountFont = Font.semibold(11.0)
-private let reactionFont = Font.regular(12.0)
+private var reactionCountFont: UIFont { return Font.semibold(11.0) }
+private var reactionFont: UIFont { return Font.regular(12.0) }
 
 private final class StatusReactionNode: ASDisplayNode {
     let iconView: ReactionIconView

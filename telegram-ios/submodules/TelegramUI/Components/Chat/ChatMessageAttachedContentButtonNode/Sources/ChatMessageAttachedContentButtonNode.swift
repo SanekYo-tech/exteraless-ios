@@ -6,7 +6,7 @@ import TelegramPresentationData
 import ChatPresentationInterfaceState
 import ShimmerEffect
 
-private let buttonFont = Font.semibold(14.0)
+private var buttonFont: UIFont { return Font.semibold(14.0) }
 private let sharedBackgroundImage = generateStretchableFilledCircleImage(radius: 6.0, color: UIColor.white)?.withRenderingMode(.alwaysTemplate)
 
 public final class ChatMessageAttachedContentButtonNode: HighlightTrackingButtonNode {

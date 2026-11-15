@@ -18,9 +18,6 @@ import MessageInlineBlockBackgroundView
 
 private let avatarFont = avatarPlaceholderFont(size: 16.0)
 
-private let titleFont = Font.semibold(14.0)
-private let textFont = Font.regular(14.0)
-
 public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
     private var backgroundView: MessageInlineBlockBackgroundView?
     private var actionButtonSeparator: SimpleLayer?
@@ -88,10 +85,30 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
         self.view.addGestureRecognizer(tapRecognizer)
     }
     
-    override public func asyncLayoutContent() -> (_ item: ChatMessageBubbleContentItem, _ layoutConstants: ChatMessageItemLayoutConstants, _ preparePosition: ChatMessageBubblePreparePosition, _ messageSelection: Bool?, _ constrainedSize: CGSize, _ avatarInset: CGFloat) -> (ChatMessageBubbleContentProperties, CGSize?, CGFloat, (CGSize, ChatMessageBubbleContentPosition) -> (CGFloat, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool, ListViewItemApply?) -> Void))) {
-        let statusLayout = self.dateAndStatusNode.asyncLayout()
+    /// The contact's actual text layout/apply path takes already-resolved display
+    /// text. Identity filtering and avatar initials are resolved by the caller.
+    /// Resolve fonts on each measurement, not when the async closure is captured.
+    func asyncLayoutContactText() -> (_ title: String?, _ text: String?, _ titleColor: UIColor, _ textColor: UIColor, _ constrainedWidth: CGFloat) -> (title: TextNodeLayout, text: TextNodeLayout, apply: (CGRect) -> Void) {
         let makeTitleLayout = TextNode.asyncLayout(self.titleNode)
         let makeTextLayout = TextNode.asyncLayout(self.textNode)
+        return { [weak self] title, text, titleColor, textColor, constrainedWidth in
+            let titleString = title.map { NSAttributedString(string: $0, font: Font.semibold(14.0), textColor: titleColor) }
+            let textString = text.map { NSAttributedString(string: $0, font: Font.regular(14.0), textColor: textColor) }
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: titleString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (textLayout, textApply) = makeTextLayout(TextNodeLayoutArguments(attributedString: textString, backgroundColor: nil, maximumNumberOfLines: 5, truncationType: .end, constrainedSize: CGSize(width: constrainedWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            return (titleLayout, textLayout, { [weak self] avatarFrame in
+                guard let self else { return }
+                let _ = titleApply()
+                let _ = textApply()
+                self.titleNode.frame = CGRect(origin: CGPoint(x: avatarFrame.maxX + 7.0, y: avatarFrame.minY + 1.0), size: titleLayout.size)
+                self.textNode.frame = CGRect(origin: CGPoint(x: avatarFrame.maxX + 7.0, y: avatarFrame.minY + 20.0), size: textLayout.size)
+            })
+        }
+    }
+
+    override public func asyncLayoutContent() -> (_ item: ChatMessageBubbleContentItem, _ layoutConstants: ChatMessageItemLayoutConstants, _ preparePosition: ChatMessageBubblePreparePosition, _ messageSelection: Bool?, _ constrainedSize: CGSize, _ avatarInset: CGFloat) -> (ChatMessageBubbleContentProperties, CGSize?, CGFloat, (CGSize, ChatMessageBubbleContentPosition) -> (CGFloat, (CGFloat) -> (CGSize, (ListViewItemUpdateAnimation, Bool, ListViewItemApply?) -> Void))) {
+        let statusLayout = self.dateAndStatusNode.asyncLayout()
+        let makeContactTextLayout = self.asyncLayoutContactText()
         let makeMessageButtonLayout = ChatMessageAttachedContentButtonNode.asyncLayout(self.messageButtonNode)
         let makeAddButtonLayout = ChatMessageAttachedContentButtonNode.asyncLayout(self.addButtonNode)
         
@@ -153,8 +170,8 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                 }
             }
             
-            var titleString: NSAttributedString?
-            var textString: NSAttributedString?
+            var titleString: String?
+            var textString: String?
             var updatedContactInfo: String?
             
             var canMessage = false
@@ -216,8 +233,8 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                 updatedContactInfo = info
                 
                 contactNamePresentation = namePresentation
-                titleString = NSAttributedString(string: displayName, font: titleFont, textColor: mainColor)
-                textString = NSAttributedString(string: info, font: textFont, textColor: messageTheme.primaryTextColor)
+                titleString = displayName
+                textString = info
             } else {
                 updatedContactInfo = nil
             }
@@ -230,8 +247,9 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                 let sideInsets = layoutConstants.text.bubbleInsets.right * 2.0
                 
                 let maxTextWidth = max(1.0, constrainedSize.width - avatarSize.width - 7.0 - sideInsets)
-                let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: titleString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: maxTextWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
-                let (textLayout, textApply) = makeTextLayout(TextNodeLayoutArguments(attributedString: textString, backgroundColor: nil, maximumNumberOfLines: 5, truncationType: .end, constrainedSize: CGSize(width: maxTextWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+                let contactTextLayout = makeContactTextLayout(titleString, textString, mainColor, messageTheme.primaryTextColor, maxTextWidth)
+                let titleLayout = contactTextLayout.title
+                let textLayout = contactTextLayout.text
                 
                 var edited = false
                 if item.attributes.updatingMedia != nil {
@@ -397,13 +415,9 @@ public class ChatMessageContactBubbleContentNode: ChatMessageBubbleContentNode {
                             
                             strongSelf.avatarNode.frame = avatarFrame
                             
-                            let _ = titleApply()
-                            let _ = textApply()
+                            contactTextLayout.apply(avatarFrame)
                             let _ = messageButtonApply(animation)
                             let _ = addButtonApply(animation)
-                            
-                            strongSelf.titleNode.frame = CGRect(origin: CGPoint(x: avatarFrame.maxX + 7.0, y: avatarFrame.minY + 1.0), size: titleLayout.size)
-                            strongSelf.textNode.frame = CGRect(origin: CGPoint(x: avatarFrame.maxX + 7.0, y: avatarFrame.minY + 20.0), size: textLayout.size)
                             
                             strongSelf.addButtonNode.frame = addButtonFrame
                             strongSelf.addButtonNode.isHidden = !canAdd && canMessage

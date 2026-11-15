@@ -4,7 +4,7 @@ import AsyncDisplayKit
 import Display
 import TelegramPresentationData
 
-private let titleFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
 
 final class BotPaymentActionItemNode: BotPaymentItemNode {
     private let title: String

@@ -9,7 +9,7 @@ import GlassBackgroundComponent
 import ComponentFlow
 import ComponentDisplayAdapters
 
-private let badgeFont = Font.with(size: 13.0, traits: [.monospacedNumbers])
+private var badgeFont: UIFont { return Font.with(size: 13.0, traits: [.monospacedNumbers]) }
 
 enum ChatHistoryNavigationButtonType {
     case down

@@ -9,7 +9,7 @@ import AppBundle
 import PhoneNumberFormat
 import AccountContext
 
-private let titleFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
 
 public class ContactsAddItem: ListViewItem {
     let context: AccountContext

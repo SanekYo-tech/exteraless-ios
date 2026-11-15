@@ -16,7 +16,7 @@ import ComponentDisplayAdapters
 import AccountContext
 import GlassBackgroundComponent
 
-private let labelFont = Font.regular(15.0)
+private var labelFont: UIFont { return Font.regular(15.0) }
 
 final class ChatPremiumRequiredInputPanelNode: ChatInputPanelNode {
     private struct Params: Equatable {

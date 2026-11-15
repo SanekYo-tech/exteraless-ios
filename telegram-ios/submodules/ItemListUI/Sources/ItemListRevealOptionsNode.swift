@@ -79,8 +79,8 @@ public struct ItemListRevealOption: Equatable {
     }
 }
 
-private let titleFont = Font.regular(11.0)
-private let iconlessTitleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.regular(11.0) }
+private var iconlessTitleFont: UIFont { return Font.regular(13.0) }
 
 private let spacing: CGFloat = 10.0
 private let edgeInset: CGFloat = 10.0

@@ -8,7 +8,7 @@ import SearchBarNode
 import ComponentFlow
 import GlassBackgroundComponent
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class ChatRecentActionsSearchNavigationContentNode: NavigationBarContentNode {
     private var theme: PresentationTheme

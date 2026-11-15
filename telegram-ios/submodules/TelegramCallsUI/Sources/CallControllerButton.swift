@@ -7,7 +7,7 @@ import AppBundle
 import SemanticStatusNode
 import AnimationUI
 
-private let labelFont = Font.regular(13.0)
+private var labelFont: UIFont { return Font.regular(13.0) }
 
 final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
     struct Content: Equatable {

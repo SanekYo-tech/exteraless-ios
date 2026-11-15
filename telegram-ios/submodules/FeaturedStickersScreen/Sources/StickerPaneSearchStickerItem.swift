@@ -40,7 +40,7 @@ final class StickerPaneSearchStickerSection: GridSection {
     }
 }
 
-private let sectionTitleFont = Font.medium(12.0)
+private var sectionTitleFont: UIFont { return Font.medium(12.0) }
 
 final class StickerPaneSearchStickerSectionNode: ASDisplayNode {
     let titleNode: ASTextNode
@@ -107,7 +107,7 @@ public final class StickerPaneSearchStickerItem: GridItem {
     }
 }
 
-private let textFont = Font.regular(20.0)
+private var textFont: UIFont { return Font.regular(20.0) }
 
 public final class StickerPaneSearchStickerItemNode: GridItemNode {
     private var currentState: (AccountContext, FoundStickerItem, CGSize)?

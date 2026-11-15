@@ -14,7 +14,7 @@ import AppBundle
 import SegmentedControlNode
 import ContextUI
 
-private let subtitleFont = Font.regular(12.0)
+private var subtitleFont: UIFont { return Font.regular(12.0) }
 
 private struct ShareTopicEntry: Comparable, Identifiable {
     let index: Int32

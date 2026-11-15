@@ -30,9 +30,9 @@ private func generateButtonImage(backgroundColor: UIColor, highlightColor: UICol
     }, opaque: false)?.stretchableImage(withLeftCapWidth: 26, topCapHeight: 26)
 }
 
-private let titleFont = Font.bold(17.0)
-private let textFont = Font.regular(14.0)
-private let buttonFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.bold(17.0) }
+private var textFont: UIFont { return Font.regular(14.0) }
+private var buttonFont: UIFont { return Font.regular(17.0) }
 
 final class PrivacyIntroControllerNode: ViewControllerTracingNode {
     private let context: AccountContext

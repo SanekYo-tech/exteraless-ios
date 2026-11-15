@@ -10,8 +10,8 @@ import Markdown
 import LocalizedPeerData
 import LiveLocationTimerNode
 
-private let titleFont = Font.regular(12.0)
-private let subtitleFont = Font.regular(10.0)
+private var titleFont: UIFont { return Font.regular(12.0) }
+private var subtitleFont: UIFont { return Font.regular(10.0) }
 
 enum LocationBroadcastNavigationAccessoryPanelMode {
     case summary

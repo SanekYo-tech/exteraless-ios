@@ -72,8 +72,8 @@ class BotCheckoutHeaderItem: ListViewItem, ItemListItem {
     let selectable: Bool = false
 }
 
-private let titleFont = Font.semibold(16.0)
-private let textFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.semibold(16.0) }
+private var textFont: UIFont { return Font.regular(14.0) }
 
 class BotCheckoutHeaderItemNode: ListViewItemNode {
     private let backgroundNode: ASDisplayNode

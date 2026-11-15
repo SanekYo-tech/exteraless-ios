@@ -51,9 +51,9 @@ public enum ChatMessageInstantVideoItemLayoutData {
     case constrained(left: CGFloat, right: CGFloat)
 }
 
-private let textFont = Font.regular(11.0)
-private let nameFont = Font.medium(14.0)
-private let inlineBotPrefixFont = Font.regular(14.0)
+private var textFont: UIFont { return Font.regular(11.0) }
+private var nameFont: UIFont { return Font.medium(14.0) }
+private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
 private let inlineBotNameFont = nameFont
 
 public enum ChatMessageInteractiveInstantVideoNodeStatusType {

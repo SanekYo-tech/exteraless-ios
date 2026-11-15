@@ -108,8 +108,8 @@ private func timestampLabelWidthForDuration(_ timestamp: Double) -> CGFloat {
     return size.width
 }
 
-private let titleFont = Font.semibold(17.0)
-private let descriptionFont = Font.regular(15.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
+private var descriptionFont: UIFont { return Font.regular(15.0) }
 
 private func stringsForDisplayData(_ data: SharedMediaPlaybackDisplayData?, presentationData: PresentationData) -> (NSAttributedString?, NSAttributedString?, Bool, NSAttributedString?) {
     var titleString: NSAttributedString?

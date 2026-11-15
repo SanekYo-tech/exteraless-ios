@@ -11,7 +11,7 @@ enum BotCheckoutActionButtonState: Equatable {
     case placeholder
 }
 
-private let titleFont = Font.semibold(17.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
 
 final class BotCheckoutActionButton: HighlightTrackingButtonNode {
     static var height: CGFloat = 52.0

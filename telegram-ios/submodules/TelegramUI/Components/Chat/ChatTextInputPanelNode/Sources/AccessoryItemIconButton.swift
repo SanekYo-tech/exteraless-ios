@@ -10,7 +10,7 @@ import ComponentFlow
 import LottieAnimationComponent
 import LottieComponent
 
-private let accessoryButtonFont = Font.medium(14.0)
+private var accessoryButtonFont: UIFont { return Font.medium(14.0) }
 
 final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundView.ContentView {
     private var item: ChatTextInputAccessoryItem

@@ -88,17 +88,17 @@ class ChatListNoticeItem: ListViewItem {
 
 private let separatorHeight = 1.0 / UIScreen.main.scale
 
-private let titleFont = Font.semibold(15.0)
-private let titleBoldFont = Font.bold(15.0)
-private let titleItalicFont = Font.semiboldItalic(15.0)
-private let titleBoldItalicFont = Font.semiboldItalic(15.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
+private var titleBoldFont: UIFont { return Font.bold(15.0) }
+private var titleItalicFont: UIFont { return Font.semiboldItalic(15.0) }
+private var titleBoldItalicFont: UIFont { return Font.semiboldItalic(15.0) }
 
-private let textFont = Font.regular(15.0)
-private let textBoldFont = Font.semibold(15.0)
-private let textItalicFont = Font.italic(15.0)
-private let textBoldItalicFont = Font.semiboldItalic(15.0)
+private var textFont: UIFont { return Font.regular(15.0) }
+private var textBoldFont: UIFont { return Font.semibold(15.0) }
+private var textItalicFont: UIFont { return Font.italic(15.0) }
+private var textBoldItalicFont: UIFont { return Font.semiboldItalic(15.0) }
 
-private let smallTextFont = Font.regular(14.0)
+private var smallTextFont: UIFont { return Font.regular(14.0) }
 
 final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
     private let contentContainer: ASDisplayNode

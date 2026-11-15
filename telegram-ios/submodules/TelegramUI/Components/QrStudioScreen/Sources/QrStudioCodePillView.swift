@@ -103,8 +103,8 @@ private final class QrStudioPillLabelView: UIView {
     private static let starSpacing: CGFloat = 1.0
     private static let dotSide: CGFloat = 3.0
     private static let dotSpacing: CGFloat = 5.0
-    private static let titleFont = Font.medium(12.0)
-    private static let detailFont = Font.with(size: 12.0, traits: .monospacedNumbers)
+    private static var titleFont: UIFont { return Font.medium(12.0) }
+    private static var detailFont: UIFont { return Font.with(size: 12.0, traits: .monospacedNumbers) }
     private static let wordSpacing: CGFloat = 4.0
 
     private let prefixLabel = UILabel()

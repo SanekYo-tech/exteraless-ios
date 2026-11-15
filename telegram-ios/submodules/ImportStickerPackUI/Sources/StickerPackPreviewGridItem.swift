@@ -55,7 +55,7 @@ final class StickerPackPreviewGridItem: GridItem {
     }
 }
 
-private let textFont = Font.regular(20.0)
+private var textFont: UIFont { return Font.regular(20.0) }
 
 final class StickerPackPreviewGridItemNode: GridItemNode {
     private var currentState: (Account, ImportStickerPack.Sticker?, CGSize)?

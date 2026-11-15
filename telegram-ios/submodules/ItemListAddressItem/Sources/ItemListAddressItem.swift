@@ -85,11 +85,11 @@ public final class ItemListAddressItem: ListViewItem, ItemListItem {
     }
 }
 
-private let labelFont = Font.regular(14.0)
-private let textFont = Font.regular(17.0)
-private let textBoldFont = Font.medium(17.0)
-private let textItalicFont = Font.italic(17.0)
-private let textBoldItalicFont = Font.semiboldItalic(17.0)
+private var labelFont: UIFont { return Font.regular(14.0) }
+private var textFont: UIFont { return Font.regular(17.0) }
+private var textBoldFont: UIFont { return Font.medium(17.0) }
+private var textItalicFont: UIFont { return Font.italic(17.0) }
+private var textBoldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
 private let textFixedFont = Font.regular(17.0)
 
 public class ItemListAddressItemNode: ListViewItemNode {

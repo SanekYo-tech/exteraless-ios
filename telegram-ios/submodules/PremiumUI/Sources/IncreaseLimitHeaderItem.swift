@@ -74,9 +74,9 @@ public class IncreaseLimitHeaderItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.semibold(17.0)
-private let textFont = Font.regular(15.0)
-private let boldTextFont = Font.semibold(15.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
+private var textFont: UIFont { return Font.regular(15.0) }
+private var boldTextFont: UIFont { return Font.semibold(15.0) }
 
 class IncreaseLimitHeaderItemNode: ListViewItemNode {
     private var hostView: ComponentHostView<Empty>?

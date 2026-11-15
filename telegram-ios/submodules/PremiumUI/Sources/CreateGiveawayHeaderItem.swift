@@ -47,8 +47,8 @@ final class CreateGiveawayHeaderItem: ItemListControllerHeaderItem {
     }
 }
 
-private let titleFont = Font.semibold(20.0)
-private let textFont = Font.regular(15.0)
+private var titleFont: UIFont { return Font.semibold(20.0) }
+private var textFont: UIFont { return Font.regular(15.0) }
 
 class CreateGiveawayHeaderItemNode: ItemListControllerHeaderItemNode {
     private let titleNode: ImmediateTextNode

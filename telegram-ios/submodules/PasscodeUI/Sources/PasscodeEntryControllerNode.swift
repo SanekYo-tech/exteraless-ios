@@ -19,9 +19,9 @@ private extension CGRect {
     }
 }
 
-private let titleFont = Font.regular(20.0)
-private let subtitleFont = Font.regular(15.0)
-private let buttonFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(20.0) }
+private var subtitleFont: UIFont { return Font.regular(15.0) }
+private var buttonFont: UIFont { return Font.regular(17.0) }
 
 final class PasscodeEntryControllerNode: ASDisplayNode {
     private let accountManager: AccountManager<TelegramAccountManagerTypes>

@@ -87,8 +87,8 @@ final class HorizontalListContextResultsChatInputPanelItem: ListViewItem {
     }
 }
 
-private let titleFont = Font.medium(16.0)
-private let textFont = Font.regular(15.0)
+private var titleFont: UIFont { return Font.medium(16.0) }
+private var textFont: UIFont { return Font.regular(15.0) }
 private let iconFont = Font.medium(25.0)
 private let iconTextBackgroundImage = generateStretchableFilledCircleImage(radius: 2.0, color: UIColor(rgb: 0xdfdfdf))
 

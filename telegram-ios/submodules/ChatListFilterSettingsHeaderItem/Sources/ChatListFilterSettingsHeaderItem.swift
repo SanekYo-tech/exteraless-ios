@@ -71,7 +71,7 @@ public class ChatListFilterSettingsHeaderItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.regular(13.0) }
 
 class ChatListFilterSettingsHeaderItemNode: ListViewItemNode {
     private let titleNode: TextNode

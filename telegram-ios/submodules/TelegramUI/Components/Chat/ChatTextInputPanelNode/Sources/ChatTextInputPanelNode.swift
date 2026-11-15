@@ -67,7 +67,7 @@ import RichTextEditorCore
 /// module importing both) to keep `EmojiTextAttachmentView` free of a rich-text-editor dependency.
 extension EmojiTextAttachmentView: @retroactive RichTextEmojiView {}
 
-private let counterFont = Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])
+private var counterFont: UIFont { return Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers]) }
 
 public let chatTextInputMinFontSize: CGFloat = 5.0
 

@@ -5,8 +5,8 @@ import AsyncDisplayKit
 import SwiftSignalKit
 import TelegramPresentationData
 
-private let labelFont = Font.regular(17.0)
-private let smallLabelFont = Font.regular(15.0)
+private var labelFont: UIFont { return Font.regular(17.0) }
+private var smallLabelFont: UIFont { return Font.regular(15.0) }
 
 private enum ToastDescription: Equatable {
     enum Key: Hashable {

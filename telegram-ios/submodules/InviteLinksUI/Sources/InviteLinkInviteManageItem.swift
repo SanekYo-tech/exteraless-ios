@@ -61,8 +61,8 @@ class InviteLinkInviteManageItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.medium(23.0)
-private let textFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.medium(23.0) }
+private var textFont: UIFont { return Font.regular(13.0) }
 
 class InviteLinkInviteManageItemNode: ListViewItemNode {
     private let backgroundNode: ASDisplayNode

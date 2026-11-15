@@ -11,8 +11,8 @@ import ComponentFlow
 import ComponentDisplayAdapters
 import MultilineTextComponent
 
-private let titleFont = Font.semibold(17.0)
-private let dateFont = Font.regular(12.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
+private var dateFont: UIFont { return Font.regular(12.0) }
 
 public final class GalleryTitleView: UIView, NavigationBarTitleView {
     public final class Content: Equatable {

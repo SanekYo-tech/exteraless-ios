@@ -6,12 +6,12 @@ import SwiftSignalKit
 import TelegramPresentationData
 import GlassBackgroundComponent
 
-private let regularTitleFont = Font.regular(36.0)
+private var regularTitleFont: UIFont { return Font.regular(36.0) }
 private let regularSubtitleFont: UIFont = {
     return UIFont.systemFont(ofSize: 10.0, weight: UIFont.Weight.bold)
 }()
 
-private let largeTitleFont = Font.regular(40.0)
+private var largeTitleFont: UIFont { return Font.regular(40.0) }
 private let largeSubtitleFont: UIFont = {
     return UIFont.systemFont(ofSize: 12.0, weight: UIFont.Weight.bold)
 }()

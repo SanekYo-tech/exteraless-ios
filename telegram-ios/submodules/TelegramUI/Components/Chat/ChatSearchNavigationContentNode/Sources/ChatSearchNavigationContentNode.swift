@@ -13,7 +13,7 @@ import ComponentFlow
 import GlassBackgroundComponent
 import ActivityIndicator
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 public final class ChatSearchNavigationContentNode: NavigationBarContentNode {
     private let context: AccountContext

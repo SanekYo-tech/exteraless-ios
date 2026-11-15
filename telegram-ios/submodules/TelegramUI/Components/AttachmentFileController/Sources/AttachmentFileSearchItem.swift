@@ -955,7 +955,7 @@ private func matchStringTokens(_ tokens: [EngineRawValueBoxKey], with other: [En
     return false
 }
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 private final class AttachmentFileSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
     private struct Params: Equatable {

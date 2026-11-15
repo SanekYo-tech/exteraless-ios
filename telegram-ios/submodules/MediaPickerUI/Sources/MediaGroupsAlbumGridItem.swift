@@ -109,7 +109,7 @@ private class MediaGroupsGridAlbumItem: ListViewItem {
 }
 
 
-private let textFont = Font.regular(15.0)
+private var textFont: UIFont { return Font.regular(15.0) }
 
 private final class MediaGroupsGridAlbumItemNode : ListViewItemNode {
     private let containerNode: ASDisplayNode
@@ -277,7 +277,7 @@ final class MediaGroupsAlbumGridItem: ListViewItem {
     }
 }
 
-private let titleFont = Font.bold(20.0)
+private var titleFont: UIFont { return Font.bold(20.0) }
 
 private class MediaGroupsAlbumGridItemNode: ListViewItemNode {
     private var item: MediaGroupsAlbumGridItem?

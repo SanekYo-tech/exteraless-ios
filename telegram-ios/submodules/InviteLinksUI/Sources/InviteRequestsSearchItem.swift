@@ -16,7 +16,7 @@ import ItemListUI
 import SearchUI
 import ContextUI
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class SearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
     private var theme: PresentationTheme

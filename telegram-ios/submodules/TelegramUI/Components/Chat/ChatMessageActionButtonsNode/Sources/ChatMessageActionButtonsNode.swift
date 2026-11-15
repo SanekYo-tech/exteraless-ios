@@ -13,7 +13,7 @@ import ComponentFlow
 import ComponentDisplayAdapters
 import EmojiStatusComponent
 
-private let titleFont = Font.medium(16.0)
+private var titleFont: UIFont { return Font.medium(16.0) }
 
 private extension UIBezierPath {
     convenience init(roundRect rect: CGRect, topLeftRadius: CGFloat = 0.0, topRightRadius: CGFloat = 0.0, bottomLeftRadius: CGFloat = 0.0, bottomRightRadius: CGFloat = 0.0) {

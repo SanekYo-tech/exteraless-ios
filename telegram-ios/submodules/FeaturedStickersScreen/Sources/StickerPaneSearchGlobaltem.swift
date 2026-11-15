@@ -145,9 +145,9 @@ public final class StickerPaneSearchGlobalItem: GridItem {
     }
 }
 
-private let titleFont = Font.bold(16.0)
-private let statusFont = Font.regular(15.0)
-private let buttonFont = Font.semibold(13.0)
+private var titleFont: UIFont { return Font.bold(16.0) }
+private var statusFont: UIFont { return Font.regular(15.0) }
+private var buttonFont: UIFont { return Font.semibold(13.0) }
 
 public class StickerPaneSearchGlobalItemNode: GridItemNode {
     private let titleNode: TextNode

@@ -102,7 +102,7 @@ private final class ChannelDiscussionGroupSetupSearchItemNode: ItemListControlle
     }
 }
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 private final class ChannelDiscussionSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
     private struct Params: Equatable {

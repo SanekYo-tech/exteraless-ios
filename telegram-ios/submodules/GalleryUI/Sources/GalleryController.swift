@@ -211,10 +211,10 @@ public func internalDocumentItemSupportsMimeType(_ type: String, fileName: Strin
     return false
 }
 
-private let textFont = Font.regular(17.0)
-private let boldFont = Font.bold(17.0)
-private let italicFont = Font.italic(17.0)
-private let boldItalicFont = Font.semiboldItalic(17.0)
+private var textFont: UIFont { return Font.regular(17.0) }
+private var boldFont: UIFont { return Font.bold(17.0) }
+private var italicFont: UIFont { return Font.italic(17.0) }
+private var boldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
 private let fixedFont = UIFont(name: "Menlo-Regular", size: 17.0) ?? textFont
 
 public func galleryCaptionStringWithAppliedEntities(context: AccountContext, text: String, entities: [MessageTextEntity], message: Message?, cachedMessageSyntaxHighlight: CachedMessageSyntaxHighlight? = nil) -> NSAttributedString {

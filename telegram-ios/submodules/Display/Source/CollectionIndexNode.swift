@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 
-private let titleFont = Font.bold(11.0)
+private var titleFont: UIFont { return Font.bold(11.0) }
 
 public final class CollectionIndexNode: ASDisplayNode {
     public static let searchIndex: String = "_$search$_"

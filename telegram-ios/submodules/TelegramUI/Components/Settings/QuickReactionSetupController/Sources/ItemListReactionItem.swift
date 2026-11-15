@@ -85,7 +85,7 @@ public class ItemListReactionItem: ListViewItem, ItemListItem {
     }
 }
 
-private let badgeFont = Font.regular(15.0)
+private var badgeFont: UIFont { return Font.regular(15.0) }
 
 public class ItemListReactionItemNode: ListViewItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

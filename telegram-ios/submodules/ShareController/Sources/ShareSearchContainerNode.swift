@@ -8,8 +8,8 @@ import TelegramPresentationData
 import MergeLists
 import AccountContext
 
-private let cancelFont = Font.regular(17.0)
-private let subtitleFont = Font.regular(12.0)
+private var cancelFont: UIFont { return Font.regular(17.0) }
+private var subtitleFont: UIFont { return Font.regular(12.0) }
 
 private enum ShareSearchRecentEntryStableId: Hashable {
     case topPeers

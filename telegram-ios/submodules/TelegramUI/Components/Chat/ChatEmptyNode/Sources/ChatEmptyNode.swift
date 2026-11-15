@@ -30,8 +30,8 @@ private protocol ChatEmptyNodeContent {
     func updateLayout(interfaceState: ChatPresentationInterfaceState, subject: ChatEmptyNode.Subject, size: CGSize, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition) -> CGSize
 }
 
-private let titleFont = Font.semibold(15.0)
-private let messageFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
+private var messageFont: UIFont { return Font.regular(13.0) }
 
 private final class ChatEmptyNodeRegularChatContent: ASDisplayNode, ChatEmptyNodeContent {
     private let textNode: ImmediateTextNode

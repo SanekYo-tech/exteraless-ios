@@ -53,7 +53,7 @@ public final class ChatMediaInputStickerGridSection: GridSection {
     }
 }
 
-private let sectionTitleFont = Font.medium(12.0)
+private var sectionTitleFont: UIFont { return Font.medium(12.0) }
 
 public final class ChatMediaInputStickerGridSectionNode: ASDisplayNode {
     public let titleNode: ASTextNode

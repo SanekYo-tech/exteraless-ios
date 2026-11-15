@@ -14,7 +14,7 @@ import AppBundle
 import SegmentedControlNode
 import ContextUI
 
-private let subtitleFont = Font.regular(12.0)
+private var subtitleFont: UIFont { return Font.regular(12.0) }
 
 extension CGPoint {
     func angle(to other: CGPoint) -> CGFloat {

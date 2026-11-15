@@ -191,8 +191,8 @@ private final class ThemeSettingsAppIconNode : ASDisplayNode {
 }
 
 
-private let textFont = Font.regular(12.0)
-private let selectedTextFont = Font.medium(12.0)
+private var textFont: UIFont { return Font.regular(12.0) }
+private var selectedTextFont: UIFont { return Font.medium(12.0) }
 
 class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

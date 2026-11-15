@@ -52,7 +52,7 @@ final class MediaGroupsHeaderItem: ListViewItem {
     }
 }
 
-private let titleFont = Font.bold(22.0)
+private var titleFont: UIFont { return Font.bold(22.0) }
 
 private class MediaGroupsHeaderItemNode: ListViewItemNode {
     private let titleNode: TextNode

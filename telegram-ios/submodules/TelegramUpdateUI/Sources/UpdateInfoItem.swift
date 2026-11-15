@@ -89,11 +89,11 @@ class UpdateInfoItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.bold(17.0)
-private let textFont = Font.regular(16.0)
-private let textBoldFont = Font.medium(16.0)
-private let textItalicFont = Font.italic(16.0)
-private let textBoldItalicFont = Font.semiboldItalic(16.0)
+private var titleFont: UIFont { return Font.bold(17.0) }
+private var textFont: UIFont { return Font.regular(16.0) }
+private var textBoldFont: UIFont { return Font.medium(16.0) }
+private var textItalicFont: UIFont { return Font.italic(16.0) }
+private var textBoldItalicFont: UIFont { return Font.semiboldItalic(16.0) }
 private let textFixedFont = Font.regular(16.0)
 
 class UpdateInfoItemNode: ListViewItemNode {

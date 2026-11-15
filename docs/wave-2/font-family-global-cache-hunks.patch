@@ -1,0 +1,2298 @@
+diff --git a/telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift b/telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift
+--- a/telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift
++++ b/telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift
+@@ -26,7 +26,7 @@
+ import ChatInputTextNode
+ import ChatEntityKeyboardInputNode
+ 
+-private let counterFont = Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])
++private var counterFont: UIFont { return Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers]) }
+ private let minInputFontSize: CGFloat = 5.0
+ 
+ private func calclulateTextFieldMinHeight(_ presentationInterfaceState: ChatPresentationInterfaceState, glass: Bool = false, metrics: LayoutMetrics) -> CGFloat {
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift
+@@ -11,7 +11,7 @@
+     case placeholder
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
+ 
+ final class BotCheckoutActionButton: HighlightTrackingButtonNode {
+     static var height: CGFloat = 52.0
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift
+@@ -72,8 +72,8 @@
+     let selectable: Bool = false
+ }
+ 
+-private let titleFont = Font.semibold(16.0)
+-private let textFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.semibold(16.0) }
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ class BotCheckoutHeaderItemNode: ListViewItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift
+@@ -75,8 +75,8 @@
+     let selectable: Bool = false
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let finalFont = Font.semibold(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var finalFont: UIFont { return Font.semibold(17.0) }
+ 
+ private func priceItemInsets(_ neighbors: ItemListNeighbors) -> UIEdgeInsets {
+     var insets = UIEdgeInsets()
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift
+@@ -74,8 +74,8 @@
+     let selectable: Bool = false
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let finalFont = Font.semibold(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var finalFont: UIFont { return Font.semibold(17.0) }
+ 
+ private func priceItemInsets(_ neighbors: ItemListNeighbors) -> UIEdgeInsets {
+     var insets = UIEdgeInsets()
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ final class BotPaymentActionItemNode: BotPaymentItemNode {
+     private let title: String
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ private func formatDate(_ value: Int32) -> String {
+     let formatter = DateFormatter()
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ class BotPaymentDisclosureItemNode: BotPaymentItemNode {
+     private let title: String
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ enum BotPaymentFieldContentType {
+     case generic
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
+ 
+ final class BotPaymentHeaderItemNode: BotPaymentItemNode {
+     private let text: String
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ final class BotPaymentSwitchItemNode: BotPaymentItemNode {
+     private let toggled: (Bool) -> Void
+diff --git a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift
+--- a/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift
++++ b/telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let textFont = Font.regular(14.0)
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ final class BotPaymentTextItemNode: BotPaymentItemNode {
+     private let text: String
+diff --git a/telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift b/telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift
+--- a/telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift
++++ b/telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift
+@@ -12,8 +12,8 @@
+ import CheckNode
+ import Markdown
+ 
+-private let textFont = Font.regular(13.0)
+-private let boldTextFont = Font.semibold(13.0)
++private var textFont: UIFont { return Font.regular(13.0) }
++private var boldTextFont: UIFont { return Font.semibold(13.0) }
+ 
+ private func formattedText(_ text: String, color: UIColor, textAlignment: NSTextAlignment = .natural) -> NSAttributedString {
+     return parseMarkdownIntoAttributedString(text, attributes: MarkdownAttributes(body: MarkdownAttributeSet(font: textFont, textColor: color), bold: MarkdownAttributeSet(font: boldTextFont, textColor: color), link: MarkdownAttributeSet(font: textFont, textColor: color), linkAttribute: { _ in return nil}), textAlignment: textAlignment)
+diff --git a/telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift b/telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift
+--- a/telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift
++++ b/telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift
+@@ -24,7 +24,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class BrowserFontSizeContextMenuItemNode: ASDisplayNode, ContextMenuCustomNode {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift b/telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift
+--- a/telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift
++++ b/telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift
+@@ -5,7 +5,7 @@
+ import SwiftSignalKit
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ class CallListHoleItem: ListViewItem {
+     var neighborDescriptor: AnyEquatable {
+diff --git a/telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift b/telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift
+--- a/telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift
++++ b/telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift
+@@ -71,7 +71,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(13.0) }
+ 
+ class ChatListFilterSettingsHeaderItemNode: ListViewItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift b/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift
+--- a/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift
++++ b/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift
+@@ -100,7 +100,7 @@
+ }
+ 
+ private let avatarFont = avatarPlaceholderFont(size: floor(40.0 * 16.0 / 37.0))
+-private let badgeFont = Font.regular(15.0)
++private var badgeFont: UIFont { return Font.regular(15.0) }
+ 
+ class ChatListFilterPresetCategoryItemNode: ItemListRevealOptionsItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift b/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift
+--- a/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift
++++ b/telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift
+@@ -122,7 +122,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ final class ChatListFilterPresetListItemNode: ItemListRevealOptionsItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift b/telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift
+--- a/telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift
++++ b/telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift
+@@ -7,8 +7,8 @@
+ import RadialStatusNode
+ import AppBundle
+ 
+-private let font = Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers])
+-private let boldFont = Font.with(size: 11.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
++private var font: UIFont { return Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers]) }
++private var boldFont: UIFont { return Font.with(size: 11.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers]) }
+ 
+ public enum ChatMessageInteractiveMediaDownloadState: Equatable {
+     case remote
+diff --git a/telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift b/telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift
+--- a/telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift
++++ b/telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift
+@@ -9,7 +9,7 @@
+ import PhoneNumberFormat
+ import AccountContext
+ 
+-private let titleFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
+ 
+ public class ContactsAddItem: ListViewItem {
+     let context: AccountContext
+diff --git a/telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift b/telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift
+--- a/telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift
++++ b/telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift
+@@ -71,10 +71,10 @@
+ private let telegramReleaseDate = Date(timeIntervalSince1970: 1376438400.0)
+ private let upperLimitDate = Date(timeIntervalSince1970: Double(Int32.max - 1))
+ 
+-private let controlFont = Font.semibold(17.0)
+-private let dayFont = Font.medium(13.0)
+-private let dateFont = Font.with(size: 19.0, design: .regular, traits: .monospacedNumbers)
+-private let selectedDateFont = Font.with(size: 19.0, design: .regular, weight: .bold, traits: .monospacedNumbers)
++private var controlFont: UIFont { return Font.semibold(17.0) }
++private var dayFont: UIFont { return Font.medium(13.0) }
++private var dateFont: UIFont { return Font.with(size: 19.0, design: .regular, traits: .monospacedNumbers) }
++private var selectedDateFont: UIFont { return Font.with(size: 19.0, design: .regular, weight: .bold, traits: .monospacedNumbers) }
+ 
+ private var calendar: Calendar = {
+     var calendar = Calendar(identifier: .gregorian)
+diff --git a/telegram-ios/submodules/Display/Source/CollectionIndexNode.swift b/telegram-ios/submodules/Display/Source/CollectionIndexNode.swift
+--- a/telegram-ios/submodules/Display/Source/CollectionIndexNode.swift
++++ b/telegram-ios/submodules/Display/Source/CollectionIndexNode.swift
+@@ -2,7 +2,7 @@
+ import UIKit
+ import AsyncDisplayKit
+ 
+-private let titleFont = Font.bold(11.0)
++private var titleFont: UIFont { return Font.bold(11.0) }
+ 
+ public final class CollectionIndexNode: ASDisplayNode {
+     public static let searchIndex: String = "_$search$_"
+diff --git a/telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift b/telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift
+--- a/telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift
++++ b/telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift
+@@ -12,9 +12,9 @@
+ import TelegramAnimatedStickerNode
+ import ShimmerEffect
+ 
+-private let titleFont = Font.bold(16.0)
+-private let statusFont = Font.regular(15.0)
+-private let buttonFont = Font.medium(13.0)
++private var titleFont: UIFont { return Font.bold(16.0) }
++private var statusFont: UIFont { return Font.regular(15.0) }
++private var buttonFont: UIFont { return Font.medium(13.0) }
+ 
+ final class TrendingTopItemNode: ASDisplayNode {
+     private let imageNode: TransformImageNode
+diff --git a/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift b/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift
+--- a/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift
++++ b/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift
+@@ -145,9 +145,9 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(16.0)
+-private let statusFont = Font.regular(15.0)
+-private let buttonFont = Font.semibold(13.0)
++private var titleFont: UIFont { return Font.bold(16.0) }
++private var statusFont: UIFont { return Font.regular(15.0) }
++private var buttonFont: UIFont { return Font.semibold(13.0) }
+ 
+ public class StickerPaneSearchGlobalItemNode: GridItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift b/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift
+--- a/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift
++++ b/telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift
+@@ -40,7 +40,7 @@
+     }
+ }
+ 
+-private let sectionTitleFont = Font.medium(12.0)
++private var sectionTitleFont: UIFont { return Font.medium(12.0) }
+ 
+ final class StickerPaneSearchStickerSectionNode: ASDisplayNode {
+     let titleNode: ASTextNode
+@@ -107,7 +107,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(20.0)
++private var textFont: UIFont { return Font.regular(20.0) }
+ 
+ public final class StickerPaneSearchStickerItemNode: GridItemNode {
+     private var currentState: (AccountContext, FoundStickerItem, CGSize)?
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift b/telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift
+@@ -13,7 +13,7 @@
+ import ComponentDisplayAdapters
+ import GlassBackgroundComponent
+ 
+-private let textFont = Font.with(size: 13.0, design: .regular, weight: .medium, traits: [.monospacedNumbers])
++private var textFont: UIFont { return Font.with(size: 13.0, design: .regular, weight: .medium, traits: [.monospacedNumbers]) }
+ 
+ private let scrubberBackgroundColor = UIColor(white: 1.0, alpha: 0.42)
+ private let scrubberForegroundColor = UIColor.white
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift b/telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift
+@@ -211,10 +211,10 @@
+     return false
+ }
+ 
+-private let textFont = Font.regular(17.0)
+-private let boldFont = Font.bold(17.0)
+-private let italicFont = Font.italic(17.0)
+-private let boldItalicFont = Font.semiboldItalic(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
++private var boldFont: UIFont { return Font.bold(17.0) }
++private var italicFont: UIFont { return Font.italic(17.0) }
++private var boldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
+ private let fixedFont = UIFont(name: "Menlo-Regular", size: 17.0) ?? textFont
+ 
+ public func galleryCaptionStringWithAppliedEntities(context: AccountContext, text: String, entities: [MessageTextEntity], message: Message?, cachedMessageSyntaxHighlight: CachedMessageSyntaxHighlight? = nil) -> NSAttributedString {
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift b/telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift
+@@ -11,8 +11,8 @@
+ import ComponentDisplayAdapters
+ import MultilineTextComponent
+ 
+-private let titleFont = Font.semibold(17.0)
+-private let dateFont = Font.regular(12.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
++private var dateFont: UIFont { return Font.regular(12.0) }
+ 
+ public final class GalleryTitleView: UIView, NavigationBarTitleView {
+     public final class Content: Equatable {
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift b/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+@@ -172,7 +172,7 @@
+ private let pictureInPictureButtonImage = generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/PictureInPictureButton"), color: .white)
+ private let moreButtonImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/More"), color: .white)
+ 
+-private let placeholderFont = Font.regular(16.0)
++private var placeholderFont: UIFont { return Font.regular(16.0) }
+ 
+ private final class UniversalVideoGalleryItemPictureInPictureNode: ASDisplayNode {
+     enum Mode {
+diff --git a/telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift b/telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift
+--- a/telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift
++++ b/telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift
+@@ -5,7 +5,7 @@
+ import TelegramCore
+ import SwiftSignalKit
+ 
+-private let textFont = Font.regular(16.0)
++private var textFont: UIFont { return Font.regular(16.0) }
+ 
+ final class SecretMediaPreviewFooterContentNode: GalleryFooterContentNode {
+     private var currentText: String?
+diff --git a/telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift b/telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift
+@@ -10,7 +10,7 @@
+ import HorizontalTabsComponent
+ import GlassBackgroundComponent
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class HashtagSearchNavigationContentNode: NavigationBarContentNode {
+     private var theme: PresentationTheme
+diff --git a/telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift b/telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift
+--- a/telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift
++++ b/telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift
+@@ -19,7 +19,7 @@
+     case actionSheet
+ }
+ 
+-private let badgeFont = Font.regular(14.0)
++private var badgeFont: UIFont { return Font.regular(14.0) }
+ 
+ public final class HorizontalPeerItem: ListViewItem {
+     public var neighborDescriptor: AnyEquatable {
+diff --git a/telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift b/telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift
+--- a/telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift
++++ b/telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift
+@@ -55,7 +55,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(20.0)
++private var textFont: UIFont { return Font.regular(20.0) }
+ 
+ final class StickerPackPreviewGridItemNode: GridItemNode {
+     private var currentState: (Account, ImportStickerPack.Sticker?, CGSize)?
+diff --git a/telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift b/telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift
+--- a/telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift
++++ b/telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift
+@@ -13,7 +13,7 @@
+ 
+ private let actionImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
+ 
+-private let textFont = Font.regular(16.0)
++private var textFont: UIFont { return Font.regular(16.0) }
+ 
+ final class InstantPageGalleryFooterContentNode: GalleryFooterContentNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift
+--- a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift
++++ b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift
+@@ -72,8 +72,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
+-private let textFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ class InviteLinkHeaderItemNode: ListViewItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift
+--- a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift
++++ b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift
+@@ -59,8 +59,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(24.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.bold(24.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ class InviteLinkInviteHeaderItemNode: ListViewItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift
+--- a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift
++++ b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift
+@@ -61,8 +61,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.medium(23.0)
+-private let textFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.medium(23.0) }
++private var textFont: UIFont { return Font.regular(13.0) }
+ 
+ class InviteLinkInviteManageItemNode: ListViewItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift
+--- a/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift
++++ b/telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift
+@@ -347,8 +347,8 @@
+     return InviteLinkViewTransaction(deletions: deletions, insertions: insertions, updates: updates, isLoading: isLoading, animated: animated, crossfade: crossfade)
+ }
+ 
+-private let titleFont = Font.bold(17.0)
+-private let subtitleFont = Font.with(size: 13, design: .regular, weight: .regular, traits: .monospacedNumbers)
++private var titleFont: UIFont { return Font.bold(17.0) }
++private var subtitleFont: UIFont { return Font.with(size: 13, design: .regular, weight: .regular, traits: .monospacedNumbers) }
+ 
+ func textForTimeout(value: Int32) -> String {
+     if value < 3600 {
+diff --git a/telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift b/telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift
+--- a/telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift
++++ b/telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift
+@@ -16,7 +16,7 @@
+ import SearchUI
+ import ContextUI
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class SearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
+     private var theme: PresentationTheme
+diff --git a/telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift b/telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift
+--- a/telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift
++++ b/telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift
+@@ -85,11 +85,11 @@
+     }
+ }
+ 
+-private let labelFont = Font.regular(14.0)
+-private let textFont = Font.regular(17.0)
+-private let textBoldFont = Font.medium(17.0)
+-private let textItalicFont = Font.italic(17.0)
+-private let textBoldItalicFont = Font.semiboldItalic(17.0)
++private var labelFont: UIFont { return Font.regular(14.0) }
++private var textFont: UIFont { return Font.regular(17.0) }
++private var textBoldFont: UIFont { return Font.medium(17.0) }
++private var textItalicFont: UIFont { return Font.italic(17.0) }
++private var textBoldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
+ private let textFixedFont = Font.regular(17.0)
+ 
+ public class ItemListAddressItemNode: ListViewItemNode {
+diff --git a/telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift b/telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift
+--- a/telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift
++++ b/telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift
+@@ -718,7 +718,7 @@
+     }
+ }
+ 
+-private let badgeFont = Font.regular(15.0)
++private var badgeFont: UIFont { return Font.regular(15.0) }
+ 
+ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift b/telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift
+--- a/telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift
++++ b/telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift
+@@ -7,7 +7,7 @@
+ import ComponentDisplayAdapters
+ import TabSelectorComponent
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class ItemListControllerTabsContentNode: NavigationBarContentNode {
+     private let tabSelector = ComponentView<Empty>()
+diff --git a/telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift b/telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift
+--- a/telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift
++++ b/telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift
+@@ -79,8 +79,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(11.0)
+-private let iconlessTitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(11.0) }
++private var iconlessTitleFont: UIFont { return Font.regular(13.0) }
+ 
+ private let spacing: CGFloat = 10.0
+ private let edgeInset: CGFloat = 10.0
+diff --git a/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift b/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift
+--- a/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift
++++ b/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift
+@@ -194,8 +194,8 @@
+     }
+ }
+ 
+-private let badgeFont = Font.regular(15.0)
+-private let boldBadgeFont = Font.semibold(14.0)
++private var badgeFont: UIFont { return Font.regular(15.0) }
++private var boldBadgeFont: UIFont { return Font.semibold(14.0) }
+ 
+ public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift b/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift
+--- a/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift
++++ b/telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift
+@@ -58,7 +58,7 @@
+     public let selectable = false
+ }
+ 
+-private let textFont = Font.regular(15.0)
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ public class ItemListPlaceholderItemNode: ListViewItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift b/telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift
+@@ -6,7 +6,7 @@
+ import TelegramPresentationData
+ import SearchBarNode
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class LocationSearchNavigationContentNode: NavigationBarContentNode {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift b/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift
+--- a/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift
++++ b/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift
+@@ -109,7 +109,7 @@
+ }
+ 
+ 
+-private let textFont = Font.regular(15.0)
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ private final class MediaGroupsGridAlbumItemNode : ListViewItemNode {
+     private let containerNode: ASDisplayNode
+@@ -277,7 +277,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(20.0)
++private var titleFont: UIFont { return Font.bold(20.0) }
+ 
+ private class MediaGroupsAlbumGridItemNode: ListViewItemNode {
+     private var item: MediaGroupsAlbumGridItem?
+diff --git a/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift b/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift
+--- a/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift
++++ b/telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift
+@@ -52,7 +52,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(22.0)
++private var titleFont: UIFont { return Font.bold(22.0) }
+ 
+ private class MediaGroupsHeaderItemNode: ListViewItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift b/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift
+--- a/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift
++++ b/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift
+@@ -19,9 +19,9 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(20.0)
+-private let subtitleFont = Font.regular(15.0)
+-private let buttonFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(20.0) }
++private var subtitleFont: UIFont { return Font.regular(15.0) }
++private var buttonFont: UIFont { return Font.regular(17.0) }
+ 
+ final class PasscodeEntryControllerNode: ASDisplayNode {
+     private let accountManager: AccountManager<TelegramAccountManagerTypes>
+diff --git a/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift b/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift
+--- a/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift
++++ b/telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift
+@@ -6,12 +6,12 @@
+ import TelegramPresentationData
+ import GlassBackgroundComponent
+ 
+-private let regularTitleFont = Font.regular(36.0)
++private var regularTitleFont: UIFont { return Font.regular(36.0) }
+ private let regularSubtitleFont: UIFont = {
+     return UIFont.systemFont(ofSize: 10.0, weight: UIFont.Weight.bold)
+ }()
+ 
+-private let largeTitleFont = Font.regular(40.0)
++private var largeTitleFont: UIFont { return Font.regular(40.0) }
+ private let largeSubtitleFont: UIFont = {
+     return UIFont.systemFont(ofSize: 12.0, weight: UIFont.Weight.bold)
+ }()
+diff --git a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ enum FormControllerActionType {
+     case accent
+diff --git a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift
+@@ -4,8 +4,8 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let textFont = Font.regular(17.0)
+-private let errorFont = Font.regular(13.0)
++private var textFont: UIFont { return Font.regular(17.0) }
++private var errorFont: UIFont { return Font.regular(13.0) }
+ 
+ final class FormControllerDetailActionItem: FormControllerItem {
+     let title: String
+diff --git a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
+ 
+ final class FormControllerHeaderItem: FormControllerItem {
+     let text: String
+diff --git a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift
+@@ -4,8 +4,8 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let textFont = Font.regular(17.0)
+-private let errorFont = Font.regular(13.0)
++private var textFont: UIFont { return Font.regular(17.0) }
++private var errorFont: UIFont { return Font.regular(13.0) }
+ 
+ enum FormControllerTextInputItemColor {
+     case primary
+diff --git a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift
+@@ -4,7 +4,7 @@
+ import Display
+ import TelegramPresentationData
+ 
+-private let titleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
+ 
+ enum FormControllerTextItemColor {
+     case standard
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift
+@@ -7,7 +7,7 @@
+ import TelegramPresentationData
+ import AppBundle
+ 
+-private let textFont: UIFont = Font.regular(16.0)
++private var textFont: UIFont { return Font.regular(16.0) }
+ 
+ final class SecureIdAuthAcceptNode: ASDisplayNode {
+     private let separatorNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift
+@@ -8,9 +8,9 @@
+ import TextFormat
+ import Markdown
+ 
+-private let infoFont = Font.regular(14.0)
+-private let passwordFont = Font.regular(16.0)
+-private let buttonFont = Font.regular(17.0)
++private var infoFont: UIFont { return Font.regular(14.0) }
++private var passwordFont: UIFont { return Font.regular(16.0) }
++private var buttonFont: UIFont { return Font.regular(17.0) }
+ 
+ final class SecureIdAuthFormContentNode: ASDisplayNode, SecureIdAuthContentNode, UITextFieldDelegate {
+     private let primaryLanguageByCountry: [String: String]
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift
+@@ -389,8 +389,8 @@
+     return values
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ private func fieldsText(_ fields: String...) -> String {
+     var result = ""
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift
+@@ -11,8 +11,8 @@
+ import AccountContext
+ 
+ private let avatarFont = avatarPlaceholderFont(size: 26.0)
+-private let titleFont = Font.semibold(14.0)
+-private let textFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.semibold(14.0) }
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ final class SecureIdAuthHeaderNode: ASDisplayNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift
+@@ -6,8 +6,8 @@
+ import TelegramPresentationData
+ import PhoneNumberFormat
+ 
+-private let titleFont = Font.regular(17.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ private func fieldsText(_ fields: String...) -> String {
+     var result = ""
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift
+@@ -6,8 +6,8 @@
+ import ActivityIndicator
+ import AppBundle
+ 
+-private let passwordFont = Font.regular(16.0)
+-private let buttonFont = Font.regular(17.0)
++private var passwordFont: UIFont { return Font.regular(16.0) }
++private var buttonFont: UIFont { return Font.regular(17.0) }
+ 
+ final class SecureIdAuthPasswordOptionContentNode: ASDisplayNode, SecureIdAuthContentNode, UITextFieldDelegate {
+     private let checkPassword: (String) -> Void
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift
+@@ -5,8 +5,8 @@
+ import TelegramPresentationData
+ import AppBundle
+ 
+-private let titleFont = Font.regular(14.0)
+-private let buttonFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
++private var buttonFont: UIFont { return Font.regular(17.0) }
+ 
+ final class SecureIdAuthPasswordSetupContentNode: ASDisplayNode, SecureIdAuthContentNode, UITextFieldDelegate {
+     private let theme: PresentationTheme
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift
+@@ -12,9 +12,9 @@
+ 
+ private let deleteImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionTrash"), color: .white)
+ 
+-private let textFont = Font.regular(16.0)
+-private let titleFont = Font.medium(15.0)
+-private let dateFont = Font.regular(14.0)
++private var textFont: UIFont { return Font.regular(16.0) }
++private var titleFont: UIFont { return Font.medium(15.0) }
++private var dateFont: UIFont { return Font.regular(14.0) }
+ 
+ final class SecureIdDocumentGalleryFooterContentNode: GalleryFooterContentNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift
+@@ -10,8 +10,8 @@
+ import RadialStatusNode
+ import PhotoResources
+ 
+-private let textFont = Font.regular(16.0)
+-private let labelFont = Font.regular(13.0)
++private var textFont: UIFont { return Font.regular(16.0) }
++private var labelFont: UIFont { return Font.regular(13.0) }
+ 
+ enum SecureIdValueFormFileItemLabel {
+     case timestamp
+diff --git a/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift b/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift
+--- a/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift
++++ b/telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift
+@@ -6,7 +6,7 @@
+ import TelegramPresentationData
+ import PhoneInputNode
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ private func countryButtonBackground(color: UIColor, separatorColor: UIColor) -> UIImage? {
+     return generateImage(CGSize(width: 45.0, height: 44.0 + 6.0), rotatedContext: { size, context in
+diff --git a/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift b/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift
+--- a/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift
++++ b/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift
+@@ -67,8 +67,8 @@
+ }
+ 
+ private let iconFont = Font.medium(12.0)
+-private let titleFont = Font.regular(14.0)
+-private let titleBoldFont = Font.semibold(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
++private var titleBoldFont: UIFont { return Font.semibold(14.0) }
+ 
+ class ChannelDiscussionGroupSetupHeaderItemNode: ListViewItemNode {
+     private let imageNode: ASImageNode
+diff --git a/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift b/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift
+--- a/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift
++++ b/telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift
+@@ -102,7 +102,7 @@
+     }
+ }
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class ChannelDiscussionSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift b/telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift
+@@ -13,7 +13,7 @@
+ import AppBundle
+ import ActivityIndicator
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class GroupInfoSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift b/telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift
+--- a/telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift
++++ b/telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift
+@@ -7,7 +7,7 @@
+ private let labelHeight: CGFloat = 36.0
+ private let labelSize = CGSize(width: labelWidth, height: labelHeight)
+ private let font = Font.with(size: 24.0, design: .round, weight: .semibold, traits: [])
+-private let suffixFont = Font.with(size: 22.0, design: .regular, weight: .regular, traits: [])
++private var suffixFont: UIFont { return Font.with(size: 22.0, design: .regular, weight: .regular, traits: []) }
+ 
+ final class BadgeLabelView: UIView {
+     private class StackView: UIView {
+diff --git a/telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift b/telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift
+--- a/telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift
++++ b/telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift
+@@ -47,8 +47,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(20.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.semibold(20.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ class CreateGiveawayHeaderItemNode: ItemListControllerHeaderItemNode {
+     private let titleNode: ImmediateTextNode
+diff --git a/telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift b/telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift
+--- a/telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift
++++ b/telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift
+@@ -74,9 +74,9 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
+-private let textFont = Font.regular(15.0)
+-private let boldTextFont = Font.semibold(15.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
++private var boldTextFont: UIFont { return Font.semibold(15.0) }
+ 
+ class IncreaseLimitHeaderItemNode: ListViewItemNode {
+     private var hostView: ComponentHostView<Empty>?
+diff --git a/telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift b/telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift
+--- a/telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift
++++ b/telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift
+@@ -62,8 +62,8 @@
+     })
+ }
+ 
+-private let largeLabelFont = Font.regular(14.5)
+-private let smallLabelFont = Font.regular(11.5)
++private var largeLabelFont: UIFont { return Font.regular(14.5) }
++private var smallLabelFont: UIFont { return Font.regular(11.5) }
+ 
+ final class GlassButtonNode: ASDisplayNode {
+     private var regularImage: UIImage?
+diff --git a/telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift b/telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift
+--- a/telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift
++++ b/telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift
+@@ -39,7 +39,7 @@
+     })?.stretchableImage(withLeftCapWidth: Int(diameter / 2.0 + shadowBlur / 2.0), topCapHeight: Int(diameter / 2.0 + shadowBlur / 2.0))
+ }
+ 
+-private let font = Font.medium(13.0)
++private var font: UIFont { return Font.medium(13.0) }
+ 
+ protocol ReactionItemNode: ASDisplayNode {
+     var isExtracted: Bool { get }
+diff --git a/telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift b/telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift
+--- a/telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift
++++ b/telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift
+@@ -10,7 +10,7 @@
+ import AppBundle
+ import ActivityIndicator
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ public let navigationBarSearchContentHeight: CGFloat = 60.0
+ 
+ public class NavigationBarSearchContentNode: NavigationBarContentNode {
+diff --git a/telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift b/telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift
+--- a/telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift
++++ b/telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift
+@@ -4,8 +4,8 @@
+ import AsyncDisplayKit
+ import TelegramPresentationData
+ 
+-private let textFont = Font.regular(14.0)
+-private let selectedTextFont = Font.semibold(14.0)
++private var textFont: UIFont { return Font.regular(14.0) }
++private var selectedTextFont: UIFont { return Font.semibold(14.0) }
+ 
+ public enum SegmentedControlLayout {
+     case stretchToFill(width: CGFloat)
+diff --git a/telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift b/telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift
+--- a/telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift
++++ b/telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift
+@@ -19,7 +19,7 @@
+ import TelegramUIPreferences
+ 
+ private let avatarFont = avatarPlaceholderFont(size: 24.0)
+-private let textFont = Font.regular(11.0)
++private var textFont: UIFont { return Font.regular(11.0) }
+ 
+ public final class SelectablePeerNodeTheme {
+     let textColor: UIColor
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift
+@@ -55,7 +55,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
+ 
+ private final class CalculatingCacheSizeItemNode: ListViewItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift
+@@ -103,8 +103,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let statusFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var statusFont: UIFont { return Font.regular(14.0) }
+ 
+ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift
+@@ -59,7 +59,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(13.0) }
+ 
+ class GlobalAutoremoveHeaderItemNode: ListViewItemNode {
+     private var animationNode: AnimatedStickerNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift
+@@ -30,9 +30,9 @@
+     }, opaque: false)?.stretchableImage(withLeftCapWidth: 26, topCapHeight: 26)
+ }
+ 
+-private let titleFont = Font.bold(17.0)
+-private let textFont = Font.regular(14.0)
+-private let buttonFont = Font.regular(17.0)
++private var titleFont: UIFont { return Font.bold(17.0) }
++private var textFont: UIFont { return Font.regular(14.0) }
++private var buttonFont: UIFont { return Font.regular(17.0) }
+ 
+ final class PrivacyIntroControllerNode: ViewControllerTracingNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift
+@@ -73,7 +73,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.regular(14.0) }
+ 
+ class RecentSessionsHeaderItemNode: ListViewItemNode {
+     private let titleNode: TextNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift
+@@ -97,8 +97,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let subtitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var subtitleFont: UIFont { return Font.regular(13.0) }
+ 
+ class SettingsSearchRecentItemNode: ItemListRevealOptionsItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift
+@@ -73,8 +73,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.regular(17.0)
+-private let subtitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(17.0) }
++private var subtitleFont: UIFont { return Font.regular(13.0) }
+ 
+ class SettingsSearchResultItemNode: ListViewItemNode {
+     private let contextSourceNode: ContextExtractedContentContainingNode
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift b/telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift
+@@ -191,8 +191,8 @@
+ }
+ 
+ 
+-private let textFont = Font.regular(12.0)
+-private let selectedTextFont = Font.medium(12.0)
++private var textFont: UIFont { return Font.regular(12.0) }
++private var selectedTextFont: UIFont { return Font.medium(12.0) }
+ 
+ class ThemeSettingsAppIconItemNode: ListViewItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift b/telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift
+--- a/telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift
++++ b/telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift
+@@ -59,7 +59,7 @@
+     }
+ }
+ 
+-private let sectionTitleFont = Font.bold(13.0)
++private var sectionTitleFont: UIFont { return Font.bold(13.0) }
+ 
+ final class ShareControllerGridSectionNode: ASDisplayNode {
+     let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift b/telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift
+--- a/telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift
++++ b/telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift
+@@ -14,7 +14,7 @@
+ import SegmentedControlNode
+ import ContextUI
+ 
+-private let subtitleFont = Font.regular(12.0)
++private var subtitleFont: UIFont { return Font.regular(12.0) }
+ 
+ extension CGPoint {
+     func angle(to other: CGPoint) -> CGFloat {
+diff --git a/telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift b/telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift
+--- a/telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift
++++ b/telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift
+@@ -8,8 +8,8 @@
+ import MergeLists
+ import AccountContext
+ 
+-private let cancelFont = Font.regular(17.0)
+-private let subtitleFont = Font.regular(12.0)
++private var cancelFont: UIFont { return Font.regular(17.0) }
++private var subtitleFont: UIFont { return Font.regular(12.0) }
+ 
+ private enum ShareSearchRecentEntryStableId: Hashable {
+     case topPeers
+diff --git a/telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift b/telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift
+--- a/telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift
++++ b/telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift
+@@ -14,7 +14,7 @@
+ import SegmentedControlNode
+ import ContextUI
+ 
+-private let subtitleFont = Font.regular(12.0)
++private var subtitleFont: UIFont { return Font.regular(12.0) }
+ 
+ private struct ShareTopicEntry: Comparable, Identifiable {
+     let index: Int32
+diff --git a/telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift b/telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift
+--- a/telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift
++++ b/telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift
+@@ -61,7 +61,7 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
+ 
+ final class BoostHeaderItemNode: ItemListControllerHeaderItemNode {
+     private let backgroundNode: NavigationBackgroundNode
+diff --git a/telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift b/telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift
+--- a/telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift
++++ b/telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift
+@@ -64,9 +64,9 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
+-private let textFont = Font.regular(15.0)
+-private let boldTextFont = Font.semibold(15.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
++private var boldTextFont: UIFont { return Font.semibold(15.0) }
+ 
+ class IncreaseLimitHeaderItemNode: ListViewItemNode {
+     private var hostView: ComponentHostView<Empty>?
+diff --git a/telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift b/telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift
+--- a/telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift
++++ b/telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift
+@@ -88,7 +88,7 @@
+ }
+ 
+ 
+-private let badgeFont = Font.regular(15.0)
++private var badgeFont: UIFont { return Font.regular(15.0) }
+ 
+ final class StatsMessageItemNode: ListViewItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift b/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift
+--- a/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift
++++ b/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift
+@@ -110,7 +110,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(20.0)
++private var textFont: UIFont { return Font.regular(20.0) }
+ 
+ final class StickerPackEmojisItemNode: GridItemNode {
+     private var item: StickerPackEmojisItem?
+diff --git a/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift b/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift
+--- a/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift
++++ b/telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift
+@@ -77,7 +77,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(20.0)
++private var textFont: UIFont { return Font.regular(20.0) }
+ 
+ final class StickerPackPreviewGridItemNode: GridItemNode {
+     private var currentState: (AccountContext, StickerPackItem?, Bool, Bool)?
+diff --git a/telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift b/telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift
+--- a/telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift
++++ b/telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift
+@@ -90,7 +90,7 @@
+     return (resultImage!, contentWidth)
+ }
+ 
+-private let badgeFont = Font.regular(13.0)
++private var badgeFont: UIFont { return Font.regular(13.0) }
+ 
+ private final class TabBarItemNode: ASDisplayNode {
+     let extractedContainerNode: ContextExtractedContentContainingNode
+diff --git a/telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift b/telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift
+--- a/telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift
++++ b/telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift
+@@ -14,8 +14,8 @@
+ import GiftItemComponent
+ import AnimatedTextComponent
+ 
+-private let titleFont = Font.semibold(15.0)
+-private let subtitleFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var subtitleFont: UIFont { return Font.regular(14.0) }
+ 
+ final class GiftAuctionAccessoryPanel: ASDisplayNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift b/telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift
+--- a/telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift
++++ b/telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift
+@@ -10,8 +10,8 @@
+ import LocalizedPeerData
+ import LiveLocationTimerNode
+ 
+-private let titleFont = Font.regular(12.0)
+-private let subtitleFont = Font.regular(10.0)
++private var titleFont: UIFont { return Font.regular(12.0) }
++private var subtitleFont: UIFont { return Font.regular(10.0) }
+ 
+ enum LocationBroadcastNavigationAccessoryPanelMode {
+     case summary
+diff --git a/telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift b/telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift
+--- a/telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift
++++ b/telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift
+@@ -16,8 +16,8 @@
+ import TooltipUI
+ import SliderContextItem
+ 
+-private let titleFont = Font.regular(12.0)
+-private let subtitleFont = Font.regular(10.0)
++private var titleFont: UIFont { return Font.regular(12.0) }
++private var subtitleFont: UIFont { return Font.regular(10.0) }
+ 
+ private func normalizeValue(_ value: CGFloat) -> CGFloat {
+     return round(value * 10.0) / 10.0
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift
+@@ -7,7 +7,7 @@
+ import SemanticStatusNode
+ import AnimationUI
+ 
+-private let labelFont = Font.regular(13.0)
++private var labelFont: UIFont { return Font.regular(13.0) }
+ 
+ final class CallControllerButtonItemNode: HighlightTrackingButtonNode {
+     struct Content: Equatable {
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift
+@@ -6,7 +6,7 @@
+ import LegacyComponents
+ 
+ private let emojiFont = Font.regular(28.0)
+-private let textFont = Font.regular(15.0)
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ final class CallControllerKeyPreviewNode: ASDisplayNode {
+     private let keyTextNode: ASTextNode
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift
+@@ -4,11 +4,11 @@
+ import AsyncDisplayKit
+ import SwiftSignalKit
+ 
+-private let compactNameFont = Font.regular(28.0)
+-private let regularNameFont = Font.regular(36.0)
+-
+-private let compactStatusFont = Font.regular(18.0)
+-private let regularStatusFont = Font.regular(18.0)
++private var compactNameFont: UIFont { return Font.regular(28.0) }
++private var regularNameFont: UIFont { return Font.regular(36.0) }
++
++private var compactStatusFont: UIFont { return Font.regular(18.0) }
++private var regularStatusFont: UIFont { return Font.regular(18.0) }
+ 
+ enum CallControllerStatusValue: Equatable {
+     case text(string: String, displayLogo: Bool)
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift
+@@ -5,8 +5,8 @@
+ import SwiftSignalKit
+ import TelegramPresentationData
+ 
+-private let labelFont = Font.regular(17.0)
+-private let smallLabelFont = Font.regular(15.0)
++private var labelFont: UIFont { return Font.regular(17.0) }
++private var smallLabelFont: UIFont { return Font.regular(15.0) }
+ 
+ private enum ToastDescription: Equatable {
+     enum Key: Hashable {
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift
+@@ -73,7 +73,7 @@
+ private let emptyHighlightedFill = UIColor(white: 1.0, alpha: 0.3)
+ private let invertedFill = UIColor(white: 1.0, alpha: 1.0)
+ 
+-private let labelFont = Font.regular(14.5)
++private var labelFont: UIFont { return Font.regular(14.5) }
+ 
+ final class LegacyCallControllerButtonNode: HighlightTrackingButtonNode {
+     private var type: LegacyCallControllerButtonType
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift
+@@ -4,11 +4,11 @@
+ import AsyncDisplayKit
+ import SwiftSignalKit
+ 
+-private let compactNameFont = Font.regular(28.0)
+-private let regularNameFont = Font.regular(36.0)
+-
+-private let compactStatusFont = Font.regular(18.0)
+-private let regularStatusFont = Font.regular(18.0)
++private var compactNameFont: UIFont { return Font.regular(28.0) }
++private var regularNameFont: UIFont { return Font.regular(36.0) }
++
++private var compactStatusFont: UIFont { return Font.regular(18.0) }
++private var regularStatusFont: UIFont { return Font.regular(18.0) }
+ 
+ enum LegacyCallControllerStatusValue: Equatable {
+     case text(String)
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift
+@@ -34,7 +34,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ class VoiceChatRecordingIconNode: ASDisplayNode {
+     private let backgroundNode: ASImageNode
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift
+@@ -28,7 +28,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class VoiceChatShareScreenContextItemNode: ASDisplayNode, ContextMenuCustomNode {
+     private let item: VoiceChatShareScreenContextItem
+diff --git a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift
+--- a/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift
++++ b/telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift
+@@ -22,7 +22,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class VoiceChatVolumeContextItemNode: ASDisplayNode, ContextMenuCustomNode {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift b/telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift
+--- a/telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift
++++ b/telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift
+@@ -8,8 +8,8 @@
+ import Display
+ import Markdown
+ 
+-private let titleFont = Font.regular(13.0)
+-private let titleBoldFont = Font.bold(13.0)
++private var titleFont: UIFont { return Font.regular(13.0) }
++private var titleBoldFont: UIFont { return Font.bold(13.0) }
+ 
+ private func spoilerAttributes(primaryTextColor: UIColor) -> MarkdownAttributeSet {
+     return MarkdownAttributeSet(font: titleFont, textColor: primaryTextColor, additionalAttributes: [TelegramTextAttributes.Spoiler: true])
+diff --git a/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift b/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift
+@@ -10,8 +10,8 @@
+ import GlassBackgroundComponent
+ import ActivityIndicatorComponent
+ 
+-private let titleFont = Font.medium(17.0)
+-private let boldTitleFont = Font.semibold(17.0)
++private var titleFont: UIFont { return Font.medium(17.0) }
++private var boldTitleFont: UIFont { return Font.semibold(17.0) }
+ 
+ final class AlertActionComponent: Component {
+     typealias EnvironmentType = AlertComponentEnvironment
+diff --git a/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift b/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift
+@@ -11,16 +11,16 @@
+ import TextFormat
+ import AccountContext
+ 
+-private let titleFont = Font.bold(17.0)
+-private let defaultTextFont = Font.regular(15.0)
+-private let defaultBoldTextFont = Font.semibold(15.0)
+-private let defaultItalicTextFont = Font.italic(15.0)
+-private let defaultBoldItalicTextFont = Font.with(size: 15.0, weight: .semibold, traits: [.italic])
++private var titleFont: UIFont { return Font.bold(17.0) }
++private var defaultTextFont: UIFont { return Font.regular(15.0) }
++private var defaultBoldTextFont: UIFont { return Font.semibold(15.0) }
++private var defaultItalicTextFont: UIFont { return Font.italic(15.0) }
++private var defaultBoldItalicTextFont: UIFont { return Font.with(size: 15.0, weight: .semibold, traits: [.italic]) }
+ private let defaultFixedTextFont = Font.monospace(15.0)
+-private let smallTextFont = Font.regular(14.0)
+-private let smallBoldTextFont = Font.semibold(14.0)
+-private let smallItalicTextFont = Font.italic(14.0)
+-private let smallBoldItalicTextFont = Font.with(size: 14.0, weight: .semibold, traits: [.italic])
++private var smallTextFont: UIFont { return Font.regular(14.0) }
++private var smallBoldTextFont: UIFont { return Font.semibold(14.0) }
++private var smallItalicTextFont: UIFont { return Font.italic(14.0) }
++private var smallBoldItalicTextFont: UIFont { return Font.with(size: 14.0, weight: .semibold, traits: [.italic]) }
+ private let smallFixedTextFont = Font.monospace(14.0)
+ private let backgroundInset: CGFloat = 8.0
+ 
+diff --git a/telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift b/telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift
+@@ -955,7 +955,7 @@
+     return false
+ }
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class AttachmentFileSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift b/telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift
+@@ -9,8 +9,8 @@
+ import ManagedAnimationNode
+ import ComponentFlow
+ 
+-private let titleFont = Font.regular(15.0)
+-private let subtitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.regular(15.0) }
++private var subtitleFont: UIFont { return Font.regular(13.0) }
+ 
+ private let smallScale: CGFloat = 0.48
+ private let smallIconScale: CGFloat = 0.69
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift
+@@ -19,10 +19,10 @@
+ import PeerInfoCoverComponent
+ import ComponentDisplayAdapters
+ 
+-private let messageFont = Font.regular(17.0)
+-private let messageBoldFont = Font.semibold(17.0)
+-private let messageItalicFont = Font.italic(17.0)
+-private let messageBoldItalicFont = Font.semiboldItalic(17.0)
++private var messageFont: UIFont { return Font.regular(17.0) }
++private var messageBoldFont: UIFont { return Font.semibold(17.0) }
++private var messageItalicFont: UIFont { return Font.italic(17.0) }
++private var messageBoldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
+ private let messageFixedFont = UIFont(name: "Menlo-Regular", size: 16.0) ?? UIFont.systemFont(ofSize: 17.0)
+ 
+ public final class ChatBotInfoItem: ListViewItem {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift
+@@ -186,7 +186,7 @@
+     }
+ }
+ 
+-private let badgeFont = Font.regular(14.0)
++private var badgeFont: UIFont { return Font.regular(14.0) }
+ 
+ private final class ChannelNewsContextReferenceContentSource: ContextReferenceContentSource {
+     private let controller: ViewController
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift
+@@ -30,8 +30,8 @@
+     func updateLayout(interfaceState: ChatPresentationInterfaceState, subject: ChatEmptyNode.Subject, size: CGSize, leftInset: CGFloat, rightInset: CGFloat, transition: ContainedViewLayoutTransition) -> CGSize
+ }
+ 
+-private let titleFont = Font.semibold(15.0)
+-private let messageFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var messageFont: UIFont { return Font.regular(13.0) }
+ 
+ private final class ChatEmptyNodeRegularChatContent: ASDisplayNode, ChatEmptyNodeContent {
+     private let textNode: ImmediateTextNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift
+@@ -6,7 +6,7 @@
+ import UniversalMediaPlayer
+ import AnimatedCountLabelNode
+ 
+-private let textFont = Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers])
++private var textFont: UIFont { return Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers]) }
+ 
+ private struct ChatInstantVideoMessageDurationNodeState: Equatable {
+     let hours: Int32?
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift
+@@ -53,7 +53,7 @@
+     }
+ }
+ 
+-private let sectionTitleFont = Font.medium(12.0)
++private var sectionTitleFont: UIFont { return Font.medium(12.0) }
+ 
+ public final class ChatMediaInputStickerGridSectionNode: ASDisplayNode {
+     public let titleNode: ASTextNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift
+@@ -13,7 +13,7 @@
+ import ComponentDisplayAdapters
+ import EmojiStatusComponent
+ 
+-private let titleFont = Font.medium(16.0)
++private var titleFont: UIFont { return Font.medium(16.0) }
+ 
+ private extension UIBezierPath {
+     convenience init(roundRect rect: CGRect, topLeftRadius: CGFloat = 0.0, topRightRadius: CGFloat = 0.0, bottomLeftRadius: CGFloat = 0.0, bottomRightRadius: CGFloat = 0.0) {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift
+@@ -49,8 +49,8 @@
+ import ChatMessageSuggestedPostInfoNode
+ import TelegramStringFormatting
+ 
+-private let nameFont = Font.medium(14.0)
+-private let inlineBotPrefixFont = Font.regular(14.0)
++private var nameFont: UIFont { return Font.medium(14.0) }
++private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
+ private let inlineBotNameFont = nameFont
+ 
+ public protocol GenericAnimatedStickerNode: ASDisplayNode {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift
+@@ -6,7 +6,7 @@
+ import ChatPresentationInterfaceState
+ import ShimmerEffect
+ 
+-private let buttonFont = Font.semibold(14.0)
++private var buttonFont: UIFont { return Font.semibold(14.0) }
+ private let sharedBackgroundImage = generateStretchableFilledCircleImage(radius: 6.0, color: UIColor.white)?.withRenderingMode(.alwaysTemplate)
+ 
+ public final class ChatMessageAttachedContentButtonNode: HighlightTrackingButtonNode {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift
+@@ -13,8 +13,8 @@
+ import AnimatedAvatarSetNode
+ import AvatarNode
+ 
+-private let titleFont: UIFont = Font.medium(16.0)
+-private let labelFont: UIFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.medium(16.0) }
++private var labelFont: UIFont { return Font.regular(13.0) }
+ private let avatarFont: UIFont = avatarPlaceholderFont(size: 8.0)
+ 
+ private let incomingGreenIcon = generateTintedImage(image: UIImage(bundleImageName: "Chat/Message/CallIncomingArrow"), color: UIColor(rgb: 0x36c033))
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift
+@@ -45,8 +45,8 @@
+     case FreeOutgoing(ChatMessageDateAndStatusOutgoingType)
+ }
+ 
+-private let reactionCountFont = Font.semibold(11.0)
+-private let reactionFont = Font.regular(12.0)
++private var reactionCountFont: UIFont { return Font.semibold(11.0) }
++private var reactionFont: UIFont { return Font.regular(12.0) }
+ 
+ private final class StatusReactionNode: ASDisplayNode {
+     let iconView: ReactionIconView
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift
+@@ -22,9 +22,9 @@
+ import TextNodeWithEntities
+ import TextFormat
+ 
+-private let titleFont = Font.medium(15.0)
+-private let textFont = Font.regular(13.0)
+-private let boldTextFont = Font.semibold(13.0)
++private var titleFont: UIFont { return Font.medium(15.0) }
++private var textFont: UIFont { return Font.regular(13.0) }
++private var boldTextFont: UIFont { return Font.semibold(13.0) }
+ 
+ public class ChatMessageGiveawayBubbleContentNode: ChatMessageBubbleContentNode, ASGestureRecognizerDelegate {
+     private let dateAndStatusNode: ChatMessageDateAndStatusNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift
+@@ -28,9 +28,9 @@
+ import ChatSwipeToReplyRecognizer
+ import ChatMessageReactionsFooterContentNode
+ 
+-private let nameFont = Font.medium(14.0)
++private var nameFont: UIFont { return Font.medium(14.0) }
+ 
+-private let inlineBotPrefixFont = Font.regular(14.0)
++private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
+ private let inlineBotNameFont = nameFont
+ 
+ public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureRecognizerDelegate {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift
+@@ -51,9 +51,9 @@
+     case constrained(left: CGFloat, right: CGFloat)
+ }
+ 
+-private let textFont = Font.regular(11.0)
+-private let nameFont = Font.medium(14.0)
+-private let inlineBotPrefixFont = Font.regular(14.0)
++private var textFont: UIFont { return Font.regular(11.0) }
++private var nameFont: UIFont { return Font.medium(14.0) }
++private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
+ private let inlineBotNameFont = nameFont
+ 
+ public enum ChatMessageInteractiveInstantVideoNodeStatusType {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift
+@@ -11,8 +11,8 @@
+ import ChatMessageItemCommon
+ import ChatMessageAttachedContentNode
+ 
+-private let titleFont: UIFont = Font.semibold(15.0)
+-private let textFont: UIFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ 
+ public final class ChatMessageInvoiceBubbleContentNode: ChatMessageBubbleContentNode {
+     private var invoice: TelegramMediaInvoice?
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift
+@@ -6,7 +6,7 @@
+ import TelegramUIPreferences
+ import TelegramStringFormatting
+ 
+-private let textFont: UIFont = Font.regular(14.0)
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ private class ChatMessageLiveLocationTextNodeParams: NSObject {
+     let color: UIColor
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift
+@@ -15,9 +15,9 @@
+ import ChatMessageItemCommon
+ import ChatControllerInteraction
+ 
+-private let titleFont = Font.medium(14.0)
+-private let liveTitleFont = Font.medium(16.0)
+-private let textFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.medium(14.0) }
++private var liveTitleFont: UIFont { return Font.medium(16.0) }
++private var textFont: UIFont { return Font.regular(14.0) }
+ 
+ public class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
+     private let imageNode: TransformImageNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift
+@@ -384,9 +384,9 @@
+     }
+ }
+ 
+-private let percentageFont = Font.bold(14.5)
+-private let percentageSmallFont = Font.bold(12.5)
+-private let countFont = Font.regular(12.5)
++private var percentageFont: UIFont { return Font.bold(14.5) }
++private var percentageSmallFont: UIFont { return Font.bold(12.5) }
++private var countFont: UIFont { return Font.regular(12.5) }
+ 
+ private func generatePercentageImage(presentationData: ChatPresentationData, incoming: Bool, value: Int, targetValue: Int) -> UIImage {
+     return generateImage(CGSize(width: 42.0, height: 20.0), rotatedContext: { size, context in
+@@ -1496,7 +1496,7 @@
+     }
+ }
+ 
+-private let labelsFont = Font.regular(14.0)
++private var labelsFont: UIFont { return Font.regular(14.0) }
+ 
+ private final class ChatMessagePollAddOptionNode: ASDisplayNode {
+     struct Attachment: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift
+@@ -29,8 +29,8 @@
+ import ChatSwipeToReplyRecognizer
+ import ChatMessageSuggestedPostInfoNode
+ 
+-private let nameFont = Font.medium(14.0)
+-private let inlineBotPrefixFont = Font.regular(14.0)
++private var nameFont: UIFont { return Font.medium(14.0) }
++private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
+ private let inlineBotNameFont = nameFont
+ 
+ public class ChatMessageStickerItemNode: ChatMessageItemView {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift
+@@ -342,8 +342,8 @@
+     }
+ }
+ 
+-private let percentageFont = Font.bold(14.5)
+-private let percentageSmallFont = Font.bold(12.5)
++private var percentageFont: UIFont { return Font.bold(14.5) }
++private var percentageSmallFont: UIFont { return Font.bold(12.5) }
+ 
+ private func generatePercentageImage(presentationData: ChatPresentationData, incoming: Bool, value: Int, targetValue: Int) -> UIImage {
+     return generateImage(CGSize(width: 42.0, height: 20.0), rotatedContext: { size, context in
+@@ -1007,7 +1007,7 @@
+     }
+ }
+ 
+-private let labelsFont = Font.regular(14.0)
++private var labelsFont: UIFont { return Font.regular(14.0) }
+ 
+ 
+ public class ChatMessageTodoBubbleContentNode: ChatMessageBubbleContentNode {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift
+@@ -20,7 +20,7 @@
+ import ChatMessageAttachedContentNode
+ import ChatControllerInteraction
+ 
+-private let titleFont: UIFont = Font.semibold(15.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
+ 
+ public final class ChatMessageWebpageBubbleContentNode: ChatMessageBubbleContentNode {
+     private var webPage: TelegramMediaWebpage?
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift
+@@ -7,8 +7,8 @@
+ import WallpaperBackgroundNode
+ import ChatPresentationInterfaceState
+ 
+-private let titleFont = Font.semibold(15.0)
+-private let textFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var textFont: UIFont { return Font.regular(13.0) }
+ 
+ public final class ChatRecentActionsEmptyNode: ASDisplayNode {
+     private var theme: PresentationTheme
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift
+@@ -8,7 +8,7 @@
+ import ComponentFlow
+ import GlassBackgroundComponent
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class ChatRecentActionsSearchNavigationContentNode: NavigationBarContentNode {
+     private var theme: PresentationTheme
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift
+@@ -13,7 +13,7 @@
+ import GlassBackgroundComponent
+ import ActivityIndicator
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ public final class ChatSearchNavigationContentNode: NavigationBarContentNode {
+     private let context: AccountContext
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift
+@@ -5,7 +5,7 @@
+ import TelegramPresentationData
+ import GlassBackgroundComponent
+ 
+-private let cancelFont = Font.regular(17.0)
++private var cancelFont: UIFont { return Font.regular(17.0) }
+ 
+ public final class ChatTextInputAudioRecordingCancelIndicator: UIView, GlassBackgroundView.ContentView {
+     private let cancel: () -> Void
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift
+@@ -10,7 +10,7 @@
+ import LottieAnimationComponent
+ import LottieComponent
+ 
+-private let accessoryButtonFont = Font.medium(14.0)
++private var accessoryButtonFont: UIFont { return Font.medium(14.0) }
+ 
+ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundView.ContentView {
+     private var item: ChatTextInputAccessoryItem
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift
+@@ -67,7 +67,7 @@
+ /// module importing both) to keep `EmojiTextAttachmentView` free of a rich-text-editor dependency.
+ extension EmojiTextAttachmentView: @retroactive RichTextEmojiView {}
+ 
+-private let counterFont = Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])
++private var counterFont: UIFont { return Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers]) }
+ 
+ public let chatTextInputMinFontSize: CGFloat = 5.0
+ 
+diff --git a/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift b/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift
+@@ -88,17 +88,17 @@
+ 
+ private let separatorHeight = 1.0 / UIScreen.main.scale
+ 
+-private let titleFont = Font.semibold(15.0)
+-private let titleBoldFont = Font.bold(15.0)
+-private let titleItalicFont = Font.semiboldItalic(15.0)
+-private let titleBoldItalicFont = Font.semiboldItalic(15.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var titleBoldFont: UIFont { return Font.bold(15.0) }
++private var titleItalicFont: UIFont { return Font.semiboldItalic(15.0) }
++private var titleBoldItalicFont: UIFont { return Font.semiboldItalic(15.0) }
+ 
+-private let textFont = Font.regular(15.0)
+-private let textBoldFont = Font.semibold(15.0)
+-private let textItalicFont = Font.italic(15.0)
+-private let textBoldItalicFont = Font.semiboldItalic(15.0)
++private var textFont: UIFont { return Font.regular(15.0) }
++private var textBoldFont: UIFont { return Font.semibold(15.0) }
++private var textItalicFont: UIFont { return Font.italic(15.0) }
++private var textBoldItalicFont: UIFont { return Font.semiboldItalic(15.0) }
+ 
+-private let smallTextFont = Font.regular(14.0)
++private var smallTextFont: UIFont { return Font.regular(14.0) }
+ 
+ final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
+     private let contentContainer: ASDisplayNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift b/telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift
+@@ -23,8 +23,8 @@
+ import GlassBackgroundComponent
+ import AnimatedTextComponent
+ 
+-private let titleFont = Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
+-private let subtitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers]) }
++private var subtitleFont: UIFont { return Font.regular(13.0) }
+ 
+ public enum ChatTitleContent: Equatable {
+     public struct PeerData: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift b/telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift
+@@ -30,8 +30,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.semibold(15.0)
+-private let subtitleFont = Font.regular(13.0)
++private var titleFont: UIFont { return Font.semibold(15.0) }
++private var subtitleFont: UIFont { return Font.regular(13.0) }
+ 
+ private final class FakeAudioLevelGenerator {
+     private var isFirstTime: Bool = true
+diff --git a/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift b/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift
+@@ -87,8 +87,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(15.0)
+-private let statusFont = Font.regular(14.0)
++private var titleFont: UIFont { return Font.bold(15.0) }
++private var statusFont: UIFont { return Font.regular(14.0) }
+ 
+ class GroupStickerPackCurrentItemNode: ItemListRevealOptionsItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift b/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift
+@@ -13,7 +13,7 @@
+ import AppBundle
+ import ActivityIndicator
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class GroupStickerSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift b/telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift
+@@ -6,8 +6,8 @@
+ import AppBundle
+ import MultilineTextComponent
+ 
+-private let titleFontWithIcon = Font.medium(13.0)
+-private let titleFontWithoutIcon = Font.regular(17.0)
++private var titleFontWithIcon: UIFont { return Font.medium(13.0) }
++private var titleFontWithoutIcon: UIFont { return Font.regular(17.0) }
+ 
+ private final class SwipeOptionsGestureRecognizer: UIPanGestureRecognizer {
+     public var validatedGesture = false
+diff --git a/telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift b/telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift
+@@ -10,8 +10,8 @@
+ import LocalizedPeerData
+ import LiveLocationTimerNode
+ 
+-private let titleFont = Font.regular(12.0)
+-private let subtitleFont = Font.regular(10.0)
++private var titleFont: UIFont { return Font.regular(12.0) }
++private var subtitleFont: UIFont { return Font.regular(10.0) }
+ 
+ enum LocationBroadcastNavigationAccessoryPanelMode {
+     case summary
+diff --git a/telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift b/telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift
+@@ -16,8 +16,8 @@
+ import TooltipUI
+ import SliderContextItem
+ 
+-private let titleFont = Font.regular(12.0)
+-private let subtitleFont = Font.regular(10.0)
++private var titleFont: UIFont { return Font.regular(12.0) }
++private var subtitleFont: UIFont { return Font.regular(10.0) }
+ 
+ private func normalizeValue(_ value: CGFloat) -> CGFloat {
+     return round(value * 10.0) / 10.0
+diff --git a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift
+@@ -14,8 +14,8 @@
+ import MultilineTextComponent
+ import ListItemComponentAdaptor
+ 
+-private let textFont = Font.with(size: 17.0, traits: .monospacedNumbers)
+-private let smallTextFont = Font.with(size: 13.0, traits: .monospacedNumbers)
++private var textFont: UIFont { return Font.with(size: 17.0, traits: .monospacedNumbers) }
++private var smallTextFont: UIFont { return Font.with(size: 13.0, traits: .monospacedNumbers) }
+ 
+ public final class MessagePriceItem: Equatable, ListViewItem, ItemListItem, ListItemComponentAdaptor.ItemGenerator {
+     let theme: PresentationTheme
+diff --git a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift
+@@ -229,7 +229,7 @@
+     }
+ }
+ 
+-private let durationFont = Font.semibold(11.0)
++private var durationFont: UIFont { return Font.semibold(11.0) }
+ private let minDurationImage: UIImage = {
+     let image = generateImage(CGSize(width: 20.0, height: 20.0), rotatedContext: { size, context in
+         context.clear(CGRect(origin: CGPoint(), size: size))
+diff --git a/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift b/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift
+@@ -103,8 +103,8 @@
+     private static let starSpacing: CGFloat = 1.0
+     private static let dotSide: CGFloat = 3.0
+     private static let dotSpacing: CGFloat = 5.0
+-    private static let titleFont = Font.medium(12.0)
+-    private static let detailFont = Font.with(size: 12.0, traits: .monospacedNumbers)
++    private static var titleFont: UIFont { return Font.medium(12.0) }
++    private static var detailFont: UIFont { return Font.with(size: 12.0, traits: .monospacedNumbers) }
+     private static let wordSpacing: CGFloat = 4.0
+ 
+     private let prefixLabel = UILabel()
+diff --git a/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift b/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift
+@@ -87,7 +87,7 @@
+         self.action?(self.glass)
+     }
+ 
+-    static let titleFont = Font.regular(17.0)
++    static var titleFont: UIFont { return Font.regular(17.0) }
+     static let titleInset: CGFloat = 12.0
+ 
+     static func width(title: String, height: CGFloat) -> CGFloat {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift b/telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift
+@@ -85,7 +85,7 @@
+     }
+ }
+ 
+-private let badgeFont = Font.regular(15.0)
++private var badgeFont: UIFont { return Font.regular(15.0) }
+ 
+ public class ItemListReactionItemNode: ListViewItemNode, ItemListItemNode {
+     private let backgroundNode: ASDisplayNode
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift b/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift
+@@ -160,8 +160,8 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(12.0)
+-private let selectedTextFont = Font.bold(12.0)
++private var textFont: UIFont { return Font.regular(12.0) }
++private var selectedTextFont: UIFont { return Font.bold(12.0) }
+ 
+ private var cachedBorderImages: [String: UIImage] = [:]
+ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selected: Bool) -> UIImage? {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift b/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift
+@@ -132,8 +132,8 @@
+ }
+ 
+ 
+-private let textFont = Font.regular(12.0)
+-private let selectedTextFont = Font.bold(12.0)
++private var textFont: UIFont { return Font.regular(12.0) }
++private var selectedTextFont: UIFont { return Font.bold(12.0) }
+ 
+ private var cachedBorderImages: [String: UIImage] = [:]
+ private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selected: Bool) -> UIImage? {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift b/telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift
+@@ -12,7 +12,7 @@
+ import PeerListItemComponent
+ import MultilineTextComponent
+ 
+-private let shareScreenPeerTitleFont = Font.medium(11.0)
++private var shareScreenPeerTitleFont: UIFont { return Font.medium(11.0) }
+ private let shareScreenCommunityShadowImage = UIImage(bundleImageName: "Components/CommunityShadow")?.withRenderingMode(.alwaysTemplate)
+ 
+ final class ShareScreenPeerComponent: Component {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift b/telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift
+@@ -27,7 +27,7 @@
+     }
+ }
+ 
+-private let textFont = Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)
++private var textFont: UIFont { return Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers) }
+ 
+ private final class SliderContextItemNode: ASDisplayNode, ContextMenuCustomNode, ASGestureRecognizerDelegate {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift b/telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift
+@@ -17,7 +17,7 @@
+ import PhotoResources
+ import SemanticStatusNode
+ 
+-private let badgeFont = Font.regular(12.0)
++private var badgeFont: UIFont { return Font.regular(12.0) }
+ private let videoIcon = generateTintedImage(image: UIImage(bundleImageName: "Chat List/MiniThumbnailPlay"), color: .white)
+ 
+ private final class MediaGridLayer: SimpleLayer {
+diff --git a/telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift b/telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift
+@@ -26,7 +26,7 @@
+     }
+ }
+ 
+-private let textFont = Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)
++private var textFont: UIFont { return Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers) }
+ 
+ private final class VolumeSliderContextItemNode: ASDisplayNode, ContextMenuCustomNode {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift b/telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift
+@@ -155,7 +155,7 @@
+             }
+         }
+ 
+-        private static let itemFont = Font.semibold(14.0)
++        private static var itemFont: UIFont { return Font.semibold(14.0) }
+ 
+         private let blurView: BlurredBackgroundView
+         private let backgroundLayer = SimpleShapeLayer()
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift b/telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift
+@@ -9,7 +9,7 @@
+ import ComponentFlow
+ import ComponentDisplayAdapters
+ 
+-private let badgeFont = Font.with(size: 13.0, traits: [.monospacedNumbers])
++private var badgeFont: UIFont { return Font.with(size: 13.0, traits: [.monospacedNumbers]) }
+ 
+ enum ChatHistoryNavigationButtonType {
+     case down
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -2874,7 +2874,7 @@
+     }
+ }
+ 
+-private let textFont = Font.regular(17.0)
++private var textFont: UIFont { return Font.regular(17.0) }
+ 
+ private final class ChatDeleteMessageContextItemNode: ASDisplayNode, ContextMenuCustomNode, ContextActionNodeProtocol {
+     private let item: ChatDeleteMessageContextItem
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift b/telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift
+@@ -11,8 +11,8 @@
+ import AccountContext
+ import Markdown
+ 
+-private let textFont = Font.regular(13.0)
+-private let boldTextFont = Font.semibold(13.0)
++private var textFont: UIFont { return Font.regular(13.0) }
++private var boldTextFont: UIFont { return Font.semibold(13.0) }
+ 
+ private func formattedText(_ text: String, color: UIColor, textAlignment: NSTextAlignment = .natural) -> NSAttributedString {
+     return parseMarkdownIntoAttributedString(text, attributes: MarkdownAttributes(body: MarkdownAttributeSet(font: textFont, textColor: color), bold: MarkdownAttributeSet(font: boldTextFont, textColor: color), link: MarkdownAttributeSet(font: textFont, textColor: color), linkAttribute: { _ in return nil}), textAlignment: textAlignment)
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift b/telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift
+@@ -16,7 +16,7 @@
+ import AccountContext
+ import GlassBackgroundComponent
+ 
+-private let labelFont = Font.regular(15.0)
++private var labelFont: UIFont { return Font.regular(15.0) }
+ 
+ final class ChatPremiumRequiredInputPanelNode: ChatInputPanelNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift b/telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift
+@@ -17,7 +17,7 @@
+ import AnimatedTextComponent
+ import GlassBackgroundComponent
+ 
+-private let labelFont = Font.regular(15.0)
++private var labelFont: UIFont { return Font.regular(15.0) }
+ 
+ final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
+     private struct Params: Equatable {
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift b/telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift
+@@ -553,7 +553,7 @@
+     }
+ }
+ 
+-private let searchBarFont = Font.regular(17.0)
++private var searchBarFont: UIFont { return Font.regular(17.0) }
+ 
+ final class ContactsSearchNavigationContentNode: NavigationBarContentNode {
+     private var presentationData: PresentationData
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift b/telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift
+@@ -87,8 +87,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.medium(16.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.medium(16.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ private let iconFont = Font.medium(25.0)
+ private let iconTextBackgroundImage = generateStretchableFilledCircleImage(radius: 2.0, color: UIColor(rgb: 0xdfdfdf))
+ 
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift b/telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift
+@@ -108,8 +108,8 @@
+     return size.width
+ }
+ 
+-private let titleFont = Font.semibold(17.0)
+-private let descriptionFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.semibold(17.0) }
++private var descriptionFont: UIFont { return Font.regular(15.0) }
+ 
+ private func stringsForDisplayData(_ data: SharedMediaPlaybackDisplayData?, presentationData: PresentationData) -> (NSAttributedString?, NSAttributedString?, Bool, NSAttributedString?) {
+     var titleString: NSAttributedString?
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift b/telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift
+@@ -76,8 +76,8 @@
+     }
+ }
+ 
+-private let titleFont = Font.medium(16.0)
+-private let textFont = Font.regular(15.0)
++private var titleFont: UIFont { return Font.medium(16.0) }
++private var textFont: UIFont { return Font.regular(15.0) }
+ private let iconFont = Font.medium(25.0)
+ private let iconTextBackgroundImage = generateStretchableFilledCircleImage(radius: 2.0, color: UIColor(rgb: 0xdfdfdf))
+ 
+diff --git a/telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift b/telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift
+--- a/telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift
++++ b/telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift
+@@ -89,11 +89,11 @@
+     }
+ }
+ 
+-private let titleFont = Font.bold(17.0)
+-private let textFont = Font.regular(16.0)
+-private let textBoldFont = Font.medium(16.0)
+-private let textItalicFont = Font.italic(16.0)
+-private let textBoldItalicFont = Font.semiboldItalic(16.0)
++private var titleFont: UIFont { return Font.bold(17.0) }
++private var textFont: UIFont { return Font.regular(16.0) }
++private var textBoldFont: UIFont { return Font.medium(16.0) }
++private var textItalicFont: UIFont { return Font.italic(16.0) }
++private var textBoldItalicFont: UIFont { return Font.semiboldItalic(16.0) }
+ private let textFixedFont = Font.regular(16.0)
+ 
+ class UpdateInfoItemNode: ListViewItemNode {

@@ -5,7 +5,7 @@ import Display
 import SwiftSignalKit
 import TelegramPresentationData
 
-private let titleFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
 
 class CallListHoleItem: ListViewItem {
     var neighborDescriptor: AnyEquatable {

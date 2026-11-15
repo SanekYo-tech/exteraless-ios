@@ -19,7 +19,7 @@ public enum HorizontalPeerItemMode {
     case actionSheet
 }
 
-private let badgeFont = Font.regular(14.0)
+private var badgeFont: UIFont { return Font.regular(14.0) }
 
 public final class HorizontalPeerItem: ListViewItem {
     public var neighborDescriptor: AnyEquatable {

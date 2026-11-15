@@ -28,7 +28,7 @@ final class VoiceChatShareScreenContextItem: ContextMenuCustomItem {
     }
 }
 
-private let textFont = Font.regular(17.0)
+private var textFont: UIFont { return Font.regular(17.0) }
 
 private final class VoiceChatShareScreenContextItemNode: ASDisplayNode, ContextMenuCustomNode {
     private let item: VoiceChatShareScreenContextItem

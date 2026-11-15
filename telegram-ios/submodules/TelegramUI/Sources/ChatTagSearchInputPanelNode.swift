@@ -17,7 +17,7 @@ import BundleIconComponent
 import AnimatedTextComponent
 import GlassBackgroundComponent
 
-private let labelFont = Font.regular(15.0)
+private var labelFont: UIFont { return Font.regular(15.0) }
 
 final class ChatTagSearchInputPanelNode: ChatInputPanelNode {
     private struct Params: Equatable {

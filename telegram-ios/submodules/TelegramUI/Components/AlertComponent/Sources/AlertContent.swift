@@ -11,16 +11,16 @@ import Markdown
 import TextFormat
 import AccountContext
 
-private let titleFont = Font.bold(17.0)
-private let defaultTextFont = Font.regular(15.0)
-private let defaultBoldTextFont = Font.semibold(15.0)
-private let defaultItalicTextFont = Font.italic(15.0)
-private let defaultBoldItalicTextFont = Font.with(size: 15.0, weight: .semibold, traits: [.italic])
+private var titleFont: UIFont { return Font.bold(17.0) }
+private var defaultTextFont: UIFont { return Font.regular(15.0) }
+private var defaultBoldTextFont: UIFont { return Font.semibold(15.0) }
+private var defaultItalicTextFont: UIFont { return Font.italic(15.0) }
+private var defaultBoldItalicTextFont: UIFont { return Font.with(size: 15.0, weight: .semibold, traits: [.italic]) }
 private let defaultFixedTextFont = Font.monospace(15.0)
-private let smallTextFont = Font.regular(14.0)
-private let smallBoldTextFont = Font.semibold(14.0)
-private let smallItalicTextFont = Font.italic(14.0)
-private let smallBoldItalicTextFont = Font.with(size: 14.0, weight: .semibold, traits: [.italic])
+private var smallTextFont: UIFont { return Font.regular(14.0) }
+private var smallBoldTextFont: UIFont { return Font.semibold(14.0) }
+private var smallItalicTextFont: UIFont { return Font.italic(14.0) }
+private var smallBoldItalicTextFont: UIFont { return Font.with(size: 14.0, weight: .semibold, traits: [.italic]) }
 private let smallFixedTextFont = Font.monospace(14.0)
 private let backgroundInset: CGFloat = 8.0
 

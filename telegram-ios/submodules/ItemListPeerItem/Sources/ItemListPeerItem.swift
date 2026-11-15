@@ -718,7 +718,7 @@ public final class ItemListPeerItem: ListViewItem, ItemListItem, ItemListRevealO
     }
 }
 
-private let badgeFont = Font.regular(15.0)
+private var badgeFont: UIFont { return Font.regular(15.0) }
 
 public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

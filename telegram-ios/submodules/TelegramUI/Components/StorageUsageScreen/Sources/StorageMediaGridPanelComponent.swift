@@ -17,7 +17,7 @@ import AvatarNode
 import PhotoResources
 import SemanticStatusNode
 
-private let badgeFont = Font.regular(12.0)
+private var badgeFont: UIFont { return Font.regular(12.0) }
 private let videoIcon = generateTintedImage(image: UIImage(bundleImageName: "Chat List/MiniThumbnailPlay"), color: .white)
 
 private final class MediaGridLayer: SimpleLayer {

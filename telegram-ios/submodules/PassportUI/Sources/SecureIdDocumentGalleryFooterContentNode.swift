@@ -12,9 +12,9 @@ import AppBundle
 
 private let deleteImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionTrash"), color: .white)
 
-private let textFont = Font.regular(16.0)
-private let titleFont = Font.medium(15.0)
-private let dateFont = Font.regular(14.0)
+private var textFont: UIFont { return Font.regular(16.0) }
+private var titleFont: UIFont { return Font.medium(15.0) }
+private var dateFont: UIFont { return Font.regular(14.0) }
 
 final class SecureIdDocumentGalleryFooterContentNode: GalleryFooterContentNode {
     private let context: AccountContext

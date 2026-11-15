@@ -122,7 +122,7 @@ final class ChatListFilterPresetListItem: ListViewItem, ItemListItem, ItemListRe
     }
 }
 
-private let titleFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
 
 final class ChatListFilterPresetListItemNode: ItemListRevealOptionsItemNode {
     private let backgroundNode: ASDisplayNode

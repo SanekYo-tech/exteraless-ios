@@ -90,7 +90,7 @@ private func tabBarItemImage(_ image: UIImage?, title: String, backgroundColor: 
     return (resultImage!, contentWidth)
 }
 
-private let badgeFont = Font.regular(13.0)
+private var badgeFont: UIFont { return Font.regular(13.0) }
 
 private final class TabBarItemNode: ASDisplayNode {
     let extractedContainerNode: ContextExtractedContentContainingNode

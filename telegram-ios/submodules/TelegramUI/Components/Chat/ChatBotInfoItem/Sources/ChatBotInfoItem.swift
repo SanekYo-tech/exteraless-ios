@@ -19,10 +19,10 @@ import ComponentFlow
 import PeerInfoCoverComponent
 import ComponentDisplayAdapters
 
-private let messageFont = Font.regular(17.0)
-private let messageBoldFont = Font.semibold(17.0)
-private let messageItalicFont = Font.italic(17.0)
-private let messageBoldItalicFont = Font.semiboldItalic(17.0)
+private var messageFont: UIFont { return Font.regular(17.0) }
+private var messageBoldFont: UIFont { return Font.semibold(17.0) }
+private var messageItalicFont: UIFont { return Font.italic(17.0) }
+private var messageBoldItalicFont: UIFont { return Font.semiboldItalic(17.0) }
 private let messageFixedFont = UIFont(name: "Menlo-Regular", size: 16.0) ?? UIFont.systemFont(ofSize: 17.0)
 
 public final class ChatBotInfoItem: ListViewItem {

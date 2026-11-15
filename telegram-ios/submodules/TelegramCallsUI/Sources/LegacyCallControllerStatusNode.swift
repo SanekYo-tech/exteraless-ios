@@ -4,11 +4,11 @@ import Display
 import AsyncDisplayKit
 import SwiftSignalKit
 
-private let compactNameFont = Font.regular(28.0)
-private let regularNameFont = Font.regular(36.0)
+private var compactNameFont: UIFont { return Font.regular(28.0) }
+private var regularNameFont: UIFont { return Font.regular(36.0) }
 
-private let compactStatusFont = Font.regular(18.0)
-private let regularStatusFont = Font.regular(18.0)
+private var compactStatusFont: UIFont { return Font.regular(18.0) }
+private var regularStatusFont: UIFont { return Font.regular(18.0) }
 
 enum LegacyCallControllerStatusValue: Equatable {
     case text(String)

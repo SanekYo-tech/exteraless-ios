@@ -28,9 +28,9 @@ import ChatMessageActionButtonsNode
 import ChatSwipeToReplyRecognizer
 import ChatMessageReactionsFooterContentNode
 
-private let nameFont = Font.medium(14.0)
+private var nameFont: UIFont { return Font.medium(14.0) }
 
-private let inlineBotPrefixFont = Font.regular(14.0)
+private var inlineBotPrefixFont: UIFont { return Font.regular(14.0) }
 private let inlineBotNameFont = nameFont
 
 public class ChatMessageInstantVideoItemNode: ChatMessageItemView, ASGestureRecognizerDelegate {

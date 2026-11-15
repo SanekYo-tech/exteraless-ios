@@ -553,7 +553,7 @@ class ContactSelectionControllerImpl: ViewController, ContactSelectionController
     }
 }
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class ContactsSearchNavigationContentNode: NavigationBarContentNode {
     private var presentationData: PresentationData

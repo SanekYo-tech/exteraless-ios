@@ -87,8 +87,8 @@ final class GroupStickerPackCurrentItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.bold(15.0)
-private let statusFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.bold(15.0) }
+private var statusFont: UIFont { return Font.regular(14.0) }
 
 class GroupStickerPackCurrentItemNode: ItemListRevealOptionsItemNode {
     private let backgroundNode: ASDisplayNode

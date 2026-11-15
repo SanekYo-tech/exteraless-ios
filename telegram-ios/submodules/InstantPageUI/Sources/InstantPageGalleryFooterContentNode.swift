@@ -13,7 +13,7 @@ import AppBundle
 
 private let actionImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Accessory Panels/MessageSelectionForward"), color: .white)
 
-private let textFont = Font.regular(16.0)
+private var textFont: UIFont { return Font.regular(16.0) }
 
 final class InstantPageGalleryFooterContentNode: GalleryFooterContentNode {
     private let context: AccountContext

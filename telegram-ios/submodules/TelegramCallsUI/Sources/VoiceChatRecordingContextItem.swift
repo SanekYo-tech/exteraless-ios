@@ -34,7 +34,7 @@ final class VoiceChatRecordingContextItem: ContextMenuCustomItem {
     }
 }
 
-private let textFont = Font.regular(17.0)
+private var textFont: UIFont { return Font.regular(17.0) }
 
 class VoiceChatRecordingIconNode: ASDisplayNode {
     private let backgroundNode: ASImageNode

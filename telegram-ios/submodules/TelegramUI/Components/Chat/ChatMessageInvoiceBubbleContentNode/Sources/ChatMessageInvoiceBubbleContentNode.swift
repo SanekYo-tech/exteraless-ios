@@ -11,8 +11,8 @@ import ChatMessageBubbleContentNode
 import ChatMessageItemCommon
 import ChatMessageAttachedContentNode
 
-private let titleFont: UIFont = Font.semibold(15.0)
-private let textFont: UIFont = Font.regular(15.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
+private var textFont: UIFont { return Font.regular(15.0) }
 
 public final class ChatMessageInvoiceBubbleContentNode: ChatMessageBubbleContentNode {
     private var invoice: TelegramMediaInvoice?

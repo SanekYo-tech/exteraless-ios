@@ -384,9 +384,9 @@ private final class ChatMessagePollOptionRadioNode: ASDisplayNode {
     }
 }
 
-private let percentageFont = Font.bold(14.5)
-private let percentageSmallFont = Font.bold(12.5)
-private let countFont = Font.regular(12.5)
+private var percentageFont: UIFont { return Font.bold(14.5) }
+private var percentageSmallFont: UIFont { return Font.bold(12.5) }
+private var countFont: UIFont { return Font.regular(12.5) }
 
 private func generatePercentageImage(presentationData: ChatPresentationData, incoming: Bool, value: Int, targetValue: Int) -> UIImage {
     return generateImage(CGSize(width: 42.0, height: 20.0), rotatedContext: { size, context in
@@ -1496,7 +1496,7 @@ private final class ChatMessagePollOptionNode: ASDisplayNode {
     }
 }
 
-private let labelsFont = Font.regular(14.0)
+private var labelsFont: UIFont { return Font.regular(14.0) }
 
 private final class ChatMessagePollAddOptionNode: ASDisplayNode {
     struct Attachment: Equatable {

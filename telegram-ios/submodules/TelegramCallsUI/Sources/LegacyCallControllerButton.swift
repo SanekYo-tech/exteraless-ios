@@ -73,7 +73,7 @@ private let emptyStroke = UIColor(white: 1.0, alpha: 0.8)
 private let emptyHighlightedFill = UIColor(white: 1.0, alpha: 0.3)
 private let invertedFill = UIColor(white: 1.0, alpha: 1.0)
 
-private let labelFont = Font.regular(14.5)
+private var labelFont: UIFont { return Font.regular(14.5) }
 
 final class LegacyCallControllerButtonNode: HighlightTrackingButtonNode {
     private var type: LegacyCallControllerButtonType

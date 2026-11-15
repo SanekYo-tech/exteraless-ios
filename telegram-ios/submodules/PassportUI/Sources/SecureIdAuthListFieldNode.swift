@@ -6,8 +6,8 @@ import TelegramCore
 import TelegramPresentationData
 import PhoneNumberFormat
 
-private let titleFont = Font.regular(17.0)
-private let textFont = Font.regular(15.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
+private var textFont: UIFont { return Font.regular(15.0) }
 
 private func fieldsText(_ fields: String...) -> String {
     var result = ""

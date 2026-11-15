@@ -19,7 +19,7 @@ import MultiAnimationRenderer
 import TelegramUIPreferences
 
 private let avatarFont = avatarPlaceholderFont(size: 24.0)
-private let textFont = Font.regular(11.0)
+private var textFont: UIFont { return Font.regular(11.0) }
 
 public final class SelectablePeerNodeTheme {
     let textColor: UIColor

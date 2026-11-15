@@ -15,9 +15,9 @@ import ChatMessageBubbleContentNode
 import ChatMessageItemCommon
 import ChatControllerInteraction
 
-private let titleFont = Font.medium(14.0)
-private let liveTitleFont = Font.medium(16.0)
-private let textFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.medium(14.0) }
+private var liveTitleFont: UIFont { return Font.medium(16.0) }
+private var textFont: UIFont { return Font.regular(14.0) }
 
 public class ChatMessageMapBubbleContentNode: ChatMessageBubbleContentNode {
     private let imageNode: TransformImageNode

@@ -73,8 +73,8 @@ class SettingsSearchResultItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.regular(17.0)
-private let subtitleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
+private var subtitleFont: UIFont { return Font.regular(13.0) }
 
 class SettingsSearchResultItemNode: ListViewItemNode {
     private let contextSourceNode: ContextExtractedContentContainingNode

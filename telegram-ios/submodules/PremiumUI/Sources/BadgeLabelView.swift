@@ -7,7 +7,7 @@ private let labelWidth: CGFloat = 16.0
 private let labelHeight: CGFloat = 36.0
 private let labelSize = CGSize(width: labelWidth, height: labelHeight)
 private let font = Font.with(size: 24.0, design: .round, weight: .semibold, traits: [])
-private let suffixFont = Font.with(size: 22.0, design: .regular, weight: .regular, traits: [])
+private var suffixFont: UIFont { return Font.with(size: 22.0, design: .regular, weight: .regular, traits: []) }
 
 final class BadgeLabelView: UIView {
     private class StackView: UIView {

@@ -23,8 +23,8 @@ import ComponentDisplayAdapters
 import GlassBackgroundComponent
 import AnimatedTextComponent
 
-private let titleFont = Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])
-private let subtitleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers]) }
+private var subtitleFont: UIFont { return Font.regular(13.0) }
 
 public enum ChatTitleContent: Equatable {
     public struct PeerData: Equatable {

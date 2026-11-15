@@ -87,7 +87,7 @@ final class QrStudioGlassButtonView: UIView {
         self.action?(self.glass)
     }
 
-    static let titleFont = Font.regular(17.0)
+    static var titleFont: UIFont { return Font.regular(17.0) }
     static let titleInset: CGFloat = 12.0
 
     static func width(title: String, height: CGFloat) -> CGFloat {

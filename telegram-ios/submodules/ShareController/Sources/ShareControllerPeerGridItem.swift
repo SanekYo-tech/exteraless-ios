@@ -59,7 +59,7 @@ final class ShareControllerGridSection: GridSection {
     }
 }
 
-private let sectionTitleFont = Font.bold(13.0)
+private var sectionTitleFont: UIFont { return Font.bold(13.0) }
 
 final class ShareControllerGridSectionNode: ASDisplayNode {
     let backgroundNode: ASDisplayNode

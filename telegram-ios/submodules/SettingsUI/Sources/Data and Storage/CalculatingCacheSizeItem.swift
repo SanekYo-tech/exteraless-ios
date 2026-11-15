@@ -55,7 +55,7 @@ final class CalculatingCacheSizeItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.regular(14.0) }
 
 private final class CalculatingCacheSizeItemNode: ListViewItemNode {
     private let backgroundNode: ASDisplayNode

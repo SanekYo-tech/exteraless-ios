@@ -39,7 +39,7 @@ private func generateBubbleShadowImage(shadow: UIColor, diameter: CGFloat, shado
     })?.stretchableImage(withLeftCapWidth: Int(diameter / 2.0 + shadowBlur / 2.0), topCapHeight: Int(diameter / 2.0 + shadowBlur / 2.0))
 }
 
-private let font = Font.medium(13.0)
+private var font: UIFont { return Font.medium(13.0) }
 
 protocol ReactionItemNode: ASDisplayNode {
     var isExtracted: Bool { get }

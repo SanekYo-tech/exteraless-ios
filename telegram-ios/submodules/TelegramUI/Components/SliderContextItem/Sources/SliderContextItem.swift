@@ -27,7 +27,7 @@ public final class SliderContextItem: ContextMenuCustomItem {
     }
 }
 
-private let textFont = Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)
+private var textFont: UIFont { return Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers) }
 
 private final class SliderContextItemNode: ASDisplayNode, ContextMenuCustomNode, ASGestureRecognizerDelegate {
     private var presentationData: PresentationData

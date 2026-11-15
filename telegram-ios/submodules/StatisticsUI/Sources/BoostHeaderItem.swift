@@ -61,7 +61,7 @@ final class BoostHeaderItem: ItemListControllerHeaderItem {
     }
 }
 
-private let titleFont = Font.semibold(17.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
 
 final class BoostHeaderItemNode: ItemListControllerHeaderItemNode {
     private let backgroundNode: NavigationBackgroundNode

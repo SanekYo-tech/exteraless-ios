@@ -26,7 +26,7 @@ public final class VolumeSliderContextItem: ContextMenuCustomItem {
     }
 }
 
-private let textFont = Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)
+private var textFont: UIFont { return Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers) }
 
 private final class VolumeSliderContextItemNode: ASDisplayNode, ContextMenuCustomNode {
     private var presentationData: PresentationData

@@ -10,7 +10,7 @@ import ComponentDisplayAdapters
 import HorizontalTabsComponent
 import GlassBackgroundComponent
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class HashtagSearchNavigationContentNode: NavigationBarContentNode {
     private var theme: PresentationTheme

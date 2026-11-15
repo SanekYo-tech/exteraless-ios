@@ -155,7 +155,7 @@ final class WalletWordSuggestionsComponent: Component {
             }
         }
 
-        private static let itemFont = Font.semibold(14.0)
+        private static var itemFont: UIFont { return Font.semibold(14.0) }
 
         private let blurView: BlurredBackgroundView
         private let backgroundLayer = SimpleShapeLayer()

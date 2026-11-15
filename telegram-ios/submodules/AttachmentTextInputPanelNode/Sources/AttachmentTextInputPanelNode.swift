@@ -26,7 +26,7 @@ import TextNodeWithEntities
 import ChatInputTextNode
 import ChatEntityKeyboardInputNode
 
-private let counterFont = Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])
+private var counterFont: UIFont { return Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers]) }
 private let minInputFontSize: CGFloat = 5.0
 
 private func calclulateTextFieldMinHeight(_ presentationInterfaceState: ChatPresentationInterfaceState, glass: Bool = false, metrics: LayoutMetrics) -> CGFloat {

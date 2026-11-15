@@ -1,0 +1,2876 @@
+{
+  "scope": "Production Source/Sources .swift files under telegram-ios/submodules; one-line global or static Display.Font requests only",
+  "bounds": {
+    "candidate_files": 512,
+    "source_bytes": 67108864,
+    "per_file_bytes": 4194304,
+    "declarations": 600,
+    "git_seconds": 15
+  },
+  "candidate_files": 194,
+  "source_bytes": 6552082,
+  "companion_declarations": 294,
+  "companion_files": 167,
+  "application": {
+    "status": "applied",
+    "date": "2026-11-15",
+    "approved_patch": "docs/wave-2/font-family-global-cache-hunks.patch",
+    "approved_patch_sha256": "30cf3c11ec28948992f22b399fc204f34713087fdf3cf5dd205f35b0153dfa3a",
+    "actual_count": {
+      "getter_replacements": 294,
+      "swift_files": 167
+    },
+    "drift_files": [],
+    "verification": "Every postimage equals its saved preimage with only the approved let-to-read-only-getter declaration substitutions. Requests, roles, all other bytes and 36 excluded declarations are preserved.",
+    "native_execution": "not_run",
+    "scope": "Process-global/static captures only; no assertion of complete live instance-cache invalidation or UI pixel correctness.",
+    "applied_hashes": {
+      "telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift": "c8f948ff0664a13462e01636f8d46b26670f865de675f5dc290b8e08e15ddcd1",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift": "a33ba662fb2a45c85472eb1bd82f6a9deb8c2b662cf99e8e1d6aad5703d42a63",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift": "b7ad31403e6b0f0524f0cba3b9e8ab2351ec4ca0be29bcca3a73c06b9581d93d",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift": "749bf9f04c69a3ecf359f9dc6860b5d4af2fef90ec3c1380b5d1487247be9ee3",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift": "581d968f4729556347d6148425412ee8db910a63b92b7ada107c9b34d87f7deb",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift": "d1d7b328e3e1d74b383360ae4f7e55783bea6ba03bf82b162da839279a034c20",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift": "c678c6326323f8ea81a0d544dfc568829444d44f0d79f7075b76afc090557f65",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift": "5eaad44ae53c1982480cdc7cb90f4ff2d5f55f13bf16905420c9c021b126aaab",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift": "7cc0fae964d317cc27e5c7aaf9ecf9a49dde07a3d179d1584f0db6207f35f437",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift": "a0d5822455b5919447a6921474d25b6b33e608ec13351f5ad8f3397aaebb9be9",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift": "3437608b83c41fc4cf5478f49a284fda60fb1200db7d5e648a301518e150d423",
+      "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift": "a0f75f89c8367e1da386cd424bb23860f9ef8d9fda6c887e3b16e77ed01e10fd",
+      "telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift": "d0db533d0ec4a37a4bc3e0337b4722d7e2165a88c3eb5b3ef8af20d3726c2a18",
+      "telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift": "d409e979c4797b0d63053eb39ffb9212cc7b0b01489991b5a0fcdd349b6c4464",
+      "telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift": "558c6467cb9649e58f0c3febce157d91fa3b7aaa3dc9a71a70ad05a0e171494f",
+      "telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift": "2981e7d34526318583ac7a2a9265fef4ceaf29cfe1bc9d33de490be8e02e5032",
+      "telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift": "ccb327cc39066e1b6454640cbb0560ebd966f93bf4e456ab30dfaee3180092fc",
+      "telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift": "e669c98b6da8aad5ff29f4286246ab3c5fadd6ee52cf06fa0d7cbfb405f4a794",
+      "telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift": "3157f7161a11af3fd6601e3fc785ee10b6d23d2da1030389f8d6a705c01449e3",
+      "telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift": "f6b8048bf394c7020591ff5b20d9ee832141be69840313f0e072d54e6bc08824",
+      "telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift": "5c6e06b037328fed9d9555b70816a8e4d38380939e625cfc42b45314fd8e7253",
+      "telegram-ios/submodules/Display/Source/CollectionIndexNode.swift": "fd0a719a0acfb81c2234cd98c92ef6cf7ee8f2c9a23e62202fb5adc4f88f4185",
+      "telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift": "a5f950eccb59699dcf8f3474b43ecf22cdcf9a0ec31167ea56f34800cd899e3d",
+      "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift": "75fbd32974b342589867406d6dc7bd412d5ba446d01e22c5677f9a91af8281af",
+      "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift": "8aab23205ced47ecc9784884757b6468c3c666ebc773de99749face41eb7f397",
+      "telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift": "59afbe4149aecccf04da2565701f1072c8094de978b5f380190f2800ed86f34b",
+      "telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift": "94982ac487ee57f1a3f701d790bd8f5626b01ffce2fea33705ffc938b0e3de98",
+      "telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift": "e10b8c304c7ad8d3f49d38f6f5a696e70d0b3c3f2bd0f20644e9b6a6b7d16a35",
+      "telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift": "283f491a3d5a77a4d2d16628ae7b836ce8f020fe3687269b3295a8c6c5ec8c6b",
+      "telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift": "6161c9288138bf942cfe0a550d726977ad7d3f75e7a2df68d4fcb72b2ca27954",
+      "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift": "48b2fad76775d166c051bea5efd177e2a1d46066a0e4095f56b32407add2d278",
+      "telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift": "d7153568de9ef2e658c231ccd25ce5dc7a909b26d6191439a20e086a7ecfa861",
+      "telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift": "dc64f529470d87b363274420416ed574f3be4680f7af83b64b5158e4f1186b9b",
+      "telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift": "6c76a7d6fb949060f7afca17b206c70a2192f5405837ee760f0b1d1e54abe691",
+      "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift": "93403d8b97d0afbbe7d022c813c82d38cf70ce1dbc25bbef5b76c9ff496bb1e6",
+      "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift": "1fb152bf1909aed54fa05cc209ff7e174e871f746626e874ebbd03c1600dd7f8",
+      "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift": "3c5d024160da35e06fe79274052cac144803b6cf20f9581c4298d24864ac11dc",
+      "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift": "81d1d8f624e522dddd279d6c93589f847a2a29637137d86f21eb53abf21d21b2",
+      "telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift": "0cb7bf7fad7b74c496e567b18268d384992ce832f3429734f2ed329d08ec89f0",
+      "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift": "20d99b2672c96d009f0cb5156d0d6baff1595cbea64aa9a86844f3a504ae31ad",
+      "telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift": "36647c4d814154d0cba1eeb504bdbbeb69761962f49dddeb03bf32aa125051e3",
+      "telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift": "c73a8ef9a6ec7a7a6899593309c9671b83b31ae8523d87aa327c1726645280a6",
+      "telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift": "727b11e0290fae991b0006dc7fd6cc8fddf890f44542369b4dbd80ececa2e64a",
+      "telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift": "1e9a3e3b3fe498e7aeda6aaa362cef73e3fea960a385b24e73e5d5440aeb459c",
+      "telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift": "aa1b4bfca799029dee83cb4f21de9f81a6e289bb828ae9e59f1bcced6f467043",
+      "telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift": "43b9a5973d71cea2ac2c0e6201a7cdd016323c3e6b94c294c15a4339744c8ff3",
+      "telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift": "c245db0e3080bb54576a66de9be89d547cb4548b675bfbf90654afa6ff9411a0",
+      "telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift": "c3bfbd28e5a95117b0aa2847253e5be583c4a3fa5f663a1ffc6ae4ba0898b55f",
+      "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift": "de8558fb76c64b42218d3120c07322cc4776ba2f063ab67d803bc8f362570d7b",
+      "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift": "62e0610fc5163b71ed2750abcec9ad7b8c901ba55353c1482b9dd46da91d5684",
+      "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift": "103bbfcc67a097d2736401535fc47c1e8a98dc89024f11db31a8151cb6032407",
+      "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift": "298820bfaff75465cd1d71bce74590c0519b66115bcac2aa69e03c53ade2a5a0",
+      "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift": "dba485aceaf4138e0ad8ebe76778163d422a68865997b51b7589de3cd6dc5595",
+      "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift": "c39fbd5822ef2d7c4ded41fc4779a565f4a4aa12a47d70bce7c0c8ca60156b88",
+      "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift": "f9a341393d931811d1d788db894e016af95553ebf64477514fe25add154b1d59",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift": "6dedee398764cac4b09425319b5016ca3d1c4ed47ebc47c12d163d4c29e4d81d",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift": "df100aed17e24d8064f8fefce06ce8fb30a34438c963670e0fad569b55281a22",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift": "682862822a9bc7c0401303fb8b1e9f34addce378fbe571b467851741ca73e154",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift": "5fbc9b289063b335060ffbf1cfcb9350a5ed927037fcba5985e1d1309a8d7480",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift": "eb87fda6da1ec6484fd265fa7c76e3acb8790e60345799411b9eea0f18ade79e",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift": "964b2323e272e75a9d31b044563666c26a9bb7fb3dfd08e77efe31717288204a",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift": "4385ec347239ba8096b30775469568ed1fbd0ae750a1e94f6e1bee0bbdbd2946",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift": "82f0bd6d3b55687c13d3d52f116ddd4a0d3a714cb536a6a98a6e1e9a152199c3",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift": "a03a812c079d2f7e9ad89d3d2962982bcfa7bb1c0be2fa37425e6c901172f67d",
+      "telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift": "3ed83e2a1fd6bf5a0710d6bda0be5a6bc782c6c8f086faab928bfbccc6b84197",
+      "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift": "1f525a819556db7177dbe376c4f99b79dd728a7a3bdb9e7c5ea7b6635f8f2244",
+      "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift": "e6aa81e474a52ab288b1bccccd5b5ee0dfbad46f7f78b44c61a750c56f3a204c",
+      "telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift": "053ed5743a6b91b4b46ef61b25c615b750917283e63ff84ad94dbae605d1e9ad",
+      "telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift": "d0b4c529ed2639cd803425cc6da673ad24dc2e6ec583ebfb8b036ea73f8a0f71",
+      "telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift": "47b553c8160b4f89ad6984525007eb2c5f7d4be7fa1ec3975510eaf4111eae92",
+      "telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift": "8a8dcb73d68cddc322703c4e43f83a1e606bac617b69edf18eaac9cded8d00e3",
+      "telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift": "f9283ea01b4bb6dab17461d9d15199b9873d180692e3620b3b85d3e636f0e72d",
+      "telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift": "88cf892678bd2bfdc968dfcc7abd8c53d3165655c269f0ba6328a1d23fb12819",
+      "telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift": "250f461d596cdd4ecbc8fb8e6c07179c82b45894e76b9e62f938d8c38e9c548d",
+      "telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift": "9299e5699c855563d1bb0a8e66493c6a7247e72da0d8a66033dfba80479c553c",
+      "telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift": "35ef56b15d48857f600acf18bb83f84a873d6e0a37730ffd91241c8c517e39ad",
+      "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift": "1479a7b3fae58563bfeb52479e239dc04d4303cd184c03c1766affc97cda6a18",
+      "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift": "69a8fc4cc534be6c4b84f9c0b3a9a7955aa887e028da57dab621a37d06651e4f",
+      "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift": "cc81233362a5636970d38180e4e59e9b13f0605854fe683f74f773f7286b6409",
+      "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift": "9fc683d6d03b63970df3f39d6ccf49088971deebd07f4b69687343858460ea1c",
+      "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift": "0c7e68e03e7e9395869f0faea29471908568ba7f3a440af59885bf712d869614",
+      "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift": "7031d1fb27e6554f97bbdc8e1dbe47e3c5a690fbf881a6f76a95553ed02af0fe",
+      "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift": "fc7e9f46d54b86275591e43333f29912991ba493c6740076572cd45fe8452d81",
+      "telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift": "346bf6173b6511de22b24958993cf2e889b247ce896dd0dea0e0e76118efc357",
+      "telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift": "041e0637da0ba6dea33811993f4e16588b1ad8a5252d9e4aae9377cc1b4b3450",
+      "telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift": "d038ff616657c28ebba308e9559a6c888979c9581083d5ae2daed51b7ac80996",
+      "telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift": "864a9e79aebb4d4aa5cf520beae655648ac602cb4e88aef71cf76aaef66de3e6",
+      "telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift": "41520adf48fd585fc907df73dba89e6b47c95a51329c61afd0f40ae9ffc15f22",
+      "telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift": "0c94a4b0c1ad106b3d39288fe1dfca091ea7c059a43af6e22f5f393f4a8bf17e",
+      "telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift": "848444b565610f031fd1b32f0a3e0cd7ef0a0da9bbba413e390abaad59306cc0",
+      "telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift": "b63490de18189e288c104c20c0a7d63fdc5b3d8c1bc6225a251add0a8afc5eb5",
+      "telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift": "e4faa1b15005dfadb4f9b27fd4a13a00dd8f293a4b58c1297b82fd510310eeaa",
+      "telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift": "531d0aacae723e4d4f8d13b3332265df278f3b280ea3ce9e3311acaddb3ce89b",
+      "telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift": "b32f2d421273ccd851b94d842dce3367a53d8182f6e7251e994de8da7c057896",
+      "telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift": "0526426839edae76d459a2eae2118bc499b02ed577bc7648f54d100cd5fbb958",
+      "telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift": "71d8c2f2b962cce1e8d0f8d6054b94dcac51406fb83934d6f693f687a382a920",
+      "telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift": "76c8010b139911d18af1a6e5f20ffd275e65a521ec433fdcf8d636f6e6ca1ada",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift": "c744aea6a9354e5f495833d1a671c7eb5a6ae1e6445f676b0ead3dfa1a78889f",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift": "069f8236ebee325136f4b128354a2a0e821157b5ca3a24b0c649be95fbf83e8b",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift": "728a69db69d92d66c67a7c0575fa55ce877d803e0f6b52a1a4cad2a62a87ab7f",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift": "cf3d4c62ee9e6a83c05073b3212bbd2358f8d165f68cac61a74c0aabfa51eafa",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift": "dfd8d8f8f00eeb2d1a8a74611f49ef77df0a3fc0c3d081df90035781ef3475f0",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift": "f2c70a6456ab88711cdac07bfca8bc3ca5f3faebfa2187f5a6be17e25bf4665a",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift": "da5a5290ba617c590f031ca3a538bf7f954dbc1d7c753ee21c479b9e5c2847b2",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift": "9174904a84922450dc29d4227e19270632165f2b1719fff72d7288091639e09b",
+      "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift": "441dcd348b987476581d7e6f3f05e52472bba7e1c7b4cd255d88ffab1d2d65d2",
+      "telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift": "718721a8d748acd81eb525ced0a1fe37d2207fa8c9c71ea3c771612730e7ac62",
+      "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift": "71ee01305e5d2127ca2d90e390929e944169e6f5fff312837ef35cebd2b0d3f8",
+      "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift": "791e4547e2000b02fbfcbfca4805295c62c190c754e242048c91ce1367d33243",
+      "telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift": "151a8874e3aec4af3664ed7cd02e0ed6e4fc33687d55c693657c460ce47a7271",
+      "telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift": "95d395f94465170c895a406ea3ba87dea27b01bc72ed941a3c03cb3ebe90bd08",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift": "dd5aa9982c7d087f55edb2bf8a7761bab524496b2fb3ee25d56e5d5024977a82",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift": "a66a7ce4fcbe401046cec9db21ea557e146f466367f8a73cc7c7eaf3ff1f34f9",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift": "47c81b22ddca8b3fa21d8c47f2fc64f893360d25dbc27b31555a630505e4c5fe",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift": "dd8ed72261adf263c0504b67f509ad175fc8527fd1e938a56b2052ecd20f1eaa",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift": "e783d72c8d0b974c39566290123b7b251bee77455e1bddb20b50e6b7fb727374",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift": "a73e0e71f3053071d8ced571dc112e8d9f3c7ef880244b843db7b66b8a889498",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift": "baf0c7c0c88ebbf07a4ea64d9feeb1ee9513987a20af0d581697f7140a17495e",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift": "ee4f0ee88d75f2ab09a10fed075e50dfb17099ec74b82218cd2aa669a8bdf6c2",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift": "624f2f0b317a7b83b96f77dde55ef547ae4ce63a71938831068c28520f4b4826",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift": "a0ff96df656b47d1ee8d9794b85c0e482768c5d590c2ddf6c485cb52d653a93b",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift": "82f8c1752f468a32e425c79f739b53d6cdc60625f5ea1fff12f462c90474d244",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift": "a0db45660637d322ef0874873d831bca335d7e41609a1c40cea37bf4656b2cf8",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift": "aaafc3f86c873d34c303da5835d812e976c1b1cf99e017c8d1496a799ed6e997",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift": "3c04e7504d0aa83061d98c0ee4b60cb774da5bdf5e9d1eab5435eced92b3e060",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift": "66f1f77af0f779f6d1283c2e74d9c76ef9d9193ca23df0f61da5c75277021fff",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift": "16e31efd5119fbcb3c4a9ae7f8919b60a702808a5bd22f5c3a176f4a73a65551",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift": "7d2847089d4f07a0a162077e76c2193850ca77fab85d330aef40bed0cd69e25d",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift": "a85006b2fdbc6b5e620f1d2eda62610e17ea966c8644def93a0e6f7b536703f9",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift": "7fb883e9883e65ff142daf9d35b847164f6d9660afb5e4b6ac62ab4484ed88fe",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift": "a1807942be76ee740abf974a06d94106845ab0dd52ba95c02f77c5cb7cfe1433",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift": "cc79f10ca8f0503a2e8768c3c8547e03322ec32b193fe92e9179d39f3db00779",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift": "d875dddc3e187e5772396a75dca2aa4d3db4a0f57e4332c08009fc38f106cf42",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift": "052aa019d3f812cbc3c07cbb39816b5b0806e64ec222d31b84e3df30391db465",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift": "d38677465f11c5758f83b5c6c8f7037ba5416d720f0963eda8434af43d763296",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift": "c74a3ffa97f373d9daefce1092f969da1798946d76595aab1db96dd87f1f3b35",
+      "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift": "eb754741212c722daadb206cef97ce25f505809d01258de420d8f2a1038d886a",
+      "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift": "7a23fe2c4d0bc2d45430b42453e1dc8280a30bfed7c333a496fbc5b00c5c10ad",
+      "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift": "993f947e5d7fcdb4925e9f49ab382a43cff562837fd0bda4dec0c538051b490a",
+      "telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift": "f910d41919c1851b98e0c67be48374804b4046a52e9d1a359a450dd9e7ef0fda",
+      "telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift": "87f67dc72bacb518903db2b2dd5a6a953dc9d2f1ad2a5feba23d66ebe2a3506b",
+      "telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift": "4812c1af8526be0f8817b2a5909576960f355c5960fe811e39ebe58db56398c2",
+      "telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift": "3372725bfaab12a931e5f49dfa0a3eb4e07b50ad77457e165a8ae8a531e3f6a5",
+      "telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift": "6a32ba7c4ab447c214003b6746038e0951c3fb0c2c1d769980c587f1c8156868",
+      "telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift": "06ff3762bc6ace97088fc3dc109e914c309ddd7ec65c2981dae8b4d33292917b",
+      "telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift": "06bfc495abae576109a960a6912705bb3b49e4ea2df7ee9de4549f4dd6ced6a0",
+      "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift": "38448a77a8fe17cbf9bfbc2319c42ad5b866d75872461c30ce7ccec06a482380",
+      "telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift": "431429c870f55a99251b6a32a07138dbcc8cfcfa309f7f49b2f3a2bd81c9ae9d",
+      "telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift": "518edc6ddd6bb058aaf872cbc5007674754d6d654e7426cd3ad563f79e1191f3",
+      "telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift": "d585f99ee23a1f7baa617613aa2202a76e5e32341ad66921984a32a4d3215442",
+      "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift": "8dbd1b19ce5f39ce81d6894582fe552bb945615a89856d1002255ea74366f1ef",
+      "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift": "b274603e23b064361c771386029142bb2c4c4248915c98af6f0d01296c078b23",
+      "telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift": "640fd05898122a7b3c52dcd25c122ed1fd54629fa8ae91214606d14febb8efbb",
+      "telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift": "b49aa08841369f2eab9d84d29a98a1094eeea5f214a26caeff0871679750113b",
+      "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift": "0ba73ee0078fa3345f1a7cf6a1449cd1fe5655b90b3676d94e0f937a502f61d4",
+      "telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift": "e1f54095c45f00b0588cc1f0209b75d92ddd61635d4ca62eb8e3784f0d2a5659",
+      "telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift": "0101f29e3e5516534ec153b66c73aa36cc470d121d624010c348f8a4edb76ada",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift": "10c7d025bfc855e221c9935c5725636c8e255fd835a20f375c16f51eeb7bc860",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift": "b1866a2253849117b55a476b261aa42c6213408a468da60709fdcde8e689ccd9",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift": "c1cf85015b9932f9fcd9da20e514f7db75f31ee13f1d88f1d6f71838b5053671",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift": "06c845fa29811727195503939b5f680b7e9112186ba031fb55224ab9032454a2",
+      "telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift": "dbc7f549cbc788e01eee4a13d4468ce4dda4dd186ca389cd093463ea107155a7",
+      "telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift": "3ce3be278a64c42ad118edd3bfc0025caee439aa68d0de9a02c1d95716680fa0",
+      "telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift": "bd28ab7020c28dd80d12c42e7af240c8c2be16074c7edef455367341005d57aa",
+      "telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift": "878172f87fc0f5a84356fdf07b91c9d2923d893ce497cc1ad9bbddfaed59c155",
+      "telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift": "9d746805bd5ae3bb2cbaa497e2c7ad0b4e858e619ba98899deefa791eae89f18",
+      "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift": "9d7d8b3257be066fc1c9f9911b3004225eb94d614ac57e2bcbd9adcd9b18bc3e"
+    }
+  },
+  "records": [
+    {
+      "path": "telegram-ios/submodules/AttachmentTextInputPanelNode/Sources/AttachmentTextInputPanelNode.swift",
+      "line": 29,
+      "symbol": "counterFont",
+      "request": "Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])",
+      "source_sha256": "dc58977961afa8f57ccb47a3c5bb0329d3f840cf530105f40f992fc7db5b6eb7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutActionButton.swift",
+      "line": 14,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "ed5c36a93566989e2b339ccc39c0865e2aebd0ef9fee0c5c559d38a35354c902",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift",
+      "line": 75,
+      "symbol": "titleFont",
+      "request": "Font.semibold(16.0)",
+      "source_sha256": "49139ff058c5e9dd4f21c31befe8fa6dc715191449eefa61df95d333208ec532",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutHeaderItem.swift",
+      "line": 76,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "49139ff058c5e9dd4f21c31befe8fa6dc715191449eefa61df95d333208ec532",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift",
+      "line": 78,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "8e12185a8fc103c5d9dcc87370847f2812f3b826d449f0a8a40770bc38a9b102",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutPriceItem.swift",
+      "line": 79,
+      "symbol": "finalFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "8e12185a8fc103c5d9dcc87370847f2812f3b826d449f0a8a40770bc38a9b102",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift",
+      "line": 77,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "9039d7c20e3ed0794b12bd0841e8e064c23393fb02963f7e0b4510de495b9933",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotCheckoutTipItem.swift",
+      "line": 78,
+      "symbol": "finalFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "9039d7c20e3ed0794b12bd0841e8e064c23393fb02963f7e0b4510de495b9933",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentActionItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "4c917835ce8d4a3eb0be15d4a3d11989756d7d67f7a293b49b1d737d8d18b916",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDateItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "bfce3e6725d9b8c00b5dcf7f90587ec0c8ec615b8c698a7cec52cd1c3dc1d7bb",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentDisclosureItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "c43d83da987d5db738529dbe9c7ed5079fc860b912d60f03adb12bbd770a0313",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentFieldItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "16f4607c3e9fc3ed5b5e179528fa2069fe44179a2f1aa2d16d90434166c675d7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentHeaderItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "4591db1b94b37aab8320ecc4c2d547c276ef88a8c4f2e1bdf472212f337d9ecc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentSwitchItemNode.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "3782742e99853f03673cf890242e1bfd4d2df79871b29b6bee626dcac69d432c",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BotPaymentsUI/Sources/BotPaymentTextItemNode.swift",
+      "line": 7,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "04d08498716228909c5f1b38cee3b6bb7aa58f72058ac46a5c5c85b87cbc73f3",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BrowserUI/Sources/BrowserAddressListItemComponent.swift",
+      "line": 14,
+      "symbol": "iconFont",
+      "request": "Font.with(size: 28.0, design: .round, weight: .bold)",
+      "source_sha256": "406008ec59f98a370a5ace1f1e3b3467c2c89276870eca1287f4e21814c23a41",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift",
+      "line": 15,
+      "symbol": "textFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "58469a7b401ae77f66435ea619e991b9f554ceb6d66cc9cfead7a04764d0e33a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BrowserUI/Sources/BrowserExceptionDomainAlertContentNode.swift",
+      "line": 16,
+      "symbol": "boldTextFont",
+      "request": "Font.semibold(13.0)",
+      "source_sha256": "58469a7b401ae77f66435ea619e991b9f554ceb6d66cc9cfead7a04764d0e33a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/BrowserUI/Sources/BrowserFontSizeContextMenuItem.swift",
+      "line": 27,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "2878c349901e90d823264a1a31e96ab9d003e55364dcb7c67727d56fefb245af",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/CallListUI/Sources/CallListHoleItem.swift",
+      "line": 8,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "e907abb797d5f03c1981601ae669921ace082218b0b1ffe05973049733807754",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ChatListFilterSettingsHeaderItem/Sources/ChatListFilterSettingsHeaderItem.swift",
+      "line": 74,
+      "symbol": "titleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "288d4e4efa2c2c1b3fef49d3c7fa7402f629d8f577e11f40efca8ca5600c4b23",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetCategoryItem.swift",
+      "line": 103,
+      "symbol": "badgeFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "eb81fd02b1111b4f7e534c5ec6703357c40879158d189aeb05b67099b2e9eda6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ChatListUI/Sources/ChatListFilterPresetListItem.swift",
+      "line": 125,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "8aa9e087fe7930819720693f01e754d0625ea4319540ceb0e6c441c84a6a334d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift",
+      "line": 10,
+      "symbol": "font",
+      "request": "Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers])",
+      "source_sha256": "7ed6144f624508c44a2a1628f269ba2eecc7ed3a5bfe85d656c23f3eb77bdfe7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ChatMessageInteractiveMediaBadge/Sources/ChatMessageInteractiveMediaBadge.swift",
+      "line": 11,
+      "symbol": "boldFont",
+      "request": "Font.with(size: 11.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])",
+      "source_sha256": "7ed6144f624508c44a2a1628f269ba2eecc7ed3a5bfe85d656c23f3eb77bdfe7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ContactListUI/Sources/ContactAddItem.swift",
+      "line": 12,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "6437daf1eb80664900b2f3e2d666c4b931eb5044d6eecfd677880b3a6a570dc3",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift",
+      "line": 74,
+      "symbol": "controlFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "d90392ec173fd30f3340f3b67f717e65d0833c2207f758618686d27d16a93390",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift",
+      "line": 75,
+      "symbol": "dayFont",
+      "request": "Font.medium(13.0)",
+      "source_sha256": "d90392ec173fd30f3340f3b67f717e65d0833c2207f758618686d27d16a93390",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift",
+      "line": 76,
+      "symbol": "dateFont",
+      "request": "Font.with(size: 19.0, design: .regular, traits: .monospacedNumbers)",
+      "source_sha256": "d90392ec173fd30f3340f3b67f717e65d0833c2207f758618686d27d16a93390",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/DatePickerNode/Sources/DatePickerNode.swift",
+      "line": 77,
+      "symbol": "selectedDateFont",
+      "request": "Font.with(size: 19.0, design: .regular, weight: .bold, traits: .monospacedNumbers)",
+      "source_sha256": "d90392ec173fd30f3340f3b67f717e65d0833c2207f758618686d27d16a93390",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/Display/Source/CollectionIndexNode.swift",
+      "line": 5,
+      "symbol": "titleFont",
+      "request": "Font.bold(11.0)",
+      "source_sha256": "0808b270960d0dc0960cbe95017ee0637efe99cbaa086fe75b952420105aa863",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift",
+      "line": 15,
+      "symbol": "titleFont",
+      "request": "Font.bold(16.0)",
+      "source_sha256": "59aacdf324a6c19ab14b1e0c9a4b2ee2b5652013ddaf81c472606a1ddea855a6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift",
+      "line": 16,
+      "symbol": "statusFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "59aacdf324a6c19ab14b1e0c9a4b2ee2b5652013ddaf81c472606a1ddea855a6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/MediaInputPaneTrendingItem.swift",
+      "line": 17,
+      "symbol": "buttonFont",
+      "request": "Font.medium(13.0)",
+      "source_sha256": "59aacdf324a6c19ab14b1e0c9a4b2ee2b5652013ddaf81c472606a1ddea855a6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift",
+      "line": 148,
+      "symbol": "titleFont",
+      "request": "Font.bold(16.0)",
+      "source_sha256": "ce41f056d44c6d01ee5e1f8e4e376e7710b9832bfec7ab9fd146404a69072763",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift",
+      "line": 149,
+      "symbol": "statusFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "ce41f056d44c6d01ee5e1f8e4e376e7710b9832bfec7ab9fd146404a69072763",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchGlobaltem.swift",
+      "line": 150,
+      "symbol": "buttonFont",
+      "request": "Font.semibold(13.0)",
+      "source_sha256": "ce41f056d44c6d01ee5e1f8e4e376e7710b9832bfec7ab9fd146404a69072763",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift",
+      "line": 43,
+      "symbol": "sectionTitleFont",
+      "request": "Font.medium(12.0)",
+      "source_sha256": "3466a4a641d5e83f8fad70b753e8f9dd2600ea272ee5c436e3fe2b4620ad93d0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/FeaturedStickersScreen/Sources/StickerPaneSearchStickerItem.swift",
+      "line": 110,
+      "symbol": "textFont",
+      "request": "Font.regular(20.0)",
+      "source_sha256": "3466a4a641d5e83f8fad70b753e8f9dd2600ea272ee5c436e3fe2b4620ad93d0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/ChatVideoGalleryItemScrubberView.swift",
+      "line": 16,
+      "symbol": "textFont",
+      "request": "Font.with(size: 13.0, design: .regular, weight: .medium, traits: [.monospacedNumbers])",
+      "source_sha256": "7baab66147397c67efb1468e03a271719977c99f48018595241efd53bf39a96a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift",
+      "line": 214,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "d578d5cd035bccf3d5ca9d92fc264176ec7d9b4e7b9fc9895c3a21ccdb032bd9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift",
+      "line": 215,
+      "symbol": "boldFont",
+      "request": "Font.bold(17.0)",
+      "source_sha256": "d578d5cd035bccf3d5ca9d92fc264176ec7d9b4e7b9fc9895c3a21ccdb032bd9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift",
+      "line": 216,
+      "symbol": "italicFont",
+      "request": "Font.italic(17.0)",
+      "source_sha256": "d578d5cd035bccf3d5ca9d92fc264176ec7d9b4e7b9fc9895c3a21ccdb032bd9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryController.swift",
+      "line": 217,
+      "symbol": "boldItalicFont",
+      "request": "Font.semiboldItalic(17.0)",
+      "source_sha256": "d578d5cd035bccf3d5ca9d92fc264176ec7d9b4e7b9fc9895c3a21ccdb032bd9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift",
+      "line": 14,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "477f5c6cac7098479b48f7b1cdfe27911ab726425d5b1ecbbc74c7aa979b7f5a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/GalleryTitleView.swift",
+      "line": 15,
+      "symbol": "dateFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "477f5c6cac7098479b48f7b1cdfe27911ab726425d5b1ecbbc74c7aa979b7f5a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift",
+      "line": 175,
+      "symbol": "placeholderFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "515d7bbacdda904d88bf71b7234a8a00f8539dda7a1349ce8ddd6e02ae24e8f6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/GalleryUI/Sources/SecretMediaPreviewFooterContentNode.swift",
+      "line": 8,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "7b52628ea63c7df49939f2a42f64c78d7f1d224d141db67a4c383399f8b183c2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/HashtagSearchUI/Sources/HashtagSearchNavigationContentNode.swift",
+      "line": 13,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "e24a61fc9551dab21fceff8482a79acf1ba0debb7b048d8d1da9ad868f611a1d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/HorizontalPeerItem/Sources/HorizontalPeerItem.swift",
+      "line": 22,
+      "symbol": "badgeFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "a8702d2bc3f62662145b476fd84f07785796ec7a1a39937da3acf90681a80d16",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ImportStickerPackUI/Sources/StickerPackPreviewGridItem.swift",
+      "line": 58,
+      "symbol": "textFont",
+      "request": "Font.regular(20.0)",
+      "source_sha256": "b605f75335e21f96f4c1c8dd5c6086e80d793b38afced6b59901b20839fa085b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InstantPageUI/Sources/InstantPageGalleryFooterContentNode.swift",
+      "line": 16,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "e26b51228b65dd4fa1d6a62511a3c53ebffb76df62c442fcfc0d0e3106a0f01d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift",
+      "line": 75,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "382e4cc8bdd89f6d3d7cdb789296851c0d964c383af40d5aa76b0f3a9dbae333",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkHeaderItem.swift",
+      "line": 76,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "382e4cc8bdd89f6d3d7cdb789296851c0d964c383af40d5aa76b0f3a9dbae333",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift",
+      "line": 62,
+      "symbol": "titleFont",
+      "request": "Font.bold(24.0)",
+      "source_sha256": "0a794b95079c65b43abff1fe42f77c223e091f6c666ab4abc558a67b91ded597",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteHeaderItem.swift",
+      "line": 63,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "0a794b95079c65b43abff1fe42f77c223e091f6c666ab4abc558a67b91ded597",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift",
+      "line": 64,
+      "symbol": "titleFont",
+      "request": "Font.medium(23.0)",
+      "source_sha256": "00d27709b44b0628cd9208bb2c77160b160227b7973d565de3ec05c8706b12cc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkInviteManageItem.swift",
+      "line": 65,
+      "symbol": "textFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "00d27709b44b0628cd9208bb2c77160b160227b7973d565de3ec05c8706b12cc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift",
+      "line": 350,
+      "symbol": "titleFont",
+      "request": "Font.bold(17.0)",
+      "source_sha256": "a7755f53a1c5b9749315c63e217c4541ae3f03868600cef4b47785153f19352a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteLinkViewController.swift",
+      "line": 351,
+      "symbol": "subtitleFont",
+      "request": "Font.with(size: 13, design: .regular, weight: .regular, traits: .monospacedNumbers)",
+      "source_sha256": "a7755f53a1c5b9749315c63e217c4541ae3f03868600cef4b47785153f19352a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/InviteLinksUI/Sources/InviteRequestsSearchItem.swift",
+      "line": 19,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "5e7a8c6e84f36e30bb2432a1cef7b95d9d0cbcd4e8cc15385eb3b21adf82b6a2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 88,
+      "symbol": "labelFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 89,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 90,
+      "symbol": "textBoldFont",
+      "request": "Font.medium(17.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 91,
+      "symbol": "textItalicFont",
+      "request": "Font.italic(17.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 92,
+      "symbol": "textBoldItalicFont",
+      "request": "Font.semiboldItalic(17.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListAddressItem/Sources/ItemListAddressItem.swift",
+      "line": 93,
+      "symbol": "textFixedFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "fd7cd5c20287279a2ccff8a7c9ef8728ee93837503f50d2cab18fa27d33f40c6",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListPeerItem/Sources/ItemListPeerItem.swift",
+      "line": 721,
+      "symbol": "badgeFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "b9c3cbed59dc9be81c7bc11b2bfaecfa42b2ce2068edf5e184e85aa30502d268",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/ItemListControllerTabsContentNode.swift",
+      "line": 10,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "f8f4ac4af05c518484b05b60d852befde55c1ffd8202d8adc4c831cb0d7abffd",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift",
+      "line": 82,
+      "symbol": "titleFont",
+      "request": "Font.regular(11.0)",
+      "source_sha256": "b83aa3921e4e654b8f2bcd6345eaa21427e19f9f40cc483e8b1bf5666473e293",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/ItemListRevealOptionsNode.swift",
+      "line": 83,
+      "symbol": "iconlessTitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "b83aa3921e4e654b8f2bcd6345eaa21427e19f9f40cc483e8b1bf5666473e293",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift",
+      "line": 197,
+      "symbol": "badgeFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "7fab1ebb909199229f9445677049825860d6c89004fe888c135421cd3716e0a0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/Items/ItemListDisclosureItem.swift",
+      "line": 198,
+      "symbol": "boldBadgeFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "7fab1ebb909199229f9445677049825860d6c89004fe888c135421cd3716e0a0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ItemListUI/Sources/Items/ItemListPlaceholderItem.swift",
+      "line": 61,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "b5ebb1ffc72312a2b0004af60e318a369653b9e5062f48ec24c1e4738af93ee8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ListMessageItem/Sources/ListMessageFileItemNode.swift",
+      "line": 114,
+      "symbol": "extensionFont",
+      "request": "Font.with(size: 15.0, design: .round, weight: .bold)",
+      "source_sha256": "b24548409afcabaf258ce47d1a53dda8bf3a004c27cc39fe3605544ed49c7a16",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/ListMessageItem/Sources/ListMessageFileItemNode.swift",
+      "line": 115,
+      "symbol": "mediumExtensionFont",
+      "request": "Font.with(size: 14.0, design: .round, weight: .bold)",
+      "source_sha256": "b24548409afcabaf258ce47d1a53dda8bf3a004c27cc39fe3605544ed49c7a16",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/ListMessageItem/Sources/ListMessageFileItemNode.swift",
+      "line": 116,
+      "symbol": "smallExtensionFont",
+      "request": "Font.with(size: 12.0, design: .round, weight: .bold)",
+      "source_sha256": "b24548409afcabaf258ce47d1a53dda8bf3a004c27cc39fe3605544ed49c7a16",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/ListMessageItem/Sources/ListMessageSnippetItemNode.swift",
+      "line": 20,
+      "symbol": "iconFont",
+      "request": "Font.with(size: 28.0, design: .round, weight: .bold)",
+      "source_sha256": "1b01d3364158179d479c8bed95f6ab119fe657595968fad3e1746f670920cc8e",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 7,
+      "symbol": "compactInfinityFont",
+      "request": "Font.with(size: 14.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 8,
+      "symbol": "compactTextFont",
+      "request": "Font.with(size: 12.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 9,
+      "symbol": "compactSmallTextFont",
+      "request": "Font.with(size: 10.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 11,
+      "symbol": "infinityFont",
+      "request": "Font.with(size: 15.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 12,
+      "symbol": "textFont",
+      "request": "Font.with(size: 13.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LiveLocationTimerNode/Sources/ChatMessageLiveLocationTimerNode.swift",
+      "line": 13,
+      "symbol": "smallTextFont",
+      "request": "Font.with(size: 11.0, design: .round, weight: .bold)",
+      "source_sha256": "7f4b44ba036c7eca4e8df62a0000fddff0e6209817f945b101eda6aece6a2012",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/LocationUI/Sources/LocationSearchNavigationContentNode.swift",
+      "line": 9,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "445dea1c537b85cc82c57a644b07813786702b521e83bef9a06ce896ac07598b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift",
+      "line": 112,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "f23693b010fcecfb64ec2a1553857aa757d398fd860df7256c3c273c50c5500b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsAlbumGridItem.swift",
+      "line": 280,
+      "symbol": "titleFont",
+      "request": "Font.bold(20.0)",
+      "source_sha256": "f23693b010fcecfb64ec2a1553857aa757d398fd860df7256c3c273c50c5500b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/MediaPickerUI/Sources/MediaGroupsHeaderItem.swift",
+      "line": 55,
+      "symbol": "titleFont",
+      "request": "Font.bold(22.0)",
+      "source_sha256": "acad5d5cdbaa434c0f09abf882ebcf05be7df230c16bf4b6923b98f2b8f7adcb",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift",
+      "line": 22,
+      "symbol": "titleFont",
+      "request": "Font.regular(20.0)",
+      "source_sha256": "4b47d3440220312d6ef56f0966fcb0b51f4a4b7d317da2b6b100bb7ecab7a38b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift",
+      "line": 23,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "4b47d3440220312d6ef56f0966fcb0b51f4a4b7d317da2b6b100bb7ecab7a38b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryControllerNode.swift",
+      "line": 24,
+      "symbol": "buttonFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "4b47d3440220312d6ef56f0966fcb0b51f4a4b7d317da2b6b100bb7ecab7a38b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift",
+      "line": 9,
+      "symbol": "regularTitleFont",
+      "request": "Font.regular(36.0)",
+      "source_sha256": "dbd68640021e7a4f7be06090cdc428481513a918dc4edfdd6f75f33afabd9ae4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PasscodeUI/Sources/PasscodeEntryKeyboardNode.swift",
+      "line": 14,
+      "symbol": "largeTitleFont",
+      "request": "Font.regular(40.0)",
+      "source_sha256": "dbd68640021e7a4f7be06090cdc428481513a918dc4edfdd6f75f33afabd9ae4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerActionItem.swift",
+      "line": 7,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "f9d2cf74ab611d0f3a68d37e92f91f3c481e2a0b513307982240257b4f17e9d2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift",
+      "line": 7,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "08d015d8aec966c27d52cdd2243dde0f59e1fa1d03af8d573a9aae5ee8cdf460",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerDetailActionItem.swift",
+      "line": 8,
+      "symbol": "errorFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "08d015d8aec966c27d52cdd2243dde0f59e1fa1d03af8d573a9aae5ee8cdf460",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerHeaderItem.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "8ecb3598540a1ba2b6eb6f0609dcfa7a0516670b412c763370e90a14e6d4d0b5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift",
+      "line": 7,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "a018822962932518233ca1140fe4f4637ee030291548724bc218a77b4ec8d2c1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextInputItem.swift",
+      "line": 8,
+      "symbol": "errorFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "a018822962932518233ca1140fe4f4637ee030291548724bc218a77b4ec8d2c1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/Form/FormControllerTextItem.swift",
+      "line": 7,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "49f1c937bd14b3c880025207bf49179682f29abf3ac329174cb41b2d5dcdb14c",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthAcceptNode.swift",
+      "line": 10,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "463146a8ddd4d8b84eb29ed28d5bf2aaf7351d24ceaf86f123e61e804254f954",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift",
+      "line": 11,
+      "symbol": "infoFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "65057227528d5bf6df7e3adb52272a57083b1260390166c5e54a88a1c7b04eb1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift",
+      "line": 12,
+      "symbol": "passwordFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "65057227528d5bf6df7e3adb52272a57083b1260390166c5e54a88a1c7b04eb1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormContentNode.swift",
+      "line": 13,
+      "symbol": "buttonFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "65057227528d5bf6df7e3adb52272a57083b1260390166c5e54a88a1c7b04eb1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift",
+      "line": 392,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "d2be9624ab03b7e6973e8eb4459a7a6163a45d7dd5eb3c25710cff610c029605",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthFormFieldNode.swift",
+      "line": 393,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "d2be9624ab03b7e6973e8eb4459a7a6163a45d7dd5eb3c25710cff610c029605",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift",
+      "line": 14,
+      "symbol": "titleFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "4c40bd5f8cfc1c1721077747872b1b67b498b73f030f96bfd82c4d36eb793a82",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthHeaderNode.swift",
+      "line": 15,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "4c40bd5f8cfc1c1721077747872b1b67b498b73f030f96bfd82c4d36eb793a82",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift",
+      "line": 9,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "5628b5df19058552e152ce7c9b73501b720a3eac59447428c2e3c484872c969b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthListFieldNode.swift",
+      "line": 10,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "5628b5df19058552e152ce7c9b73501b720a3eac59447428c2e3c484872c969b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift",
+      "line": 9,
+      "symbol": "passwordFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "8144bae8f8885b5632c294fd2dc554b953ef8fd574738d2afb8a55e15e2e056d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordOptionContentNode.swift",
+      "line": 10,
+      "symbol": "buttonFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "8144bae8f8885b5632c294fd2dc554b953ef8fd574738d2afb8a55e15e2e056d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift",
+      "line": 8,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "736de98006f158f15035f7996659aadb30aa9576c9705462eb3bd281b3137544",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdAuthPasswordSetupContentNode.swift",
+      "line": 9,
+      "symbol": "buttonFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "736de98006f158f15035f7996659aadb30aa9576c9705462eb3bd281b3137544",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift",
+      "line": 15,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "647fa9c49f31232785886f3da481d182ed288b2d9234c5b0be76695e31655c81",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift",
+      "line": 16,
+      "symbol": "titleFont",
+      "request": "Font.medium(15.0)",
+      "source_sha256": "647fa9c49f31232785886f3da481d182ed288b2d9234c5b0be76695e31655c81",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdDocumentGalleryFooterContentNode.swift",
+      "line": 17,
+      "symbol": "dateFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "647fa9c49f31232785886f3da481d182ed288b2d9234c5b0be76695e31655c81",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift",
+      "line": 13,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "685545c979e3699bff90eb4808b372ab540a6cf9b877a26e8482c1f7d9793a00",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormFileItem.swift",
+      "line": 14,
+      "symbol": "labelFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "685545c979e3699bff90eb4808b372ab540a6cf9b877a26e8482c1f7d9793a00",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PassportUI/Sources/SecureIdValueFormPhoneItem.swift",
+      "line": 9,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "33828934d782ea719c5ec6b8bdb9fdc0056613d033ddb87656fbe8e81c760023",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift",
+      "line": 69,
+      "symbol": "iconFont",
+      "request": "Font.medium(12.0)",
+      "source_sha256": "60913de274799f5ff34e3413ac5cee81ef03c8a3650118d01af6f1694500bf86",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift",
+      "line": 70,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "60913de274799f5ff34e3413ac5cee81ef03c8a3650118d01af6f1694500bf86",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupHeaderItem.swift",
+      "line": 71,
+      "symbol": "titleBoldFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "60913de274799f5ff34e3413ac5cee81ef03c8a3650118d01af6f1694500bf86",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PeerInfoUI/Sources/ChannelDiscussionGroupSetupSearchItem.swift",
+      "line": 105,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "7d01260ba652b2846eddf0f607da8c018ae4ed8fe0123206b76f397722165ce8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PeerInfoUI/Sources/GroupInfoSearchNavigationContentNode.swift",
+      "line": 16,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "a4859635922999313fa97b8b1f05cd2090c2b5778829dab13f9c01ca0e4d29d9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift",
+      "line": 9,
+      "symbol": "font",
+      "request": "Font.with(size: 24.0, design: .round, weight: .semibold, traits: [])",
+      "source_sha256": "56fa98197fde6b39dd62fc25a987a28638d3ad0187d0fe78488c311a6ee68633",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/BadgeLabelView.swift",
+      "line": 10,
+      "symbol": "suffixFont",
+      "request": "Font.with(size: 22.0, design: .regular, weight: .regular, traits: [])",
+      "source_sha256": "56fa98197fde6b39dd62fc25a987a28638d3ad0187d0fe78488c311a6ee68633",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift",
+      "line": 50,
+      "symbol": "titleFont",
+      "request": "Font.semibold(20.0)",
+      "source_sha256": "5bbc2c2c418832463693eafe425c4dbe7ecc33b66f54bb7d80bca00b6a41ef98",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/CreateGiveawayHeaderItem.swift",
+      "line": 51,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "5bbc2c2c418832463693eafe425c4dbe7ecc33b66f54bb7d80bca00b6a41ef98",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift",
+      "line": 77,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "a93fdc3b822d04362861eb68f879c15c43f4f48e18e5e70ebdf665bdde475cfc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift",
+      "line": 78,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "a93fdc3b822d04362861eb68f879c15c43f4f48e18e5e70ebdf665bdde475cfc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/PremiumUI/Sources/IncreaseLimitHeaderItem.swift",
+      "line": 79,
+      "symbol": "boldTextFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "a93fdc3b822d04362861eb68f879c15c43f4f48e18e5e70ebdf665bdde475cfc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift",
+      "line": 65,
+      "symbol": "largeLabelFont",
+      "request": "Font.regular(14.5)",
+      "source_sha256": "8373390f253ff88ced0229e2df1a01cf19161eb7c07d7353898612e3a1b0ba58",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/QrCodeUI/Sources/GlassButtonNode.swift",
+      "line": 66,
+      "symbol": "smallLabelFont",
+      "request": "Font.regular(11.5)",
+      "source_sha256": "8373390f253ff88ced0229e2df1a01cf19161eb7c07d7353898612e3a1b0ba58",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ReactionSelectionNode/Sources/ReactionSelectionNode.swift",
+      "line": 42,
+      "symbol": "font",
+      "request": "Font.medium(13.0)",
+      "source_sha256": "dd095cbc5726c545132b825c69b184f380d143532c7467b7e76bcba57949a653",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SearchUI/Sources/NavigationBarSearchContentNode.swift",
+      "line": 13,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "d633bdb5754f39bb23621bc12bd205dc1055a2ef9233b783bf4f991f5a6f1055",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift",
+      "line": 7,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "4d004ba84c0e9930c8ebd56e30dd2c174d69709975130f233f8f6b85df22e3c2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SegmentedControlNode/Sources/SegmentedControlNode.swift",
+      "line": 8,
+      "symbol": "selectedTextFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "4d004ba84c0e9930c8ebd56e30dd2c174d69709975130f233f8f6b85df22e3c2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SelectablePeerNode/Sources/SelectablePeerNode.swift",
+      "line": 22,
+      "symbol": "textFont",
+      "request": "Font.regular(11.0)",
+      "source_sha256": "5a52a8cbaaf41b0077b3f477b5421a37d41249853c830ab5ccf994a53b2f7302",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/CalculatingCacheSizeItem.swift",
+      "line": 58,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "9164e13ac6d7081f1cac34c1fa2ad68bab75657ee7c05bcbaabc43a1d6096372",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift",
+      "line": 106,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "b6b918b320e603c6c9112efb2c5824357bcac3880e62d469a4186bfdffc62c65",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Data and Storage/ProxySettingsServerItem.swift",
+      "line": 107,
+      "symbol": "statusFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "b6b918b320e603c6c9112efb2c5824357bcac3880e62d469a4186bfdffc62c65",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/GlobalAutoremoveHeaderItem.swift",
+      "line": 62,
+      "symbol": "titleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "8b5f871a4af7cc523ec7ac966377faa75ec5a996c660d22dc0dd368f295636ff",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift",
+      "line": 33,
+      "symbol": "titleFont",
+      "request": "Font.bold(17.0)",
+      "source_sha256": "6008c469174e9b094dddb3d15d4413f0e159b746c0707a716cf20c4c228f4fb8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift",
+      "line": 34,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "6008c469174e9b094dddb3d15d4413f0e159b746c0707a716cf20c4c228f4fb8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/PrivacyIntroControllerNode.swift",
+      "line": 35,
+      "symbol": "buttonFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "6008c469174e9b094dddb3d15d4413f0e159b746c0707a716cf20c4c228f4fb8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Privacy and Security/Recent Sessions/RecentSessionsHeaderItem.swift",
+      "line": 76,
+      "symbol": "titleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "ef3c04b52c46a52e1a355976cb6d4e95853c498734cc36434d4d49f7cfc63b56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift",
+      "line": 100,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "06d6150c0e74af8ed9d7b9ff17bd6e8f2632394a26020bf4ae4e0b307eadb772",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchRecentItem.swift",
+      "line": 101,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "06d6150c0e74af8ed9d7b9ff17bd6e8f2632394a26020bf4ae4e0b307eadb772",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift",
+      "line": 76,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "f701ea739b6dd2b927f6aa2ad1f53c88be88f74d8531d9cd08336fb73a80540f",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchResultItem.swift",
+      "line": 77,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "f701ea739b6dd2b927f6aa2ad1f53c88be88f74d8531d9cd08336fb73a80540f",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift",
+      "line": 194,
+      "symbol": "textFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "ef18bba2b6c04546645565f7e0274527aca289c7f3e75c1ccbe7185a9462dc88",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/SettingsUI/Sources/Themes/ThemeSettingsAppIconItem.swift",
+      "line": 195,
+      "symbol": "selectedTextFont",
+      "request": "Font.medium(12.0)",
+      "source_sha256": "ef18bba2b6c04546645565f7e0274527aca289c7f3e75c1ccbe7185a9462dc88",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ShareController/Sources/ShareControllerPeerGridItem.swift",
+      "line": 62,
+      "symbol": "sectionTitleFont",
+      "request": "Font.bold(13.0)",
+      "source_sha256": "9ec394756de286432825622fef4559b764a768371a9a510d6c83d6713c391d07",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ShareController/Sources/SharePeersContainerNode.swift",
+      "line": 17,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "55c35b2c50d6fdb6740cecdd697e174c80b14f4c3d6a956dbca196b982fb2652",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift",
+      "line": 11,
+      "symbol": "cancelFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "7015a84d0f5fe0f8fe7c232aabce3de56515e9b8acd84f9b00b21b8bdbe499ed",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ShareController/Sources/ShareSearchContainerNode.swift",
+      "line": 12,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "7015a84d0f5fe0f8fe7c232aabce3de56515e9b8acd84f9b00b21b8bdbe499ed",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/ShareController/Sources/ShareTopicsContainerNode.swift",
+      "line": 17,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "d419781981e89ab5d38135f82134b1d9de0b3ebe71c4bef456a6e141d23a4e43",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StatisticsUI/Sources/BoostHeaderItem.swift",
+      "line": 64,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "2303eaec53e577e2aa8db6e3aa4bd89761a8cf40df6fbaf1c0a3f0b2e077a460",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift",
+      "line": 67,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "b024fdf5a32745a7d17541730a32b8d38f837fdb2f3f179c5b8f1903b73adb87",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift",
+      "line": 68,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "b024fdf5a32745a7d17541730a32b8d38f837fdb2f3f179c5b8f1903b73adb87",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StatisticsUI/Sources/BoostLevelHeaderItem.swift",
+      "line": 69,
+      "symbol": "boldTextFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "b024fdf5a32745a7d17541730a32b8d38f837fdb2f3f179c5b8f1903b73adb87",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StatisticsUI/Sources/StatsMessageItem.swift",
+      "line": 91,
+      "symbol": "badgeFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "0e95dda8567486fe730bd0d8e7be3c564570c5aaf5aed9a74c81150f79d62fc7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackEmojisItem.swift",
+      "line": 113,
+      "symbol": "textFont",
+      "request": "Font.regular(20.0)",
+      "source_sha256": "fe5442a715c2622ad2eac1cdd81ac7ee826e30ffbe80f09430df570819eb5e3a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/StickerPackPreviewUI/Sources/StickerPackPreviewGridItem.swift",
+      "line": 80,
+      "symbol": "textFont",
+      "request": "Font.regular(20.0)",
+      "source_sha256": "ea1714fbb6554a8d9b75a2ded40d327a17296e417dfb2efc5a9833c566c2346f",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TabBarUI/Sources/TabBarNode.swift",
+      "line": 93,
+      "symbol": "badgeFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "124dce34cd155381145169bf21f68e403feda64db6d3f70585a101e7b5c8bdc1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift",
+      "line": 17,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "bcb0c5beec22f0032c98ad685a1758263398657ee7c95d8979739ff0e9063498",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/GiftAuctionAccessoryPanel.swift",
+      "line": 18,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "bcb0c5beec22f0032c98ad685a1758263398657ee7c95d8979739ff0e9063498",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift",
+      "line": 13,
+      "symbol": "titleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "61c0e754a42dc99d035670c39b5c3baded556fa0ee4278447841e866bc966cf9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/LocationBroadcastNavigationAccessoryPanel.swift",
+      "line": 14,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(10.0)",
+      "source_sha256": "61c0e754a42dc99d035670c39b5c3baded556fa0ee4278447841e866bc966cf9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift",
+      "line": 19,
+      "symbol": "titleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "9527c950598888d700ffbe4c2f260a2722cba1bd75bdf2ce8f944850082f4f09",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramBaseController/Sources/MediaNavigationAccessoryHeaderNode.swift",
+      "line": 20,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(10.0)",
+      "source_sha256": "9527c950598888d700ffbe4c2f260a2722cba1bd75bdf2ce8f944850082f4f09",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerButton.swift",
+      "line": 10,
+      "symbol": "labelFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "49f32b9452c1a4b23c6a25e823eff2bed8b9d3b4e91c37c0fbf0513798555646",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyButton.swift",
+      "line": 7,
+      "symbol": "labelFont",
+      "request": "Font.regular(22.0)",
+      "source_sha256": "e37486cceb4118d5f7a4de6825d16fc5100112d6b8cca293f16dac3bc7227841",
+      "disposition": "excluded",
+      "reason": "editor/art/emoji role outside the ordinary-sans cohort"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift",
+      "line": 8,
+      "symbol": "emojiFont",
+      "request": "Font.regular(28.0)",
+      "source_sha256": "12761b1cc321a7abccf720db3d7063d4401c274db8c128a2570d8ec6fd6cd2a2",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerKeyPreviewNode.swift",
+      "line": 9,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "12761b1cc321a7abccf720db3d7063d4401c274db8c128a2570d8ec6fd6cd2a2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift",
+      "line": 7,
+      "symbol": "compactNameFont",
+      "request": "Font.regular(28.0)",
+      "source_sha256": "f77529694fd42fe81a33d177d9ebf71b459052fbfe36a7d17a9072b3fc0973d5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift",
+      "line": 8,
+      "symbol": "regularNameFont",
+      "request": "Font.regular(36.0)",
+      "source_sha256": "f77529694fd42fe81a33d177d9ebf71b459052fbfe36a7d17a9072b3fc0973d5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift",
+      "line": 10,
+      "symbol": "compactStatusFont",
+      "request": "Font.regular(18.0)",
+      "source_sha256": "f77529694fd42fe81a33d177d9ebf71b459052fbfe36a7d17a9072b3fc0973d5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerStatusNode.swift",
+      "line": 11,
+      "symbol": "regularStatusFont",
+      "request": "Font.regular(18.0)",
+      "source_sha256": "f77529694fd42fe81a33d177d9ebf71b459052fbfe36a7d17a9072b3fc0973d5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift",
+      "line": 8,
+      "symbol": "labelFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "2b276061c5a77aa068c63d75ad29f5bdcd1be2af68cecc1f719761eb14c3baa9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/CallControllerToastNode.swift",
+      "line": 9,
+      "symbol": "smallLabelFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "2b276061c5a77aa068c63d75ad29f5bdcd1be2af68cecc1f719761eb14c3baa9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerButton.swift",
+      "line": 76,
+      "symbol": "labelFont",
+      "request": "Font.regular(14.5)",
+      "source_sha256": "74382d1a7ed91b7472a0aab57a234aa535920a7ae257dd1eec870ebd4b8001fc",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift",
+      "line": 7,
+      "symbol": "compactNameFont",
+      "request": "Font.regular(28.0)",
+      "source_sha256": "aac940febf31609ff8715158441a9a8da1285c1f50343faf5e1687d6b40a75c4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift",
+      "line": 8,
+      "symbol": "regularNameFont",
+      "request": "Font.regular(36.0)",
+      "source_sha256": "aac940febf31609ff8715158441a9a8da1285c1f50343faf5e1687d6b40a75c4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift",
+      "line": 10,
+      "symbol": "compactStatusFont",
+      "request": "Font.regular(18.0)",
+      "source_sha256": "aac940febf31609ff8715158441a9a8da1285c1f50343faf5e1687d6b40a75c4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/LegacyCallControllerStatusNode.swift",
+      "line": 11,
+      "symbol": "regularStatusFont",
+      "request": "Font.regular(18.0)",
+      "source_sha256": "aac940febf31609ff8715158441a9a8da1285c1f50343faf5e1687d6b40a75c4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatCameraPreviewController.swift",
+      "line": 515,
+      "symbol": "textFont",
+      "request": "Font.with(size: 14.0, design: .camera, weight: .regular)",
+      "source_sha256": "b9c9e71944ddc543b12265d0f30cd33046381ebadf3ebd8edfc5a4916b95534d",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatCameraPreviewController.swift",
+      "line": 516,
+      "symbol": "selectedTextFont",
+      "request": "Font.with(size: 14.0, design: .camera, weight: .semibold)",
+      "source_sha256": "b9c9e71944ddc543b12265d0f30cd33046381ebadf3ebd8edfc5a4916b95534d",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatRecordingContextItem.swift",
+      "line": 37,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "53fa42bf69ef50a18fe7f4ec98e51c6e5d1e34dfbebae82361401d6909140a8f",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatShareScreenContextItem.swift",
+      "line": 31,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "fe270b2f6780c91f2785fdf1ea1746eabacdf2b4ae3ef23b80e046aa96174a55",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramCallsUI/Sources/VoiceChatVolumeContextItem.swift",
+      "line": 25,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "61b01d0b21489b9b22d004169ba7837da89c2e29994ea45b6f2679887df35f8d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift",
+      "line": 11,
+      "symbol": "titleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "31afba90297f8872f3c767b8542989d43fad6abb5d5b015197abeddce61e6f83",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramStringFormatting/Sources/ServiceMessageStrings.swift",
+      "line": 12,
+      "symbol": "titleBoldFont",
+      "request": "Font.bold(13.0)",
+      "source_sha256": "31afba90297f8872f3c767b8542989d43fad6abb5d5b015197abeddce61e6f83",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift",
+      "line": 13,
+      "symbol": "titleFont",
+      "request": "Font.medium(17.0)",
+      "source_sha256": "d115cf1d03a1395a6ce7b91b232301a3e3ef8f765ab167681a61e49850a22e8c",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertActionComponent.swift",
+      "line": 14,
+      "symbol": "boldTitleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "d115cf1d03a1395a6ce7b91b232301a3e3ef8f765ab167681a61e49850a22e8c",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 14,
+      "symbol": "titleFont",
+      "request": "Font.bold(17.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 15,
+      "symbol": "defaultTextFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 16,
+      "symbol": "defaultBoldTextFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 17,
+      "symbol": "defaultItalicTextFont",
+      "request": "Font.italic(15.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 18,
+      "symbol": "defaultBoldItalicTextFont",
+      "request": "Font.with(size: 15.0, weight: .semibold, traits: [.italic])",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 20,
+      "symbol": "smallTextFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 21,
+      "symbol": "smallBoldTextFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 22,
+      "symbol": "smallItalicTextFont",
+      "request": "Font.italic(14.0)",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AlertComponent/Sources/AlertContent.swift",
+      "line": 23,
+      "symbol": "smallBoldItalicTextFont",
+      "request": "Font.with(size: 14.0, weight: .semibold, traits: [.italic])",
+      "source_sha256": "9153c01811440350ac2337f45631f902131660d0be60dfe19e331236baac5e7d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/AttachmentFileController/Sources/AttachmentFileSearchItem.swift",
+      "line": 958,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "47483233bbaf0a59d482ee34c09285a5e6e30f65ef436b97418ba03ace21806b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift",
+      "line": 12,
+      "symbol": "titleFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "06efeda65340de5a078fc930c97035a5d4d5cdf69231be4df2908cf9892191f0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Calls/VoiceChatActionButton/Sources/VoiceChatActionButton.swift",
+      "line": 13,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "06efeda65340de5a078fc930c97035a5d4d5cdf69231be4df2908cf9892191f0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift",
+      "line": 22,
+      "symbol": "messageFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "f1915f9ee1bc896ff02ecdcb9e44e6f62df8fc1a1408ccf772be3ee4e9affc39",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift",
+      "line": 23,
+      "symbol": "messageBoldFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "f1915f9ee1bc896ff02ecdcb9e44e6f62df8fc1a1408ccf772be3ee4e9affc39",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift",
+      "line": 24,
+      "symbol": "messageItalicFont",
+      "request": "Font.italic(17.0)",
+      "source_sha256": "f1915f9ee1bc896ff02ecdcb9e44e6f62df8fc1a1408ccf772be3ee4e9affc39",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatBotInfoItem/Sources/ChatBotInfoItem.swift",
+      "line": 25,
+      "symbol": "messageBoldItalicFont",
+      "request": "Font.semiboldItalic(17.0)",
+      "source_sha256": "f1915f9ee1bc896ff02ecdcb9e44e6f62df8fc1a1408ccf772be3ee4e9affc39",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatChannelSubscriberInputPanelNode/Sources/ChatChannelSubscriberInputPanelNode.swift",
+      "line": 189,
+      "symbol": "badgeFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "4dc02d62fb1592c459b993748d5232243b5e5ed162b99fa68a4a0d4edfb2f26e",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift",
+      "line": 33,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "18402b9faa8e555f6c54e71af8922add1659736883eaff352b1815f9f3a687b8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatEmptyNode/Sources/ChatEmptyNode.swift",
+      "line": 34,
+      "symbol": "messageFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "18402b9faa8e555f6c54e71af8922add1659736883eaff352b1815f9f3a687b8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatInstantVideoMessageDurationNode/Sources/ChatInstantVideoMessageDurationNode.swift",
+      "line": 9,
+      "symbol": "textFont",
+      "request": "Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers])",
+      "source_sha256": "364c902e41337b13eea85d5097070ed3ee8f0c8e3005b3ce42bbf5ce2a553df9",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMediaInputStickerGridItem/Sources/ChatMediaInputStickerGridItem.swift",
+      "line": 56,
+      "symbol": "sectionTitleFont",
+      "request": "Font.medium(12.0)",
+      "source_sha256": "069131e1e1bbeaf63883c3b825b8babd0e3972964c8ff56ef5d2e3de0bba835f",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageActionButtonsNode/Sources/ChatMessageActionButtonsNode.swift",
+      "line": 16,
+      "symbol": "titleFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "cda914d144deb70223052cdd544e60e277a0185713c5afe7afb4426028189150",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift",
+      "line": 52,
+      "symbol": "nameFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "6d40c8e6a560971819a6bef5efb396d7e7c4a5ee2478366a07e314f2bc412405",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAnimatedStickerItemNode/Sources/ChatMessageAnimatedStickerItemNode.swift",
+      "line": 53,
+      "symbol": "inlineBotPrefixFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "6d40c8e6a560971819a6bef5efb396d7e7c4a5ee2478366a07e314f2bc412405",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageAttachedContentButtonNode/Sources/ChatMessageAttachedContentButtonNode.swift",
+      "line": 9,
+      "symbol": "buttonFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "ab6e57ce633bcdeda3c5c27c4b473a6586f582195efe6714512867cf07d26988",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift",
+      "line": 16,
+      "symbol": "titleFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "985e3e7992c1cb9be4bddbe4a90c233a3bce0e06bf2f723326db6ac23f2edfda",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageCallBubbleContentNode/Sources/ChatMessageCallBubbleContentNode.swift",
+      "line": 17,
+      "symbol": "labelFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "985e3e7992c1cb9be4bddbe4a90c233a3bce0e06bf2f723326db6ac23f2edfda",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift",
+      "line": 48,
+      "symbol": "reactionCountFont",
+      "request": "Font.semibold(11.0)",
+      "source_sha256": "f86bd2d7e0c4c62e1beff8c284e7635384f01aedaeeaf736cecdf67b7e54a4ef",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageDateAndStatusNode/Sources/ChatMessageDateAndStatusNode.swift",
+      "line": 49,
+      "symbol": "reactionFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "f86bd2d7e0c4c62e1beff8c284e7635384f01aedaeeaf736cecdf67b7e54a4ef",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift",
+      "line": 25,
+      "symbol": "titleFont",
+      "request": "Font.medium(15.0)",
+      "source_sha256": "dea4de1e200181a79c8aeebb40a0d3fa030bc7b99e9b9b779b5fd1b519f1afa8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift",
+      "line": 26,
+      "symbol": "textFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "dea4de1e200181a79c8aeebb40a0d3fa030bc7b99e9b9b779b5fd1b519f1afa8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageGiveawayBubbleContentNode/Sources/ChatMessageGiveawayBubbleContentNode.swift",
+      "line": 27,
+      "symbol": "boldTextFont",
+      "request": "Font.semibold(13.0)",
+      "source_sha256": "dea4de1e200181a79c8aeebb40a0d3fa030bc7b99e9b9b779b5fd1b519f1afa8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift",
+      "line": 31,
+      "symbol": "nameFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "c992441975e31cad7e8fa112cc3d48a56ece6fbc418c8390a9e0aaa77aa7f622",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift",
+      "line": 33,
+      "symbol": "inlineBotPrefixFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "c992441975e31cad7e8fa112cc3d48a56ece6fbc418c8390a9e0aaa77aa7f622",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift",
+      "line": 54,
+      "symbol": "textFont",
+      "request": "Font.regular(11.0)",
+      "source_sha256": "32ec0b4fbacd44088ae0d905c800442cdcd857020be91293826033f04308d640",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift",
+      "line": 55,
+      "symbol": "nameFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "32ec0b4fbacd44088ae0d905c800442cdcd857020be91293826033f04308d640",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift",
+      "line": 56,
+      "symbol": "inlineBotPrefixFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "32ec0b4fbacd44088ae0d905c800442cdcd857020be91293826033f04308d640",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift",
+      "line": 14,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "7d65d26a5ca276b2fbd17f3c20c3ca0c9a4163a961834e9459b43acbb4349136",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInvoiceBubbleContentNode/Sources/ChatMessageInvoiceBubbleContentNode.swift",
+      "line": 15,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "7d65d26a5ca276b2fbd17f3c20c3ca0c9a4163a961834e9459b43acbb4349136",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageLiveLocationTextNode.swift",
+      "line": 9,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "7b4730c2a4181c06e62f381c4fd51548ab4fa75dd31934c359fea594c5620416",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift",
+      "line": 18,
+      "symbol": "titleFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "3e8fa41c0a92efbe8e034f209cf8fba10c56cfc432faa46182014b5dac7af28a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift",
+      "line": 19,
+      "symbol": "liveTitleFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "3e8fa41c0a92efbe8e034f209cf8fba10c56cfc432faa46182014b5dac7af28a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageMapBubbleContentNode/Sources/ChatMessageMapBubbleContentNode.swift",
+      "line": 20,
+      "symbol": "textFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "3e8fa41c0a92efbe8e034f209cf8fba10c56cfc432faa46182014b5dac7af28a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift",
+      "line": 387,
+      "symbol": "percentageFont",
+      "request": "Font.bold(14.5)",
+      "source_sha256": "a097e11e4145ada572d14cf2cae2e30472768fd93d7da4f0ed3c547c7953bf14",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift",
+      "line": 388,
+      "symbol": "percentageSmallFont",
+      "request": "Font.bold(12.5)",
+      "source_sha256": "a097e11e4145ada572d14cf2cae2e30472768fd93d7da4f0ed3c547c7953bf14",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift",
+      "line": 389,
+      "symbol": "countFont",
+      "request": "Font.regular(12.5)",
+      "source_sha256": "a097e11e4145ada572d14cf2cae2e30472768fd93d7da4f0ed3c547c7953bf14",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessagePollBubbleContentNode/Sources/ChatMessagePollBubbleContentNode.swift",
+      "line": 1499,
+      "symbol": "labelsFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "a097e11e4145ada572d14cf2cae2e30472768fd93d7da4f0ed3c547c7953bf14",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift",
+      "line": 32,
+      "symbol": "nameFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "266ad1061610749f02bcc209abdb56421d75db5953910fe8301b875b5eb8002d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageStickerItemNode/Sources/ChatMessageStickerItemNode.swift",
+      "line": 33,
+      "symbol": "inlineBotPrefixFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "266ad1061610749f02bcc209abdb56421d75db5953910fe8301b875b5eb8002d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift",
+      "line": 345,
+      "symbol": "percentageFont",
+      "request": "Font.bold(14.5)",
+      "source_sha256": "ae76aaaecdccbf6ac2944e94c2e86f3492dfbb85547810436f9ba8ae8a0c9f45",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift",
+      "line": 346,
+      "symbol": "percentageSmallFont",
+      "request": "Font.bold(12.5)",
+      "source_sha256": "ae76aaaecdccbf6ac2944e94c2e86f3492dfbb85547810436f9ba8ae8a0c9f45",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTodoBubbleContentNode/Sources/ChatMessageTodoBubbleContentNode.swift",
+      "line": 1010,
+      "symbol": "labelsFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "ae76aaaecdccbf6ac2944e94c2e86f3492dfbb85547810436f9ba8ae8a0c9f45",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageWebpageBubbleContentNode/Sources/ChatMessageWebpageBubbleContentNode.swift",
+      "line": 23,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "d302078fe13a5f61246c1829aa9d3ae8dbf630f184d522b63a2b64e4ab778285",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift",
+      "line": 10,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "f52c755a9ed6f8a174aa641277b56cca4fae0baf4c428608a39e6a5514c99da7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsEmptyNode.swift",
+      "line": 11,
+      "symbol": "textFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "f52c755a9ed6f8a174aa641277b56cca4fae0baf4c428608a39e6a5514c99da7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatRecentActionsController/Sources/ChatRecentActionsSearchNavigationContentNode.swift",
+      "line": 11,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "365f1ffaaf859a378fe785b70e9090751f39db2095c39cc0dd92cabb923cd315",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode/Sources/ChatSearchNavigationContentNode.swift",
+      "line": 16,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "7fcdd31fe7d87dc2c6b3ea37f9343fa84eb35a1caaabaa7ea55e8c6bf9486172",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatSendStarsScreen/Sources/BadgeLabelView.swift",
+      "line": 9,
+      "symbol": "font",
+      "request": "Font.with(size: 24.0, design: .round, weight: .semibold, traits: [])",
+      "source_sha256": "1ed7fb014d73c49f67fabdd859eaed5a7429d4fc79c45b8482b2d7c500501308",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingCancelIndicator/Sources/ChatTextInputAudioRecordingCancelIndicator.swift",
+      "line": 8,
+      "symbol": "cancelFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "249999c8e6d7b70ee2d03a4e44e4a2111906bc09f8f45d2711a845fb5a28a932",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputAudioRecordingTimeNode/Sources/ChatTextInputAudioRecordingTimeNode.swift",
+      "line": 22,
+      "symbol": "textFont",
+      "request": "Font.with(size: 15.0, design: .camera)",
+      "source_sha256": "e02b0810ba5ad0f8ba09d5785535ec90a9c0004660d3d740d3b1c8fb85700b75",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/AccessoryItemIconButton.swift",
+      "line": 13,
+      "symbol": "accessoryButtonFont",
+      "request": "Font.medium(14.0)",
+      "source_sha256": "ac8f38f18b77939d0b51bbbe4b2471835f5bb951f65e30c6783329d1c9b81543",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources/ChatTextInputPanelNode.swift",
+      "line": 70,
+      "symbol": "counterFont",
+      "request": "Font.with(size: 14.0, design: .regular, traits: [.monospacedNumbers])",
+      "source_sha256": "441d5df2e321f86a1d383ae0c8e296a48ef71bf8e679c3f1279bf01539c251a7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 91,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 92,
+      "symbol": "titleBoldFont",
+      "request": "Font.bold(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 93,
+      "symbol": "titleItalicFont",
+      "request": "Font.semiboldItalic(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 94,
+      "symbol": "titleBoldItalicFont",
+      "request": "Font.semiboldItalic(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 96,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 97,
+      "symbol": "textBoldFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 98,
+      "symbol": "textItalicFont",
+      "request": "Font.italic(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 99,
+      "symbol": "textBoldItalicFont",
+      "request": "Font.semiboldItalic(15.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatList/ChatListHeaderNoticeComponent/Sources/ChatListNoticeItem.swift",
+      "line": 101,
+      "symbol": "smallTextFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "47ffd4c0a9b65b2cbb410d24d96001f1eda847a43d2567e869f00bb08ebf7a56",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift",
+      "line": 26,
+      "symbol": "titleFont",
+      "request": "Font.with(size: 17.0, design: .regular, weight: .semibold, traits: [.monospacedNumbers])",
+      "source_sha256": "cbfed3d2813824affb1f0acefb514f4ff863b0dc403d8fcd630c46351cc9d1c0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift",
+      "line": 27,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "cbfed3d2813824affb1f0acefb514f4ff863b0dc403d8fcd630c46351cc9d1c0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Gifts/GiftViewScreen/Sources/BadgeLabelView.swift",
+      "line": 11,
+      "symbol": "font",
+      "request": "Font.with(size: 24.0, design: .round, weight: .semibold, traits: [])",
+      "source_sha256": "1a959d9c46434a66e957b90862d17f4a18e1b80fd9df38d271de63db79c17d62",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift",
+      "line": 33,
+      "symbol": "titleFont",
+      "request": "Font.semibold(15.0)",
+      "source_sha256": "488a89e7dcffe3bb2965622d7cc8a8f8517a077c9eaf9bfad6a1e583af25481a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/GroupCallHeaderPanelComponent/Sources/GroupCallNavigationAccessoryPanel.swift",
+      "line": 34,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "488a89e7dcffe3bb2965622d7cc8a8f8517a077c9eaf9bfad6a1e583af25481a",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift",
+      "line": 90,
+      "symbol": "titleFont",
+      "request": "Font.bold(15.0)",
+      "source_sha256": "1d1d8735bf4072c6c563957c5bc684c3c73202b1455087f4aa06f83d3be0b426",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerPackCurrentItem.swift",
+      "line": 91,
+      "symbol": "statusFont",
+      "request": "Font.regular(14.0)",
+      "source_sha256": "1d1d8735bf4072c6c563957c5bc684c3c73202b1455087f4aa06f83d3be0b426",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/GroupStickerPackSetupController/Sources/GroupStickerSearchNavigationContentNode.swift",
+      "line": 16,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "a204f118e19755f79445565efe64ed73fb69f2d940bc3c46f049b7900294edcb",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ListComposePollOptionComponent/Sources/ListComposePollOptionComponent.swift",
+      "line": 1373,
+      "symbol": "extensionFont",
+      "request": "Font.with(size: 15.0, design: .round, weight: .bold)",
+      "source_sha256": "a0292ab37a8bb64056ded29c691773d780e44e70281023ba06dbcf227dc4f1cc",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ListComposePollOptionComponent/Sources/ListComposePollOptionComponent.swift",
+      "line": 1374,
+      "symbol": "mediumExtensionFont",
+      "request": "Font.with(size: 14.0, design: .round, weight: .bold)",
+      "source_sha256": "a0292ab37a8bb64056ded29c691773d780e44e70281023ba06dbcf227dc4f1cc",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ListComposePollOptionComponent/Sources/ListComposePollOptionComponent.swift",
+      "line": 1375,
+      "symbol": "smallExtensionFont",
+      "request": "Font.with(size: 12.0, design: .round, weight: .bold)",
+      "source_sha256": "a0292ab37a8bb64056ded29c691773d780e44e70281023ba06dbcf227dc4f1cc",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift",
+      "line": 9,
+      "symbol": "titleFontWithIcon",
+      "request": "Font.medium(13.0)",
+      "source_sha256": "a5c73020b18298f249cbb5d3196670421ca0fc1c84191af615edfa2e3c6aac92",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ListItemSwipeOptionContainer/Sources/ListItemSwipeOptionContainer.swift",
+      "line": 10,
+      "symbol": "titleFontWithoutIcon",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "a5c73020b18298f249cbb5d3196670421ca0fc1c84191af615edfa2e3c6aac92",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift",
+      "line": 13,
+      "symbol": "titleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "9109d7ae6737a4fb9905ede2ec072dd35399969eaeab68ca038e2cf49656f1d8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/LiveLocationHeaderPanelComponent/Sources/LocationBroadcastNavigationAccessoryPanel.swift",
+      "line": 14,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(10.0)",
+      "source_sha256": "9109d7ae6737a4fb9905ede2ec072dd35399969eaeab68ca038e2cf49656f1d8",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift",
+      "line": 19,
+      "symbol": "titleFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "a3b83dac76a41c8ad9411d8aa54e636978e28e0ae80cd2da211f21c2dfd73db3",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/MediaPlaybackHeaderPanelComponent/Sources/MediaNavigationAccessoryHeaderNode.swift",
+      "line": 20,
+      "symbol": "subtitleFont",
+      "request": "Font.regular(10.0)",
+      "source_sha256": "a3b83dac76a41c8ad9411d8aa54e636978e28e0ae80cd2da211f21c2dfd73db3",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift",
+      "line": 17,
+      "symbol": "textFont",
+      "request": "Font.with(size: 17.0, traits: .monospacedNumbers)",
+      "source_sha256": "3a841f55e2fc4f895802a435673ac725101d572510c1382611c8acd79c08f26d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/MessagePriceItem/Sources/MessagePriceItem.swift",
+      "line": 18,
+      "symbol": "smallTextFont",
+      "request": "Font.with(size: 13.0, traits: .monospacedNumbers)",
+      "source_sha256": "3a841f55e2fc4f895802a435673ac725101d572510c1382611c8acd79c08f26d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoVisualMediaPaneNode/Sources/PeerInfoVisualMediaPaneNode.swift",
+      "line": 232,
+      "symbol": "durationFont",
+      "request": "Font.semibold(11.0)",
+      "source_sha256": "3931905745a1f9d5f0714a5bbd5098ba0fff099b6251f58d11e15514707ec629",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift",
+      "line": 106,
+      "symbol": "titleFont",
+      "request": "Font.medium(12.0)",
+      "source_sha256": "3504f9317b9bc8f863116190e1ceba2c05c35ac509e62c318c30aeefcd2381e5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioCodePillView.swift",
+      "line": 107,
+      "symbol": "detailFont",
+      "request": "Font.with(size: 12.0, traits: .monospacedNumbers)",
+      "source_sha256": "3504f9317b9bc8f863116190e1ceba2c05c35ac509e62c318c30aeefcd2381e5",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/QrStudioScreen/Sources/QrStudioGlassButtonView.swift",
+      "line": 90,
+      "symbol": "titleFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "af4c28d27384d0f1b66c8996d06ee93cc1fad7f8dc3a9dd917acaffc7929d353",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Settings/QuickReactionSetupController/Sources/ItemListReactionItem.swift",
+      "line": 88,
+      "symbol": "badgeFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "5291478540b0ccfae91779c4aef08a070880cd9437df26931f4f8b418ff8390b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift",
+      "line": 163,
+      "symbol": "textFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "8029ee0fa6ef69a8fa07a6ba46b75ed06a36701497a11992e7dbbcece4f9d35d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeCarouselItem/Sources/ThemeCarouselItem.swift",
+      "line": 164,
+      "symbol": "selectedTextFont",
+      "request": "Font.bold(12.0)",
+      "source_sha256": "8029ee0fa6ef69a8fa07a6ba46b75ed06a36701497a11992e7dbbcece4f9d35d",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift",
+      "line": 135,
+      "symbol": "textFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "14f240dd6448818a12cbb4073c55a85b1f18f1a7537e4fbf493cc274ff93fc73",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Settings/ThemeSettingsThemeItem/Sources/ThemeSettingsThemeItem.swift",
+      "line": 136,
+      "symbol": "selectedTextFont",
+      "request": "Font.bold(12.0)",
+      "source_sha256": "14f240dd6448818a12cbb4073c55a85b1f18f1a7537e4fbf493cc274ff93fc73",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/ShareScreen/Sources/ShareScreenPeerComponent.swift",
+      "line": 15,
+      "symbol": "shareScreenPeerTitleFont",
+      "request": "Font.medium(11.0)",
+      "source_sha256": "573eb259dfadcbd1fe850a5ad3640a7cb647b74cfd97247f382f739d9742f227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/SliderContextItem/Sources/SliderContextItem.swift",
+      "line": 30,
+      "symbol": "textFont",
+      "request": "Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)",
+      "source_sha256": "274998559d4302252c3cbf951907c30bc740e64c39561d6a68a4aa34be2a0e11",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/PieChartComponent.swift",
+      "line": 72,
+      "symbol": "chartLabelFont",
+      "request": "Font.with(size: 16.0, design: .round, weight: .semibold)",
+      "source_sha256": "94f381a12278a010adf0d3c3245b007e905b75a1d75251478958e92c63571c3b",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageFileListPanelComponent.swift",
+      "line": 97,
+      "symbol": "extensionFont",
+      "request": "Font.with(size: 15.0, design: .round, weight: .bold)",
+      "source_sha256": "a09f13f424a7edddee445b8c5fc2797d989385032766a8fe2623f84deddeb752",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageFileListPanelComponent.swift",
+      "line": 98,
+      "symbol": "mediumExtensionFont",
+      "request": "Font.with(size: 14.0, design: .round, weight: .bold)",
+      "source_sha256": "a09f13f424a7edddee445b8c5fc2797d989385032766a8fe2623f84deddeb752",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageFileListPanelComponent.swift",
+      "line": 99,
+      "symbol": "smallExtensionFont",
+      "request": "Font.with(size: 12.0, design: .round, weight: .bold)",
+      "source_sha256": "a09f13f424a7edddee445b8c5fc2797d989385032766a8fe2623f84deddeb752",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/StorageUsageScreen/Sources/StorageMediaGridPanelComponent.swift",
+      "line": 20,
+      "symbol": "badgeFont",
+      "request": "Font.regular(12.0)",
+      "source_sha256": "30232457d05fc826be78d5e9d81c08bf1e17c6444f5e2466bcf99ca80f77b0a7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/VolumeSliderContextItem/Sources/VolumeSliderContextItem.swift",
+      "line": 29,
+      "symbol": "textFont",
+      "request": "Font.with(size: 17.0, design: .regular, traits: .monospacedNumbers)",
+      "source_sha256": "6917b2838fb30eacdaa22c44391aee1eff77c1ec0942ce98275a19e7304cd6fb",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Wallet/WalletImportScreen/Sources/WalletWordSuggestionsComponent.swift",
+      "line": 158,
+      "symbol": "itemFont",
+      "request": "Font.semibold(14.0)",
+      "source_sha256": "63df4739af76242f68de661c17162be268f9e9fc084f7ca09228ab39ca8eca13",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Wallet/WalletSendScreen/Sources/WalletSendAmountCanvas.swift",
+      "line": 417,
+      "symbol": "integral",
+      "request": "Font.with(size: 48.0, design: .round, weight: .bold, traits: [])",
+      "source_sha256": "9f978c56c7f25d620b480f36aa84f1e0c01a34647636ec7a7b3c9e4b33fcc686",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Wallet/WalletSendScreen/Sources/WalletSendAmountCanvas.swift",
+      "line": 418,
+      "symbol": "fractional",
+      "request": "Font.with(size: 32.0, design: .round, weight: .bold)",
+      "source_sha256": "9f978c56c7f25d620b480f36aa84f1e0c01a34647636ec7a7b3c9e4b33fcc686",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Components/Wallet/WalletSendScreen/Sources/WalletSendAmountCanvas.swift",
+      "line": 419,
+      "symbol": "rate",
+      "request": "Font.with(size: 13.0, design: .round, weight: .semibold)",
+      "source_sha256": "9f978c56c7f25d620b480f36aa84f1e0c01a34647636ec7a7b3c9e4b33fcc686",
+      "disposition": "excluded",
+      "reason": "explicit native design/width/glyph role"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatHistoryNavigationButtonNode.swift",
+      "line": 12,
+      "symbol": "badgeFont",
+      "request": "Font.with(size: 13.0, traits: [.monospacedNumbers])",
+      "source_sha256": "4b02db0744a309996fd056a23af8cbfca12a2516025e99f9b8a825e9114fc5c1",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift",
+      "line": 2877,
+      "symbol": "textFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "41b9c848783d573e3e625674a9947559a570141ae026117178b32ed86f01bdb2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift",
+      "line": 14,
+      "symbol": "textFont",
+      "request": "Font.regular(13.0)",
+      "source_sha256": "7be5bf5571e71c6232dd71df12cde69a4c9d8d37bf562e2901bb4bb6cf975a04",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatMessageActionUrlAuthController.swift",
+      "line": 15,
+      "symbol": "boldTextFont",
+      "request": "Font.semibold(13.0)",
+      "source_sha256": "7be5bf5571e71c6232dd71df12cde69a4c9d8d37bf562e2901bb4bb6cf975a04",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatPremiumRequiredInputPanelNode.swift",
+      "line": 19,
+      "symbol": "labelFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "6d8afb4b107adc76642440546681dfd5ab9d71d55c31b78ba9f82640a625db60",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ChatTagSearchInputPanelNode.swift",
+      "line": 20,
+      "symbol": "labelFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "e669354e8a7bd2220b1899b54c71516cf3e7b1efb9d085932de29315ae390eb0",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ContactSelectionController.swift",
+      "line": 556,
+      "symbol": "searchBarFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "2f20831e0bb526712165ca07f49dc984046e3b2f2e8226a540e0af4a7569e4c4",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/EmojisChatInputPanelItem.swift",
+      "line": 94,
+      "symbol": "textFont",
+      "request": "Font.regular(32.0)",
+      "source_sha256": "27bac6c75a3f045faf95c5a8dae9eaa760cd8af27c6c8923d0d7a253bf501cd8",
+      "disposition": "excluded",
+      "reason": "editor/art/emoji role outside the ordinary-sans cohort"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift",
+      "line": 90,
+      "symbol": "titleFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "9d55b8a460c82ff8d27d9155bf7dc31dff1dbebf680354df8891a741696146b2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift",
+      "line": 91,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "9d55b8a460c82ff8d27d9155bf7dc31dff1dbebf680354df8891a741696146b2",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/HorizontalListContextResultsChatInputPanelItem.swift",
+      "line": 92,
+      "symbol": "iconFont",
+      "request": "Font.medium(25.0)",
+      "source_sha256": "9d55b8a460c82ff8d27d9155bf7dc31dff1dbebf680354df8891a741696146b2",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift",
+      "line": 111,
+      "symbol": "titleFont",
+      "request": "Font.semibold(17.0)",
+      "source_sha256": "8329ba028bdffd5c8e25cea922fe3f7cabe76fe1eea54819ac1b8df61bb887b7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/OverlayAudioPlayerControlsNode.swift",
+      "line": 112,
+      "symbol": "descriptionFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "8329ba028bdffd5c8e25cea922fe3f7cabe76fe1eea54819ac1b8df61bb887b7",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift",
+      "line": 79,
+      "symbol": "titleFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "61c453951506965fe957d5a48762796405c6ed8c05eb88eef4ac009d092d3e4b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift",
+      "line": 80,
+      "symbol": "textFont",
+      "request": "Font.regular(15.0)",
+      "source_sha256": "61c453951506965fe957d5a48762796405c6ed8c05eb88eef4ac009d092d3e4b",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/VerticalListContextResultsChatInputPanelItem.swift",
+      "line": 81,
+      "symbol": "iconFont",
+      "request": "Font.medium(25.0)",
+      "source_sha256": "61c453951506965fe957d5a48762796405c6ed8c05eb88eef4ac009d092d3e4b",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 92,
+      "symbol": "titleFont",
+      "request": "Font.bold(17.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 93,
+      "symbol": "textFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 94,
+      "symbol": "textBoldFont",
+      "request": "Font.medium(16.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 95,
+      "symbol": "textItalicFont",
+      "request": "Font.italic(16.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 96,
+      "symbol": "textBoldItalicFont",
+      "request": "Font.semiboldItalic(16.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "companion-hunk"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUpdateUI/Sources/UpdateInfoItem.swift",
+      "line": 97,
+      "symbol": "textFixedFont",
+      "request": "Font.regular(16.0)",
+      "source_sha256": "7df7365a533c250645e53276e38a67354a6547d7ace99aa3141c9123deaca227",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    },
+    {
+      "path": "telegram-ios/submodules/TextFormat/Sources/StringWithAppliedEntities.swift",
+      "line": 720,
+      "symbol": "internalFixedCodeFont",
+      "request": "Font.regular(17.0)",
+      "source_sha256": "77f9519bdcf61a5864c71d1564ed372a9cf41a51795640c5b4330721fae30521",
+      "disposition": "excluded",
+      "reason": "explicit code/emoji/icon role requires its own consumer review"
+    }
+  ],
+  "proof": "Source-only inventory. Does not claim per-instance cache invalidation, native compilation or UI pixels."
+}

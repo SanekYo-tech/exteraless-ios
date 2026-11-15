@@ -6,7 +6,7 @@ import TelegramCore
 import TelegramPresentationData
 import PhoneInputNode
 
-private let textFont = Font.regular(17.0)
+private var textFont: UIFont { return Font.regular(17.0) }
 
 private func countryButtonBackground(color: UIColor, separatorColor: UIColor) -> UIImage? {
     return generateImage(CGSize(width: 45.0, height: 44.0 + 6.0), rotatedContext: { size, context in

@@ -172,7 +172,7 @@ private let pictureInPictureImage = UIImage(bundleImageName: "Media Gallery/Pict
 private let pictureInPictureButtonImage = generateTintedImage(image: UIImage(bundleImageName: "Media Gallery/PictureInPictureButton"), color: .white)
 private let moreButtonImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/More"), color: .white)
 
-private let placeholderFont = Font.regular(16.0)
+private var placeholderFont: UIFont { return Font.regular(16.0) }
 
 private final class UniversalVideoGalleryItemPictureInPictureNode: ASDisplayNode {
     enum Mode {

@@ -30,8 +30,8 @@ func textForTimeout(value: Int32) -> String {
     }
 }
 
-private let titleFont = Font.semibold(15.0)
-private let subtitleFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.semibold(15.0) }
+private var subtitleFont: UIFont { return Font.regular(13.0) }
 
 private final class FakeAudioLevelGenerator {
     private var isFirstTime: Bool = true

@@ -16,8 +16,8 @@ import TelegramNotices
 import TooltipUI
 import SliderContextItem
 
-private let titleFont = Font.regular(12.0)
-private let subtitleFont = Font.regular(10.0)
+private var titleFont: UIFont { return Font.regular(12.0) }
+private var subtitleFont: UIFont { return Font.regular(10.0) }
 
 private func normalizeValue(_ value: CGFloat) -> CGFloat {
     return round(value * 10.0) / 10.0

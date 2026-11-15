@@ -4,8 +4,8 @@ import AsyncDisplayKit
 import Display
 import TelegramPresentationData
 
-private let textFont = Font.regular(17.0)
-private let errorFont = Font.regular(13.0)
+private var textFont: UIFont { return Font.regular(17.0) }
+private var errorFont: UIFont { return Font.regular(13.0) }
 
 final class FormControllerDetailActionItem: FormControllerItem {
     let title: String

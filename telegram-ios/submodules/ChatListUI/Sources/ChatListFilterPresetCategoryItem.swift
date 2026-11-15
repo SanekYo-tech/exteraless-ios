@@ -100,7 +100,7 @@ final class ChatListFilterPresetCategoryItem: ListViewItem, ItemListItem, ItemLi
 }
 
 private let avatarFont = avatarPlaceholderFont(size: floor(40.0 * 16.0 / 37.0))
-private let badgeFont = Font.regular(15.0)
+private var badgeFont: UIFont { return Font.regular(15.0) }
 
 class ChatListFilterPresetCategoryItemNode: ItemListRevealOptionsItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

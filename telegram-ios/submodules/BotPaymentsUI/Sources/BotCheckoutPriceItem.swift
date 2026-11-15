@@ -75,8 +75,8 @@ class BotCheckoutPriceItem: ListViewItem, ItemListItem {
     let selectable: Bool = false
 }
 
-private let titleFont = Font.regular(17.0)
-private let finalFont = Font.semibold(17.0)
+private var titleFont: UIFont { return Font.regular(17.0) }
+private var finalFont: UIFont { return Font.semibold(17.0) }
 
 private func priceItemInsets(_ neighbors: ItemListNeighbors) -> UIEdgeInsets {
     var insets = UIEdgeInsets()

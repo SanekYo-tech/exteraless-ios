@@ -62,9 +62,6 @@ class ChatListArchiveInfoItem: ListViewItem {
 
 private let separatorHeight = 1.0 / UIScreen.main.scale
 
-private let titleFont = Font.regular(20.0)
-private let textFont = Font.regular(15.0)
-
 private final class InfoPageNode: ASDisplayNode {
     private let iconNodeBase: ASImageNode
     private let iconNodeContent: ASImageNode
@@ -112,6 +109,10 @@ private final class InfoPageNode: ASDisplayNode {
                 title = strings.ArchivedChats_IntroTitle3
                 text = strings.ArchivedChats_IntroText3
             }
+            // Resolve inside the layout request, including a reused asyncLayout
+            // closure. A process-global UIFont would pin the first family.
+            let titleFont = Font.regular(20.0)
+            let textFont = Font.regular(15.0)
             let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: title, font: titleFont, textColor: theme.list.itemPrimaryTextColor, paragraphAlignment: nil), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: min(300.0, width - 16.0), height: .greatestFiniteMagnitude), alignment: .center, lineSpacing: 0.0, cutout: nil, insets: UIEdgeInsets()))
             let (textLayout, textApply) = makeTextLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: text, font: textFont, textColor: theme.list.itemPrimaryTextColor, paragraphAlignment: nil), backgroundColor: nil, maximumNumberOfLines: 0, truncationType: .end, constrainedSize: CGSize(width: min(300.0, width - 16.0), height: .greatestFiniteMagnitude), alignment: .center, lineSpacing: 0.0, cutout: nil, insets: UIEdgeInsets()))
             

@@ -13,7 +13,7 @@ import ComponentDisplayAdapters
 import AppBundle
 import ActivityIndicator
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class GroupStickerSearchNavigationContentNode: NavigationBarContentNode, ItemListControllerSearchNavigationContentNode {
     private struct Params: Equatable {

@@ -5,7 +5,7 @@ import Display
 import TelegramCore
 import SwiftSignalKit
 
-private let textFont = Font.regular(16.0)
+private var textFont: UIFont { return Font.regular(16.0) }
 
 final class SecretMediaPreviewFooterContentNode: GalleryFooterContentNode {
     private var currentText: String?

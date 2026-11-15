@@ -13,7 +13,7 @@ import ComponentFlow
 import ComponentDisplayAdapters
 import GlassBackgroundComponent
 
-private let textFont = Font.with(size: 13.0, design: .regular, weight: .medium, traits: [.monospacedNumbers])
+private var textFont: UIFont { return Font.with(size: 13.0, design: .regular, weight: .medium, traits: [.monospacedNumbers]) }
 
 private let scrubberBackgroundColor = UIColor(white: 1.0, alpha: 0.42)
 private let scrubberForegroundColor = UIColor.white

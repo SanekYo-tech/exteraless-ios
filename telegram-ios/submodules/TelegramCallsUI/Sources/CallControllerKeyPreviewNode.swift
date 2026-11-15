@@ -6,7 +6,7 @@ import SwiftSignalKit
 import LegacyComponents
 
 private let emojiFont = Font.regular(28.0)
-private let textFont = Font.regular(15.0)
+private var textFont: UIFont { return Font.regular(15.0) }
 
 final class CallControllerKeyPreviewNode: ASDisplayNode {
     private let keyTextNode: ASTextNode

@@ -12,8 +12,8 @@ import PhotoResources
 import CheckNode
 import Markdown
 
-private let textFont = Font.regular(13.0)
-private let boldTextFont = Font.semibold(13.0)
+private var textFont: UIFont { return Font.regular(13.0) }
+private var boldTextFont: UIFont { return Font.semibold(13.0) }
 
 private func formattedText(_ text: String, color: UIColor, textAlignment: NSTextAlignment = .natural) -> NSAttributedString {
     return parseMarkdownIntoAttributedString(text, attributes: MarkdownAttributes(body: MarkdownAttributeSet(font: textFont, textColor: color), bold: MarkdownAttributeSet(font: boldTextFont, textColor: color), link: MarkdownAttributeSet(font: textFont, textColor: color), linkAttribute: { _ in return nil}), textAlignment: textAlignment)

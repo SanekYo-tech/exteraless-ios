@@ -194,8 +194,8 @@ public class ItemListDisclosureItem: ListViewItem, ItemListItem, ListItemCompone
     }
 }
 
-private let badgeFont = Font.regular(15.0)
-private let boldBadgeFont = Font.semibold(14.0)
+private var badgeFont: UIFont { return Font.regular(15.0) }
+private var boldBadgeFont: UIFont { return Font.semibold(14.0) }
 
 public class ItemListDisclosureItemNode: ListViewItemNode, ItemListItemNode {
     private let backgroundNode: ASDisplayNode

@@ -7,7 +7,7 @@ import SwiftSignalKit
 import TelegramPresentationData
 import AppBundle
 
-private let textFont: UIFont = Font.regular(16.0)
+private var textFont: UIFont { return Font.regular(16.0) }
 
 final class SecureIdAuthAcceptNode: ASDisplayNode {
     private let separatorNode: ASDisplayNode

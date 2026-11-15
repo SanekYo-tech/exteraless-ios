@@ -160,8 +160,8 @@ public class ThemeCarouselThemeIconItem: ListViewItem {
     }
 }
 
-private let textFont = Font.regular(12.0)
-private let selectedTextFont = Font.bold(12.0)
+private var textFont: UIFont { return Font.regular(12.0) }
+private var selectedTextFont: UIFont { return Font.bold(12.0) }
 
 private var cachedBorderImages: [String: UIImage] = [:]
 private func generateBorderImage(theme: PresentationTheme, bordered: Bool, selected: Bool) -> UIImage? {

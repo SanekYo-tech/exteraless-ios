@@ -347,8 +347,8 @@ private func preparedTransition(from fromEntries: [InviteLinkViewEntry], to toEn
     return InviteLinkViewTransaction(deletions: deletions, insertions: insertions, updates: updates, isLoading: isLoading, animated: animated, crossfade: crossfade)
 }
 
-private let titleFont = Font.bold(17.0)
-private let subtitleFont = Font.with(size: 13, design: .regular, weight: .regular, traits: .monospacedNumbers)
+private var titleFont: UIFont { return Font.bold(17.0) }
+private var subtitleFont: UIFont { return Font.with(size: 13, design: .regular, weight: .regular, traits: .monospacedNumbers) }
 
 func textForTimeout(value: Int32) -> String {
     if value < 3600 {

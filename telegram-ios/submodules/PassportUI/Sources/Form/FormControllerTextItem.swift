@@ -4,7 +4,7 @@ import AsyncDisplayKit
 import Display
 import TelegramPresentationData
 
-private let titleFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.regular(14.0) }
 
 enum FormControllerTextItemColor {
     case standard

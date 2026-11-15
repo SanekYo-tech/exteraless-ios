@@ -62,8 +62,8 @@ private func generateFilledButtonImage(color: UIColor, icon: UIImage?, angle: CG
     })
 }
 
-private let largeLabelFont = Font.regular(14.5)
-private let smallLabelFont = Font.regular(11.5)
+private var largeLabelFont: UIFont { return Font.regular(14.5) }
+private var smallLabelFont: UIFont { return Font.regular(11.5) }
 
 final class GlassButtonNode: ASDisplayNode {
     private var regularImage: UIImage?

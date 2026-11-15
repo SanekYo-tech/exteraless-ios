@@ -13,8 +13,8 @@ import SwiftSignalKit
 import AnimatedAvatarSetNode
 import AvatarNode
 
-private let titleFont: UIFont = Font.medium(16.0)
-private let labelFont: UIFont = Font.regular(13.0)
+private var titleFont: UIFont { return Font.medium(16.0) }
+private var labelFont: UIFont { return Font.regular(13.0) }
 private let avatarFont: UIFont = avatarPlaceholderFont(size: 8.0)
 
 private let incomingGreenIcon = generateTintedImage(image: UIImage(bundleImageName: "Chat/Message/CallIncomingArrow"), color: UIColor(rgb: 0x36c033))

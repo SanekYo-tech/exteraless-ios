@@ -10,7 +10,7 @@ import ComponentDisplayAdapters
 import AppBundle
 import ActivityIndicator
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 public let navigationBarSearchContentHeight: CGFloat = 60.0
 
 public class NavigationBarSearchContentNode: NavigationBarContentNode {

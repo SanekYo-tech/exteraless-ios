@@ -5,8 +5,8 @@ import Display
 import TelegramPresentationData
 import AppBundle
 
-private let titleFont = Font.regular(14.0)
-private let buttonFont = Font.regular(17.0)
+private var titleFont: UIFont { return Font.regular(14.0) }
+private var buttonFont: UIFont { return Font.regular(17.0) }
 
 final class SecureIdAuthPasswordSetupContentNode: ASDisplayNode, SecureIdAuthContentNode, UITextFieldDelegate {
     private let theme: PresentationTheme

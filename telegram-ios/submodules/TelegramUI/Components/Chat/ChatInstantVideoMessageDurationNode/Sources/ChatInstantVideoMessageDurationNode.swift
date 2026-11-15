@@ -6,7 +6,7 @@ import Display
 import UniversalMediaPlayer
 import AnimatedCountLabelNode
 
-private let textFont = Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers])
+private var textFont: UIFont { return Font.with(size: 11.0, design: .regular, weight: .regular, traits: [.monospacedNumbers]) }
 
 private struct ChatInstantVideoMessageDurationNodeState: Equatable {
     let hours: Int32?

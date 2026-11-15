@@ -6,8 +6,8 @@ import ComponentDisplayAdapters
 import AppBundle
 import MultilineTextComponent
 
-private let titleFontWithIcon = Font.medium(13.0)
-private let titleFontWithoutIcon = Font.regular(17.0)
+private var titleFontWithIcon: UIFont { return Font.medium(13.0) }
+private var titleFontWithoutIcon: UIFont { return Font.regular(17.0) }
 
 private final class SwipeOptionsGestureRecognizer: UIPanGestureRecognizer {
     public var validatedGesture = false

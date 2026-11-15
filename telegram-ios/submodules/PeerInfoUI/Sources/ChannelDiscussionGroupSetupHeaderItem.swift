@@ -67,8 +67,8 @@ class ChannelDiscussionGroupSetupHeaderItem: ListViewItem, ItemListItem {
 }
 
 private let iconFont = Font.medium(12.0)
-private let titleFont = Font.regular(14.0)
-private let titleBoldFont = Font.semibold(14.0)
+private var titleFont: UIFont { return Font.regular(14.0) }
+private var titleBoldFont: UIFont { return Font.semibold(14.0) }
 
 class ChannelDiscussionGroupSetupHeaderItemNode: ListViewItemNode {
     private let imageNode: ASImageNode

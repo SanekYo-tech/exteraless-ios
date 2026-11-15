@@ -12,9 +12,9 @@ import AnimatedStickerNode
 import TelegramAnimatedStickerNode
 import ShimmerEffect
 
-private let titleFont = Font.bold(16.0)
-private let statusFont = Font.regular(15.0)
-private let buttonFont = Font.medium(13.0)
+private var titleFont: UIFont { return Font.bold(16.0) }
+private var statusFont: UIFont { return Font.regular(15.0) }
+private var buttonFont: UIFont { return Font.medium(13.0) }
 
 final class TrendingTopItemNode: ASDisplayNode {
     private let imageNode: TransformImageNode

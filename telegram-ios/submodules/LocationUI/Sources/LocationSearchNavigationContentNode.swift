@@ -6,7 +6,7 @@ import TelegramCore
 import TelegramPresentationData
 import SearchBarNode
 
-private let searchBarFont = Font.regular(17.0)
+private var searchBarFont: UIFont { return Font.regular(17.0) }
 
 final class LocationSearchNavigationContentNode: NavigationBarContentNode {
     private var presentationData: PresentationData

@@ -14,8 +14,8 @@ import BundleIconComponent
 import MultilineTextComponent
 import ListItemComponentAdaptor
 
-private let textFont = Font.with(size: 17.0, traits: .monospacedNumbers)
-private let smallTextFont = Font.with(size: 13.0, traits: .monospacedNumbers)
+private var textFont: UIFont { return Font.with(size: 17.0, traits: .monospacedNumbers) }
+private var smallTextFont: UIFont { return Font.with(size: 13.0, traits: .monospacedNumbers) }
 
 public final class MessagePriceItem: Equatable, ListViewItem, ItemListItem, ListItemComponentAdaptor.ItemGenerator {
     let theme: PresentationTheme

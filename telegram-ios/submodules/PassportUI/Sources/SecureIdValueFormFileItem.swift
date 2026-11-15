@@ -10,8 +10,8 @@ import TelegramStringFormatting
 import RadialStatusNode
 import PhotoResources
 
-private let textFont = Font.regular(16.0)
-private let labelFont = Font.regular(13.0)
+private var textFont: UIFont { return Font.regular(16.0) }
+private var labelFont: UIFont { return Font.regular(13.0) }
 
 enum SecureIdValueFormFileItemLabel {
     case timestamp

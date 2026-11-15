@@ -72,8 +72,8 @@ public class InviteLinkHeaderItem: ListViewItem, ItemListItem {
     }
 }
 
-private let titleFont = Font.semibold(17.0)
-private let textFont = Font.regular(14.0)
+private var titleFont: UIFont { return Font.semibold(17.0) }
+private var textFont: UIFont { return Font.regular(14.0) }
 
 class InviteLinkHeaderItemNode: ListViewItemNode {
     private let titleNode: TextNode
