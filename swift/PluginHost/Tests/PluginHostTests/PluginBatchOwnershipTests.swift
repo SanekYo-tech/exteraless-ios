@@ -67,6 +67,7 @@ final class PluginBatchOwnershipTests: HostLifecycleTestCase {
             if source.hasPrefix("_exteraless_runtime.load_json(") {
                 return "{\"metadata\":{\"id\":\"\(names[Int(reference.raw - 1)])\"},\"handles\":{\"send_message\":true},\"has_settings\":false}"
             }
+            if source.hasPrefix("_exteraless_runtime.hook_priority_json(") { return "0" }
             if source.hasPrefix("_exteraless_runtime.dispatch_json(") {
                 if reference.raw == 1 { effects.append(PluginNativeCallLease(isCurrent: { true })) }
                 if reference.raw == 2 { entered.succeed(()); try maintenanceTestBlock(gate) }

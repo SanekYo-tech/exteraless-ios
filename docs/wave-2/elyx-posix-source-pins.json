@@ -1,0 +1,1436 @@
+{
+  "schema": 1,
+  "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
+  "branch": "ci/elyx-posix-20261116-61d829ab",
+  "captured_utc": "2026-11-15T22:12:03.631929+00:00",
+  "base_trees": {
+    "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
+    "swift/ExteralessCore": "637a8dde7485c78ef5cfdaa2559651c216d8d09e"
+  },
+  "handoff_receipt_sha256": "7c9474064d6afede795502b022f8a4e20ecde27fe44d92cd27d88b299fd927d5",
+  "scope": "Owned Linux/POSIX archive and ready Host components; service/engine contract recorders are explicit",
+  "excluded": [
+    "PluginElyxDeveloperFiles.swift",
+    "PluginElyxDeveloperDescriptor.swift",
+    "PluginElyxDeveloperRegistry*.swift",
+    "PluginElyxDeveloperFilesTests.swift",
+    "Apple/UIKit app",
+    "production native FD authority registry"
+  ],
+  "bounds_seconds": {
+    "python_outer": 120,
+    "python_child": 20,
+    "swift_build": 180,
+    "swift_test": 30
+  },
+  "files": [
+    {
+      "path": ".github/workflows/compat-tests.yml",
+      "origin": "workflow",
+      "raw_sha256": "3c5c3dfaf4ec66ec92c0acf0f8151b7d67fb090f0f8af77fae7e385415700add",
+      "raw_bytes": 11392,
+      "canonical_sha256": "3c5c3dfaf4ec66ec92c0acf0f8151b7d67fb090f0f8af77fae7e385415700add",
+      "canonical_bytes": 11392,
+      "git_blob": "4aa19b5ca049d6c6237ce320176638881eca512e"
+    },
+    {
+      "path": "python/bridge/__init__.py",
+      "origin": "base",
+      "canonical_sha256": "b794aceaec03f87b1b43ffed13adaccd0aa2f227d63f3556d3740aa09a1e068c",
+      "canonical_bytes": 3935,
+      "git_blob": "d33c473df0de2a92fa9bdb7024e19a2588333462"
+    },
+    {
+      "path": "python/bridge/_exteraless_bridge.c",
+      "origin": "working-tree",
+      "raw_sha256": "2d4ea9f3f7f43da2c8c621c90df153a73a15509218639c24e9a7dee1a50326a2",
+      "raw_bytes": 131552,
+      "canonical_sha256": "2d4ea9f3f7f43da2c8c621c90df153a73a15509218639c24e9a7dee1a50326a2",
+      "canonical_bytes": 131552,
+      "git_blob": "1431762ae7a85ee7b5a58e4cb5bc51f562cdbfd3"
+    },
+    {
+      "path": "python/bridge/pyproject.toml",
+      "origin": "base",
+      "canonical_sha256": "43929f62ec195379981bf33a7d3796194774ce38b872ba86b0fed29f33ed707f",
+      "canonical_bytes": 538,
+      "git_blob": "e197af06d73e4df8fbf0cfcd301b899613cc3788"
+    },
+    {
+      "path": "python/bridge/setup.py",
+      "origin": "base",
+      "canonical_sha256": "c528e043072d5fcce767399a0b1aff52c936c6126e455cadfd173bb76c7dbe44",
+      "canonical_bytes": 919,
+      "git_blob": "fc174a2c67b7574b488d4424bd0588810edd68ac"
+    },
+    {
+      "path": "python/exteraless_runtime/__init__.py",
+      "origin": "working-tree",
+      "raw_sha256": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
+      "raw_bytes": 18952,
+      "canonical_sha256": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
+      "canonical_bytes": 18952,
+      "git_blob": "29d8acdb70b11d4fd94a6e5bfbb1c0d61f02ac88"
+    },
+    {
+      "path": "python/exteraless_runtime/_archives.py",
+      "origin": "working-tree",
+      "raw_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
+      "raw_bytes": 67917,
+      "canonical_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
+      "canonical_bytes": 67917,
+      "git_blob": "e040597787c369e598a96f60027dda9dbce081a6"
+    },
+    {
+      "path": "python/exteraless_runtime/_audit_paths.py",
+      "origin": "working-tree",
+      "raw_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
+      "raw_bytes": 19972,
+      "canonical_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
+      "canonical_bytes": 19972,
+      "git_blob": "0256fd519439ab2857554b166ae58df5c6974ce1"
+    },
+    {
+      "path": "python/exteraless_runtime/_callbacks.py",
+      "origin": "working-tree",
+      "raw_sha256": "70497a280c5ebc081e662fc72c656bb907df721981c19e2929f7c815e638c481",
+      "raw_bytes": 5513,
+      "canonical_sha256": "70497a280c5ebc081e662fc72c656bb907df721981c19e2929f7c815e638c481",
+      "canonical_bytes": 5513,
+      "git_blob": "2708c2abc20578a99043bfba09c439da30181373"
+    },
+    {
+      "path": "python/exteraless_runtime/_codec.py",
+      "origin": "working-tree",
+      "raw_sha256": "a9c6b19357d0a637dd6f6c641198cd37552f317ac1202722291fde3a313fe6fb",
+      "raw_bytes": 3400,
+      "canonical_sha256": "a9c6b19357d0a637dd6f6c641198cd37552f317ac1202722291fde3a313fe6fb",
+      "canonical_bytes": 3400,
+      "git_blob": "eed0ba45bbd466e7d3533ce952420f8a58a94fc8"
+    },
+    {
+      "path": "python/exteraless_runtime/_config.py",
+      "origin": "working-tree",
+      "raw_sha256": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
+      "raw_bytes": 20253,
+      "canonical_sha256": "e842c58b0e28355e01c69cb3c744978170331bffeef90251c5874b15a9159799",
+      "canonical_bytes": 20253,
+      "git_blob": "4b9c9b280083d5f5558d7ad9462cd7d0abde52ea"
+    },
+    {
+      "path": "python/exteraless_runtime/_config_manifest.py",
+      "origin": "working-tree",
+      "raw_sha256": "3e0b56a5a75a634b383b04c579c08ac982dee9012e24daa11d0320c0144b699c",
+      "raw_bytes": 406365,
+      "canonical_sha256": "3e0b56a5a75a634b383b04c579c08ac982dee9012e24daa11d0320c0144b699c",
+      "canonical_bytes": 406365,
+      "git_blob": "c3676316de50e4a25749bbd06e5680e7b856cf2e"
+    },
+    {
+      "path": "python/exteraless_runtime/_controllers.py",
+      "origin": "working-tree",
+      "raw_sha256": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
+      "raw_bytes": 11666,
+      "canonical_sha256": "f43b87693bc51f87b2cf824ea3dc535d9346d45558a8b501f705b33f8a5881a3",
+      "canonical_bytes": 11666,
+      "git_blob": "93b9f9d77c97509ce9d2c617c3d05cfa1cd3a254"
+    },
+    {
+      "path": "python/exteraless_runtime/_dependencies.py",
+      "origin": "working-tree",
+      "raw_sha256": "30669ce63a2d5707a0ef34b89a0b93a7e96517f103cb40a31a6d1f5acfa61a16",
+      "raw_bytes": 10252,
+      "canonical_sha256": "30669ce63a2d5707a0ef34b89a0b93a7e96517f103cb40a31a6d1f5acfa61a16",
+      "canonical_bytes": 10252,
+      "git_blob": "ee497b39b252dfd824ba24e1a135db4741a3c6bf"
+    },
+    {
+      "path": "python/exteraless_runtime/_developer.py",
+      "origin": "working-tree",
+      "raw_sha256": "22611badcf6c3be224e68c3f9acdefeae7edff937e1aa5a278b68b0eed27ff2d",
+      "raw_bytes": 4976,
+      "canonical_sha256": "22611badcf6c3be224e68c3f9acdefeae7edff937e1aa5a278b68b0eed27ff2d",
+      "canonical_bytes": 4976,
+      "git_blob": "30ed8f2cfd9773aca8b665333ddb8ed1a91a1611"
+    },
+    {
+      "path": "python/exteraless_runtime/_elyx_developer.py",
+      "origin": "working-tree",
+      "raw_sha256": "a2b999fb1113249c557a5c9fb90e57476b06bac05b597b9bbebb3e688e926690",
+      "raw_bytes": 6312,
+      "canonical_sha256": "a2b999fb1113249c557a5c9fb90e57476b06bac05b597b9bbebb3e688e926690",
+      "canonical_bytes": 6312,
+      "git_blob": "2eef6f2efb0761378142c9f735b6f819dab1ba21"
+    },
+    {
+      "path": "python/exteraless_runtime/_elyx_helpers.py",
+      "origin": "working-tree",
+      "raw_sha256": "f9a9cd73cbaf0d7ab987a1158e090935ec4fdd936f837e1801b04a2d4f0abaee",
+      "raw_bytes": 905,
+      "canonical_sha256": "f9a9cd73cbaf0d7ab987a1158e090935ec4fdd936f837e1801b04a2d4f0abaee",
+      "canonical_bytes": 905,
+      "git_blob": "2688ac63b0b53a006821dcf896e282fd84914912"
+    },
+    {
+      "path": "python/exteraless_runtime/_facades.py",
+      "origin": "working-tree",
+      "raw_sha256": "c9a5b7c0861d07441746d3967e119fb0fe6efe38d4b560714970b6fa4d3f12bf",
+      "raw_bytes": 4883,
+      "canonical_sha256": "c9a5b7c0861d07441746d3967e119fb0fe6efe38d4b560714970b6fa4d3f12bf",
+      "canonical_bytes": 4883,
+      "git_blob": "3f8ad0e7ae341fb98653ccc185cd28d0698dd829"
+    },
+    {
+      "path": "python/exteraless_runtime/_hook_registrations.py",
+      "origin": "working-tree",
+      "raw_sha256": "888affeff0b233b41fda8f12f91c828fd206e61ea93146a95db7e2e981ee654f",
+      "raw_bytes": 3705,
+      "canonical_sha256": "888affeff0b233b41fda8f12f91c828fd206e61ea93146a95db7e2e981ee654f",
+      "canonical_bytes": 3705,
+      "git_blob": "747e31152d5bf3354613fc1cd4a5f6e0a8172b5a"
+    },
+    {
+      "path": "python/exteraless_runtime/_java_types.py",
+      "origin": "working-tree",
+      "raw_sha256": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
+      "raw_bytes": 27248,
+      "canonical_sha256": "30a1ed6fd51fef50587029ca692c1005067cad7ceba54a212163f50b4c314f56",
+      "canonical_bytes": 27248,
+      "git_blob": "4466f8b69b3dd881c25ffc7e3fc952a881ac2b42"
+    },
+    {
+      "path": "python/exteraless_runtime/_logging.py",
+      "origin": "working-tree",
+      "raw_sha256": "8eca0d23f56a85ea87da14a22b0b8cdfb641adfc56fb5cb241e22a91ea1719cd",
+      "raw_bytes": 1060,
+      "canonical_sha256": "8eca0d23f56a85ea87da14a22b0b8cdfb641adfc56fb5cb241e22a91ea1719cd",
+      "canonical_bytes": 1060,
+      "git_blob": "e0a29e32e4fa6d2495d79cd313b844641135c439"
+    },
+    {
+      "path": "python/exteraless_runtime/_notifications.py",
+      "origin": "working-tree",
+      "raw_sha256": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
+      "raw_bytes": 5352,
+      "canonical_sha256": "50157ca3fa158c99b1687b35e97bc4ae13614dc897526c0061f096b1225f1ca7",
+      "canonical_bytes": 5352,
+      "git_blob": "0415275b6bb0737e759d96a2756150ee32876482"
+    },
+    {
+      "path": "python/exteraless_runtime/_pill_types.py",
+      "origin": "working-tree",
+      "raw_sha256": "25a73a00c6841d0d0e28027951c20d069f46782dc2bf8120b51b95623e3ee190",
+      "raw_bytes": 8780,
+      "canonical_sha256": "25a73a00c6841d0d0e28027951c20d069f46782dc2bf8120b51b95623e3ee190",
+      "canonical_bytes": 8780,
+      "git_blob": "8484669aa3ad06d0c5761d27a31cc8984ebea072"
+    },
+    {
+      "path": "python/exteraless_runtime/_pills.py",
+      "origin": "working-tree",
+      "raw_sha256": "fc2ac5e18723de8f3779624ddac3a7523aee4047b843c2364cf64b10b9bdb999",
+      "raw_bytes": 21830,
+      "canonical_sha256": "fc2ac5e18723de8f3779624ddac3a7523aee4047b843c2364cf64b10b9bdb999",
+      "canonical_bytes": 21830,
+      "git_blob": "c200dbdfb36074a78598a6d903bff28a569ee71d"
+    },
+    {
+      "path": "python/exteraless_runtime/_platform.py",
+      "origin": "working-tree",
+      "raw_sha256": "2b6050b372f8923bb7efb965bb0b79af73e29dad551e0ff85270359ad4d16932",
+      "raw_bytes": 14351,
+      "canonical_sha256": "2b6050b372f8923bb7efb965bb0b79af73e29dad551e0ff85270359ad4d16932",
+      "canonical_bytes": 14351,
+      "git_blob": "b39942181de2dfe243cf96a09769413857981226"
+    },
+    {
+      "path": "python/exteraless_runtime/_reflection.py",
+      "origin": "working-tree",
+      "raw_sha256": "8f5a3e9cdd064f2d593852005b36dfff387ac6915848e430554357c7aac7ed6f",
+      "raw_bytes": 1658,
+      "canonical_sha256": "8f5a3e9cdd064f2d593852005b36dfff387ac6915848e430554357c7aac7ed6f",
+      "canonical_bytes": 1658,
+      "git_blob": "f0a67d08d78c8999cdfdf64e5e20a35c157cb57e"
+    },
+    {
+      "path": "python/exteraless_runtime/_registrations.py",
+      "origin": "working-tree",
+      "raw_sha256": "e15f5fa6d292f383031139aa1b03f1d095d29aa557233f697897ba99c7ac122c",
+      "raw_bytes": 7350,
+      "canonical_sha256": "e15f5fa6d292f383031139aa1b03f1d095d29aa557233f697897ba99c7ac122c",
+      "canonical_bytes": 7350,
+      "git_blob": "706105b82a3ec37487113a3fe2d8548be9f772ca"
+    },
+    {
+      "path": "python/exteraless_runtime/_scheduling.py",
+      "origin": "working-tree",
+      "raw_sha256": "53428ff5b9a207405377d86939e582748d45e4e3a016d75f0d34552bcd92a293",
+      "raw_bytes": 5265,
+      "canonical_sha256": "53428ff5b9a207405377d86939e582748d45e4e3a016d75f0d34552bcd92a293",
+      "canonical_bytes": 5265,
+      "git_blob": "0d03960082701919825c70a4d5cf8ac5bd587310"
+    },
+    {
+      "path": "python/exteraless_runtime/_settings.py",
+      "origin": "working-tree",
+      "raw_sha256": "9421584fbc940ffb54f191d6b9726de36b53d6c037b6a71278ea49bfa20077a2",
+      "raw_bytes": 5290,
+      "canonical_sha256": "9421584fbc940ffb54f191d6b9726de36b53d6c037b6a71278ea49bfa20077a2",
+      "canonical_bytes": 5290,
+      "git_blob": "47ba4367fc51b5de3b0b61306a6909813bd3ef3c"
+    },
+    {
+      "path": "python/exteraless_runtime/_tl.py",
+      "origin": "working-tree",
+      "raw_sha256": "00b016b315a43fcd7015ee4d37debf69fcc1c347b6e380ade92d06775eb03d9f",
+      "raw_bytes": 34919,
+      "canonical_sha256": "00b016b315a43fcd7015ee4d37debf69fcc1c347b6e380ade92d06775eb03d9f",
+      "canonical_bytes": 34919,
+      "git_blob": "71a0580c5f8084544bc0b2226a4e75e908dea025"
+    },
+    {
+      "path": "python/exteraless_runtime/_ui.py",
+      "origin": "working-tree",
+      "raw_sha256": "301b669e23eeb7388810d699a27f91f16189f6d181070c7851480a417f1f4398",
+      "raw_bytes": 53520,
+      "canonical_sha256": "301b669e23eeb7388810d699a27f91f16189f6d181070c7851480a417f1f4398",
+      "canonical_bytes": 53520,
+      "git_blob": "a568a979faa95dfc62c17bf6e899cc772a1e0720"
+    },
+    {
+      "path": "python/runtime/dependency-lock.json",
+      "origin": "base",
+      "canonical_sha256": "222da84eea828044f5af0e8d034945662fd74aae6414bc91f67d6311f14ef924",
+      "canonical_bytes": 8949,
+      "git_blob": "91cd9446281a37cbc65950cebcddaa6be775743a"
+    },
+    {
+      "path": "python/sdk/.gitignore",
+      "origin": "base",
+      "canonical_sha256": "862263fa1f46c20f0d1e4dac5ffcc75abd55c08211b2c3864c5f8764b9d87793",
+      "canonical_bytes": 19,
+      "git_blob": "7a60b85e148f80966a550e5ab6a762a907c69ca6"
+    },
+    {
+      "path": "python/sdk/android_utils.py",
+      "origin": "base",
+      "canonical_sha256": "ecae1f61d63daa0453c70f6118eaa791d798dd7440d12ab2704ccc5386886863",
+      "canonical_bytes": 10832,
+      "git_blob": "c86d16a5f91ece12d9d97535c2987f7e0522fcaa"
+    },
+    {
+      "path": "python/sdk/base_plugin.py",
+      "origin": "base",
+      "canonical_sha256": "25a85112e3be4d6afbbedf42c405f91cd2ee373c2a7735b9329cc664a410843b",
+      "canonical_bytes": 37937,
+      "git_blob": "d73283dd6b4866ae1a9051ff90191d561b1441df"
+    },
+    {
+      "path": "python/sdk/client_utils.py",
+      "origin": "base",
+      "canonical_sha256": "689c05722c691c767ba34f9187c468dd3f29b4d99414560caa60e35b4b528d88",
+      "canonical_bytes": 35330,
+      "git_blob": "efdbaa3718e2a6282ad4cdf8e900044cc5d9a056"
+    },
+    {
+      "path": "python/sdk/dev_server.py",
+      "origin": "base",
+      "canonical_sha256": "686dac5329b52f478a8ab9b1c837e752cd6c61a22022a3979cbd7105b77d1e38",
+      "canonical_bytes": 12231,
+      "git_blob": "f67b5bef698605ed5f8fe9a4c5cf3c33648c318a"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/__init__.py",
+      "origin": "base",
+      "canonical_sha256": "c727c43ef32e020e8669391ea4721269c429592ee1712286acc4d925a0882cbf",
+      "canonical_bytes": 1722,
+      "git_blob": "bed7e236f7e3d52cbea1cc9cd540289dc2a420b8"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/archive.py",
+      "origin": "base",
+      "canonical_sha256": "d35fe1a2e0f2a28d2fce29d3b5f0fcbc7a8c05c5667b488c3c8afb180ca660c2",
+      "canonical_bytes": 12482,
+      "git_blob": "d6e321b026b106506e0eb35cdbb10c9f1c70697c"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/assets.py",
+      "origin": "base",
+      "canonical_sha256": "06f74f9ed95ad0e6402f8d9f7498431e4d0d81935bbe704493f62d4f3bc6320b",
+      "canonical_bytes": 11625,
+      "git_blob": "93ba20aa9d850a541d253c7c126706e5da0225ec"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/dev_commands.py",
+      "origin": "base",
+      "canonical_sha256": "5d33aaac3e89f36d3eb7d6bf7f0ee43219b5d871f18c68aec837310e8e8b2ee3",
+      "canonical_bytes": 9438,
+      "git_blob": "be77170ee20a30007e93bc62294cb06cba270457"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/errors.py",
+      "origin": "base",
+      "canonical_sha256": "91903e8ac644557c628f5ef7dbb756a257c86bb090428db513ca626d9c45a66a",
+      "canonical_bytes": 1112,
+      "git_blob": "3d869332637388148fa043db969410738f29d450"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/facade.py",
+      "origin": "base",
+      "canonical_sha256": "a61a3b1920f3daf9fbb4d42df9af65f46f9da03782f847c3dc8463a291c0f390",
+      "canonical_bytes": 10343,
+      "git_blob": "8e0dcd1eaa512c9222238edcc2a5648b5cdd58a7"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/loader.py",
+      "origin": "base",
+      "canonical_sha256": "a09eddf36ae77415fbf41e58aed3b09ccb4ce27759aea6ba9814ad8129bc0e12",
+      "canonical_bytes": 13738,
+      "git_blob": "307f05d19c6bee3a1fc7f62a0d3668101ebfab1a"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/localization.py",
+      "origin": "base",
+      "canonical_sha256": "b8a4d27642c27996dbd99cba7a1597bb73b8a3878920cc23b0eed416b47136cf",
+      "canonical_bytes": 7129,
+      "git_blob": "ec0430e55b95759b6e86848ca989860045185323"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/metadata.py",
+      "origin": "base",
+      "canonical_sha256": "dfedf130c7501ff0c67350ceba51ee068e8664c6faca3aaa1760b9dae4dc7bd3",
+      "canonical_bytes": 9827,
+      "git_blob": "503d4d851ebdc6635c5f8e55624733d07481290b"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/namespace.py",
+      "origin": "base",
+      "canonical_sha256": "1b9a33a09318d0c19a7e64696028089def15cecff2a75a4c0ad6dfbde7d51966",
+      "canonical_bytes": 14610,
+      "git_blob": "ac148fe19dc5a15e2f335639e1afaaea9a9ebeb6"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/settings.py",
+      "origin": "base",
+      "canonical_sha256": "d240700bad642540941beb02b421be23b37597ce12dea7d86f55be4ef753d0a7",
+      "canonical_bytes": 3863,
+      "git_blob": "2ad6a310c6d79569256799398877003166a4af5c"
+    },
+    {
+      "path": "python/sdk/elyx_runtime/utils.py",
+      "origin": "base",
+      "canonical_sha256": "51b4de5c64622d025045475c0c8a1e7cdf91abc6590cb957b96689c992e9435a",
+      "canonical_bytes": 1246,
+      "git_blob": "2bab990fed1da56ce82d549c71296eb6097aa6c7"
+    },
+    {
+      "path": "python/sdk/extera_utils/__init__.py",
+      "origin": "base",
+      "canonical_sha256": "1da3782cecc9b63e5803b23b19273581b855657aaf1984821e417d21f6b96d85",
+      "canonical_bytes": 293,
+      "git_blob": "86bf2c2f6d0ad14544d7aa424473197e3bed424d"
+    },
+    {
+      "path": "python/sdk/extera_utils/audit_gate.py",
+      "origin": "base",
+      "canonical_sha256": "bea9ef82832a61f21537150ddb4cff5f5bd4c2ccf4fca90b0d2307d0e8c2dff5",
+      "canonical_bytes": 34153,
+      "git_blob": "133c45af75808d30aefcf7dae02c3b2fc3099551"
+    },
+    {
+      "path": "python/sdk/extera_utils/capability_scan.py",
+      "origin": "base",
+      "canonical_sha256": "cf18dff77cd08b77f870df6fe4ded28cdff21bc649142bb40ff6f667d37901db",
+      "canonical_bytes": 24053,
+      "git_blob": "53811bd7995b9330801e228f2bedf3e6ccf32c6e"
+    },
+    {
+      "path": "python/sdk/extera_utils/class_aliases.py",
+      "origin": "base",
+      "canonical_sha256": "4f6999a246f0838355ea260bdd5ddd2fcaee652e4f427de7fc24fede14804c0c",
+      "canonical_bytes": 30627,
+      "git_blob": "b5e9ab7f9a981e8e0ea81379b3ee56bc8f3b49a9"
+    },
+    {
+      "path": "python/sdk/extera_utils/classes.py",
+      "origin": "base",
+      "canonical_sha256": "45b5d7fca63969b58c551e0333f66e13ef798136650f8ea36448e275a155f993",
+      "canonical_bytes": 30230,
+      "git_blob": "5d5d2407c87c01093e8646bf6794b62cb111f44a"
+    },
+    {
+      "path": "python/sdk/extera_utils/hook_profile.py",
+      "origin": "base",
+      "canonical_sha256": "b295c5890eed31ed06b7f629043d83843248292df6e9f9e48b8544ba3cae8422",
+      "canonical_bytes": 1483,
+      "git_blob": "7b822fcce764606aad8adc82b6a794af3fda6fba"
+    },
+    {
+      "path": "python/sdk/extera_utils/metadata_parser.py",
+      "origin": "base",
+      "canonical_sha256": "272d66cc7a86606b45114ed4f8596524d2a4435b5805a66d48a92bc5587e0c13",
+      "canonical_bytes": 11878,
+      "git_blob": "6dd58e77fbff47a1ba8fe669af678269f287c377"
+    },
+    {
+      "path": "python/sdk/extera_utils/plugin_loader.py",
+      "origin": "base",
+      "canonical_sha256": "c90134bde58559d675ffeff313eecd4223f39d60edbe0992137b41461b6547f5",
+      "canonical_bytes": 141726,
+      "git_blob": "6d1d890ba601287845629914697ee6d0c4489114"
+    },
+    {
+      "path": "python/sdk/extera_utils/text_formatting.py",
+      "origin": "base",
+      "canonical_sha256": "c024bd2ff9dabee1afec68c4376d6cc98324dfb51581b6baff625f5121191ce7",
+      "canonical_bytes": 13282,
+      "git_blob": "e7ff95f2a9f65d1702d6846fbb933d85c523f846"
+    },
+    {
+      "path": "python/sdk/extera_utils/thread_state.py",
+      "origin": "base",
+      "canonical_sha256": "57ea7cd51037a79b93326909d3b8f3f81cfe5d1b900405126b94027c162985e8",
+      "canonical_bytes": 836,
+      "git_blob": "184689f5b2fe677f227dc71a92caa77c88b393ca"
+    },
+    {
+      "path": "python/sdk/file_utils.py",
+      "origin": "base",
+      "canonical_sha256": "b3f37a701aafe1704cc70fa1208b9ac1bf90d8473b67845b8fc9d8160947d83f",
+      "canonical_bytes": 21576,
+      "git_blob": "6dd09f392b11c8a57541eeb9482745c121840693"
+    },
+    {
+      "path": "python/sdk/hook_utils.py",
+      "origin": "base",
+      "canonical_sha256": "97a8228f76881426de2df04fed441d1bf0424cae1bebc211b8a434990ebd464a",
+      "canonical_bytes": 5438,
+      "git_blob": "65af91122b371da5fb5287b97d40ae635cb1a030"
+    },
+    {
+      "path": "python/sdk/intents.py",
+      "origin": "base",
+      "canonical_sha256": "dddd13ff0d2dbbc1a991acee45a28c8ee006440bb230f95cee67b2f27a41ba13",
+      "canonical_bytes": 9675,
+      "git_blob": "7e9bcc24c332f9f39de33b0f3511e6ae92f84078"
+    },
+    {
+      "path": "python/sdk/markdown_utils.py",
+      "origin": "base",
+      "canonical_sha256": "9b348c6a22162d111975ddee17176f269d134bf8b6cfbc65a67e1ad5c86d1d4a",
+      "canonical_bytes": 4148,
+      "git_blob": "c690faa80c44a8731b465fa0a3501c0d273366b4"
+    },
+    {
+      "path": "python/sdk/pip_controller.py",
+      "origin": "base",
+      "canonical_sha256": "a6a7d853a6ead24a1394b49e09a640f8ae9d1b3dd787f7bdf2ff27740e6ebe01",
+      "canonical_bytes": 17382,
+      "git_blob": "ce2f934a2e6107391db515003d49beb3856f59dc"
+    },
+    {
+      "path": "python/sdk/plugin_settings.py",
+      "origin": "base",
+      "canonical_sha256": "4bb0a96755c059d499c78e9fce8569dd669458303c72be6d63ceb397b87f3344",
+      "canonical_bytes": 5170,
+      "git_blob": "fc3c6a62025df9bdc06f563f79933ab095e6b947"
+    },
+    {
+      "path": "python/sdk/ui/__init__.py",
+      "origin": "base",
+      "canonical_sha256": "4ca9eb1938a5f1f16c024bcf7303559ed40dabd38a8743f227c3cb1e88d22a03",
+      "canonical_bytes": 63,
+      "git_blob": "b400533f1cb0dd956317de3608c3e43012116dda"
+    },
+    {
+      "path": "python/sdk/ui/alert.py",
+      "origin": "base",
+      "canonical_sha256": "38446959aa3cf1c17df24967ca6cc319aa98a18be1cd4006dde27a416b2cffc0",
+      "canonical_bytes": 12722,
+      "git_blob": "765efb85c972da2907b869b126fdf70ae0829dbd"
+    },
+    {
+      "path": "python/sdk/ui/bulletin.py",
+      "origin": "base",
+      "canonical_sha256": "8eec86cc8f684a2872cb889eaee633e71b692302d215010390a8212d137ea19d",
+      "canonical_bytes": 6780,
+      "git_blob": "2292c27cc4d20c0cbb28fcc3696c3aaae25945d1"
+    },
+    {
+      "path": "python/sdk/ui/settings.py",
+      "origin": "base",
+      "canonical_sha256": "483154a1355c8476f8fff60dbf9975e5b4f7cb088d62d822071c6c7b0c5000e3",
+      "canonical_bytes": 6529,
+      "git_blob": "580eabf4e09763a434b486dcf2cd2c8dfd60a082"
+    },
+    {
+      "path": "python/virtualjava/__init__.py",
+      "origin": "working-tree",
+      "raw_sha256": "918fbafd5a7338ef16f63d930aa87ec51d8cf78da8269220bb6fd6ddd185e221",
+      "raw_bytes": 1351,
+      "canonical_sha256": "918fbafd5a7338ef16f63d930aa87ec51d8cf78da8269220bb6fd6ddd185e221",
+      "canonical_bytes": 1351,
+      "git_blob": "01a096b823fbf9013d78769094afdea2fde2b869"
+    },
+    {
+      "path": "python/virtualjava/arrays.py",
+      "origin": "working-tree",
+      "raw_sha256": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
+      "raw_bytes": 6549,
+      "canonical_sha256": "09088cce9b5d587eaecd57bdc9ddbed082ada60fa23308244577740510ab0c11",
+      "canonical_bytes": 6549,
+      "git_blob": "039aa6624b6732ee9022233f9602891a56dff740"
+    },
+    {
+      "path": "python/virtualjava/backend.py",
+      "origin": "working-tree",
+      "raw_sha256": "765bfe3f9c8bb5f2031d28d5b3cb47d69ef46b7d6fbbaf59c4d255c09e8fb71d",
+      "raw_bytes": 7499,
+      "canonical_sha256": "765bfe3f9c8bb5f2031d28d5b3cb47d69ef46b7d6fbbaf59c4d255c09e8fb71d",
+      "canonical_bytes": 7499,
+      "git_blob": "e3cfccb3de9435209409b7be18d7d67cd2f7f654"
+    },
+    {
+      "path": "python/virtualjava/finder.py",
+      "origin": "working-tree",
+      "raw_sha256": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71",
+      "raw_bytes": 10956,
+      "canonical_sha256": "d1bc47eecc730b6b6ac9e724c3f957ffd9cb6b72a481c5f0cb0410704bb98e71",
+      "canonical_bytes": 10956,
+      "git_blob": "db4121c9b4dd1b8d207ffa6bcb138b30060a8114"
+    },
+    {
+      "path": "python/virtualjava/proxy.py",
+      "origin": "working-tree",
+      "raw_sha256": "025acce2920244788ec5f69874228b5db459fc3a3c5b5555edeb85f10d32de92",
+      "raw_bytes": 8870,
+      "canonical_sha256": "025acce2920244788ec5f69874228b5db459fc3a3c5b5555edeb85f10d32de92",
+      "canonical_bytes": 8870,
+      "git_blob": "1c33d6fb99f48fb108a459f20c0373bd15c6f19f"
+    },
+    {
+      "path": "python/virtualjava/registry.py",
+      "origin": "working-tree",
+      "raw_sha256": "7ad5d5125e4dd231b07fe3145402e1113aab639fa57af2e22d10e5aa033e69b8",
+      "raw_bytes": 2182,
+      "canonical_sha256": "7ad5d5125e4dd231b07fe3145402e1113aab639fa57af2e22d10e5aa033e69b8",
+      "canonical_bytes": 2182,
+      "git_blob": "50063fa0e9721bde7fb9122638e889e81d052cf3"
+    },
+    {
+      "path": "swift/PluginHost/Package.swift",
+      "origin": "working-tree",
+      "raw_sha256": "fbc50ee84590add303641563b765c189fd1de71d47d8d4939bba42146734766c",
+      "raw_bytes": 1436,
+      "canonical_sha256": "fbc50ee84590add303641563b765c189fd1de71d47d8d4939bba42146734766c",
+      "canonical_bytes": 1436,
+      "git_blob": "fb9a37d93baacef3deb48c7320fb6369ea3c03dc"
+    },
+    {
+      "path": "swift/PluginHost/Sources/CPluginHostShims/include/ph_atomic.h",
+      "origin": "working-tree",
+      "raw_sha256": "7423467c23cd56374aef83f704b93d0396d2ff5e7d30e07cadbada6049485bd8",
+      "raw_bytes": 962,
+      "canonical_sha256": "7423467c23cd56374aef83f704b93d0396d2ff5e7d30e07cadbada6049485bd8",
+      "canonical_bytes": 962,
+      "git_blob": "bb6b7a2c0904d16e887f7b87a415b5b03f9026f0"
+    },
+    {
+      "path": "swift/PluginHost/Sources/CPluginHostShims/ph_atomic.c",
+      "origin": "working-tree",
+      "raw_sha256": "4bfed21b108e9a6443befa41f3211247dbea767e2562e30b88ecb4d06073234d",
+      "raw_bytes": 962,
+      "canonical_sha256": "4bfed21b108e9a6443befa41f3211247dbea767e2562e30b88ecb4d06073234d",
+      "canonical_bytes": 962,
+      "git_blob": "aaabe80eaac6e84353c48c636644129f8f46dd96"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/BridgeServices.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2b9d428135e67213a47e64f780d595f3ca92ebdbb300e6c042e915d581d0957e",
+      "raw_bytes": 54775,
+      "canonical_sha256": "2b9d428135e67213a47e64f780d595f3ca92ebdbb300e6c042e915d581d0957e",
+      "canonical_bytes": 54775,
+      "git_blob": "e180236777756bfbabf4f0fc8589f74ea4fa57f5"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift",
+      "origin": "working-tree",
+      "raw_sha256": "b6d6f6a295340292f6f6598beecbc5c892623472aae2f93f28a8856a3627f30d",
+      "raw_bytes": 9612,
+      "canonical_sha256": "b6d6f6a295340292f6f6598beecbc5c892623472aae2f93f28a8856a3627f30d",
+      "canonical_bytes": 9612,
+      "git_blob": "f20e462c2b290672f13115b30cb7be9bec2d0a5f"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/ExtensionPoints.swift",
+      "origin": "working-tree",
+      "raw_sha256": "a7f5ce2b5fd5495a505a548504a40c9cf8f83fbbfcbd95d22d727da5360dec5b",
+      "raw_bytes": 19791,
+      "canonical_sha256": "a7f5ce2b5fd5495a505a548504a40c9cf8f83fbbfcbd95d22d727da5360dec5b",
+      "canonical_bytes": 19791,
+      "git_blob": "74250b4e5871606fb39f559582d8b724ef6e818f"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeBridgeBinding.swift",
+      "origin": "working-tree",
+      "raw_sha256": "27f65038bf5c316494bcdbecbf4f1c0f83a567d01e3d471120c1a6d3b00d7246",
+      "raw_bytes": 4167,
+      "canonical_sha256": "27f65038bf5c316494bcdbecbf4f1c0f83a567d01e3d471120c1a6d3b00d7246",
+      "canonical_bytes": 4167,
+      "git_blob": "bd0b7520d87dda1aa1dbc339838d81ebdc0f4005"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceCallback.swift",
+      "origin": "working-tree",
+      "raw_sha256": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69",
+      "raw_bytes": 15097,
+      "canonical_sha256": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69",
+      "canonical_bytes": 15097,
+      "git_blob": "dc2b9c8d34e68b73108c2420115b840e122edb4a"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceCleanup.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1b820dc298fe2442a456d6d6b483510dfe51ad6a27649b9d1a234952b0d10f39",
+      "raw_bytes": 2394,
+      "canonical_sha256": "1b820dc298fe2442a456d6d6b483510dfe51ad6a27649b9d1a234952b0d10f39",
+      "canonical_bytes": 2394,
+      "git_blob": "31c174db3123e2159b96635592b2e046c1c42832"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceEventDelivery.swift",
+      "origin": "working-tree",
+      "raw_sha256": "bdc197482f170d09687f78545d8aa6b35e1ff05ee9d3f358cd979f9cc5e502a7",
+      "raw_bytes": 7072,
+      "canonical_sha256": "bdc197482f170d09687f78545d8aa6b35e1ff05ee9d3f358cd979f9cc5e502a7",
+      "canonical_bytes": 7072,
+      "git_blob": "b2a3e5b67294b32e78869ec82103cbd706cafe2b"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceInterceptionModels.swift",
+      "origin": "working-tree",
+      "raw_sha256": "05ed1af2ac1d6418b4f80f3b9efc8054f07c3687daa2f101f30413a1d09d81fb",
+      "raw_bytes": 14136,
+      "canonical_sha256": "05ed1af2ac1d6418b4f80f3b9efc8054f07c3687daa2f101f30413a1d09d81fb",
+      "canonical_bytes": 14136,
+      "git_blob": "a7e2766e015c6e6b76421b495f9e9c944a6a95fa"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceLogEvent.swift",
+      "origin": "working-tree",
+      "raw_sha256": "83049e070f36d267d0c9f724681d419b5c443f8971aa197e5fdcd5fd37b17b40",
+      "raw_bytes": 4797,
+      "canonical_sha256": "83049e070f36d267d0c9f724681d419b5c443f8971aa197e5fdcd5fd37b17b40",
+      "canonical_bytes": 4797,
+      "git_blob": "0fa9e9b43f0ae046268addd2c5a528eae1d1bbe5"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOpenBarrier.swift",
+      "origin": "working-tree",
+      "raw_sha256": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9",
+      "raw_bytes": 16030,
+      "canonical_sha256": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9",
+      "canonical_bytes": 16030,
+      "git_blob": "f1749a1c7194db0bc9c3d45ec7be3585127e8215"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOperations.swift",
+      "origin": "working-tree",
+      "raw_sha256": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169",
+      "raw_bytes": 8662,
+      "canonical_sha256": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169",
+      "canonical_bytes": 8662,
+      "git_blob": "e28d3db848d14148b86e70466a346a307b52407c"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServicePlayback.swift",
+      "origin": "working-tree",
+      "raw_sha256": "e710f7979e1d5606168ea5f5f9815f1c6876a51fd32646b5f9f152191f1c465b",
+      "raw_bytes": 2971,
+      "canonical_sha256": "e710f7979e1d5606168ea5f5f9815f1c6876a51fd32646b5f9f152191f1c465b",
+      "canonical_bytes": 2971,
+      "git_blob": "49b4557471f7ed9a76342bc2af88c511865e0b95"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceReleaseQueue.swift",
+      "origin": "working-tree",
+      "raw_sha256": "91b6e32299632e4960c581ddab40f02d15b13c4ac42e7fb26d899af43253f525",
+      "raw_bytes": 4181,
+      "canonical_sha256": "91b6e32299632e4960c581ddab40f02d15b13c4ac42e7fb26d899af43253f525",
+      "canonical_bytes": 4181,
+      "git_blob": "15e2128a9a2dbf91df07c816302807e32de2100a"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceScheduler.swift",
+      "origin": "working-tree",
+      "raw_sha256": "c64fda685439f416513b94c23b05bf64883cc986ba99d1dceddaa02e016ee83f",
+      "raw_bytes": 5073,
+      "canonical_sha256": "c64fda685439f416513b94c23b05bf64883cc986ba99d1dceddaa02e016ee83f",
+      "canonical_bytes": 5073,
+      "git_blob": "f0de11ccf95e21ef80b650f30e96771f7b62a3b6"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceSnapshots.swift",
+      "origin": "working-tree",
+      "raw_sha256": "4dd80e363c8dd5579a35620d354e65578c9273cedccc262b26b1ec49c06012f5",
+      "raw_bytes": 9179,
+      "canonical_sha256": "4dd80e363c8dd5579a35620d354e65578c9273cedccc262b26b1ec49c06012f5",
+      "canonical_bytes": 9179,
+      "git_blob": "1cecee8940e676b914ef35fd6fcb1ed0b32d7bee"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceWire.swift",
+      "origin": "working-tree",
+      "raw_sha256": "e465bb340c8ac3c936677833881bba21011183c05530677e6807ce914d676a26",
+      "raw_bytes": 6215,
+      "canonical_sha256": "e465bb340c8ac3c936677833881bba21011183c05530677e6807ce914d676a26",
+      "canonical_bytes": 6215,
+      "git_blob": "de64641964281b9b9acb7a80ea5bae5985688fc9"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift",
+      "origin": "working-tree",
+      "raw_sha256": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
+      "raw_bytes": 13443,
+      "canonical_sha256": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
+      "canonical_bytes": 13443,
+      "git_blob": "bc7aceb5e760a677c2a788e51bae0f75589be08f"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginBridgeExtension.swift",
+      "origin": "working-tree",
+      "raw_sha256": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f",
+      "raw_bytes": 3204,
+      "canonical_sha256": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f",
+      "canonical_bytes": 3204,
+      "git_blob": "e7195878f86c718c7923586de0a62f2d4a2cf078"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift",
+      "origin": "working-tree",
+      "raw_sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
+      "raw_bytes": 9952,
+      "canonical_sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
+      "canonical_bytes": 9952,
+      "git_blob": "8bb0ab0730a066054b984d4a057fc640451a342d"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift",
+      "origin": "working-tree",
+      "raw_sha256": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
+      "raw_bytes": 14004,
+      "canonical_sha256": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
+      "canonical_bytes": 14004,
+      "git_blob": "d7e3f5da0a818e6c942f4f893765679aca6b7dcf"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperRequest.swift",
+      "origin": "working-tree",
+      "raw_sha256": "82f9655ccd392d4b76cd6df46e547d8d9e1b494a03e5256994f05be7b5e85eca",
+      "raw_bytes": 8644,
+      "canonical_sha256": "82f9655ccd392d4b76cd6df46e547d8d9e1b494a03e5256994f05be7b5e85eca",
+      "canonical_bytes": 8644,
+      "git_blob": "2c91bbca0e2332b80671fd2629459df0d6e617e2"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperTransaction.swift",
+      "origin": "working-tree",
+      "raw_sha256": "ed22be0fe9deb8abb60d5614dc29ad96c1a40f4f4b59425654a6fd5d26b650d4",
+      "raw_bytes": 13546,
+      "canonical_sha256": "ed22be0fe9deb8abb60d5614dc29ad96c1a40f4f4b59425654a6fd5d26b650d4",
+      "canonical_bytes": 13546,
+      "git_blob": "c49a85ce1f91035cef3789389c828264b5665cca"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginEventExecution.swift",
+      "origin": "working-tree",
+      "raw_sha256": "882de607740cfd3eca62cd11d564519c987498bcd8fd862194dc21f1b6e73707",
+      "raw_bytes": 10229,
+      "canonical_sha256": "882de607740cfd3eca62cd11d564519c987498bcd8fd862194dc21f1b6e73707",
+      "canonical_bytes": 10229,
+      "git_blob": "cfd4d47649330ec9f910451570cbf7126c24a2eb"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginEventQueue.swift",
+      "origin": "working-tree",
+      "raw_sha256": "dc797e3ae31aab59e86e2d31ea2aa0afa44e78643c1fe4587abe6e2bde678f34",
+      "raw_bytes": 13575,
+      "canonical_sha256": "dc797e3ae31aab59e86e2d31ea2aa0afa44e78643c1fe4587abe6e2bde678f34",
+      "canonical_bytes": 13575,
+      "git_blob": "08507c9d96ad26404ebda76b3ce4c04ecb53046f"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginHost.swift",
+      "origin": "working-tree",
+      "raw_sha256": "5c256b20fc4ecce58c6e460aa1989836450abf499d9f3c7deb135fd5c2421de6",
+      "raw_bytes": 121819,
+      "canonical_sha256": "5c256b20fc4ecce58c6e460aa1989836450abf499d9f3c7deb135fd5c2421de6",
+      "canonical_bytes": 121819,
+      "git_blob": "2098a1d7d05f2f9efb97451b3cef92f9ad1aa704"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginHostLifecycle.swift",
+      "origin": "working-tree",
+      "raw_sha256": "dfa7484596853add073a7d6e66ef4c38d6cf3cd680f7a44865281cd6cd4872da",
+      "raw_bytes": 13054,
+      "canonical_sha256": "dfa7484596853add073a7d6e66ef4c38d6cf3cd680f7a44865281cd6cd4872da",
+      "canonical_bytes": 13054,
+      "git_blob": "61b2c2dab90e1baff63ea7a432bfa8c93ac3bc93"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginModel.swift",
+      "origin": "working-tree",
+      "raw_sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0",
+      "raw_bytes": 27541,
+      "canonical_sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0",
+      "canonical_bytes": 27541,
+      "git_blob": "06e42868d57150ed9a35c673359b847a47ae6d84"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginNativeEffectBudget.swift",
+      "origin": "working-tree",
+      "raw_sha256": "6dc6a7014d64cf28d33066d5dab475158210aa6bc094d656a61af38c860c97d5",
+      "raw_bytes": 2872,
+      "canonical_sha256": "6dc6a7014d64cf28d33066d5dab475158210aa6bc094d656a61af38c860c97d5",
+      "canonical_bytes": 2872,
+      "git_blob": "628a8c3a5ee9b0a8b85925139c92fd2652cdfb3c"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginPermissionStorage.swift",
+      "origin": "working-tree",
+      "raw_sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de",
+      "raw_bytes": 6573,
+      "canonical_sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de",
+      "canonical_bytes": 6573,
+      "git_blob": "0762aad234b90acdc9f8be4a82c2a933d5e1cba7"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginResourcePath.swift",
+      "origin": "working-tree",
+      "raw_sha256": "fd68d73978d46702f7a1a9e3e08f65e2d20189c0280c6a12b32b92436a6b0e45",
+      "raw_bytes": 1700,
+      "canonical_sha256": "fd68d73978d46702f7a1a9e3e08f65e2d20189c0280c6a12b32b92436a6b0e45",
+      "canonical_bytes": 1700,
+      "git_blob": "b31b9b57204002240847f9af9b567e5d16315435"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginRuntimeProtocol.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1926e6aad7bd145cb0438ea56080e812e3e0fb962c963f1c7640a13b632f8c8e",
+      "raw_bytes": 5676,
+      "canonical_sha256": "1926e6aad7bd145cb0438ea56080e812e3e0fb962c963f1c7640a13b632f8c8e",
+      "canonical_bytes": 5676,
+      "git_blob": "3194646fe6a1c0d012e8a0eeeee4c38c17e48eea"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginRuntimeStartupContinuation.swift",
+      "origin": "working-tree",
+      "raw_sha256": "0e70f0c9d728eedff50d4e0d0553672842f0a7cc57699bd287aaa4f444a35c60",
+      "raw_bytes": 8776,
+      "canonical_sha256": "0e70f0c9d728eedff50d4e0d0553672842f0a7cc57699bd287aaa4f444a35c60",
+      "canonical_bytes": 8776,
+      "git_blob": "20aa46a8f52cb5aac7a1facdf0bd8bb1874a96b9"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginServiceModels.swift",
+      "origin": "working-tree",
+      "raw_sha256": "d5cf1997b54359323a38db2dbe39002a59a59642514b8fc27db66dc7184c3815",
+      "raw_bytes": 13318,
+      "canonical_sha256": "d5cf1997b54359323a38db2dbe39002a59a59642514b8fc27db66dc7184c3815",
+      "canonical_bytes": 13318,
+      "git_blob": "609473b776814e9bbec26c41dfed924360c9171d"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginServiceStorage.swift",
+      "origin": "working-tree",
+      "raw_sha256": "827ce0d50604b56694fbfa83fa7112b7943cf9c33b102de20c57ac9e4ea603d2",
+      "raw_bytes": 13966,
+      "canonical_sha256": "827ce0d50604b56694fbfa83fa7112b7943cf9c33b102de20c57ac9e4ea603d2",
+      "canonical_bytes": 13966,
+      "git_blob": "d9d23cde6256bbfb19b97dee7ec7526843f7d596"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginSettingsPageLease.swift",
+      "origin": "working-tree",
+      "raw_sha256": "d607bf036b27d3af74de54a0fce1f1614f7bdd73ab940d443feb074df0d5e19c",
+      "raw_bytes": 2299,
+      "canonical_sha256": "d607bf036b27d3af74de54a0fce1f1614f7bdd73ab940d443feb074df0d5e19c",
+      "canonical_bytes": 2299,
+      "git_blob": "9b6a16d814fdefe12d618a34b7a53be4c8a87569"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTLHostPayload.swift",
+      "origin": "working-tree",
+      "raw_sha256": "e3935c527f2ed969ebd1898bdf85b817454563b504532216e508953498b96d76",
+      "raw_bytes": 4981,
+      "canonical_sha256": "e3935c527f2ed969ebd1898bdf85b817454563b504532216e508953498b96d76",
+      "canonical_bytes": 4981,
+      "git_blob": "9c5958546a5e15b542a590b3cf888f3010f67c70"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTLInvocationOrigin.swift",
+      "origin": "working-tree",
+      "raw_sha256": "328d6f819ae6141529d334cb4ab9eb94536aad29617541ef2d9c92de18e12383",
+      "raw_bytes": 6022,
+      "canonical_sha256": "328d6f819ae6141529d334cb4ab9eb94536aad29617541ef2d9c92de18e12383",
+      "canonical_bytes": 6022,
+      "git_blob": "72591cfb9c8230a6d2d98dbbea6f36c76facbb75"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustLevel.swift",
+      "origin": "working-tree",
+      "raw_sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8",
+      "raw_bytes": 4822,
+      "canonical_sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8",
+      "canonical_bytes": 4822,
+      "git_blob": "8db634f07666d65517b5dbfc43bff04a7333d6f2"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustSelection.swift",
+      "origin": "working-tree",
+      "raw_sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4",
+      "raw_bytes": 1281,
+      "canonical_sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4",
+      "canonical_bytes": 1281,
+      "git_blob": "7200b4fc11f31b6e7ab6746dac7e0aff321d5ef3"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginWatchdog.swift",
+      "origin": "working-tree",
+      "raw_sha256": "4efb7cda74992219acde62f3de5b5fb72d0ff5c8d602a6bf2904c10c0ff3850c",
+      "raw_bytes": 16071,
+      "canonical_sha256": "4efb7cda74992219acde62f3de5b5fb72d0ff5c8d602a6bf2904c10c0ff3850c",
+      "canonical_bytes": 16071,
+      "git_blob": "14f3f37661ea491db9d6afe6c15050578111747c"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PythonRuntime.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1e9235e65f1fb860da218317a033d12e2b37f545b2b2dbdad33de29fce6544f1",
+      "raw_bytes": 19886,
+      "canonical_sha256": "1e9235e65f1fb860da218317a033d12e2b37f545b2b2dbdad33de29fce6544f1",
+      "canonical_bytes": 19886,
+      "git_blob": "ecaf6256f1d5d48a6fccdd91eb2560d47d5b03b8"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/SecurityGates.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2467c87171c86cb7e9f1960afbd57f087000b2fcf5e33e6a98854d60fd7a7bba",
+      "raw_bytes": 11697,
+      "canonical_sha256": "2467c87171c86cb7e9f1960afbd57f087000b2fcf5e33e6a98854d60fd7a7bba",
+      "canonical_bytes": 11697,
+      "git_blob": "591d69e71561c3d7ec391664792ced470a26cea4"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/SubinterpreterManager.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2f01f17fd5e12d1d561339097a25270f4277766cda58f38c36b0f0005dd43c60",
+      "raw_bytes": 27671,
+      "canonical_sha256": "2f01f17fd5e12d1d561339097a25270f4277766cda58f38c36b0f0005dd43c60",
+      "canonical_bytes": 27671,
+      "git_blob": "bba6b6e9f44f4943559e89c5fa1dd2c95057a8ef"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/BridgeAccountArgumentTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "0f5045cc63473beb72af308bf955861aa156c2f08591e95827587be4ae503f36",
+      "raw_bytes": 1805,
+      "canonical_sha256": "0f5045cc63473beb72af308bf955861aa156c2f08591e95827587be4ae503f36",
+      "canonical_bytes": 1805,
+      "git_blob": "569aa8642729a6f0f411c24edca2fdb2015d91d2"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/BridgeServiceConformanceTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "d9077faeb3ed8e1d03ce61d4ffefa7ce28e5b9ef1e5ed3baaf363ef98034b346",
+      "raw_bytes": 38916,
+      "canonical_sha256": "d9077faeb3ed8e1d03ce61d4ffefa7ce28e5b9ef1e5ed3baaf363ef98034b346",
+      "canonical_bytes": 38916,
+      "git_blob": "2ddd60c94289b1380579480d6850d23bc27eaf03"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/HostLifecycleTestSupport.swift",
+      "origin": "working-tree",
+      "raw_sha256": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
+      "raw_bytes": 7196,
+      "canonical_sha256": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
+      "canonical_bytes": 7196,
+      "git_blob": "ac5c669c2ce9000375c19e2ea3db655c1e9c7e62"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/NativeServiceCleanupTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "354f95687ba25c7c7350f9c0e18ecfdc6958a178282a048584432ca23509856c",
+      "raw_bytes": 7661,
+      "canonical_sha256": "354f95687ba25c7c7350f9c0e18ecfdc6958a178282a048584432ca23509856c",
+      "canonical_bytes": 7661,
+      "git_blob": "f388f841fdca76f06c6cb5eaa7dd4afdc5806c5a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/NativeServiceDispatcherTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2d15f3c14f4cd0a6d659c923468ae55d6eace033734983863b32a23501df7c08",
+      "raw_bytes": 3210,
+      "canonical_sha256": "2d15f3c14f4cd0a6d659c923468ae55d6eace033734983863b32a23501df7c08",
+      "canonical_bytes": 3210,
+      "git_blob": "ff78e0ee13775916e154c0d71ae5641c0788d98a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/NativeServicePhase2Tests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "25122c99d1f4d5490f0dd036df727c7ffdd441ec1c16e2fdac6a2ead85b5e919",
+      "raw_bytes": 11251,
+      "canonical_sha256": "25122c99d1f4d5490f0dd036df727c7ffdd441ec1c16e2fdac6a2ead85b5e919",
+      "canonical_bytes": 11251,
+      "git_blob": "0d7098dd499be81a70510933cd0a3ac8dc16c17a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/NativeServiceRemediationTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1401bc04c702f34f8f5eacc1b4f43304ef615127b1cc80e46d0bf250e1c63983",
+      "raw_bytes": 13185,
+      "canonical_sha256": "1401bc04c702f34f8f5eacc1b4f43304ef615127b1cc80e46d0bf250e1c63983",
+      "canonical_bytes": 13185,
+      "git_blob": "ccc00b64aa4e2f6bd273098d5e13cc6923288729"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/NativeServiceTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "ce8a562db625e7666bd704106229713e0dac0f2fbf5f4a92297d9f6557690a3e",
+      "raw_bytes": 21110,
+      "canonical_sha256": "ce8a562db625e7666bd704106229713e0dac0f2fbf5f4a92297d9f6557690a3e",
+      "canonical_bytes": 21110,
+      "git_blob": "13db1a6eb9f3c75d8a27866d3ce81c5f05370c9a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginArchiveDescriptorTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2925286baf7e3707f1e51b8c8f835a4450f5db7b5d623dd17e68576a0c5cf8fd",
+      "raw_bytes": 8361,
+      "canonical_sha256": "2925286baf7e3707f1e51b8c8f835a4450f5db7b5d623dd17e68576a0c5cf8fd",
+      "canonical_bytes": 8361,
+      "git_blob": "0ce4e32f6f6c4ef6e70a45c0b2ecd2b35ac1552a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginArchiveHostTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "0a1a4d02683f4908b80b86b20761975cd96e82f827b394b74ff546f69835692d",
+      "raw_bytes": 17038,
+      "canonical_sha256": "0a1a4d02683f4908b80b86b20761975cd96e82f827b394b74ff546f69835692d",
+      "canonical_bytes": 17038,
+      "git_blob": "c16ef40920c2570de8fd241c0a29336856b13103"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginBatchOwnershipTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "cecba474eb8e0bde1c7a173c8bab96c47288686e8c978366099acde315ef5b62",
+      "raw_bytes": 5844,
+      "canonical_sha256": "cecba474eb8e0bde1c7a173c8bab96c47288686e8c978366099acde315ef5b62",
+      "canonical_bytes": 5844,
+      "git_blob": "b2542340d3628d4cbd911b6cbde9f71725f98492"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginBoundedStopTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "5d654183b3f14c08efccd4ae31169fe93b927c68d07990f5a073c38e449c940d",
+      "raw_bytes": 2234,
+      "canonical_sha256": "5d654183b3f14c08efccd4ae31169fe93b927c68d07990f5a073c38e449c940d",
+      "canonical_bytes": 2234,
+      "git_blob": "5a8972538b10b657fd1f5be9afe383d9c3592186"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginBridgeExtensionTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "fb73d17ecc3e3c48fa8242d9a1b06137a713f2ab250b9a4e2e76a58c050a7d1d",
+      "raw_bytes": 8564,
+      "canonical_sha256": "fb73d17ecc3e3c48fa8242d9a1b06137a713f2ab250b9a4e2e76a58c050a7d1d",
+      "canonical_bytes": 8564,
+      "git_blob": "a0bc9b1527222b9db08f280a4da571e4cc299be3"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginCallbackGateTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2fc1750de803d4bf9087ef8a853c2be946e038cf78904f4c33c0bed5caf84b64",
+      "raw_bytes": 10313,
+      "canonical_sha256": "2fc1750de803d4bf9087ef8a853c2be946e038cf78904f4c33c0bed5caf84b64",
+      "canonical_bytes": 10313,
+      "git_blob": "ccfa9c0f18e996f1b2fd0db49b0de1cfc8617ce7"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "3de3e85b1d06b6edb22c817b5f84e4545ae02a4396ab259288dd131201526c7a",
+      "raw_bytes": 17130,
+      "canonical_sha256": "3de3e85b1d06b6edb22c817b5f84e4545ae02a4396ab259288dd131201526c7a",
+      "canonical_bytes": 17130,
+      "git_blob": "3ba8435fa3034d0eb6963d7afe2cb0b5046730a6"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginEventIngressTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "3c0657693271fcf779ecdd3f5d932f0f74798e0d74729e970f5932675482b215",
+      "raw_bytes": 6432,
+      "canonical_sha256": "3c0657693271fcf779ecdd3f5d932f0f74798e0d74729e970f5932675482b215",
+      "canonical_bytes": 6432,
+      "git_blob": "cb1d738333b0b09c37ac6ba5c5d9ece0d5ef7521"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginHostMaintenanceTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "58d371bbd5cdabe621b62b58ddca6accec2d424dfe4c459f7bacd3781117229b",
+      "raw_bytes": 20053,
+      "canonical_sha256": "58d371bbd5cdabe621b62b58ddca6accec2d424dfe4c459f7bacd3781117229b",
+      "canonical_bytes": 20053,
+      "git_blob": "edd38ef053e0bafed1764b8edbc882c1fa296e59"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginHostOwnershipTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "2b7d8ab6b834b314d2d263a43b1e9b9f7bffd16b8af4756e529a693597b4916c",
+      "raw_bytes": 24077,
+      "canonical_sha256": "2b7d8ab6b834b314d2d263a43b1e9b9f7bffd16b8af4756e529a693597b4916c",
+      "canonical_bytes": 24077,
+      "git_blob": "3d30ee9bde5001ace33b91be2980e0b8ca333570"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginHostTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "d4af3169ed7a96710f891e001c10062b1426df40c453649708a99bf184e79ad7",
+      "raw_bytes": 21999,
+      "canonical_sha256": "d4af3169ed7a96710f891e001c10062b1426df40c453649708a99bf184e79ad7",
+      "canonical_bytes": 21999,
+      "git_blob": "c5c761b261094e4098947022e4a270b5aa372d98"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginNativeEffectTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "cb3da62bd502896f0ada3657034ec119914c49d2fb880d4b698801254056d5d4",
+      "raw_bytes": 2120,
+      "canonical_sha256": "cb3da62bd502896f0ada3657034ec119914c49d2fb880d4b698801254056d5d4",
+      "canonical_bytes": 2120,
+      "git_blob": "4a98045143e4cb2596b43f8e5c81fb66cea73f9f"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginResourcePathTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "9762c3cff2bb68ff37daa6c629402db42337dd4afe05e1a3da6eeb24535df4ee",
+      "raw_bytes": 2751,
+      "canonical_sha256": "9762c3cff2bb68ff37daa6c629402db42337dd4afe05e1a3da6eeb24535df4ee",
+      "canonical_bytes": 2751,
+      "git_blob": "9a98d3c5f6eda5685080c3f848ac84816ba25b9b"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginRuntimeProtocolTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "8489915df42e6d64438eb2fadb4b20ef1d48eef85e7f7957088654e0ddb2244b",
+      "raw_bytes": 4731,
+      "canonical_sha256": "8489915df42e6d64438eb2fadb4b20ef1d48eef85e7f7957088654e0ddb2244b",
+      "canonical_bytes": 4731,
+      "git_blob": "4bbd177873b01e72743cfd09752dffb48bd00c62"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginRuntimeStartupContinuationTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1709bcc71e7bfef8f485c39692784e7dc664742a87d34c435ecc9cefc5471cbd",
+      "raw_bytes": 11928,
+      "canonical_sha256": "1709bcc71e7bfef8f485c39692784e7dc664742a87d34c435ecc9cefc5471cbd",
+      "canonical_bytes": 11928,
+      "git_blob": "09c56a667c63b417f9b088bf17fee5c8aae262ea"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginSendHookPriorityTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "e2ade96c9387c42cf26213caead612271615f8a5a1688a88ca02f0275bf0cced",
+      "raw_bytes": 14078,
+      "canonical_sha256": "e2ade96c9387c42cf26213caead612271615f8a5a1688a88ca02f0275bf0cced",
+      "canonical_bytes": 14078,
+      "git_blob": "35e5c23cddabcc0ffe93eb1a51eb58264a7f124a"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginServiceStorageTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "4eb5a5041478fb45a12ca641dba05d63dca6684fa007b2b6cb1b1682cef16512",
+      "raw_bytes": 11992,
+      "canonical_sha256": "4eb5a5041478fb45a12ca641dba05d63dca6684fa007b2b6cb1b1682cef16512",
+      "canonical_bytes": 11992,
+      "git_blob": "13fdd578b7740079055cd6d5543a08155c642f11"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginSettingsExecutionTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "e4953865d1193d80a86eee650adbd779d6ce8350196b9b9a7ee8aa1c53c1850a",
+      "raw_bytes": 4610,
+      "canonical_sha256": "e4953865d1193d80a86eee650adbd779d6ce8350196b9b9a7ee8aa1c53c1850a",
+      "canonical_bytes": 4610,
+      "git_blob": "4d27455fe53ca0426a1a81e30d51d5652e3ddb4c"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginSettingsPageLeaseTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "083f795b3e8f246b7d517ef82e57eb09a8cce8f409c0ba0e133b11ac1b853269",
+      "raw_bytes": 8965,
+      "canonical_sha256": "083f795b3e8f246b7d517ef82e57eb09a8cce8f409c0ba0e133b11ac1b853269",
+      "canonical_bytes": 8965,
+      "git_blob": "4d3472c4e1f70699675dd7ae65e0791f0d02550b"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginSettingsReadExecutionTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "23cf8c1edb34f31bb577cd6d318da088bec29499c79f06b43eadf76a345bb101",
+      "raw_bytes": 11865,
+      "canonical_sha256": "23cf8c1edb34f31bb577cd6d318da088bec29499c79f06b43eadf76a345bb101",
+      "canonical_bytes": 11865,
+      "git_blob": "8655ef46ebeedbfa62bd2b5eecc262cb72331bd5"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTLHostTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "13196a69dfe76a04fa22e61c8cb544e26528805c119834987facc6442e43a945",
+      "raw_bytes": 13902,
+      "canonical_sha256": "13196a69dfe76a04fa22e61c8cb544e26528805c119834987facc6442e43a945",
+      "canonical_bytes": 13902,
+      "git_blob": "19fe89df8c099543d5f32f3ba3b1b59378fd3af7"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTextOriginTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "7ada43a02bb0075e9fd87be5a1a5c1d7aa6d384f9dcc2865350b76814b12b281",
+      "raw_bytes": 8456,
+      "canonical_sha256": "7ada43a02bb0075e9fd87be5a1a5c1d7aa6d384f9dcc2865350b76814b12b281",
+      "canonical_bytes": 8456,
+      "git_blob": "fdeb6d11766dd49200160a1ab4c5b5558e82b3cc"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTrustHostTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "8fe3e3765cadad192238eaff09936f3872686c835f554c97febd20f90d70d04d",
+      "raw_bytes": 13713,
+      "canonical_sha256": "8fe3e3765cadad192238eaff09936f3872686c835f554c97febd20f90d70d04d",
+      "canonical_bytes": 13713,
+      "git_blob": "c5a569081f6430ca841dd732c6f734d7489916dc"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTrustLevelTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "b33ef9ac1416ed54137e1a5093885e5fc1889057ba8c9797fb9ca11734d69e1c",
+      "raw_bytes": 16048,
+      "canonical_sha256": "b33ef9ac1416ed54137e1a5093885e5fc1889057ba8c9797fb9ca11734d69e1c",
+      "canonical_bytes": 16048,
+      "git_blob": "ede9fe2b7c15b11fd156b5d4172a94c8ffcd90c7"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginWatchdogMarkerTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "3e9ba8cf624b7c47c0d9601a5db22460f53c4f46e433d6ea54d75ae43e3a9dfb",
+      "raw_bytes": 3958,
+      "canonical_sha256": "3e9ba8cf624b7c47c0d9601a5db22460f53c4f46e433d6ea54d75ae43e3a9dfb",
+      "canonical_bytes": 3958,
+      "git_blob": "9dba635e222544adb4cde0dcbb14b523dc0235ed"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PythonRuntimeConfigurationTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "1f92e3acd306de81942532b8f0a8636ded4d2daa5650cd18bd7cfb06ad03020d",
+      "raw_bytes": 9435,
+      "canonical_sha256": "1f92e3acd306de81942532b8f0a8636ded4d2daa5650cd18bd7cfb06ad03020d",
+      "canonical_bytes": 9435,
+      "git_blob": "0456cd1095297e60f3d18ccd344d89af9cc73abc"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/SubinterpreterLifecycleTests.swift",
+      "origin": "working-tree",
+      "raw_sha256": "9f9f5626c332bb37c4fa504bc90e5a1209ac0ba5c6d993bac616ab8b77d63b0d",
+      "raw_bytes": 12925,
+      "canonical_sha256": "9f9f5626c332bb37c4fa504bc90e5a1209ac0ba5c6d993bac616ab8b77d63b0d",
+      "canonical_bytes": 12925,
+      "git_blob": "57a2a3312529ef33b9f79e06fe20df6d9a4664d0"
+    },
+    {
+      "path": "tools/compat/tests/conftest.py",
+      "origin": "base",
+      "canonical_sha256": "09a576673973c53bef1a7be1ce10f5281bded53e5bc25f4d9515eca8f8be98a5",
+      "canonical_bytes": 1598,
+      "git_blob": "03c10478ac63198a9d8621627f768c452d687931"
+    },
+    {
+      "path": "tools/compat/tests/fixtures/ios_runtime/audit_import.plugin",
+      "origin": "working-tree",
+      "raw_sha256": "066f8ed3f4a2d1809c948d75a0a862b874eaf9bd2cab164f07637849c4f3ac81",
+      "raw_bytes": 1494,
+      "canonical_sha256": "066f8ed3f4a2d1809c948d75a0a862b874eaf9bd2cab164f07637849c4f3ac81",
+      "canonical_bytes": 1494,
+      "git_blob": "3268c3bf009b2266eb1dadaee5341b8232f86e8a"
+    },
+    {
+      "path": "tools/compat/tests/fixtures/ios_runtime/failure.plugin",
+      "origin": "working-tree",
+      "raw_sha256": "cf55e5abf0036495a15b2b4dd0f76af686156351f6245daeca08c303463db068",
+      "raw_bytes": 700,
+      "canonical_sha256": "cf55e5abf0036495a15b2b4dd0f76af686156351f6245daeca08c303463db068",
+      "canonical_bytes": 700,
+      "git_blob": "ce4405e8216049a86408640cee51ed6cd6c71cf5"
+    },
+    {
+      "path": "tools/compat/tests/fixtures/ios_runtime/lifecycle.plugin",
+      "origin": "working-tree",
+      "raw_sha256": "eb17871f2790cb387bb381917f6999014f4299ac744e61675c4d0cc7ee5820b8",
+      "raw_bytes": 3983,
+      "canonical_sha256": "eb17871f2790cb387bb381917f6999014f4299ac744e61675c4d0cc7ee5820b8",
+      "canonical_bytes": 3983,
+      "git_blob": "a497be1182c8c71646125e2537049539ff995e13"
+    },
+    {
+      "path": "tools/compat/tests/fixtures/ios_runtime/metadata.plugin",
+      "origin": "working-tree",
+      "raw_sha256": "a455c8ec49e4b290093a9ed50f75b8d4e9713c888163f91296665a77dddf3920",
+      "raw_bytes": 345,
+      "canonical_sha256": "a455c8ec49e4b290093a9ed50f75b8d4e9713c888163f91296665a77dddf3920",
+      "canonical_bytes": 345,
+      "git_blob": "73e183b4bbc6550864ea0c0af5282e5f2caa6276"
+    },
+    {
+      "path": "tools/compat/tests/test_ios_elyx_archives.py",
+      "origin": "working-tree",
+      "raw_sha256": "a235d6a114fef36ae3ed08cb0adac3a967d99d6d4f7301ed5f96308843d1a29e",
+      "raw_bytes": 27740,
+      "canonical_sha256": "a235d6a114fef36ae3ed08cb0adac3a967d99d6d4f7301ed5f96308843d1a29e",
+      "canonical_bytes": 27740,
+      "git_blob": "756de4ce06bf5e3c3f36417db84f29cecbb34c06"
+    },
+    {
+      "path": "tools/compat/tests/test_ios_elyx_p1.py",
+      "origin": "working-tree",
+      "raw_sha256": "46ff2ceccd6483fb2c3e7983e40db4ea05f8a578bcead8de0122d2abb535a295",
+      "raw_bytes": 21111,
+      "canonical_sha256": "46ff2ceccd6483fb2c3e7983e40db4ea05f8a578bcead8de0122d2abb535a295",
+      "canonical_bytes": 21111,
+      "git_blob": "6625824e0f900ecec2e8bbea45528115f3694355"
+    },
+    {
+      "path": "tools/compat/tests/test_ios_elyx_source_authority.py",
+      "origin": "working-tree",
+      "raw_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
+      "raw_bytes": 13677,
+      "canonical_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
+      "canonical_bytes": 13677,
+      "git_blob": "9b7665d5dd94a00113f0020ac24123c1ed4e6127"
+    },
+    {
+      "path": "tools/compat/tests/test_ios_runtime.py",
+      "origin": "working-tree",
+      "raw_sha256": "1936648c55f336a4bac0c9abcedfbb804c424a17dc81eb38eb7a0c95ee1a32c2",
+      "raw_bytes": 44794,
+      "canonical_sha256": "1936648c55f336a4bac0c9abcedfbb804c424a17dc81eb38eb7a0c95ee1a32c2",
+      "canonical_bytes": 44794,
+      "git_blob": "357236173c9000da5c7025ca8027f6690d0a1209"
+    },
+    {
+      "path": "tools/runtime/vendor_dependencies.py",
+      "origin": "base",
+      "canonical_sha256": "55139830d6f5d6d153f85d8cbd8f56c1abf3e80b1b661b8bb33ef8558455e757",
+      "canonical_bytes": 27867,
+      "git_blob": "11c7f828e91a1485f4c05117b1e9a5a7e100f870"
+    }
+  ]
+}

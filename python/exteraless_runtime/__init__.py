@@ -9,7 +9,7 @@ import os
 import sys
 from contextlib import contextmanager
 
-from . import _codec, _dependencies
+from . import _archives, _codec, _dependencies
 from ._platform import Platform, RuntimeStateError, UnsupportedSurfaceError
 
 __all__ = [
@@ -42,30 +42,32 @@ def _sdk_module(name):
 
 def _source_path(path):
     path = os.path.abspath(os.fspath(path))
-    if not path.lower().endswith((".py", ".plugin")):
-        raise UnsupportedSurfaceError("iOS runtime accepts Python source .py/.plugin files only")
+    if not path.lower().endswith((".py", ".plugin", ".elyx", ".eaf")):
+        raise UnsupportedSurfaceError("iOS runtime accepts .py/.plugin source and .elyx/.eaf archives")
     return path
 
 
 def _metadata(path):
+    if _archives.is_archive(path):
+        return _archives.inspect_archive(path).metadata
     return _sdk_module("extera_utils.metadata_parser").read_metadata(path)
 
 
 def metadata_json(path) -> str:
-    """Return the SDK metadata object using its AST reader, even before configure."""
+    """Static SDK metadata, including bounded archive mappings, before configure."""
     return _codec.dumps(_metadata(_source_path(path)))
 
 
-def configure(plugin_id, plugins_dir, settings_dir) -> None:
+def configure(plugin_id, plugins_dir, settings_dir, plugin_format="source") -> None:
     """Bind a single immutable plugin identity to the current owner worker."""
     global _state
-    _sdk_module("extera_utils.metadata_parser")._validate_plugin_id(plugin_id)
+    _archives.validate_plugin_id(plugin_id, plugin_format)
     plugins_dir = os.path.realpath(os.fspath(plugins_dir))
     settings_dir = os.path.realpath(os.fspath(settings_dir))
     if _state is not None:
         _state.check_worker()
-        if (plugin_id, plugins_dir, settings_dir) != (
-                _state.plugin_id, _state.plugins_dir, _state.settings_dir):
+        if (plugin_id, plugins_dir, settings_dir, plugin_format) != (
+                _state.plugin_id, _state.plugins_dir, _state.settings_dir, _state.plugin_format):
             raise RuntimeStateError("an iOS interpreter can be configured for only one plugin")
         return None
 
@@ -79,6 +81,7 @@ def configure(plugin_id, plugins_dir, settings_dir) -> None:
         raise RuntimeStateError("configure requires the native virtualjava bootstrap")
 
     platform = Platform(bridge, plugin_id, plugins_dir, settings_dir)
+    platform.plugin_format = plugin_format
     bridge.xt_set_plugin_id(plugin_id)
     platform.getPluginsDir()
     dependencies = _dependencies.create_provider()
@@ -86,6 +89,7 @@ def configure(plugin_id, plugins_dir, settings_dir) -> None:
     if loader.plugins:
         raise RuntimeStateError("configure requires an empty SDK plugin registry")
     platform.install(loader, dependencies)
+    platform.archives = _archives.ArchiveAdapter(platform)
     _state = platform
     return None
 
@@ -163,7 +167,10 @@ def _cleanup(platform, record=None, path=None, module_name=None):
     # exported by C while marshalling native service arguments (UI callbacks).
     primary_error = sys.exception()
     try:
-        platform.callbacks.end()
+        try:
+            platform.archives.cleanup()
+        finally:
+            platform.callbacks.end()
     except BaseException:
         if primary_error is None:
             raise
@@ -182,7 +189,8 @@ def load_json(path) -> str:
     """Use the SDK loader; turn its failure JSON into an exception for Swift."""
     platform = _runtime()
     path = _source_path(path)
-    metadata = _metadata(path)
+    snapshot = _archives.snapshot_for_load(platform, path) if _archives.is_archive(path) else None
+    metadata = snapshot.metadata if snapshot is not None else _metadata(path)
     if metadata["id"] != platform.plugin_id:
         raise PluginLoadError("plugin __id__ does not match the configured worker")
     if platform.loader.is_loaded(platform.plugin_id):
@@ -192,7 +200,12 @@ def load_json(path) -> str:
     platform.callbacks.begin()
     try:
         with _scope(platform):
-            result = _codec.loads(loader.load_plugin(path, platform.plugin_id))
+            if snapshot is not None:
+                platform.archives.activate(snapshot)
+            # The preserved SDK dispatcher is case-sensitive. Its archive branch
+            # also serves a direct API caller with an upper-case file suffix.
+            load = loader._load_elyx_plugin if snapshot is not None and not path.endswith((".elyx", ".eaf")) else loader.load_plugin
+            result = _codec.loads(load(path, platform.plugin_id))
         if result.get("ok") is not True:
             raise PluginLoadError(result.get("error") or "SDK plugin load failed", result.get("debug"))
         return _codec.dumps({
@@ -260,6 +273,9 @@ def hook_priority_json(hook, name, canonical_name):
         raise TypeError("hook names must be strings")
     instance = platform.loader.plugins[platform.plugin_id].instance
     with _scope(platform):
+        if hook == "on_send_message_hook":
+            from ._hook_registrations import send_priority
+            return _codec.dumps(send_priority(instance) if platform.callbacks.active else None)
         matches = list(_matching_priorities(platform, instance, hook, name, canonical_name))
         return _codec.dumps(max(matches) if matches else None)
 

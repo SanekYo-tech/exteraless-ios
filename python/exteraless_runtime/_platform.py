@@ -176,15 +176,23 @@ class Platform:
     # dispatch_json consumes those very records instead of an Android registry.
     def addRequestHook(self, plugin_id, name, match_substring, priority):
         self.check_plugin(plugin_id)
+        from ._hook_registrations import add_request
+        return add_request(self, name, match_substring, priority)
 
     def removeRequestHook(self, plugin_id, name):
         self.check_plugin(plugin_id)
+        from ._hook_registrations import remove_request
+        return remove_request(self, name)
 
     def addSendMessageHook(self, plugin_id, priority):
         self.check_plugin(plugin_id)
+        from ._hook_registrations import add_send
+        return add_send(self, priority)
 
     def removeSendMessageHook(self, plugin_id):
         self.check_plugin(plugin_id)
+        from ._hook_registrations import remove_send
+        return remove_send(self)
 
     def selected_account(self):
         value = self.call("selectedAccount", fqcn="org.telegram.messenger.UserConfig", op="get")
@@ -320,6 +328,12 @@ class Platform:
         _config.install(self)
         _pill_types.install()
         _pills.install(self, client)
+        from . import _developer
+        _developer.install(self)
+        from . import _elyx_developer
+        _elyx_developer.install(self)
         from virtualjava.registry import register_native_metadata
         register_native_metadata("exteraless.ios.Runtime", lambda member: self.call(
             member, fqcn="exteraless.ios.Runtime", op="member_kind"))
+        from . import _reflection
+        _reflection.install(self)

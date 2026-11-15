@@ -8,8 +8,10 @@ import builtins
 import importlib
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import sys
 import sysconfig
+import unicodedata
 
 from ._platform import RuntimeStateError
 
@@ -158,6 +160,183 @@ def _read_mode(mode):
     return isinstance(mode, str) and mode.startswith("r") and not any(flag in mode for flag in "wax+")
 
 
+def _lexical(path):
+    try:
+        path = os.fsdecode(os.fspath(path))
+        if not path or "\0" in path:
+            return None
+        path = os.path.normcase(os.path.abspath(path))
+        # Match the native OS-root aliases without resolving any untrusted leaf.
+        if sys.platform == "darwin":
+            for name in ("var", "tmp", "etc"):
+                prefix = "/" + name
+                if _within(path, prefix):
+                    path = "/private" + path
+                    break
+        return path
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _descriptor_path(fd):
+    """OS-provided name of an already-open inode, including Darwin/iOS F_GETPATH."""
+    if type(fd) is not int or fd < 0:
+        return None
+    try:
+        if sys.platform == "darwin":
+            import fcntl
+            return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0])
+        if sys.platform.startswith("linux"):
+            return os.readlink(f"/proc/self/fd/{fd}")
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _code_path(path):
+    path = _lexical(path)
+    return unicodedata.normalize("NFC", path).casefold() if path is not None else None
+
+
+class ArchiveCodePaths:
+    """Every interpreter protects the shared archive layout, even before A loads.
+
+    A per-owner-only list would leave files-capable interpreter B unaware of A's
+    executable cache. Ordinary asset file contents remain filesystem data; code
+    files and archive directory topology require native installation/cleanup.
+    """
+    code_suffixes = (".py", ".pyc", ".pyo", ".pyw", ".pth", ".whl", ".so", ".dylib", ".dll", ".pyd", ".fwork", ".elyx", ".eaf")
+
+    def __init__(self, own_cache):
+        self.own_cache = _code_path(own_cache)
+        self.shared_cache = _code_path(os.path.dirname(own_cache))
+        if self.own_cache is None or self.shared_cache is None:
+            raise RuntimeStateError("archive cache protection has no native anchor")
+        self.protected_code_roots = {}
+
+    def bind_image(self, root, members):
+        root = _code_path(root)
+        if root is None or not _within(root, self.own_cache + os.sep + "elyx"):
+            raise RuntimeStateError("archive code image belongs to another native cache")
+        self.protected_code_roots[root] = frozenset(_code_path(path) for path in members if path.lower().endswith(self.code_suffixes))
+
+    def unbind_image(self, root):
+        self.protected_code_roots.pop(_code_path(root), None)
+
+    def reason(self, path, structural=False):
+        # Lexical protection still applies when a malicious link points OUT of
+        # the tree; resolved protection catches aliases pointing INTO the tree.
+        resolved = _real(path)
+        for target in {_code_path(path), _code_path(resolved) if resolved else None} - {None}:
+            root = self.shared_cache
+            if _within(root, target):
+                return "archive code ancestors"
+            if not _within(target, root):
+                continue
+            parts = os.path.relpath(target, root).split(os.sep)
+            if len(parts) == 1:
+                return "archive code ancestors"
+            if parts[1] != "elyx":
+                continue
+            if len(parts) <= 4 or structural or "__pycache__" in parts or target.lower().endswith(self.code_suffixes):
+                return "immutable archive code/topology"
+        return None
+
+    def check_path(self, path, structural=False):
+        reason = self.reason(path, structural)
+        if reason:
+            raise PermissionError(f"{reason} is read-only; replace the archive through the native Host")
+
+    def fd_path(self, fd):
+        path = _descriptor_path(fd)
+        if path:
+            return path
+        try:
+            mode = os.fstat(fd).st_mode
+        except (OSError, TypeError, ValueError):
+            return None  # the syscall will report its invalid descriptor
+        if stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+            raise PermissionError("cannot verify a filesystem descriptor for archive code protection")
+        return None  # pipes/sockets are governed by their existing SDK policies
+
+    def target(self, path, fd=None):
+        if type(path) is int:
+            return self.fd_path(path)
+        if not isinstance(path, (str, bytes, os.PathLike)):
+            return None
+        path = os.fsdecode(path)
+        if os.path.isabs(path) or fd is None or fd == -1:
+            return path
+        parent = self.fd_path(fd)
+        if parent is None:
+            raise PermissionError("cannot verify a dir_fd for archive code protection")
+        return os.path.join(parent, path)
+
+    def check(self, event, args, audit):
+        arg = lambda index: audit._arg(args, index)
+        if event == "open":
+            mode, flags = arg(1), arg(2)
+            if not ((isinstance(mode, str) and any(char in mode for char in "wax+"))
+                    or (type(flags) is int and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND))):
+                return
+            targets = [self.target(arg(0))]
+        elif event in ("os.rename", "os.link"):
+            targets = [self.target(arg(0), arg(2)), self.target(arg(1), arg(3))]
+        elif event == "os.symlink":
+            targets = [self.target(arg(1), arg(2))]
+        elif event in ("os.remove", "os.rmdir"):
+            targets = [self.target(arg(0), arg(1))]
+        elif event in ("os.mkdir", "os.chmod"):
+            targets = [self.target(arg(0), arg(2))]
+        elif event in ("os.chown", "os.utime"):
+            targets = [self.target(arg(0), arg(3))]
+        else:
+            targets = [self.target(arg(index)) for index in audit._WRITE_TARGETS.get(event, ())]
+        structural = event in ("os.rmdir", "os.mkdir", "os.symlink", "shutil.rmtree", "shutil.copytree", "shutil.unpack_archive")
+        for path in targets:
+            if path is not None:
+                # No following lookup is used to authorize an operation. A
+                # directory or symlink mutation is conservatively structural.
+                try: structural |= stat.S_IFMT(os.lstat(path).st_mode) in (stat.S_IFDIR, stat.S_IFLNK)
+                except OSError: pass
+        for path in targets:
+            if path is not None:
+                self.check_path(path, structural)
+
+
+def _install_archive_fd_guards(loader, paths):
+    # CPython's os.open audit event omits dir_fd. Resolve that argument here,
+    # while retaining the real audit event and permission/owner attribution.
+    original_open = os.open
+
+    def open_file(path, flags, mode=0o777, *, dir_fd=None):
+        if loader.plugin_frame_owner() is not None and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND):
+            target = paths.target(path, dir_fd)
+            if target is not None:
+                paths.check_path(target)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    os.open = open_file
+    # These descriptor writes do not emit a CPython open event. Do not let a
+    # files-only owner mutate a code inode through an existing fd or dup2 alias.
+    for name in ("write", "writev", "pwrite", "pwritev", "ftruncate", "fchmod", "fchown", "dup2"):
+        original = getattr(os, name, None)
+        if original is None: continue
+
+        def guarded(*args, _original=original, _name=name, **kwargs):
+            if loader.plugin_frame_owner() is not None:
+                fds = [args[0] if args else kwargs.get("fd")]
+                if _name == "dup2":
+                    fds.append(args[1] if len(args) > 1 else kwargs.get("fd2"))
+                for fd in fds:
+                    path = paths.fd_path(fd)
+                    if path is not None:
+                        paths.check_path(path, _name == "dup2" or os.path.isdir(path))
+            return _original(*args, **kwargs)
+
+        setattr(os, name, guarded)
+
+
 def install(platform, loader, dependencies, files):
     audit = importlib.import_module("extera_utils.audit_gate")
     own_files = _real(platform.getFilesDir())
@@ -166,6 +345,8 @@ def install(platform, loader, dependencies, files):
         raise RuntimeStateError("native plugin files/cache paths cannot be resolved")
     paths = capture(platform, loader, dependencies, own_files, own_cache)
     platform.audit_paths = paths
+    archive_paths = ArchiveCodePaths(platform.getCacheDir())
+    platform.archive_code_paths = archive_paths
     protected_native_directories = ()
 
     def refresh_protected_paths():
@@ -206,9 +387,15 @@ def install(platform, loader, dependencies, files):
     audit._is_runtime_file = paths.contains
 
     previous_protected_write = audit._check_protected_write
+    previous_protected_reason = audit._protected_reason
+    audit._protected_reason = lambda plugin_id, path: archive_paths.reason(path) or previous_protected_reason(plugin_id, path)
     write_flags = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 
     def protected_write(event, args, plugin_id, active_loader):
+        try:
+            archive_paths.check(event, args, audit)
+        except PermissionError as error:
+            raise audit._denial(error)
         targets = audit._write_targets(event, args)
         if event == "open":
             mode, flags = audit._arg(args, 1), audit._arg(args, 2)
@@ -231,6 +418,7 @@ def install(platform, loader, dependencies, files):
         return previous_protected_write(event, args, plugin_id, active_loader)
 
     audit._check_protected_write = protected_write
+    _install_archive_fd_guards(loader, archive_paths)
 
     previous_open = builtins.open
 

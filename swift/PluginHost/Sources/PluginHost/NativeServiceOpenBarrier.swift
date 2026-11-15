@@ -269,6 +269,15 @@ public final class NativeServiceInterceptions<Owner: Hashable & Sendable>: @unch
         notifyBarriers()
     }
 
+    public func retirePermissions(pluginId: String) {
+        lock.lock()
+        let fileLeases = files.values.map(\.lease).filter { $0.pluginId == pluginId }
+        let intentLeases = intents.map(\.lease).filter { $0.pluginId == pluginId }
+        lock.unlock()
+        for lease in fileLeases where !lease.isOpen { _ = remove(id: lease.id, owner: lease.owner, file: true) }
+        for lease in intentLeases where !lease.isOpen { _ = remove(id: lease.id, owner: lease.owner, file: false) }
+    }
+
     public func interceptFile(_ context: NativeServiceFileOpenContext, accountRecordId: Int64? = nil,
                               completion: @escaping @Sendable (NativeServiceOpenDecision) -> Void) -> NativeServiceOpenBarrier<Owner>? {
         lock.lock()

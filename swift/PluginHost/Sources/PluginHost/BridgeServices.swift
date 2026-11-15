@@ -110,6 +110,7 @@ public final class BridgeServices: @unchecked Sendable {
     private var callback: Callback?
     private var ownedCallback: OwnedCallback?
     private var additionalProvider: (any PluginBridgeExtension)?
+    private var sourceDispatcher: (@Sendable (String, String, String?) -> String)?
     private var validateOwner: (@Sendable (String, String?, Bool) -> Bool)?
     private var validateEffectOwner: (@Sendable (String, String) -> Bool)?
     private var instances: [Int64: InstanceRecord] = [:]
@@ -196,12 +197,40 @@ public final class BridgeServices: @unchecked Sendable {
         set { lock.lock(); validateEffectOwner = newValue; lock.unlock() }
     }
 
+    /// Native-only installer for the FD capability registry. This read-only
+    /// route has its own issued inspection/load/manifest scopes. The registry
+    /// validates C-injected identity plus actual source custody; ordinary bridge
+    /// permission flags and Python envelope fields cannot issue capabilities.
+    public var elyxSourceDispatcher: (@Sendable (String, String, String?) -> String)? {
+        get { lock.lock(); defer { lock.unlock() }; return sourceDispatcher }
+        set { lock.lock(); sourceDispatcher = newValue; lock.unlock() }
+    }
+
     /// Returns {ok:true,value:...} or {ok:false,error:{kind,message}}.
     public func dispatchJSON(_ json: String, pluginId: String?) -> String {
         do {
             guard let data = json.data(using: .utf8),
                   let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw BridgeFailure.malformed("Expected a JSON request object")
+            }
+            if object["op"] as? String == "elyx_source" {
+                guard json.utf8.count <= 32768,
+                      Set(object.keys) == Set(["op", "operation", "payload", "pluginId", "ownerToken"]),
+                      let pluginId, object["pluginId"] as? String == pluginId,
+                      let operation = object["operation"] as? String,
+                      ["claim", "manifest", "read", "check", "release"].contains(operation),
+                      let payload = object["payload"] as? String, payload.utf8.count <= 4096,
+                      object["ownerToken"] is NSNull || object["ownerToken"] is String else {
+                    throw BridgeFailure.malformed("Invalid C-context Elyx source envelope")
+                }
+                guard let dispatcher = elyxSourceDispatcher else {
+                    throw BridgeFailure.unimplemented("Native FD-backed Elyx source registry is not installed")
+                }
+                // The registry checks live one-shot scopes. Inspection has no
+                // plugin owner; release may close this caller's retiring ticket.
+                let result = dispatcher(json, pluginId, object["ownerToken"] as? String)
+                try validateExtensionResponse(result)
+                return result
             }
             let request = try Request(object)
             try validateClass(request, pluginId: pluginId)
@@ -259,7 +288,7 @@ public final class BridgeServices: @unchecked Sendable {
             if operation == .get || operation == .memberKind || operation == .classExists { return true }
             return operation == .call && fqcn == BridgeServices.runtimeClassName
                 && ["getFilesDir", "getCacheDir", "getPluginsDir", "getProtectedPaths", "getVersion",
-                    "hasPermission", "isUnsafeMode", "log", "logEvent"].contains(member)
+                    "hasPermission", "isUnsafeMode", "getTrustLevel", "log", "logEvent"].contains(member)
         }
 
         init(_ object: [String: Any]) throws {
@@ -494,6 +523,10 @@ public final class BridgeServices: @unchecked Sendable {
         if request.member == "isUnsafeMode" {
             try request.arity(0...0)
             return permissions?.unsafeMode ?? false
+        }
+        if request.member == "getTrustLevel" {
+            try request.arity(0...0)
+            return (permissions?.snapshot(pluginId).level ?? .default).rawValue
         }
         // Lifetime accounting belongs to the bridge, not the UI/platform adapter.
         // Native probes and callbacks can complete even without a UI service.
@@ -794,7 +827,7 @@ public final class BridgeServices: @unchecked Sendable {
             if fqcn.hasSuffix(".SendMessagesHelper"), member == "sendMessage" { return "method" }
         }
         let methods: [String: Set<String>] = [
-            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getSettings", "setSettings", "updateSettings", "clearSettings", "getFilesDir", "getPluginsDir", "getCacheDir", "getProtectedPaths", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode"],
+            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getSettings", "setSettings", "updateSettings", "clearSettings", "getFilesDir", "getPluginsDir", "getCacheDir", "getProtectedPaths", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode", "getTrustLevel"],
             "org.telegram.messenger.AndroidUtilities": ["dp", "dpf2", "runOnUIThread", "addToClipboard"],
             "org.telegram.messenger.LocaleController": ["getInstance", "getString", "getLocaleStringIso639"],
             "org.telegram.messenger.ApplicationLoader": ["getFilesDir", "getFilesDirFixed", "getCacheDir"],
@@ -924,6 +957,12 @@ public final class BridgeServices: @unchecked Sendable {
 
     // MARK: Helpers
 
+    public func permissionsChanged(pluginId: String) {
+        // Do not clear C pending-reference accounting as if the owner unloaded.
+        // Live-owner providers cancel effects and release on that owner's FIFO.
+        extensionProvider?.permissionsChanged(pluginId: pluginId)
+    }
+
     private func requiredPluginId(_ pluginId: String?) throws -> String {
         guard let pluginId, !pluginId.isEmpty else {
             throw BridgeFailure.permission("Native interpreter plugin identity is required")
@@ -990,13 +1029,14 @@ public final class BridgeServices: @unchecked Sendable {
     }
 
     private func nativeEffectLease(pluginId: String, ownerToken: String?, permission: PluginPermission) throws -> PluginNativeCallLease {
+        let permissionCurrent: @Sendable () -> Bool = permissions?.futurePredicate(pluginId, requiring: [permission]) ?? { true }
         let lease = PluginNativeCallLease { [weak self] in
             guard let self else { return false }
             if self.ownerValidator != nil {
                 guard let ownerToken, let isActive = self.effectOwnerValidator,
                       isActive(pluginId, ownerToken) else { return false }
             }
-            return self.permissions?.has(pluginId, permission) ?? true
+            return permissionCurrent()
         }
         try lease.check()
         return lease

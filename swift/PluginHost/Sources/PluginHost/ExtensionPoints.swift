@@ -191,15 +191,18 @@ public struct CreateSettingsPayload: Hashable, Sendable {
     public let account: Int32
     public private(set) var expectedOwner: PluginHost.CallbackOwner?
     public private(set) var shouldExecute: @Sendable () -> Bool
+    let settingsPage: PluginSettingsPageLease?
     private let identity = UUID()
 
     public init(pluginId: String, account: Int32,
                 expectedOwner: PluginHost.CallbackOwner? = nil,
-                shouldExecute: @escaping @Sendable () -> Bool = { true }) {
+                shouldExecute: @escaping @Sendable () -> Bool = { true },
+                settingsPage: PluginSettingsPageLease? = nil) {
         self.pluginId = pluginId
         self.account = account
         self.expectedOwner = expectedOwner
         self.shouldExecute = shouldExecute
+        self.settingsPage = settingsPage
     }
 
     func pinned(owner: PluginHost.CallbackOwner?, shouldExecute: @escaping @Sendable () -> Bool) -> Self {

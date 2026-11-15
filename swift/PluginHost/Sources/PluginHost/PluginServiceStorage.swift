@@ -21,7 +21,8 @@ public final class PluginServiceStorage: @unchecked Sendable {
     }
 
     public static func validatePluginId(_ pluginId: String) throws {
-        guard Plugin.isValidID(pluginId) else {
+        guard (Plugin.isValidID(pluginId) || Plugin.isValidID(pluginId, format: .elyx)),
+              !Plugin.isReservedID(pluginId) else {
             throw BridgeFailure.permission("Invalid plugin id for native storage: \(pluginId)")
         }
     }
@@ -62,14 +63,35 @@ public final class PluginServiceStorage: @unchecked Sendable {
         try Self.validatePluginId(pluginId)
         lock.lock()
         defer { lock.unlock() }
-        return try directory(["files", component(pluginId)])
+        return try directory(["files", Self.component(pluginId)])
     }
 
     public func cacheDirectory(pluginId: String) throws -> URL {
         try Self.validatePluginId(pluginId)
         lock.lock()
         defer { lock.unlock() }
-        return try directory(["cache", component(pluginId)])
+        return try directory(["cache", Self.component(pluginId)])
+    }
+
+    /// Capture before retiring a worker. The lease pins archive directory/file
+    /// inodes so a delayed purge cannot discover a replacement generation by path.
+    public func captureArchiveCache(pluginId: String) throws -> PluginArchiveCacheLease {
+        try captureArchiveCache(pluginId: pluginId, hooks: .init())
+    }
+
+    func captureArchiveCache(pluginId: String, hooks: PluginArchiveFileHooks) throws -> PluginArchiveCacheLease {
+        try Self.validatePluginId(pluginId)
+        lock.lock(); defer { lock.unlock() }
+        guard let root, root.isFileURL else {
+            throw BridgeFailure.storage("Application Support/exteraless is unavailable")
+        }
+        return try PluginArchiveCacheLease.capture(root: root, component: Self.component(pluginId), hooks: hooks)
+    }
+
+    /// Synchronous convenience; asynchronous retirement uses captureArchiveCache
+    /// before the await and purges that same lease afterwards.
+    public func purgeArchiveCache(pluginId: String) throws {
+        try captureArchiveCache(pluginId: pluginId).purge()
     }
 
     public func getSetting(pluginId: String, key: String, defaultValue: PluginJSONValue) throws -> PluginJSONValue {
@@ -153,7 +175,7 @@ public final class PluginServiceStorage: @unchecked Sendable {
         }
     }
 
-    private func component(_ pluginId: String) -> String {
+    static func component(_ pluginId: String) -> String {
         // Validated ids are ASCII; every permitted byte has exactly two hex digits.
         pluginId + "-" + pluginId.utf8.map { String($0, radix: 16) }.joined()
     }
@@ -187,7 +209,7 @@ public final class PluginServiceStorage: @unchecked Sendable {
 
     private func settingsURL(pluginId: String) throws -> URL {
         let directory = try self.directory(["settings"])
-        let url = directory.appendingPathComponent(component(pluginId)).appendingPathExtension("json")
+        let url = directory.appendingPathComponent(Self.component(pluginId)).appendingPathExtension("json")
         try checkContained(url, in: directory)
         return url
     }

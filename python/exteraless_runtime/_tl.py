@@ -335,7 +335,11 @@ class Requests:
             if callback is None:
                 if error is not None: p.log(p.plugin_id, f"{member} failed: {getattr(error, 'text', error)}")
                 return None
-            callback(response, error) if callable(callback) else callback.run(response, error)
+            # Decode and native/lease validation stay outside the user callback
+            # guard. The installed SDK safe_call contains Exception, not shutdown.
+            from android_utils import safe_call
+            target = callback if callable(callback) else callback.run
+            safe_call(target, response, error)
             return None  # RequestDelegate.run is void; never export an ignored return handle.
         try:
             wrapper = lease.wrap(completed, account=account, terminal=True)
@@ -411,7 +415,9 @@ def install(platform, client):
         _exteraless_request_delegate = True
         def __init__(self, fn, account=None): self.fn, self.account = fn, account_index(account, "RequestCallback")
         def run(self, response, error):
-            with client.hook_scope(self.account): return self.fn(response, error) if self.fn is not None else None
+            from android_utils import safe_call
+            with client.hook_scope(self.account): safe_call(self.fn, response, error)
+            # RequestDelegate.run is void, including direct SDK delegate calls.
     client.RequestCallback = RequestCallback
     client.send_request = send_request
 
@@ -590,6 +596,10 @@ def install(platform, client):
         # caption clears it; native edit preparation owns cached-text semantics.
         return native_media(model, account=account, member="editMedia")
     client.edit_message = edit_message
+    def account_edit_message(self, message_obj, text=None, file_path=None, with_spoiler=_OMITTED, parse_mode=None):
+        return edit_message(message_obj, text=text, file_path=file_path, with_spoiler=with_spoiler,
+                            parse_mode=parse_mode, account=self.account)
+    client.AccountClient.edit_message = account_edit_message
 
     class SendMessageParams(Object):
         def __init__(self, **fields): self.__dict__.update(fields)

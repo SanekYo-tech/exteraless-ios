@@ -61,7 +61,7 @@ final class PluginServiceStorageTests: XCTestCase {
     func testPluginIDsCannotEscapeDirectories() throws {
         let root = try directory()
         let storage = PluginServiceStorage(rootDirectory: root)
-        for id in ["../escape", "a/b", "a\\b", "/absolute", "..", "a.b", "", "9bad", "nul\0id"] {
+        for id in ["../escape", "a/b", "a\\b", "/absolute", "..", "a.b", "", "9-bad", "nul\0id", "exteralessMetadataInspector"] {
             XCTAssertThrowsError(try storage.filesDirectory(pluginId: id))
             XCTAssertThrowsError(try storage.cacheDirectory(pluginId: id))
             XCTAssertThrowsError(try storage.setSetting(pluginId: id, key: "k", value: .null))

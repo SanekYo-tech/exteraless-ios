@@ -140,6 +140,13 @@ public final class NativeServiceOperations<Owner: Hashable & Sendable>: @uncheck
         return entries.count
     }
 
+    public func retirePermissions(pluginId: String) -> [Ticket] {
+        lock.lock()
+        let candidates = entries.values.map(\.ticket).filter { $0.lease.pluginId == pluginId }
+        lock.unlock()
+        return candidates.filter { !$0.lease.isOpen }.compactMap { take(id: $0.id, owner: $0.lease.owner) }
+    }
+
     public func tickets(accountRecordId: Int64, kind: String) -> [Ticket] {
         lock.lock(); defer { lock.unlock() }
         return entries.values.filter { $0.ticket.accountRecordId == accountRecordId && $0.ticket.kind == kind }.map(\.ticket)

@@ -52,8 +52,7 @@ def install(platform, base, services, client):
         def replacePluginSettings(self, plugin_id, raw): return platform.replaceSettings(str(plugin_id), raw)
         def openPluginSettings(self, plugin_id, target=None):
             platform.check_plugin(str(plugin_id))
-            if target is not None: raise UnsupportedSurfaceError("deep settings routes require an explicit native pagePath")
-            return platform.show_settings()
+            return platform.show_settings(target=target)
 
     class AndroidUtilities:
         @staticmethod

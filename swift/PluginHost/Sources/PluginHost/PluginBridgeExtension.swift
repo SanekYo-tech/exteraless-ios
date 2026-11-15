@@ -12,11 +12,15 @@ public protocol PluginBridgeExtension: AnyObject, Sendable {
     /// Called after the interpreter lifetime is retired. Cancel native resources;
     /// do not invoke Python callbacks during this cleanup.
     func releaseInstances(pluginId: String)
+    /// Permission policy changed while the interpreter is still alive. Revoke
+    /// disallowed retained native work through its normal FIFO cleanup path.
+    func permissionsChanged(pluginId: String)
 }
 
 public extension PluginBridgeExtension {
     var exportedMethods: [String: Set<String>] { [:] }
     func releaseInstances(pluginId: String) {}
+    func permissionsChanged(pluginId: String) {}
 }
 
 /// Immutable provider order; each in-flight dispatch retains its own snapshot.
@@ -44,6 +48,10 @@ public final class CompositePluginBridgeExtension: PluginBridgeExtension {
 
     public func releaseInstances(pluginId: String) {
         for provider in providers { provider.releaseInstances(pluginId: pluginId) }
+    }
+
+    public func permissionsChanged(pluginId: String) {
+        for provider in providers { provider.permissionsChanged(pluginId: pluginId) }
     }
 }
 

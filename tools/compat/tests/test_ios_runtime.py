@@ -275,7 +275,7 @@ def case_metadata(directory):
     assert "extera_utils.plugin_loader" not in sys.modules
     assert "_exteraless_bridge" not in sys.modules
     raises(runtime.RuntimeStateError, lambda: runtime.load_json(str(FIXTURES / "metadata.plugin")))
-    raises(runtime.UnsupportedSurfaceError, lambda: runtime.metadata_json("example.elyx"))
+    raises(runtime.UnsupportedSurfaceError, lambda: runtime.metadata_json("example.zip"))
     malformed = directory / "malformed.plugin"
     malformed.write_text("__id__ = 'bad_probe'\n__name__ = 'bad'\nif :\n", encoding="utf-8")
     from extera_utils.metadata_parser import PluginMetadataError
