@@ -8,7 +8,9 @@ private func tlCheck(_ value: Bool, _ message: String) throws {
     if !value { throw SDKTLFailure(description: message) }
 }
 private func tlQuote(_ value: String) -> String {
-    String(decoding: try! JSONEncoder().encode(value), as: UTF8.self)
+    // This string is embedded in Python source, not decoded with json.loads.
+    // Use the Host's Python-literal encoder; JSON's escaped slash is literal in Python.
+    PluginRuntimeScript.quote(value)
 }
 private func tlThread() -> UInt64 { var id: UInt64 = 0; pthread_threadid_np(nil, &id); return id }
 
