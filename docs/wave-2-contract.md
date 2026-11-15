@@ -1,9 +1,15 @@
 # Полная реализационная волна и последующее независимое ревью
 
+Текущие подволны и **переопределения владения общими файлами** находятся в
+[`wave-2/progress.md`](wave-2/progress.md). Эта таблица ниже описывает исходное
+разделение; временные передачи Host/Runtime/AppDelegate/Network перечислены там.
+
 База: `68bb1adf`. Пользователь прямо запросил масштабное делегирование до
 закрытия плана с последующей сверкой независимыми reviewers с Android-оригиналом.
 Runtime/SDK gate `43633853229` полностью пройден на `38d335fa`; full IPA
-`43635233046` уже собирается, watcher принадлежит coordinator. Не опрашивать его.
+**`43635233046` на `68bb1adf` также success**. Скачанный build 23 перепроверен:
+67 unsigned iOS ARM64 Mach-O, 55 runtime frameworks, 1071 ресурс, шесть extensions.
+Все baseline CI/watchers завершены. Новую большую волну проверяем после стыковки.
 
 ## Общие правила
 
@@ -125,6 +131,7 @@ Coordinator добавит расширяемую границу в PluginHost:
 
 ```swift
 public protocol PluginBridgeExtension: AnyObject, Sendable {
+    var exportedMethods: [String: Set<String>] { get }
     // nil = this provider does not own this operation; result is full
     // {ok:true,value:...}/{ok:false,error:{kind,message}} JSON envelope.
     func dispatch(requestJSON: String, pluginId: String) throws -> String?
@@ -137,6 +144,10 @@ Request envelope остаётся `op/fqcn/member/args/kwargs/instance/value`; p
 приходит из C state. Extra provider вызывается до builtin для своих операций,
 unknown возвращает nil. Composite provider пишет coordinator. Каждый provider
 валидирует операцию/аргументы и permissions; не эмулировать Unknown как success.
+`exportedMethods` перечисляет только реализованные методы установленного provider;
+default = [:]. BridgeServices отвечает на `member_kind`/`class_exists` по этой
+таблице без входа в side-effect dispatcher. После удаления provider его extra
+методы перестают обнаруживаться; builtin discovery сохраняется.
 
 SDK новые native calls через `exteraless.ios.Runtime`:
 
@@ -153,6 +164,22 @@ Builtin per-plugin bulk storage уже реализован coordinator:
 настроек `__handle__`/`__bytes__` не должны превращаться в transport tags.
 Размер 1 MiB, keys validated, owner из native context, atomic full write.
 
+Legacy runnable bridge использует `BridgeServices.onOwnedCallback`:
+`(pluginId, ownerToken: String?, handle, method, argsJSON, delayMs) -> Bool`.
+Host-bound schedulers сравнивают epoch с captureOwner до Task и возвращают
+admission; False откатывает reservation. onCallback сохранён только для standalone
+bridge fixtures без owner validator. Completion refs теперь keyed plugin+epoch.
+
+`PluginPlatformService` effects требуют `lease: PluginNativeCallLease`; провайдер
+проверяет lease непосредственно перед эффектом и после async подготовки.
+`BridgeServices.effectOwnerValidator` ставит Host, допуская только active/loading
+generation, а cleanup через ownerValidator может пережить переход в unloading.
+
+`Runtime.getProtectedPaths() -> [absolute_path]` также реализован: native host
+сообщает SDK audit дополнительный client-settings folder внутри реального
+shared base path. SDK-only native probes возвращают [] по default протокола.
+Это узкая защита настроек, не blanket-запрет всего AppGroup/temporary storage.
+
 Callbacks — положительные C handles, **не Swift/Python pointers**. Coordinator
 предоставит `PluginCallbackDispatcher` с sync token capture и owner-queue invoke;
 providers могут принимать closures init-параметрами:
@@ -162,6 +189,10 @@ providers могут принимать closures init-параметрами:
 captureOwner, hasPermission, callback (Bool admission result), release.
 Callbacks и release одного owner идут FIFO; разные owner могут исполняться
 параллельно. Provider должен учитывать false при перегрузке/retired owner.
+Для before-intent/file barriers есть `PluginCallbackDispatcher.result(owner,
+handle, method, argsJSON) async throws -> String`: actual Python JSON-result,
+та же FIFO, cancellation отменяет ожидание и ещё не начатый callback. Native
+action после await дополнительно проверяет свой cancellation/deadline.
 Не запускать Python на main или через PyGILState_Ensure. Native provider хранит
 owner при принятии операции; после reload старый owner не входит в новый Python.
 UI SDK создаёт отдельные wrapper-callables на каждый presentation lease; reuse

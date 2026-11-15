@@ -1,5 +1,26 @@
 # Встроенный CPython: проверяемая поставка для iOS
 
+## Полная client/SDK волна — 15.11.2026
+
+- **[Linux 43693106297](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43693106297)
+  на `b1424e10`: 280 Core + 89 PluginHost + 16 PluginHooks tests passed.**
+  В Core проверены settings/CAS, AI, appearance, feed/player/pills, filtering и
+  backup policies; execution Core suite — 2.689 s. Native UIKit в этом запуске нет.
+- C bridge теперь привязывает immutable owner epoch, отсоединяет handle tables до
+  reentrant DECREF и корректно участвует в cyclic GC. Windows CPython 3.12.10
+  debug-allocator probe: **219 native calls**, 27 terminal API refusals, 2/2 payloads
+  освобождены. Независимый reviewer закрыл воспроизведённую P2-утечку.
+- Apple runtime/SDK probe должен быть пересобран по актуальному source fingerprint:
+  новые C/Host/SDK изменения не покрываются прежним 169-call iOS artifact.
+- Source integration и independent review продолжаются. Найденные Settings/AI
+  P1/P2 исправляются отдельной подволной; запуск новой Telegram IPA и получение
+  UIKit frames — после стыковки. Актуальные owners/gates:
+  [wave-2/progress.md](wave-2/progress.md).
+
+Последняя проверенная Telegram IPA ниже — **build 23 на `68bb1adf`**. Новая волна
+в неё не входит. Полный app graph использует **runner `xcode-27`, Xcode 27.1**;
+`macos-26` / Xcode 26.6 — для Foundation/CPython component workflow.
+
 ## Интеграционная волна — 14.11.2026
 
 **[Component 43633853229](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229)

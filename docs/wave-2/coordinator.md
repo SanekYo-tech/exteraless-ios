@@ -1,5 +1,8 @@
 # Coordinator — стыковка полной волны
 
+Актуальная передача владения, проверенные commits/CI и дополнительные подволны:
+[progress.md](progress.md). При конфликте со старой таблицей брать её.
+
 ## Уже реализовано
 
 - `PluginBridgeExtension` / `CompositePluginBridgeExtension`, shared JSON envelope
@@ -15,16 +18,21 @@
 - `ExteralessClientRuntime`: composition root всех пяти native domains, Core
   definitions registration, shared root config, context lifecycle и reload.
 - TelegramPluginServices.context(recordId:) для native UI/TL main-thread resolver.
+- Immutable native owner epoch, bind C/SDK до load, per-owner result callback и
+  SDK-aware release. Mailbox gate/maintenance переданы lifecycle implementer.
+- Extension discovery через таблицу реально установленных `exportedMethods`.
+- AI/appearance/chat shared menu и policy-врезки применены; TL provider и deep
+  observation codecs подключены. AppDelegate/privacy/proxy hunks переданы integrator.
 - Подготовлены meaningful tests extension identity/malformed replies/cleanup
   reentry/callback-release FIFO/stale owners и bulk atomicity/isolation/corruption.
 
 ## После получения агентов применить общие места
 
-1. AppDelegate после вычисления rootPath и до Account/Network initialization:
+1. **Применено:** AppDelegate после app-group upgrades и до Account/Network initialization:
    `MainActor.assumeIsolated { ExteralessClientRuntime.shared.configure(rootPath: rootPath) }`.
-2. В existing context callback перед ExteralessPluginRuntime.update/clear:
+2. **Применено:** existing context callback перед ExteralessPluginRuntime.update/clear:
    ClientRuntime.update(context:context.context) / clearContext().
-3. PeerInfoSettingsItems: native ExteralessSettingsEntry factory row рядом с Plugins;
+3. **Применено:** PeerInfoSettingsItems: native ExteralessSettingsEntry factory row рядом с Plugins;
    использовать actual entry API core-settings-agent и уникальный item id.
 4. ExteralessPluginRuntime после создания host: PluginCallbackDispatcher, composite
    [clientSettings, nativePluginUI, nativeTL] providers, их update/clearContext.
@@ -34,6 +42,6 @@
 6. Сверить feature catalog declarations с actual native callsites, затем выполнить
    целевые suites, native probes и итоговую экономную unsigned IPA.
 
-Эти общие места намеренно стыкуются после implementer reports: текущая первая
-IPA на `68bb1adf` ещё проверяет baseline runtime UI; её исправления должны иметь
-возможность отдельного commit без частично готовых domain types.
+Baseline IPA на `68bb1adf` прошла 43635233046; теперь common client composition
+стыкуется в новой волне. Типы domains и entry проверяются по implementer reports
+перед объединённой компиляцией.
