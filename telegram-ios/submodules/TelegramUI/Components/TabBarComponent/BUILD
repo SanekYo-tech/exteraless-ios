@@ -10,6 +10,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/Display",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/TelegramPresentationData",

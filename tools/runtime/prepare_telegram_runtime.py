@@ -18,6 +18,7 @@ import tempfile
 from support import digest, download, inspect_archive, read_lock, stage_application
 from vendor_dependencies import vendor as vendor_dependencies, verify_bundle as verify_dependency_bundle
 from native_dependencies import stage_application_policy
+from native_bundle_resources import CONTRACT as NATIVE_RESOURCE_CONTRACT, source_resources
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -292,6 +293,7 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
         raise ValueError('Review the C compatibility layer before changing CPython')
     sources = source_inventory(source_root)
     client_assets = application_resources(telegram_root)
+    native_resources, native_resources_sha = source_resources(telegram_root)
     compat = compatibility_manifest(source_root)
     support_report = inspect_archive(archive, lock)
     if any(item['python'] != CPYTHON_VERSION for item in support_report['slices'].values()):
@@ -342,6 +344,13 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
             telegram_root / 'build-system/exteraless/runtime-assets.json')
         for item in client_assets.values():
             inputs['telegram-ios/' + item['source']] = item['sha256']
+        inputs['telegram-ios/' + NATIVE_RESOURCE_CONTRACT] = native_resources_sha
+        inputs['telegram-ios/build-system/Make/NativeBundleResources.py'] = digest(
+            source_root / 'telegram-ios/build-system/Make/NativeBundleResources.py')
+        inputs['tools/runtime/native_bundle_resources.py'] = digest(source_root / 'tools/runtime/native_bundle_resources.py')
+        for resources in native_resources['groups'].values():
+            for item in resources:
+                inputs['telegram-ios/' + item['source']] = item['sha256']
         for group in ('input_sha256', 'postimage_sha256'):
             inputs.update({'telegram-ios/' + name: sha for name, sha in client_patches[group].items()})
         # TL schema is produced by the TL/services owner. Keep its exact bytes.
@@ -356,6 +365,8 @@ def prepare(source_root, telegram_root, archive, lock, report_path=None, depende
             'bundle_id': bundle_id, 'actual_cpython': CPYTHON_VERSION,
             'client_core_module': 'ExteralessCore',
             'application_resources': client_assets,
+            'native_bundle_resources': native_resources,
+            'native_bundle_resources_sha256': native_resources_sha,
             'client_source_patches': client_patches,
             'support': support_report, 'targets': targets,
             'native_dependency_lock_sha256': digest(native_lock),

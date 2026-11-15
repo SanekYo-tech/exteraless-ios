@@ -55,6 +55,8 @@ swift_library(
         ":TelegramCallsUIBundle",
     ],
     deps = [
+        "//submodules/LocalizedPeerData:LocalizedPeerData",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SSignalKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/Postbox:Postbox",

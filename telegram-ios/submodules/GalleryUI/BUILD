@@ -10,6 +10,8 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/LocalizedPeerData:LocalizedPeerData",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/UrlWhitelist",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/LottieSettings:LottieSettings",

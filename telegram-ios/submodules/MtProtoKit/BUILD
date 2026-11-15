@@ -29,6 +29,7 @@ objc_library(
     ],
     sdk_dylibs = [
         "libz",
+        "libdns_sd",
     ],
     visibility = [
         "//visibility:public",

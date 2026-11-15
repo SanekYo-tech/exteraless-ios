@@ -34,7 +34,7 @@ jobs:
           submodules: recursive
 
       - name: Test unsigned build plumbing
-        run: python3 -m unittest discover -s tools/ci/tests -v
+        run: python3 -m unittest discover -s tools/ci/tests -p 'test_unsigned*.py' -v
 
       - name: Test runtime packaging (no plugins or simulators)
         run: python3 -m unittest discover -s tools/runtime/tests -p test_telegram_packaging.py -v
@@ -80,6 +80,12 @@ jobs:
               fh.write("\n")
           EOF
 
+      - name: Prepare pinned client patches and prove clean-base replay
+        run: |
+          python3 -B -m unittest discover -s tools/runtime/tests -p test_client_source_patches.py -v
+          python3 -B tools/runtime/apply_telegram_client_patches.py \
+            --prove-clean-base --report "$RUNNER_TEMP/client-source-patches.json"
+
       - name: Create canonical source directory
         run: |
           set -euo pipefail
@@ -96,7 +102,7 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.PYTHON_SUPPORT_CACHE }}
-          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json') }}
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json', 'python/runtime/new-native-dependency-lock.json') }}
 
       - name: Prepare runtime Bazel inputs
         run: |
@@ -118,7 +124,7 @@ jobs:
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.PYTHON_SUPPORT_CACHE }}
-          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json') }}
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json', 'python/runtime/new-native-dependency-lock.json') }}
 
       - name: Restore Bazel cache
         id: bazel-cache
@@ -164,6 +170,7 @@ jobs:
             --report build/artifacts/runtime-manifest.json
           python3 - <<'PY'
           from pathlib import Path
+          import json, os
           import shutil
           target = Path('build/artifacts/signing-entitlements')
           target.mkdir(parents=True, exist_ok=True)
@@ -174,8 +181,11 @@ jobs:
               shutil.copy2(path, target / path.name)
           shutil.copy2('bazel-bin/Telegram/Telegram_dossier.zip', 'build/artifacts/Telegram_dossier.zip')
           shutil.copy2('build-input/exteraless/runtime-staging.json', 'build/artifacts/runtime-staging.json')
+          runtime = json.loads(Path('build/artifacts/runtime-manifest.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Unsigned IPA + six extensions; CPython {}, {} runtime frameworks; resource/rpath verification passed.\n'.format(
+                  runtime['actual_cpython'], len(runtime['frameworks'])))
           PY
-          echo "Unsigned IPA + six extensions; CPython 3.12.16, 55 runtime frameworks and resource/rpath verification passed. Sign locally with your compatible profiles." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -187,6 +197,7 @@ jobs:
             ${{ env.SOURCE_DIR }}/build/artifacts/build-manifest.json
             ${{ env.SOURCE_DIR }}/build/artifacts/runtime-manifest.json
             ${{ env.SOURCE_DIR }}/build/artifacts/runtime-staging.json
+            ${{ runner.temp }}/client-source-patches.json
             ${{ env.SOURCE_DIR }}/build/artifacts/Telegram_dossier.zip
             ${{ env.SOURCE_DIR }}/build/artifacts/signing-entitlements/
           if-no-files-found: error
@@ -203,6 +214,7 @@ jobs:
             ${{ env.SOURCE_DIR }}/build/diagnostics/unsigned-preflight.json
             ${{ env.SOURCE_DIR }}/build/diagnostics/runtime-preflight.json
             ${{ env.SOURCE_DIR }}/build/diagnostics/runtime-staging.json
+            ${{ runner.temp }}/client-source-patches.json
           if-no-files-found: ignore
           retention-days: 7
 

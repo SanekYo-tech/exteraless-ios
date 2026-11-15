@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+filegroup(
+    name = "ClientHarnessDomainFingerprintSources",
+    srcs = glob(["Sources/**/*.swift"]),
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "ChatMessageBubbleItemNode",
     module_name = "ChatMessageBubbleItemNode",
@@ -10,6 +16,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/AsyncDisplayKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/Display",

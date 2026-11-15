@@ -17,6 +17,7 @@ import zipfile
 # Also supports the harness's importlib.spec_from_file_location loader.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ClientSourcePatches import validate_patch_provenance, verify_client_sources
+from NativeBundleResources import CONTRACT as NATIVE_RESOURCE_CONTRACT, source_resources, verify_archive
 
 
 GENERATOR = 'exteraless-telegram-runtime-v1'
@@ -51,6 +52,11 @@ def load_staging_manifest(base_path):
         raise RuntimeError('Unexpected runtime staging version; regenerate build-input/exteraless')
     if report.get('client_source_patches') != verify_client_sources(base):
         raise RuntimeError('Client source patch provenance changed; regenerate runtime staging')
+    if 'native_bundle_resources' in report or (base / NATIVE_RESOURCE_CONTRACT).is_file():
+        resources, sha = source_resources(base)
+        if (report.get('native_bundle_resources') != resources
+                or report.get('native_bundle_resources_sha256') != sha):
+            raise RuntimeError('Native root-resource provenance changed; regenerate runtime staging')
     for group in ('input_sha256', 'postimage_sha256'):
         for name, expected in report['client_source_patches'][group].items():
             if report['source_files'].get('telegram-ios/' + name) != expected:
@@ -284,6 +290,9 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
     native_frameworks = spec.get('native_frameworks', [])
     framework_names = ['Python', *modules, *(entry['framework'] for entry in native_frameworks)]
     application_assets = manifest.get('application_resources', {})
+    native_resources = None
+    if 'native_bundle_resources' in manifest:
+        native_resources = verify_archive(ipa, manifest['native_bundle_resources'], 'Telegram')
     expected = dict(spec['resources'], **manifest['assets'])
     with zipfile.ZipFile(ipa) as archive:
         names = set(archive.namelist())
@@ -431,6 +440,7 @@ def verify_runtime_ipa(ipa, manifest, target='device'):
             'support_sha256': manifest['support']['sha256'], 'target': target,
             'frameworks': framework_names, 'resource_files': len(expected) + len(application_assets),
             'application_resources': application_assets,
+            'native_bundle_resources': native_resources,
             'extensions': extension_report, 'checked_macho_files': len(binary_info),
             'dependencies': dependencies,
             'native_dependencies': native_policy,

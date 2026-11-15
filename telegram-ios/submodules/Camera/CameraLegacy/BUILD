@@ -13,6 +13,7 @@ swift_library(
         "//submodules/Camera:CameraBundle",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/Camera",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Display:Display",

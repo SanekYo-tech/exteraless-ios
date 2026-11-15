@@ -1,6 +1,7 @@
 """Small source/packaging fixtures: no plugin imports, compiler or simulator."""
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import plistlib
@@ -183,6 +184,29 @@ class TelegramPackagingTests(unittest.TestCase):
         self.write(app / name, b'x' * manifest['application_resources'][name]['size'])
         (app / 'Nested' / name).unlink()
         with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+            verify_runtime_ipa(self.archive(app), manifest)
+
+    def test_production_verifier_enforces_font_resources_in_each_process_bundle(self):
+        app = self.app()
+        font = b'owned font bytes'
+        notice = b'owned license bytes'
+        entries = [
+            {'source': 'Fonts/Fixture.ttf', 'size': len(font), 'sha256': hashlib.sha256(font).hexdigest()},
+            {'source': 'Fonts/Fixture-OFL.txt', 'size': len(notice), 'sha256': hashlib.sha256(notice).hexdigest()},
+        ]
+        bundles = {'Payload/Telegram.app': ['fonts'],
+                   'Payload/Telegram.app/PlugIns/ShareExtension.appex': ['fonts'],
+                   'Payload/Telegram.app/PlugIns/NotificationContentExtension.appex': ['fonts']}
+        for name in bundles:
+            destination = app / name.removeprefix('Payload/Telegram.app').lstrip('/')
+            self.write(destination / 'Fixture.ttf', font)
+            self.write(destination / 'Fixture-OFL.txt', notice)
+        manifest = dict(self.manifest, native_bundle_resources={
+            'schema': 1, 'groups': {'fonts': entries}, 'archives': {'Telegram': bundles}})
+        result = verify_runtime_ipa(self.archive(app), manifest)
+        self.assertEqual(len(result['native_bundle_resources']['files']), 6)
+        (app / 'PlugIns/ShareExtension.appex/Fixture-OFL.txt').unlink()
+        with self.assertRaisesRegex(ValueError, 'process bundle root'):
             verify_runtime_ipa(self.archive(app), manifest)
 
     def test_vendor_copy_preserves_its_sealed_inventory(self):

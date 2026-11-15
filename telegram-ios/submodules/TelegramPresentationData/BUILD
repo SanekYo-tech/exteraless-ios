@@ -34,10 +34,17 @@ swift_library(
     name = "ExteralessAppearancePresentationTestsLib",
     testonly = True,
     module_name = "ExteralessAppearancePresentationTests",
-    srcs = ["Tests/AppearancePresentationRevisionTests.swift"],
+    srcs = [
+        "Tests/AppearancePresentationRevisionTests.swift",
+        "Tests/AppearanceMonetPresentationTests.swift",
+    ],
     copts = ["-swift-version", "6"],
     deps = [
         ":TelegramPresentationData",
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/Display:Display",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/TelegramUIPreferences:TelegramUIPreferences",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
     ],
 )
@@ -50,5 +57,15 @@ ios_unit_test(
     test_host = "//Tests/Exteraless:NativeTestHost",
     linkopts = ["-framework", "MediaPlayer"],
     deps = [":ExteralessAppearancePresentationTestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "ExteralessMonetNotices",
+    srcs = [
+        "Sources/MonetColorUtilities/ExteralessMonet-NOTICE.txt",
+        "Sources/MonetColorUtilities/MaterialColorUtilities-LICENSE.txt",
+        "Sources/MonetColorUtilities/exteraGram-LICENSE.txt",
+    ],
     visibility = ["//visibility:public"],
 )

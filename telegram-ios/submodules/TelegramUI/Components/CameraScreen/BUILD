@@ -53,6 +53,7 @@ swift_library(
         ":CameraScreenBundle",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/AsyncDisplayKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/Display",

@@ -22,6 +22,16 @@ filegroup(
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
+filegroup(
+    name = "ClientHarnessFinalVisualFingerprintSources",
+    srcs = glob(["Sources/ChatInputContent/**/*.swift"]) + [
+        "Sources/SyncCore/SyncCore_CloudFileMediaResource.swift",
+        "Sources/SyncCore/SyncCore_AppConfiguration.swift",
+        "Sources/TelegramEngine/Resources/TelegramEngineResources.swift",
+    ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "TelegramCore",
     module_name = "TelegramCore",
@@ -32,6 +42,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/sqlcipher:sqlcipher",
         "//third-party/exteraless:ExteralessCore",
         "//third-party/exteraless:PluginHooks",
         "//submodules/TelegramApi:TelegramApi",

@@ -53,6 +53,7 @@ swift_library(
         ":MediaEditorBundle",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/AsyncDisplayKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/Display",

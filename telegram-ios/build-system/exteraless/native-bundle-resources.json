@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "groups": {
+    "fonts": [
+      {"source": "submodules/Display/Resources/Fonts/ExteralessRoboto/ExteralessRoboto-Regular.ttf", "size": 488584, "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"},
+      {"source": "submodules/Display/Resources/Fonts/ExteralessRoboto/ExteralessRoboto-Italic.ttf", "size": 530944, "sha256": "9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182"},
+      {"source": "submodules/Display/Resources/Fonts/ExteralessRoboto/ExteralessRoboto-OFL.txt", "size": 4394, "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41"}
+    ],
+    "monet": [
+      {"source": "submodules/TelegramPresentationData/Sources/MonetColorUtilities/ExteralessMonet-NOTICE.txt", "size": 1569, "sha256": "71951fd9582873e7aa7a6650e84c7abe309a44df145a48bd3441539333ac8356"},
+      {"source": "submodules/TelegramPresentationData/Sources/MonetColorUtilities/MaterialColorUtilities-LICENSE.txt", "size": 10756, "sha256": "e662e6c2fc7ba7bc613c7e4ddf852d4ad3fcc05faead7cbe16b1dac67b55f426"},
+      {"source": "submodules/TelegramPresentationData/Sources/MonetColorUtilities/exteraGram-LICENSE.txt", "size": 18061, "sha256": "3f0901488e52e36314c701ba4cc0c0086db7377633334c04a7c17cd173077bb0"}
+    ]
+  },
+  "archives": {
+    "Telegram": {
+      "Payload/Telegram.app": ["fonts", "monet"],
+      "Payload/Telegram.app/PlugIns/ShareExtension.appex": ["fonts"],
+      "Payload/Telegram.app/PlugIns/NotificationContentExtension.appex": ["fonts"]
+    },
+    "ClientUIHarness": {"Payload/ClientUIHarness.app": ["fonts", "monet"]},
+    "NativeTestHost": {"Payload/NativeTestHost.app": ["fonts", "monet"]}
+  }
+}

@@ -1,6 +1,12 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
+filegroup(
+    name = "ClientHarnessFinalVisualFingerprintSources",
+    srcs = glob(["Sources/**/*.swift"]),
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "AvatarNode",
     module_name = "AvatarNode",

@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+filegroup(
+    name = "ClientHarnessFinalVisualFingerprintSources",
+    srcs = glob(["Sources/**/*.swift"]),
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "DirectMediaImageCache",
     module_name = "DirectMediaImageCache",

@@ -12,6 +12,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
@@ -147,7 +148,7 @@ swift_library(
 swift_library(
     name = "ChatListUITestsLib",
     testonly = True,
-    srcs = glob(["Tests/**/*.swift"]),
+    srcs = glob(["Tests/**/*.swift"], exclude = ["Tests/ChatSwipeNativeTests.swift"]),
     deps = [
         ":ChatListUI",
         "//submodules/TelegramCore:TelegramCore",
@@ -172,5 +173,32 @@ ios_unit_test(
     runner = ":ChatListUITestRunner",
     resources = ["//Telegram:InstantPagePreviewTestStrings"],
     deps = [":ChatListUITestsLib"],
+    visibility = ["//visibility:public"],
+)
+
+swift_library(
+    name = "ExteralessChatSwipeTestsLib",
+    testonly = True,
+    srcs = ["Tests/ChatSwipeNativeTests.swift"],
+    copts = ["-swift-version", "6"],
+    deps = [
+        ":ChatListUI",
+        "//third-party/exteraless:ExteralessCore",
+        "//submodules/AccountContext:AccountContext",
+        "//submodules/Display:Display",
+        "//submodules/ItemListUI:ItemListUI",
+        "//submodules/Postbox:Postbox",
+        "//submodules/TelegramCore:TelegramCore",
+        "//submodules/TelegramPresentationData:TelegramPresentationData",
+    ],
+)
+
+ios_unit_test(
+    name = "ExteralessChatSwipeTests",
+    timeout = "short",
+    minimum_os_version = "15.0",
+    runner = "//Tests/Exteraless:Runner",
+    test_host = "//Tests/Exteraless:NativeTestHost",
+    deps = [":ExteralessChatSwipeTestsLib"],
     visibility = ["//visibility:public"],
 )

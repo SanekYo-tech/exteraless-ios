@@ -12,6 +12,8 @@ filegroup(
         "Sources/ExteralessCore/Retention*.swift",
         "Sources/ExteralessCore/ChatFeatures.swift",
         "Sources/ExteralessCore/ChatFeedPolicy.swift",
+        "Sources/ExteralessCore/AppearancePolicy.swift",
+        "Sources/ExteralessCore/AppearanceFeatures.swift",
         "Sources/ExteralessCore/CorePillFeatures.swift",
         "Sources/ExteralessCore/Feed*.swift",
         "Sources/ExteralessCore/Player*.swift",

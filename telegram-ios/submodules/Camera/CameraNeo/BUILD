@@ -53,6 +53,7 @@ swift_library(
         ":CameraNeoBundle",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/AppBundle",
         "//submodules/Camera",
         "//submodules/GZip",

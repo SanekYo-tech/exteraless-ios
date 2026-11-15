@@ -1,5 +1,11 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+filegroup(
+    name = "ClientHarnessDomainFingerprintSources",
+    srcs = ["Sources/PhotoResources.swift"],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "PhotoResources",
     module_name = "PhotoResources",

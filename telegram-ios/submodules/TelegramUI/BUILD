@@ -12,7 +12,7 @@ filegroup(
     srcs = glob([
         "Sounds/**/*",
         "Resources/**/*",
-    ], exclude = ["Sounds/**/.*", "Resources/**/.*", "Resources/Exteraless/Links/*.txt"]),
+    ], exclude = ["Sounds/**/.*", "Resources/**/.*", "Resources/Exteraless/Links/*.txt"]) + ["//submodules/TelegramPresentationData:ExteralessMonetNotices"],
     visibility = ["//visibility:public"],
 )
 
@@ -63,6 +63,8 @@ filegroup(
         "Sources/ExteralessClient/Chats/ExteralessChatTableController.swift",
         "Sources/ExteralessClient/ExteralessSettingsController.swift",
         "Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift",
+        "Sources/ExteralessClient/ExteralessClientRuntime.swift",
+        "Sources/ExteralessClient/ClientSettingsBridgeExtension.swift",
     ],
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
@@ -109,6 +111,17 @@ available_appcenter_targets = [
 ]
 
 appcenter_targets = available_appcenter_targets if telegram_bundle_id in internal_bundle_ids else []
+
+filegroup(
+    name = "ClientHarnessFinalVisualFingerprintSources",
+    srcs = [
+        "Sources/ExteralessClient/Chats/ExteralessComposerVisualFactory.swift",
+        "Sources/ChatInterfaceStateInputPanels.swift",
+        "Sources/PastedMarkdownConversion.swift",
+        "Sources/Chat/ChatControllerLoadDisplayNode.swift",
+    ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
 
 swift_library(
     name = "TelegramUI",
@@ -671,6 +684,11 @@ swift_library(
     deps = [
         ":TelegramUI",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/AsyncDisplayKit:AsyncDisplayKit",
+        "//submodules/Display:Display",
+        "//submodules/GalleryUI:GalleryUI",
+        "//submodules/SaveToCameraRoll:SaveToCameraRoll",
+        "//submodules/ShareController:ShareController",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//third-party/exteraless:ExteralessCore",
@@ -773,11 +791,12 @@ swift_library(
     name = "ExteralessTLModelTestsLib",
     testonly = True,
     module_name = "ExteralessTLModelTests",
-    srcs = ["Tests/PluginTLEditModelTests.swift"],
+    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift"],
     copts = ["-swift-version", "6"],
     deps = [
         ":TelegramUI",
         "//submodules/TelegramCore:TelegramCore",
+        "//third-party/exteraless:PluginHost",
     ],
 )
 
@@ -804,9 +823,13 @@ swift_library(
     deps = [
         ":TelegramUI",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/ChatInterfaceState:ChatInterfaceState",
+        "//submodules/ChatSendMessageActionUI:ChatSendMessageActionUI",
+        "//submodules/MediaPickerUI:MediaPickerUI",
+        "//submodules/TelegramUI/Components/ChatScheduleTimeController",
         "//submodules/Display:Display",
         "//submodules/GalleryUI:GalleryUI",
-        "//submodules/MediaPlayer:MediaPlayer",
+        "//submodules/MediaPlayer:UniversalMediaPlayer",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

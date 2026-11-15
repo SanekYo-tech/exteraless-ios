@@ -684,6 +684,7 @@ ios_framework(
     deps = [
         "//submodules/MtProtoKit:MtProtoKit",
     ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
 plist_fragment(
@@ -725,6 +726,7 @@ ios_framework(
     deps = [
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
     ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
 plist_fragment(
@@ -769,6 +771,7 @@ ios_framework(
     deps = [
         "//submodules/Postbox:Postbox",
     ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
 plist_fragment(
@@ -1032,6 +1035,7 @@ ios_framework(
     deps = [
         "//submodules/TelegramUI:TelegramUI",
     ] + debug_deps,
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
 plist_fragment(
@@ -1094,6 +1098,8 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/Display:Display",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/TelegramUI",
         "//submodules/PasscodeCore",
         "//submodules/TelegramUI/Components/ShareExtensionContext"
@@ -1133,6 +1139,7 @@ ios_extension(
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:Share.mobileprovision",
     }),
+    resources = ["//submodules/Display:ExteralessFontResources"],
     deps = [":ShareExtensionLib"],
     frameworks = [
         ":TelegramUIFramework"
@@ -1194,6 +1201,8 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/Display:Display",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/TelegramUI:TelegramUI",
         "//submodules/PasscodeCore",
         ":NotificationContentExtensionLink",
@@ -1241,6 +1250,7 @@ ios_extension(
         ":disableProvisioningProfilesSetting": None,
         "//conditions:default": "@build_configuration//provisioning:NotificationContent.mobileprovision",
     }),
+    resources = ["//submodules/Display:ExteralessFontResources"],
     deps = [":NotificationContentExtensionLib"],
     frameworks = [
         ":TelegramUIFramework"
@@ -1434,6 +1444,7 @@ swift_library(
         ":IntentsAssets"
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Postbox:Postbox",
         "//submodules/TelegramCore:TelegramCore",
@@ -1907,6 +1918,14 @@ apple_prebuilt_watchos_application(
     tags = ["manual"],
 )
 
+# Public build-selection identity used by the frozen visual harness contract.
+alias(
+    name = "ClientUIHarness",
+    actual = "//Tests/ExteralessHarness:ClientUIHarness",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
 ios_application(
     name = "Telegram",
     bundle_id = "{telegram_bundle_id}".format(
@@ -1932,6 +1951,9 @@ ios_application(
     ],
     resources = [
         ":LaunchScreen",
+        "//submodules/Display:ExteralessFontResources",
+        # Flat main-bundle resource used by Bundle.main.url(forResource:withExtension:).
+        "//submodules/TelegramUI:ExteralessLinkResources",
         "//third-party/exteraless:RuntimeResources",
         #":DefaultAppIcon",
     ],

@@ -9,6 +9,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "ClientHarnessFinalVisualFingerprintSources",
+    srcs = glob(["Sources/**/*.swift"]),
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 swift_library(
     name = "ChatTextInputPanelNode",
     module_name = "ChatTextInputPanelNode",
@@ -19,6 +25,7 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/Display",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/AsyncDisplayKit",

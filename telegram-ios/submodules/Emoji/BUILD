@@ -9,6 +9,9 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
+    deps = [
+        "//third-party/exteraless:ExteralessCore",
+    ],
     visibility = [
         "//visibility:public",
     ],

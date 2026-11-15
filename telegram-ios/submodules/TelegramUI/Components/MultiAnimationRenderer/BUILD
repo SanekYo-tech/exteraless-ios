@@ -13,6 +13,7 @@ swift_library(
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/Display:Display",
         "//submodules/TelegramUI/Components/AnimationCache:AnimationCache",
+        "//third-party/exteraless:ExteralessCore",
     ],
     visibility = [
         "//visibility:public",

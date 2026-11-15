@@ -1,0 +1,4 @@
+# Keep the pinned upstream notice/license bytes on every checkout platform.
+ExteralessMonet-NOTICE.txt -text
+MaterialColorUtilities-LICENSE.txt -text
+exteraGram-LICENSE.txt -text
