@@ -14,8 +14,8 @@ private final class DCTTimingTarget: MultiAnimationRenderTarget {
     var loopCount = 0
 
     override func transitionToContents(_ contents: AnyObject, didLoop: Bool) {
-        XCTAssertEqual(CFGetTypeID(contents), CGImageGetTypeID())
-        guard CFGetTypeID(contents) == CGImageGetTypeID() else { return }
+        XCTAssertEqual(CFGetTypeID(contents), CGImage.typeID)
+        guard CFGetTypeID(contents) == CGImage.typeID else { return }
         let image = contents as! CGImage
         var pixel = [UInt8](repeating: 0, count: 4)
         pixel.withUnsafeMutableBytes { bytes in

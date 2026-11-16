@@ -1,7 +1,7 @@
 import Foundation
 import PluginHooks
 import SwiftSignalKit
-import TelegramApi
+internal import TelegramApi
 import XCTest
 @testable import Postbox
 @testable import TelegramCore

@@ -16,7 +16,7 @@ final class AppearanceSwitchTests: XCTestCase {
         var changes: [Bool] = []
         for style in [2, 3, 0, 2] {
             try settings.set(.integer(Int64(style)), for: "appearance.switchStyle")
-            _ = host.update(transition: .immediate, component: AnyComponent(SwitchComponent(value: false, accessibilityLabel: "Show previews", appearanceSettings: settings, valueUpdated: { changes.append($0) })), environment: {}, containerSize: CGSize(width: 80, height: 44))
+            _ = host.update(transition: .init(animation: .none), component: AnyComponent(SwitchComponent(value: false, accessibilityLabel: "Show previews", appearanceSettings: settings, valueUpdated: { changes.append($0) })), environment: {}, containerSize: CGSize(width: 80, height: 44))
             let root = try XCTUnwrap(host.view)
             let control = try XCTUnwrap(root.subviews.compactMap { $0 as? UIControl }.first { !$0.isHidden })
             XCTAssertEqual(control.accessibilityLabel, "Show previews")

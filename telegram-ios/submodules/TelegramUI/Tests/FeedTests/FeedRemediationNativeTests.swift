@@ -25,6 +25,7 @@ private final class FeedMetadataFixtureLease: ExteralessFeedMetadataLease {
 @MainActor
 final class FeedRemediationNativeTests: XCTestCase {
     func testFPP02PeerFlagsWithoutMessageEditChangeRenderKeyAndExportPermission() {
+        let contentSettings = ContentSettings(ignoreContentRestrictionReasons: [], addContentRestrictionReasons: [])
         let open = FeedNativeFixtures.channel(1)
         let protected = FeedNativeFixtures.channel(1, protected: true)
         let message = EngineMessage(FeedNativeFixtures.message(channel: open, id: 7, timestamp: 100)._asMessage().withUpdatedAuthor(nil))
@@ -36,9 +37,9 @@ final class FeedRemediationNativeTests: XCTestCase {
         XCTAssertNotEqual(before.renderToken, after.renderToken)
         XCTAssertFalse(before.isCopyProtected)
         XCTAssertTrue(after.isCopyProtected)
-        XCTAssertFalse(after.allowsExport(contentSettings: .default))
-        XCTAssertTrue(after.allowsMedia(contentSettings: .default), "Gallery may view, but must receive protected policy")
-        XCTAssertTrue(reverse.allowsExport(contentSettings: .default))
+        XCTAssertFalse(after.allowsExport(contentSettings: contentSettings))
+        XCTAssertTrue(after.allowsMedia(contentSettings: contentSettings), "Gallery may view, but must receive protected policy")
+        XCTAssertTrue(reverse.allowsExport(contentSettings: contentSettings))
         let replies = FeedNativeFixtures.message(channel: open, id: 8, timestamp: 99, text: "Reply edited", group: nil)
         let root = message._asMessage()
         let refreshed = EngineMessage(stableId: root.stableId, stableVersion: root.stableVersion, id: root.id, globallyUniqueId: root.globallyUniqueId, groupingKey: root.groupingKey, groupInfo: root.groupInfo, threadId: root.threadId, timestamp: root.timestamp, flags: root.flags, tags: root.tags, globalTags: root.globalTags, localTags: root.localTags, customTags: root.customTags, forwardInfo: root.forwardInfo, author: nil, text: root.text, attributes: root.attributes, media: message.engineMedia, peers: message.enginePeers, associatedMessages: [replies.id: replies], associatedMessageIds: [replies.id], associatedMedia: root.associatedMedia, associatedThreadInfo: root.associatedThreadInfo, associatedStories: root.associatedStories)
@@ -49,6 +50,7 @@ final class FeedRemediationNativeTests: XCTestCase {
     }
 
     func testFPP02FreshActionDeniesChangedProtectionAndRetiredAccountOrScope() {
+        let contentSettings = ContentSettings(ignoreContentRestrictionReasons: [], addContentRestrictionReasons: [])
         let open = FeedNativeFixtures.channel(1)
         let protected = FeedNativeFixtures.channel(1, protected: true)
         let message = FeedNativeFixtures.message(channel: open, id: 7, timestamp: 100)
@@ -59,11 +61,11 @@ final class FeedRemediationNativeTests: XCTestCase {
         let authorizer = ExteralessFeedFreshActions(fetch: { ids in
             XCTAssertEqual(ids, [message.id]); fetches += 1; return pipe.signal()
         })
-        authorizer.perform(ids: [message.id], current: { account == 1 && scope == 1 }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: .default) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
+        authorizer.perform(ids: [message.id], current: { account == 1 && scope == 1 }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: contentSettings) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
         pipe.putNext([message.id: FeedNativeFixtures.projection(message, peer: protected.peer)])
         XCTAssertEqual(denied, 1)
         XCTAssertEqual(effects, 0)
-        authorizer.perform(ids: [message.id], current: { account == 1 && scope == 1 }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: .default) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
+        authorizer.perform(ids: [message.id], current: { account == 1 && scope == 1 }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: contentSettings) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
         account = 2
         pipe.putNext([message.id: FeedNativeFixtures.projection(message)])
         XCTAssertEqual(effects, 0)
@@ -73,7 +75,7 @@ final class FeedRemediationNativeTests: XCTestCase {
         pipe.putNext([message.id: FeedNativeFixtures.projection(message)])
         XCTAssertEqual(effects, 0)
         scope = 1
-        authorizer.perform(ids: [message.id], current: { true }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: .default) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
+        authorizer.perform(ids: [message.id], current: { true }, allowed: { $0.allSatisfy { $0.allowsExport(contentSettings: contentSettings) } }, rejected: { denied += 1 }, action: { _ in effects += 1 })
         pipe.putNext([message.id: FeedNativeFixtures.projection(message)])
         XCTAssertEqual(fetches, 4)
         XCTAssertEqual(effects, 1)

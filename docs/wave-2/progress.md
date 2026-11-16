@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `ee40679a`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `93dcb653`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -25,11 +25,33 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43809909587 /ee40679a interrupted** в native-test stage; app packages PASS, нет завершённой ошибки или artifacts |
+| UIKit | **43812503558 /93dcb653 failure**: полные native-test compiler/link/bundle diagnostics получены; fixes идут параллельно |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43812503558 завершён; watcher завершён. Core fixtures —ses_e1d06c8f8ffehjPM0uMig1HERu;
+  graphics —ses_e1d06c8a7ffekqpt3ouAeKRg28; AI —ses_e1d06c8a5ffeudGDP7qGkCTe8V;
+  Feed/Presence/Chats —ses_e1d06c8a3ffezy3nUjXSB6kizy;
+  native test graph/link/resources —ses_e25088d28ffem4nSC3FcOP577B.
+  Graphics ready:5testfiles/11substitutions,21XCTestIDsunchanged;
+  `native-graphics-fixture-typecheck.md`. Остальные группы ещё в работе.
+  AI ready:2testfiles,14IDs/137 прежних assertions сохранены; native Signals и
+  InstantPage остаются на MainActor, черезTask выходитVoid/error.
+  `native-ai-fixture-typecheck.md`.
+  Core ready:5files/41IDs/281assertions; Feed/Presence/Chats ready:5files/23IDs/147assertions.
+  `native-core-fixture-typecheck.md`, `native-feed-presence-fixture-typecheck.md`.
+  Все17fixturefiles готовы; ожидается test-bundle graph/link/resource delta.
+  Coordinator сверил17/17postimages; nativePlan37targets/434methods сохранён.
+  Graphowner установилENOSPCдляChatSwipe+четырёхlinkactions; неsymbol/collision.
+  ItemListUIdependency+2imports применены. Ownerготовитboundedcache/free-space
+  recovery передnativecompile; исходники/IPA/Bazeloutput не удаляются.
+  Recoveryready:6/6postimages/ZIPverified,23toolingchecks(1POSIXskip),1737inputs
+  иConfig--checkPASS. Nativephase20GiBfloor/30GiBgoal/60sreclaim; diskcachewritesoff.
+  Полныйcohort готовкcommit: `native-test-correction-cohort.md`.
+  Coordinator regenerated SharedAccountContext: единственный makeShareScreen stub,
+ 243generatedmethods, exactgeneratoroutputverified.434testmethods/20scenes retained.
+- Compat43812484349/93dcb653 завершён GREEN; watcher завершён.
 - UIKit43809909587 завершёнfailure, watcher завершён. Native step осталсябез
   conclusion; annotations пусты, artifacts отсутствуют. Причина не установлена.
   `run_logged` теперь зеркалирует boundedcompiler/XCTestoutput вActions;9checksPASS.

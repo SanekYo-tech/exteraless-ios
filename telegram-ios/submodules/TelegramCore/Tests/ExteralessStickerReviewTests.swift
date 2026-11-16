@@ -84,6 +84,7 @@ final class ExteralessStickerPolicyReviewTests: XCTestCase {
         let initial = DispatchSemaphore(value: 0), oldRead = DispatchSemaphore(value: 0)
         let releaseOld = DispatchSemaphore(value: 0), latest = DispatchSemaphore(value: 0)
         let writerACompleted = DispatchSemaphore(value: 0)
+        let writerAResult = Atomic<Result<Void, Error>?>(value: nil)
         let blocked = Atomic(value: false), values = Atomic<[Bool]>(value: [])
         let subscription = _internal_exteralessStickerPolicy(settings: store, queue: queue, didRead: { policy in
             if policy.hideGroupPack && !policy.hideTrending && !blocked.swap(true) {
@@ -97,10 +98,13 @@ final class ExteralessStickerPolicyReviewTests: XCTestCase {
         })
         defer { releaseOld.signal(); subscription.dispose() }
         XCTAssertEqual(initial.wait(timeout: .now() + 1), .success)
-        DispatchQueue.global().async {
+        // justDispatch forwards to the same global queue without running inline;
+        // Atomic carries the write result back to the test's throwing context.
+        Queue(queue: DispatchQueue.global()).justDispatch {
             // A can remain inside its callback in the broken implementation;
             // writer B below must still be able to commit independently.
-            XCTAssertNoThrow(try store.set(.bool(true), for: "chats.hideGroupSticker"))
+            let result = Result { try store.set(.bool(true), for: "chats.hideGroupSticker") }
+            _ = writerAResult.swap(result)
             writerACompleted.signal()
         }
         XCTAssertEqual(oldRead.wait(timeout: .now() + 1), .success)
@@ -110,6 +114,8 @@ final class ExteralessStickerPolicyReviewTests: XCTestCase {
         XCTAssertEqual(latest.wait(timeout: .now() + 1), .success)
         XCTAssertEqual(writerACompleted.wait(timeout: .now() + 1), .success)
         queue.sync {}
+        let writeResult = try XCTUnwrap(writerAResult.with { $0 })
+        XCTAssertNoThrow(try writeResult.get())
         let delivered = values.with { $0 }
         XCTAssertEqual(delivered.last, true)
         if let firstTrue = delivered.firstIndex(of: true) { XCTAssertTrue(delivered[firstTrue...].allSatisfy { $0 }) }
@@ -166,17 +172,22 @@ final class ExteralessStickerPolicyReviewTests: XCTestCase {
         let store = fixture.store, queue = Queue(name: "StickerPolicyReentryFixture")
         try store.set(.bool(false), for: "chats.disableTrending")
         let delivering = Atomic(value: false), values = Atomic<[Bool]>(value: [])
+        let resetResult = Atomic<Result<Void, Error>?>(value: nil)
         let done = DispatchSemaphore(value: 0)
         let subscription = _internal_exteralessStickerPolicy(settings: store, queue: queue).start(next: { policy in
             XCTAssertFalse(delivering.swap(true))
             defer { _ = delivering.swap(false) }
             _ = values.modify { $0 + [policy.hideTrending] }
-            if !policy.hideTrending { XCTAssertNoThrow(try store.reset("chats.disableTrending")) }
-            else { done.signal() }
+            if !policy.hideTrending {
+                let result = Result { try store.reset("chats.disableTrending") }
+                _ = resetResult.swap(result)
+            } else { done.signal() }
         })
         defer { subscription.dispose() }
         XCTAssertEqual(done.wait(timeout: .now() + 1), .success)
         queue.sync {}
+        let writeResult = try XCTUnwrap(resetResult.with { $0 })
+        XCTAssertNoThrow(try writeResult.get())
         XCTAssertEqual(values.with { $0 }, [false, true])
     }
 }

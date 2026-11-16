@@ -277,13 +277,15 @@ final class ExteralessRetentionTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: exteralessRetentionEncode(ExteralessRetentionIndex(accountPeerId: self.accountPeer))) as? [String: Any])
         object["future-field"] = "must not be silently dropped"
         let encoded = try JSONSerialization.data(withJSONObject: object)
-        let result = try self.value(postbox.transaction { transaction -> Bool in
-            transaction.putItemCacheEntry(id: exteralessRetentionIndexId, entry: CodableEntry(data: encoded))
-            XCTAssertThrowsError(try ExteralessRetentionIndex.load(transaction: transaction, accountPeerId: self.accountPeer))
-            XCTAssertEqual(transaction.retrieveItemCacheEntry(id: exteralessRetentionIndexId)?.data, encoded)
-            return true
+        let result: Result<Bool, Error> = try self.value(postbox.transaction { transaction in
+            Result {
+                transaction.putItemCacheEntry(id: exteralessRetentionIndexId, entry: CodableEntry(data: encoded))
+                XCTAssertThrowsError(try ExteralessRetentionIndex.load(transaction: transaction, accountPeerId: self.accountPeer))
+                XCTAssertEqual(transaction.retrieveItemCacheEntry(id: exteralessRetentionIndexId)?.data, encoded)
+                return true
+            }
         })
-        XCTAssertTrue(result)
+        XCTAssertTrue(try result.get())
     }
 
     func testRangeHookCapturesOnlyKnownRowsUsingTheReceivingPeerNamespace() throws {

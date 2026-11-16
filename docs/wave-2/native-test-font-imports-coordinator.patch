@@ -1,0 +1,20 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIViews.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIViews.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIViews.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIViews.swift
+@@ -1,5 +1,6 @@
+ import Display
+ import Foundation
++import ItemListUI
+ import TelegramPresentationData
+ import UIKit
+ 
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIResources.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIResources.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIResources.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIResources.swift
+@@ -1,5 +1,6 @@
+ import AppBundle
+ import Foundation
++import ItemListUI
+ import TelegramPresentationData
+ import UIKit
+ 

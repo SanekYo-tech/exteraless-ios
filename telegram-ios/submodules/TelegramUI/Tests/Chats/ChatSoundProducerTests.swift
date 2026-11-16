@@ -23,7 +23,7 @@ final class ChatSoundProducerTests: XCTestCase {
         if kind == 4 { attributes.append(OutgoingChatContextResultMessageAttribute(queryId: 1, id: "inline", hideVia: true, webpageUrl: nil)) }
         if kind == 5 { return .forward(source: MessageId(peerId: peer, namespace: 0, id: 3), threadId: 42, grouping: .auto, attributes: attributes, correlationId: 200) }
         if kind == 6 {
-            attributes.append(RichTextMessageAttribute(instantPage: InstantPage(blocks: [.paragraph(.plain("rich"))], media: [id: image], isComplete: true, rtl: false, url: "", views: nil), fullInstantPage: nil))
+            attributes.append(RichTextMessageAttribute(instantPage: InstantPage(blocks: [.paragraph(.plain("rich"))], media: [id: .image(image)], isComplete: true, rtl: false, url: "", views: nil), fullInstantPage: nil))
         }
         return .message(text: kind == 6 ? "" : "😀漢ABC", attributes: attributes, inlineStickers: [:], mediaReference: media, threadId: 42, replyToMessageId: .init(messageId: MessageId(peerId: peer, namespace: 0, id: 9), quote: nil, innerSubject: nil), replyToStoryId: nil, localGroupingKey: 100, correlationId: 200, bubbleUpEmojiOrStickersets: [])
     }

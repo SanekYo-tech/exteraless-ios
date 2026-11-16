@@ -17,6 +17,7 @@ swift_library(
     deps = [
         "//submodules/AppBundle:AppBundle",
         "//submodules/Display:Display",
+        "//submodules/ItemListUI:ItemListUI",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//third-party/exteraless:PluginHost",
     ],

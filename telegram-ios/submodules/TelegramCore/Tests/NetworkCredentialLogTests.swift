@@ -33,7 +33,7 @@ final class NetworkCredentialLogTests: XCTestCase {
         return logger
     }
 
-    func testCannedMtProtoKitErrorsAndAllRequestDescriptionsHideSentinelForBothFlags() {
+    func testCannedMtProtoKitErrorsAndAllRequestDescriptionsHideSentinelForBothFlags() throws {
         for redact in [true, false] {
             let log = logger(redact)
             XCTAssertEqual(Logger.shared.redactSensitiveData, redact)
@@ -46,7 +46,7 @@ final class NetworkCredentialLogTests: XCTestCase {
                     dependsOn: nil, acknowledged: nil, progress: nil, completed: { _ in })
                 // This is the same adapter used by MtProtoKitRequestService.add.
                 let request = mtProtoKitRequestForEngineRequest(engineRequest)
-                let error = MTRpcError(errorCode: 403, errorDescription: "echo [\(sentinel)] / \\u0041")
+                let error = try XCTUnwrap(MTRpcError(errorCode: 403, errorDescription: "echo [\(sentinel)] / \\u0041"))
                 var capturedLogs: [String] = []
                 capturedLogs.append(String(describing: request.metadataForLogging!))
                 capturedLogs.append(String(describing: request.shortMetadataForLogging!))
@@ -99,9 +99,9 @@ final class NetworkCredentialLogTests: XCTestCase {
         }
     }
 
-    func testRetryAndCompletionKeepOriginalErrorWhileFailureFormattingIsSafe() {
+    func testRetryAndCompletionKeepOriginalErrorWhileFailureFormattingIsSafe() throws {
         _ = logger(false)
-        let native = MTRpcError(errorCode: 420, errorDescription: "FLOOD_WAIT_7_" + sentinel)
+        let native = try XCTUnwrap(MTRpcError(errorCode: 420, errorDescription: "FLOOD_WAIT_7_" + sentinel))
         var seenContext: NetworkEngineErrorContext?
         var delivered: NetworkEngineRequestFailure?
         let request = NetworkEngineRequest(payload: payload(0xa677244f), name: "auth.sendCode", parse: { _ in nil }, shouldContinueAfterError: { context in

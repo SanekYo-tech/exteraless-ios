@@ -68,7 +68,7 @@ final class AppearanceAvatarRenderingTests: XCTestCase {
         avatar.setCustomLetters(["A"])
         let colors = AvatarNode.Colors(unseenColors: [.red, .red], unseenCloseFriendsColors: [.green, .green], seenColors: [.gray, .gray])
         let stats = AvatarNode.StoryStats(totalCount: 1, unseenCount: 1, hasUnseenCloseFriendsItems: false, hasLiveItems: false, progress: nil)
-        avatar.setStoryStats(storyStats: stats, presentationParams: .init(colors: colors, lineWidth: 2, inactiveLineWidth: 1), transition: .immediate)
+        avatar.setStoryStats(storyStats: stats, presentationParams: .init(colors: colors, lineWidth: 2, inactiveLineWidth: 1), transition: .init(animation: .none))
         let ring = try XCTUnwrap(avatar.view.subviews.compactMap { $0 as? AvatarStoryIndicatorComponent.View }.first)
         func image() throws -> UIImage {
             try XCTUnwrap(ring.subviews.compactMap { ($0 as? UIImageView)?.image }.first)
@@ -82,7 +82,7 @@ final class AppearanceAvatarRenderingTests: XCTestCase {
 
         try settings.reset("appearance.avatarCorners")
         avatar.setCustomLetters(["A"])
-        avatar.setStoryStats(storyStats: stats, presentationParams: .init(colors: colors, lineWidth: 2, inactiveLineWidth: 1, forceRoundedRect: true), transition: .immediate)
+        avatar.setStoryStats(storyStats: stats, presentationParams: .init(colors: colors, lineWidth: 2, inactiveLineWidth: 1, forceRoundedRect: true), transition: .init(animation: .none))
         XCTAssertEqual(avatar.resolvedStoryCornerFraction, 0.25)
         let forum = try image()
         try settings.set(.bool(true), for: "appearance.singleCornerRadius")
@@ -103,7 +103,7 @@ final class AppearanceAvatarRenderingTests: XCTestCase {
             for progress in [AvatarStoryIndicatorComponent.Progress.indefinite, .definite(0.6)] {
                 let component = AvatarStoryIndicatorComponent(hasUnseen: true, hasUnseenCloseFriendsItems: false, hasLiveItems: false, colors: colors, activeLineWidth: 2, inactiveLineWidth: 1, counters: .init(totalCount: 1, unseenCount: 1), progress: progress, isRoundedRect: false, customCornerFraction: fraction)
                 XCTAssertEqual(component.isRoundedRect, fraction < 0.5, "an explicit fraction selects its path")
-                _ = host.update(transition: .immediate, component: AnyComponent(component), environment: {}, containerSize: available)
+                _ = host.update(transition: .init(animation: .none), component: AnyComponent(component), environment: {}, containerSize: available)
                 let view = try XCTUnwrap(host.view)
                 let name: String
                 if case .indefinite = progress { name = "appearance.story.loadingContour" }
@@ -122,7 +122,7 @@ final class AppearanceAvatarRenderingTests: XCTestCase {
                 }
             }
         }
-        _ = host.update(transition: .immediate, component: AnyComponent(AvatarStoryIndicatorComponent(hasUnseen: true, hasUnseenCloseFriendsItems: false, hasLiveItems: false, colors: colors, activeLineWidth: 2, inactiveLineWidth: 1, counters: nil, progress: nil, isRoundedRect: true, customCornerFraction: 0)), environment: {}, containerSize: available)
+        _ = host.update(transition: .init(animation: .none), component: AnyComponent(AvatarStoryIndicatorComponent(hasUnseen: true, hasUnseenCloseFriendsItems: false, hasLiveItems: false, colors: colors, activeLineWidth: 2, inactiveLineWidth: 1, counters: nil, progress: nil, isRoundedRect: true, customCornerFraction: 0)), environment: {}, containerSize: available)
         let view = try XCTUnwrap(host.view)
         XCTAssertFalse(view.layer.sublayers?.contains { $0.mask != nil && $0.opacity > 0 } ?? false, "cancelled loading restores the normal indicator")
     }

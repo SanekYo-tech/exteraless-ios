@@ -140,7 +140,16 @@ final class FeedFollowupTests: XCTestCase {
                 let peer = id == aId ? FeedNativeFixtures.channel(1, protected: protected) : b
                 let root = FeedNativeFixtures.message(channel: peer, id: 1, timestamp: id == aId ? 100 : 90)
                 let reply = FeedNativeFixtures.message(channel: a, id: 9, timestamp: 80, text: replyText)
-                let message = EngineMessage(root._asMessage().withUpdatedAuthor(nil).withUpdatedAssociatedMessages(EngineSimpleDictionary(id == aId ? [reply.id: reply._asMessage()] : [:])))
+                let message = EngineMessage(
+                    stableId: root.stableId, stableVersion: root.stableVersion, id: root.id,
+                    globallyUniqueId: root.globallyUniqueId, groupingKey: root.groupingKey, groupInfo: root.groupInfo,
+                    threadId: root.threadId, timestamp: root.timestamp, flags: root.flags,
+                    tags: root.tags, globalTags: root.globalTags, localTags: root.localTags, customTags: root.customTags,
+                    forwardInfo: root.forwardInfo, author: nil, text: root.text, attributes: root.attributes,
+                    media: root.engineMedia, peers: root.enginePeers, associatedMessages: id == aId ? [reply.id: reply] : [:],
+                    associatedMessageIds: root.associatedMessageIds, associatedMedia: root.associatedMedia,
+                    associatedThreadInfo: root.associatedThreadInfo, associatedStories: root.associatedStories
+                )
                 result[id] = FeedNativeFixtures.projection(message)
             }
             return result

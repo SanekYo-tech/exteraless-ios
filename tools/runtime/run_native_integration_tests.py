@@ -24,6 +24,7 @@ import time
 import uuid
 
 from native_test_plan import build_plan, digest, verify_native_results
+from native_test_disk import Limits as DiskLimits, NATIVE_CACHE_FLAGS, checked_workspace, recover_capacity, observe_after_compile
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
@@ -222,6 +223,29 @@ def copy_case_evidence(telegram, label, destination):
             shutil.copyfile(path, target)
 
 
+def prepare_native_disk(args, bazel_startup):
+    """Recheck generation before querying/stopping only this owned Bazel server."""
+    started = time.monotonic()
+    checked_workspace(args.owned_root, args.repository, args.generation, args.bazel_root)
+    query = [*bazel_startup, '--noblock_for_lock', 'info', 'output_base']
+    bazel_output = Path(output(query, timeout=10))
+    def quiesce(timeout):
+        command = [*bazel_startup, '--noblock_for_lock', 'shutdown']
+        began = time.monotonic()
+        output(command, timeout=timeout)
+        return {'command': command, 'status': 'owned-server-shutdown-complete',
+                'seconds': round(time.monotonic() - began, 3)}
+    remaining = 60 - (time.monotonic() - started)
+    if remaining <= 0:
+        raise TimeoutError('Native disk phase exhausted its 60-second resource budget')
+    report = recover_capacity(args.owned_root, args.repository, args.generation, args.cache,
+        args.bazel_root, bazel_output, args.output, quiesce=quiesce,
+        limits=DiskLimits(phase_seconds=remaining))
+    report['phaseSecondsIncludingBazelInfo'] = round(time.monotonic() - started, 3)
+    write_json(args.output / 'disk-capacity.json', report)
+    return bazel_output
+
+
 def execute(args, plan, paths):
     # Finish inside the owned workspace's 2100s hard envelope, with time reserved
     # for cancellation, simulator identity checks and deletion.
@@ -267,7 +291,7 @@ def execute(args, plan, paths):
         'generation': args.generation, 'xcode': actual, 'sdk': sdk,
         'tool_sha256': {name: digest(Path(__file__).with_name(name)) for name in (
             'run_native_integration_tests.py', 'native_test_plan.py', 'client_ui_harness_workspace.py',
-            'native_bundle_resources.py')},
+            'native_bundle_resources.py', 'native_test_disk.py')},
         'client_source_patches': staging['client_source_patches'], 'acceptanceIdentity': identity})
     for logical, path in paths.items():
         relative = logical.replace('@exteraless//', 'external/exteraless/').replace(':', '/')
@@ -285,6 +309,10 @@ def execute(args, plan, paths):
     line.add_cache_dir(str(args.cache))
     labels = [target['label'] for target in plan['targets']]
     limits = ['--jobs=2', '--local_resources=cpu=2', '--local_resources=memory=6000']
+    # remote_upload_local_results=false alone does NOT stop Bazel 9.2 disk
+    # writes. Use the effective empty disk_cache override throughout this native
+    # phase, including run-only, while retaining all materialized output files.
+    native_cache = list(NATIVE_CACHE_FLAGS)
     # Same startup resource limits as the preceding full simulator build.
     def startup(command):
         index = 1 + len(line.get_startup_bazel_arguments())
@@ -295,7 +323,7 @@ def execute(args, plan, paths):
     with tempfile.TemporaryDirectory(prefix='.native-tests-private-', dir=args.output.parent) as private:
         graph = Path(private) / 'actions.json'
         try:
-            query = startup(line.get_unsigned_test_preflight_arguments(labels)) + limits
+            query = startup(line.get_unsigned_test_preflight_arguments(labels)) + limits + native_cache
             with graph.open('w', encoding='utf-8') as stream, (args.output / 'analysis.log').open('w', encoding='utf-8') as log:
                 subprocess.run(query, cwd=telegram, stdout=stream, stderr=log, check=True,
                                timeout=min(300, max(1, deadline - time.monotonic())))
@@ -305,8 +333,21 @@ def execute(args, plan, paths):
             for name in ('unsigned-preflight.json', 'runtime-preflight.json'):
                 if (Path(private) / name).is_file():
                     shutil.copyfile(Path(private) / name, args.output / name)
-    run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits + ['--keep_going'],
-               telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
+    bazel_startup = [bazel, *line.get_startup_bazel_arguments(), '--host_jvm_args=-Xmx4096m', '--max_idle_secs=30']
+    bazel_output = prepare_native_disk(args, bazel_startup)
+    compile_failed = True
+    try:
+        run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits + native_cache + ['--keep_going'],
+                   telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
+        compile_failed = False
+    finally:
+        try:
+            observe_after_compile(args.owned_root, args.repository, args.generation, args.cache,
+                                  args.bazel_root, bazel_output, args.output)
+        except Exception as error:
+            print('NATIVE_DISK post-compile measurement failed: ' + str(error), flush=True)
+            if not compile_failed:
+                raise
     from native_test_resources import verify_test_host_resources
     host_resources = verify_test_host_resources(telegram, plan)
     write_json(args.output / 'native-bundle-resources.json', host_resources)
@@ -341,7 +382,7 @@ def execute(args, plan, paths):
                 test_filter = None if target['build_test_filter'] else case['class']
                 command = startup(line.get_test_arguments(target['label'], run_only=True, test_filter=test_filter,
                     test_arguments=['--destination=platform=ios_simulator,id=' + record['udid']],
-                    test_environment=['STARTUP_TIMEOUT_SEC=150'], test_timeout=270, streamed=True)) + limits
+                    test_environment=['STARTUP_TIMEOUT_SEC=150'], test_timeout=270, streamed=True)) + limits + native_cache
                 try:
                     result = run_logged(command, telegram, directory, max(1, deadline - time.monotonic()),
                                         case=case, contract=contract, cancel_test=lambda: shutdown_device(record))

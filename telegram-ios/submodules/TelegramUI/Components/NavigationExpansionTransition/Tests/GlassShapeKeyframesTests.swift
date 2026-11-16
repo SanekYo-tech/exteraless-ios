@@ -135,13 +135,13 @@ final class GlassShapeKeyframesTests: XCTestCase {
             XCTAssertNotNil(shape.animation(forKey: "path"), "ordinary path transition must not jump to final shape")
         }
         glass.cancelShapeAnimations()
-        glass.update(size: small, cornerRadius: 12, isDark: true, tintColor: .init(kind: .panel), transition: .immediate)
+        glass.update(size: small, cornerRadius: 12, isDark: true, tintColor: .init(kind: .panel), transition: .init(animation: .none))
         for layer in self.layers(glass.layer) where layer.name?.hasPrefix("appearance.glass.") == true {
             XCTAssertFalse(layer.animationKeys()?.contains { $0.hasPrefix("navigationGlass.") || ["path", "position", "bounds", "bounds.size"].contains($0) } ?? false)
             XCTAssertEqual(layer.bounds.size, small)
         }
         try settings.set(.integer(0), for: "appearance.glassOutlineStyle")
-        glass.update(size: small, cornerRadius: 12, isDark: true, tintColor: .init(kind: .panel), transition: .immediate)
+        glass.update(size: small, cornerRadius: 12, isDark: true, tintColor: .init(kind: .panel), transition: .init(animation: .none))
         XCTAssertTrue(self.layers(glass.layer).first { $0.name == "appearance.glass.outline" }?.isHidden == true)
         XCTAssertFalse(self.layers(glass.layer).contains { $0.name == "appearance.glass.fallbackBlur" })
     }

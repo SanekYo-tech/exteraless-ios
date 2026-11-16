@@ -29,7 +29,7 @@ final class AppearancePresenceTests: XCTestCase {
                 for expanded in [false, true] {
                     for date in [(2026, 11, 15), (2026, 11, 14), (2026, 11, 13), (2025, 11, 13)] {
                         let last = timestamp(date.0, date.1, date.2)
-                        let presence = EnginePeer.Presence(TelegramUserPresence(status: .present(last), lastActivity: last))
+                        let presence = EnginePeer.Presence(TelegramUserPresence(status: .present(until: last), lastActivity: last))
                         let result = stringAndActivityForUserPresence(strings: strings, dateTimeFormat: format, presence: presence, relativeTo: now, expanded: expanded, relativeLastSeen: false)
                         XCTAssertFalse(result.1)
                         XCTAssertTrue(result.0.contains(stringForMessageTimestamp(timestamp: last, dateTimeFormat: format)), result.0)
@@ -65,9 +65,15 @@ final class AppearancePresenceTests: XCTestCase {
     func testPrivacyBucketsAndPersianFastPathRemainNative() throws {
         let strings = defaultPresentationStrings
         let now = timestamp(2026, 11, 15, hour: 20)
+        let privacyBuckets: [(UserPresenceStatus, String)] = [
+            (.recently(isHidden: false), strings.LastSeen_Lately),
+            (.lastWeek(isHidden: false), strings.LastSeen_WithinAWeek),
+            (.lastMonth(isHidden: false), strings.LastSeen_WithinAMonth),
+            (.none, strings.LastSeen_ALongTimeAgo)
+        ]
         for relative in [false, true] {
             for seconds in [false, true] {
-                for (status, expected) in [(UserPresenceStatus.recently, strings.LastSeen_Lately), (.lastWeek, strings.LastSeen_WithinAWeek), (.lastMonth, strings.LastSeen_WithinAMonth), (.none, strings.LastSeen_ALongTimeAgo)] {
+                for (status, expected) in privacyBuckets {
                     let result = stringAndActivityForUserPresence(strings: strings, dateTimeFormat: format(seconds: seconds), presence: EnginePeer.Presence(TelegramUserPresence(status: status, lastActivity: 0)), relativeTo: now, relativeLastSeen: relative)
                     XCTAssertEqual(result.0, expected)
                     XCTAssertFalse(result.1)
@@ -76,7 +82,7 @@ final class AppearancePresenceTests: XCTestCase {
         }
         let last = timestamp(2026, 11, 13)
         let format = self.format(seconds: true, persian: true)
-        let result = stringAndActivityForUserPresence(strings: strings, dateTimeFormat: format, presence: EnginePeer.Presence(TelegramUserPresence(status: .present(last), lastActivity: last)), relativeTo: now, expanded: true, relativeLastSeen: false)
+        let result = stringAndActivityForUserPresence(strings: strings, dateTimeFormat: format, presence: EnginePeer.Presence(TelegramUserPresence(status: .present(until: last), lastActivity: last)), relativeTo: now, expanded: true, relativeLastSeen: false)
         let persianDate = try XCTUnwrap(format.identityCalendar.persianText(for: Date(timeIntervalSince1970: Double(last)), style: .monthDay(includeYear: false)))
         XCTAssertTrue(result.0.contains(persianDate))
         XCTAssertTrue(result.0.contains(stringForMessageTimestamp(timestamp: last, dateTimeFormat: format)))

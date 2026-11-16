@@ -24,6 +24,7 @@ TOOLS = (
     'tools/runtime/client_ui_harness_tools.py', 'tools/runtime/record_client_ui_batch.py',
     'tools/runtime/native_test_plan.py', 'tools/runtime/run_native_integration_tests.py',
     'tools/runtime/native_test_resources.py', 'tools/runtime/native_bundle_resources.py',
+    'tools/runtime/native_test_disk.py',
     'tools/runtime/verify_client_ui_batches.py',
 )
 

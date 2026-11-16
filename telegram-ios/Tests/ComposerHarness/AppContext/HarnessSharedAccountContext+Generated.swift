@@ -598,6 +598,9 @@ extension HarnessSharedAccountContext {
     public func makeShareController(context: AccountContext, params: ShareControllerParams) -> ViewController {
         fatalError("harness: SharedAccountContext.makeShareController is not provided")
     }
+    public func makeShareScreen(context: AccountContext, params: ShareControllerParams) -> ViewController {
+        fatalError("harness: SharedAccountContext.makeShareScreen is not provided")
+    }
     public func makeMiniAppListScreenInitialData(context: AccountContext) -> Signal<MiniAppListScreenInitialData, NoError> {
         fatalError("harness: SharedAccountContext.makeMiniAppListScreenInitialData is not provided")
     }

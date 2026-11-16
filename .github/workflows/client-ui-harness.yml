@@ -29,7 +29,8 @@ jobs:
       SOURCE_DIR: /Users/Shared/exteraless-client-ui-harness/telegram-ios
       BAZEL_USER_ROOT: /Users/Shared/exteraless-client-ui-harness/bazel-user-root
       WORKSPACE_GENERATION: ${{ github.run_id }}-${{ github.run_attempt }}
-      # Reuse the app's content-addressed action/download caches, never delete them.
+      # Reuse app actions; only the explicitly claimed disk-action cache may be
+      # boundedly reclaimed before native compile. Python/download caches remain separate.
       BAZEL_DISK_CACHE: /Users/runner/Library/Caches/exteraless-bazel-disk
       PYTHON_SUPPORT_CACHE: /Users/runner/Library/Caches/exteraless-python-support
     steps:
@@ -74,7 +75,7 @@ jobs:
           python -B -m unittest tools.ci.tests.test_native_test_workflow
           tools.ci.tests.test_native_fixture_classes tools.ci.tests.test_client_ui_batches
           tools.ci.tests.test_native_input_identity tools.ci.tests.test_client_ui_supplements
-          tools.ci.tests.test_client_ui_map -v
+          tools.ci.tests.test_client_ui_map tools.runtime.tests.test_native_test_disk -v
 
       - name: Stage or refresh the sentinel-owned harness source
         run: >-
@@ -110,6 +111,15 @@ jobs:
           restore-keys: |
             bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-
 
+      - name: Claim only the fixed Bazel disk action cache for this source generation
+        timeout-minutes: 1
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 45 -- python -B tools/runtime/native_test_disk.py claim
+          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --cache "$BAZEL_DISK_CACHE" --output "$CLIENT_UI_RUN_DIR/build/native-cache-claim.json"
+
       - name: Build full Telegram plus loginless UIKit app, unsigned
         timeout-minutes: 112
         run: >-
@@ -120,7 +130,7 @@ jobs:
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
 
       - name: Compile and run required native IntegrationTests, unsigned iOS 27
-        timeout-minutes: 36
+        timeout-minutes: 35
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
@@ -280,6 +290,7 @@ jobs:
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build-result.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build.log
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build-failure.json
+            ${{ env.CLIENT_UI_RUN_DIR }}/build/native-cache-claim.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/unsigned-preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-staging.json

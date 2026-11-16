@@ -185,27 +185,25 @@ final class ExteralessAIFollowupNativeTests: XCTestCase {
                 var nativeCalls = 0
                 var providers: [AITranscriptionProvider] = []
                 let finished = expectation(description: "round button terminal callback")
+                // Construct on MainActor; the real producer creates its task/lease on subscription.
+                let request = exteralessAINativeRequest(isCurrent: { true }, error: { ExteralessAITranscriptionError.failed(AIError.sanitized($0).description) }) { lease in
+                    starts += 1
+                    return try await ExteralessAINativeTranscriptionRequest.run(configuration: config, isPremium: premium, telegram: {
+                        nativeCalls += 1
+                        let capability = ExteralessAIProcessingCapability(messageId: captured.id, expectedStableVersion: captured.stableVersion, allowsExternalProcessing: false, allowsCopy: false)
+                        let scope = try db.scope(capability: capability, lease: lease)
+                        return try db.transaction { db.storeAudio(transaction: $0, scope: scope, native: true, text: "fixture transcript") }
+                    }, provider: { resolved in
+                        providers.append(resolved.provider)
+                        let scope = try db.scope(capability: .message(captured, canCopy: true), lease: lease)
+                        let text = try await speech.transcribe(fileURL: db.root.appendingPathComponent("round.mp4"), locale: "en", configuration: resolved)
+                        return try db.transaction { db.storeAudio(transaction: $0, scope: scope, native: false, text: text) }
+                    })
+                }
                 node.aiTranscriptionInputProvider = {
                     .init(identity: db.roundIdentity, existingText: nil, usesSelectedProvider: {
                         ExteralessAIHooks.usesSelectedTranscription(isPremium: premium, store: db.settings.store)
-                    }, allowNative: { nativeGates += 1; return premium }, request: {
-                        MainActor.assumeIsolated {
-                            exteralessAINativeRequest(isCurrent: { true }, error: { ExteralessAITranscriptionError.failed(AIError.sanitized($0).description) }) { lease in
-                                starts += 1
-                                return try await ExteralessAINativeTranscriptionRequest.run(configuration: config, isPremium: premium, telegram: {
-                                    nativeCalls += 1
-                                    let capability = ExteralessAIProcessingCapability(messageId: captured.id, expectedStableVersion: captured.stableVersion, allowsExternalProcessing: false, allowsCopy: false)
-                                    let scope = try db.scope(capability: capability, lease: lease)
-                                    return try db.transaction { db.storeAudio(transaction: $0, scope: scope, native: true, text: "fixture transcript") }
-                                }, provider: { resolved in
-                                    providers.append(resolved.provider)
-                                    let scope = try db.scope(capability: .message(captured, canCopy: true), lease: lease)
-                                    let text = try await speech.transcribe(fileURL: db.root.appendingPathComponent("round.mp4"), locale: "en", configuration: resolved)
-                                    return try db.transaction { db.storeAudio(transaction: $0, scope: scope, native: false, text: text) }
-                                })
-                            }
-                        }
-                    }, failed: { _ in XCTFail("unexpected failure"); finished.fulfill() }, finished: { finished.fulfill() })
+                    }, allowNative: { nativeGates += 1; return premium }, request: { request }, failed: { _ in XCTFail("unexpected failure"); finished.fulfill() }, finished: { finished.fulfill() })
                 }
                 let button = roundButton(node)
                 button.sendActions(for: .touchUpInside)
@@ -253,24 +251,21 @@ final class ExteralessAIFollowupNativeTests: XCTestCase {
                 }
                 return try await ExteralessAISignalOperation<Bool>().value(response)
             }
+            let request = exteralessAINativeRequest(lease: scope.lease, isCurrent: { true }, ended: { _ in ended.fulfill() }, error: { ExteralessAITranscriptionError.failed(AIError.sanitized($0).description) }) { _ in
+                starts += 1
+                return try await ExteralessAINativeTranscriptionRequest.run(configuration: config, isPremium: native, telegram: {
+                    XCTAssertTrue(native)
+                    return try await queuedCommit()
+                }, provider: { selected in
+                    XCTAssertFalse(native)
+                    XCTAssertEqual(selected.provider, .apple)
+                    return try await queuedCommit()
+                })
+            }
             node.aiTranscriptionInputProvider = {
                 .init(identity: db.roundIdentity, existingText: nil, usesSelectedProvider: {
                     ExteralessAIHooks.usesSelectedTranscription(isPremium: native, store: db.settings.store)
-                }, allowNative: { XCTAssertTrue(native); return native }, request: {
-                    MainActor.assumeIsolated {
-                        exteralessAINativeRequest(lease: scope.lease, isCurrent: { true }, ended: { _ in ended.fulfill() }, error: { ExteralessAITranscriptionError.failed(AIError.sanitized($0).description) }) { _ in
-                            starts += 1
-                            return try await ExteralessAINativeTranscriptionRequest.run(configuration: config, isPremium: native, telegram: {
-                                XCTAssertTrue(native)
-                                return try await queuedCommit()
-                            }, provider: { selected in
-                                XCTAssertFalse(native)
-                                XCTAssertEqual(selected.provider, .apple)
-                                return try await queuedCommit()
-                            })
-                        }
-                    }
-                }, failed: { _ in terminal += 1 }, finished: { terminal += 1 })
+                }, allowNative: { XCTAssertTrue(native); return native }, request: { request }, failed: { _ in terminal += 1 }, finished: { terminal += 1 })
             }
             let button = roundButton(node)
             button.sendActions(for: .touchUpInside)
@@ -413,7 +408,7 @@ final class ExteralessAIFollowupNativeTests: XCTestCase {
         let host = ComponentHostView<Empty>()
         node.audioTranscriptionButton = host
         node.view.addSubview(host)
-        _ = host.update(transition: .immediate, component: AnyComponent(node.aiTranscriptionButtonComponent(theme: .custom(.black, .white), transcriptionState: .collapsed)), environment: {}, containerSize: CGSize(width: 30, height: 30))
+        _ = host.update(transition: ComponentTransition(animation: .none), component: AnyComponent(node.aiTranscriptionButtonComponent(theme: .custom(.black, .white), transcriptionState: .collapsed)), environment: {}, containerSize: CGSize(width: 30, height: 30))
         return host.componentView as! AudioTranscriptionButtonComponent.View
     }
 }

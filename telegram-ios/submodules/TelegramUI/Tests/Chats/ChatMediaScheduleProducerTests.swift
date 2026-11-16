@@ -23,7 +23,7 @@ final class ChatMediaScheduleProducerTests: XCTestCase {
             MediaSpoilerMessageAttribute(),
             PaidStarsMessageAttribute(stars: StarsAmount(value: 3, nanos: 0), postponeSending: true),
             SendAsMessageAttribute(peerId: peer),
-            RichTextMessageAttribute(instantPage: InstantPage(blocks: [.paragraph(.plain("caption"))], media: [mediaId: image], isComplete: true, rtl: false, url: "", views: nil), fullInstantPage: nil)
+            RichTextMessageAttribute(instantPage: InstantPage(blocks: [.paragraph(.plain("caption"))], media: [mediaId: .image(image)], isComplete: true, rtl: false, url: "", views: nil), fullInstantPage: nil)
         ]
         return .message(text: "😀漢ABC", attributes: attributes, inlineStickers: [:], mediaReference: .standalone(media: image), threadId: 42, replyToMessageId: .init(messageId: MessageId(peerId: peer, namespace: 0, id: 9), quote: nil, innerSubject: nil), replyToStoryId: nil, localGroupingKey: 100, correlationId: id, bubbleUpEmojiOrStickersets: [])
     }

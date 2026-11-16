@@ -61,11 +61,15 @@ final class ExteralessAINativeUITests: XCTestCase {
         var config = AITranslationConfiguration(settings: fixture.settings)
         config.provider = .google
         let source = page((0 ..< 7).map { .paragraph(.plain("leaf-\($0)")) })
-        let task = Task { try await ExteralessAIRichTextTranslator.translate(page: source, client: client, to: "fr", configuration: config) }
+        let result = AINativeUIPageResult()
+        let task = Task<Void, Error> { @MainActor in
+            result.page = try await ExteralessAIRichTextTranslator.translate(page: source, client: client, to: "fr", configuration: config)
+        }
         await fulfillment(of: [five], timeout: 3)
         XCTAssertEqual(transport.count, 5)
         transport.releaseAndCompleteFollowing()
-        let translated = try await task.value
+        try await task.value
+        let translated = try XCTUnwrap(result.page)
         XCTAssertEqual(transport.count, 7)
         XCTAssertEqual(transport.maximumActive, 5)
         XCTAssertEqual(translated.blocks.count, 7)
@@ -97,7 +101,9 @@ final class ExteralessAINativeUITests: XCTestCase {
         var config = AITranslationConfiguration(settings: fixture.settings)
         config.provider = .google
         let source = page((0 ..< 7).map { .paragraph(.plain("cancel-leaf-\($0)")) })
-        let task = Task { try await ExteralessAIRichTextTranslator.translate(page: source, client: client, to: "fr", configuration: config) }
+        let task = Task<Void, Error> { @MainActor in
+            _ = try await ExteralessAIRichTextTranslator.translate(page: source, client: client, to: "fr", configuration: config)
+        }
         await fulfillment(of: [five], timeout: 3)
         task.cancel()
         transport.releaseAndCompleteFollowing()
@@ -159,6 +165,12 @@ final class ExteralessAINativeUITests: XCTestCase {
     private func page(_ blocks: [InstantPageBlock]) -> InstantPage {
         InstantPage(blocks: blocks, media: [:], isComplete: true, rtl: false, url: "", views: nil)
     }
+}
+
+/// The real translated page stays on MainActor; the task boundary carries only completion/error.
+@MainActor
+private final class AINativeUIPageResult {
+    var page: InstantPage?
 }
 
 private final class AINativeCountingTransport: AIHTTPTransport, @unchecked Sendable {

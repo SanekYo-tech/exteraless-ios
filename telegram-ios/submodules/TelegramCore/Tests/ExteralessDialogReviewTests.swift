@@ -317,8 +317,9 @@ private final class DialogReviewPostboxFixture {
     }
     func muteChannel(globalEnabled: Bool, peer: PeerMuteState) throws {
         try transaction { tx in
-            var settings = GlobalNotificationSettings.defaultSettings
-            settings.remote.channels.enabled = globalEnabled
+            var remote = GlobalNotificationSettingsSet.defaultSettings
+            remote.channels.enabled = globalEnabled
+            let settings = GlobalNotificationSettings(toBeSynchronized: nil, remote: remote)
             tx.setPreferencesEntry(key: PreferencesKeys.globalNotifications, value: PreferencesEntry(settings))
             tx.globalNotificationSettingsUpdated()
             tx.updateCurrentPeerNotificationSettings([self.channel: TelegramPeerNotificationSettings.defaultSettings.withUpdatedMuteState(peer)])
