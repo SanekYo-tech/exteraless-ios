@@ -1,4 +1,4 @@
-name: Sealed Elyx FD startup and ingress POSIX
+name: Sealed native Elyx Mode ABA (Linux)
 
 on:
   workflow_dispatch:
@@ -12,13 +12,14 @@ env:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
 jobs:
-  sealed-native-posix:
-    name: Sealed Elyx Host 47 + Foundation ingress 7 (POSIX)
+  mode-aba:
+    name: NativeElyxModeABATests (4 Linux cases)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
     env:
       SWIFT_ROOT: /home/runner/swift-6.4.2
-      EVIDENCE: ${{ github.workspace }}/build/elyx-fd-final
+      SWIFT_BINPATH: /home/runner/swift-6.4.2/usr/bin
+      EVIDENCE: ${{ github.workspace }}/build/elyx-mode-aba
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_DEFAULT_TIMEOUT: "15"
       PIP_RETRIES: "1"
@@ -29,27 +30,23 @@ jobs:
           sparse-checkout: |
             .github/workflows
             docs/wave-2
-            python
-            tools/runtime
+            tools/ci
             tools/compat/tests
             swift/PluginHost
             swift/ExteralessCore
+            telegram-ios/submodules/TelegramUI/Sources/Exteraless
             telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI
-            telegram-ios/submodules/TelegramUI/Tests
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
-      - name: Verify sealed source pins
+      - name: Verify sealed sources and exact spans before execution
         run: |
           set -euo pipefail
-          mkdir -p "$EVIDENCE/host" "$EVIDENCE/ingress"
-          cp docs/wave-2/elyx-posix-source-pins.json "$EVIDENCE/"
-          cp docs/wave-2/native-elyx-developer-final-inputs.json "$EVIDENCE/"
+          mkdir -p "$EVIDENCE"
           git rev-parse HEAD | tee "$EVIDENCE/cohort-sha.txt"
-          python -c 'import json; p=json.load(open("docs/wave-2/elyx-posix-source-pins.json")); print("\n".join("{}  {}".format(f["canonical_sha256"], f["path"]) for f in p["files"]))' > "$EVIDENCE/sources.sha256"
-          sha256sum --check "$EVIDENCE/sources.sha256" > "$EVIDENCE/source-check.log"
           uname -a | tee "$EVIDENCE/platform.log"
-      - name: Install the supplied ingress driver's import dependency
+          python -u -B tools/ci/elyx_mode_aba_ci.py verify before 2>&1 | tee "$EVIDENCE/verify-before.log"
+      - name: Install bounded helper import dependency
         run: |
           set -euo pipefail
           timeout --signal=KILL 120s python -m pip install pytest==8.3.5 2>&1 | tee "$EVIDENCE/driver-tools.log"
@@ -80,136 +77,34 @@ jobs:
           sha256sum "${SWIFT_ROOT}/${tarball}" > "$EVIDENCE/swift-download.sha256"
           tar -xzf "${SWIFT_ROOT}/${tarball}" -C "$SWIFT_ROOT" --strip-components=1
           rm -f "${SWIFT_ROOT}/${tarball}"
-          test -x "${SWIFT_ROOT}/usr/bin/swift"
-      - name: Verify and record the same compiler identity
+          test -x "${SWIFT_BINPATH}/swift"
+      - name: Verify and record pinned compiler identity
         run: |
           set -euo pipefail
-          printf '%s  %s\n' 76db9f3dd8487a14ae39374509620e33af02f10da5dc42247406657832e4e9da "$SWIFT_ROOT/usr/bin/swift-frontend" | sha256sum --check | tee "$EVIDENCE/toolchain-check.log"
-          echo "${SWIFT_ROOT}/usr/bin" >> "$GITHUB_PATH"
-          "${SWIFT_ROOT}/usr/bin/swift" --version | tee "$EVIDENCE/swift-version.log"
-          sha256sum "${SWIFT_ROOT}/usr/bin/swift-frontend" > "$EVIDENCE/swift-frontend.sha256"
-      - name: Compile complete sealed Host and test target
-        id: host-build
-        working-directory: swift/PluginHost
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 180s swift build --build-tests --jobs 2 2>&1 | tee "$EVIDENCE/host/build.log"
-      - name: Execute all 47 sealed Elyx Host cases
-        working-directory: swift/PluginHost
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 30s swift test --skip-build --jobs 2 \
-            --filter 'PluginElyxDeveloper(ActivationTests|FilesTests|Tests)' \
-            --xunit-output "$EVIDENCE/host/native.xml" 2>&1 | tee "$EVIDENCE/host/test.log"
-      - name: Run the sealed Linux ingress driver (120s compile, 30s test)
-        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
+          printf '%s  %s\n' 76db9f3dd8487a14ae39374509620e33af02f10da5dc42247406657832e4e9da "$SWIFT_BINPATH/swift-frontend" | sha256sum --check | tee "$EVIDENCE/toolchain-check.log"
+          echo "$SWIFT_BINPATH" >> "$GITHUB_PATH"
+          "$SWIFT_BINPATH/swift" --version | tee "$EVIDENCE/swift-version.log"
+          sha256sum "$SWIFT_BINPATH/swift-frontend" > "$EVIDENCE/swift-frontend.sha256"
+      - name: Execute sealed driver (120s compile, 30s native test)
         timeout-minutes: 4
         run: |
           set -euo pipefail
-          python -B - <<'PY' 2>&1 | tee "$EVIDENCE/ingress/driver.log"
-          import json, os, pathlib, runpy, shutil, sys, time
-          root = pathlib.Path.cwd()
-          evidence = pathlib.Path(os.environ["EVIDENCE"]) / "ingress"
-          package = pathlib.Path(os.environ["RUNNER_TEMP"]) / ("elyx-ingress-" + os.environ["GITHUB_RUN_ID"])
-          assert sys.platform == "linux" and not package.exists()
-          driver = root / "tools/compat/tests/test_native_elyx_ingress.py"
-          helper = root / "tools/compat/tests/test_sdk_developer_native.py"
-          calls, started = [], {}
-          # Observe the supplied helper's real return values. No driver, Swift
-          # source, subprocess command or timeout is replaced by this log hook.
-          def profile(frame, event, arg):
-              if frame.f_code.co_filename != str(helper) or frame.f_code.co_name != "run_bounded":
-                  return
-              if event == "call":
-                  started[id(frame)] = time.monotonic()
-              elif event == "return":
-                  command = frame.f_locals["command"]
-                  phase = "build" if command[1] == "build" else "test"
-                  output = arg if isinstance(arg, str) else frame.f_locals.get("output", "")
-                  (evidence / (phase + ".log")).write_text(output, encoding="utf-8")
-                  process = frame.f_locals.get("process")
-                  calls.append({"phase": phase, "command": command, "timeout_seconds": frame.f_locals["timeout"],
-                                "seconds": time.monotonic() - started.pop(id(frame), time.monotonic()),
-                                "returncode": process.returncode if process is not None else None})
-          sys.argv = [str(driver), str(package)]
-          sys.setprofile(profile)
-          try:
-              runpy.run_path(str(driver), run_name="__main__")
-          finally:
-              sys.setprofile(None)
-              (evidence / "commands.json").write_text(json.dumps(calls, indent=2) + "\n")
-              for name in ("input-sha256.json", "Package.swift"):
-                  if (package / name).exists():
-                      shutil.copyfile(package / name, evidence / name)
-          assert [(c["phase"], c["timeout_seconds"], c["returncode"]) for c in calls] == [("build", 120, 0), ("test", 30, 0)]
-          PY
-      - name: Record exact Host and ingress native XCTest evidence
+          # stdbuf's inherited libc settings flush native XCTest lines on hangs.
+          # The supplied driver, Swift sources, commands and deadlines are intact.
+          stdbuf -oL -eL python -u -B tools/ci/elyx_mode_aba_ci.py run 2>&1 | tee "$EVIDENCE/driver.log"
+      - name: Verify sealed sources and exact spans after execution
         if: always()
         run: |
-          python -B - <<'PY'
-          import collections, hashlib, json, os, pathlib, re, xml.etree.ElementTree as ET
-          root = pathlib.Path(os.environ["EVIDENCE"])
-          pins = json.loads(pathlib.Path("docs/wave-2/elyx-posix-source-pins.json").read_text())
-          summaries = {}
-          for group, summary_name in (("host", "Selected tests"), ("ingress", "All tests")):
-              directory = root / group
-              directory.mkdir(parents=True, exist_ok=True)
-              spec = pins["native_fd_final"]["expected_tests"][group]
-              expected = set(spec["case_ids"])
-              log = directory / "test.log"
-              if not log.exists():
-                  summaries[group] = {"error": "Native XCTest log absent; inspect compiler/driver logs", "expected": spec["count"]}
-                  (directory / "counts.json").write_text(json.dumps(summaries[group], indent=2) + "\n")
-                  continue
-              raw = log.read_bytes()
-              text = re.sub(r"\x1b\[[0-9;]*m", "", raw.decode("utf-8", "replace"))
-              normalize = lambda name: ".".join(name.rsplit(".", 2)[-2:])
-              starts = [normalize(n) for n in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' started at .+$", text, re.M)]
-              finished = [(normalize(n), s, t) for n, s, t in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' (passed|failed|skipped) \(([0-9.]+) seconds\)$", text, re.M)]
-              summary = re.search(r"^Test Suite '" + re.escape(summary_name) + r"' (passed|failed) at [^\n]+\n\s*Executed (\d+) tests, with (\d+) failures \((\d+) unexpected\) in ([0-9.]+) \([0-9.]+\) seconds", text, re.M)
-              cases = [{"class": n.split(".")[0], "name": n.split(".")[1], "status": s, "seconds": t} for n, s, t in finished]
-              counts = {"expected": spec["count"], "tests": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
-                        "failures": sum(c["status"] == "failed" for c in cases), "errors": 0,
-                        "skipped": sum(c["status"] == "skipped" for c in cases), "cases": cases,
-                        "seconds": summary[5] if summary else None, "cohort_sha": os.environ["GITHUB_SHA"],
-                        "log_sha256": hashlib.sha256(raw).hexdigest(), "provenance": "Native XCTest case events and complete suite summary"}
-              issues = []
-              if len(expected) != spec["count"] or collections.Counter(starts) != collections.Counter({n: 1 for n in expected}):
-                  issues.append("Native starts differ from exact sealed case inventory")
-              if collections.Counter(n for n, _, _ in finished) != collections.Counter({n: 1 for n in expected}):
-                  issues.append("Native finishes differ from exact sealed case inventory")
-              if summary is None or summary[1] != "passed" or int(summary[2]) != len(cases) or int(summary[3]) != counts["failures"]:
-                  issues.append("Missing or nonpassing complete native suite summary")
-              if counts["passed"] != spec["count"] or counts["skipped"]:
-                  issues.append("Not every required case passed without skips")
-              counts["report_errors"] = issues
-              counts["native_diagnostic_lines"] = [line for line in text.splitlines() if "error:" in line or re.search(r"\.swift:\d+", line)]
-              counts["module_counts"] = dict(collections.Counter(c["class"] for c in cases))
-              document = ET.Element("testsuites")
-              suite = ET.SubElement(document, "testsuite", name=group + " native XCTest", tests=str(len(cases)),
-                                    failures=str(counts["failures"]), errors="0", skipped=str(counts["skipped"]), time=counts["seconds"] or "0")
-              properties = ET.SubElement(suite, "properties")
-              for name, value in (("source", "test.log native XCTest case events"), ("source_sha256", counts["log_sha256"]), ("cohort_sha", counts["cohort_sha"])):
-                  ET.SubElement(properties, "property", name=name, value=value)
-              for case in cases:
-                  item = ET.SubElement(suite, "testcase", classname=case["class"], name=case["name"], time=case["seconds"])
-                  if case["status"] == "failed":
-                      ET.SubElement(item, "failure", message="Native XCTest failure").text = "\n".join(counts["native_diagnostic_lines"])
-                  elif case["status"] == "skipped":
-                      ET.SubElement(item, "skipped")
-              if issues:
-                  ET.SubElement(suite, "system-err").text = "\n".join(issues)
-              ET.ElementTree(document).write(directory / "xctest.xml", encoding="utf-8", xml_declaration=True)
-              (directory / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
-              summaries[group] = {k:v for k,v in counts.items() if k not in ("cases", "native_diagnostic_lines")}
-          (root / "summary.json").write_text(json.dumps(summaries, indent=2) + "\n")
-          print(json.dumps(summaries, indent=2))
-          assert all("error" not in s and not s["report_errors"] for s in summaries.values()), "Incomplete or failed native cohort; see retained logs and per-case JSON"
-          PY
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          python -u -B tools/ci/elyx_mode_aba_ci.py verify after 2>&1 | tee "$EVIDENCE/verify-after.log"
+      - name: Record actual four-case XCTest results and JUnit
+        if: always()
+        run: python -u -B tools/ci/elyx_mode_aba_ci.py report
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: elyx-fd-final-posix-${{ github.run_id }}
+          name: elyx-mode-aba-posix-${{ github.run_id }}
           path: ${{ env.EVIDENCE }}/
           if-no-files-found: error
           retention-days: 14

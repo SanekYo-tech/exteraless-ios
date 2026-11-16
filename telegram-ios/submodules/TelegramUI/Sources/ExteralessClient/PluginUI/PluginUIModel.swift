@@ -428,7 +428,7 @@ struct PluginUIModel: Equatable, Sendable {
         case .bulletin, .toast: fields = ["style", "durationMs", "buttonText", "position", "subtitle", "cancelable", "icon"]
         case .bottomSheet, .menu: fields = ["items", "buttons", "view", "input", "selectedIndex", "subtitle", "cancelable", "cancelOnTouchOutside", "dimEnabled", "icon", "messageClickable", "blurredBackground", "blurBehind"]
         case .share: fields = ["files", "url", "mimeType", "cancelable"]
-        case .settings, .page: fields = ["rows", "pagePath", "subtitle", "cancelable", "icon"]
+        case .settings, .page: fields = ["rows", "pagePath", "targetRowId", "settingsSnapshotId", "subtitle", "cancelable", "icon"]
         }
         try object.uiFields(common.union(fields), name: kind.rawValue)
         if kind == .settings && object["rows"] == nil {
@@ -498,6 +498,22 @@ struct PluginUIModel: Equatable, Sendable {
             guard let id = UUID(uuidString: source) else { throw PluginUIFailure.invalidHandle("Invalid native fragment id") }
             self.sourceId = id
         } else { self.sourceId = nil }
+        if let target = try object.uiString("targetRowId", limit: 256) {
+            guard kind == .settings, object["rows"] != nil, !target.isEmpty, target.utf8.count <= 256 else {
+                throw PluginUIFailure.malformed("SettingsTarget.invalid")
+            }
+            var page = self.rows
+            for id in self.pagePath {
+                guard let next = PluginUIWidget.find(id, in: page)?.subpage else { throw PluginUIFailure.invalidHandle("SettingsTarget.unknown") }
+                page = next
+            }
+            guard PluginUIWidget.find(target, in: page) != nil else { throw PluginUIFailure.invalidHandle("SettingsTarget.unknown") }
+        }
+        if let snapshot = try object.uiString("settingsSnapshotId", limit: 36) {
+            guard kind == .settings, object["rows"] != nil, UUID(uuidString: snapshot) != nil else {
+                throw PluginUIFailure.malformed("Settings snapshot requires a portable settings model and UUID")
+            }
+        }
         if kind == .share && self.text.isEmpty && self.files.isEmpty && self.url == nil { throw PluginUIFailure.malformed("Share requires text, a URL or files") }
         if kind.isTransient && self.text.isEmpty && self.title?.isEmpty != false { throw PluginUIFailure.malformed("Bulletin/toast requires text") }
     }

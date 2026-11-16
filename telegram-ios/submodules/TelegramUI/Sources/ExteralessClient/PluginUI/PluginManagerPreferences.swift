@@ -45,9 +45,14 @@ final class PluginManagerPreferences: @unchecked Sendable {
     private let lock = NSLock()
     private let url: URL
     private var state = PluginManagerPresentationState()
+    /// Optional native observation after a successful durable write and lock
+    /// release. It cannot alter admission, persistence or the published state.
+    private let didPersist: (@Sendable (PluginManagerPreferenceChange) -> Void)?
 
-    init(url: URL, legacyEngineEnabled: Bool = false) throws {
+    init(url: URL, legacyEngineEnabled: Bool = false,
+         didPersist: (@Sendable (PluginManagerPreferenceChange) -> Void)? = nil) throws {
         self.url = url
+        self.didPersist = didPersist
         self.state.engineEnabled = legacyEngineEnabled
         if FileManager.default.fileExists(atPath: url.path) {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
@@ -66,6 +71,10 @@ final class PluginManagerPreferences: @unchecked Sendable {
     }
 
     func apply(_ change: PluginManagerPreferenceChange, isCurrent: () -> Bool = { true }) throws {
+        var persisted = false
+        // Defer order matters: unlock below runs BEFORE this observation, so two
+        // real callers can commit while their actor continuations remain held.
+        defer { if persisted { self.didPersist?(change) } }
         self.lock.lock(); defer { self.lock.unlock() }
         var next = self.state
         switch change {
@@ -92,6 +101,7 @@ final class PluginManagerPreferences: @unchecked Sendable {
         guard isCurrent() else { throw PluginUIFailure.invalidHandle("Plugin config writer authority expired") }
         try data.write(to: self.url, options: .atomic)
         self.state = next
+        persisted = true
     }
 
     private static func validate(_ state: PluginManagerPresentationState) throws {

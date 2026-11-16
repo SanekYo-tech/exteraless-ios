@@ -1,0 +1,519 @@
+{
+  "base": "a707e85bcf4ce8bce39029829acf7577b5d8950c",
+  "boundary": "exact Root methods/initializers, actual native queues/store/Host/registry; UI/context/transport and Python execution recorders",
+  "branch": "ci/elyx-mode-aba-20261116-0b0bd7c67b",
+  "exact_span_count": 13,
+  "exact_span_sha256": {
+    "core.ExteraConfigCommandError": "e7023721fe0ac4e0b2865a443305ac0bde24653d0c987ca6a560ff5fc5effe31",
+    "core.ExteraConfigCommandQueue": "6389ed506300a1524edeb928442e0b805e190b219821c550135e1c6d3271ad18",
+    "core.ExteraConfigManagerMutation": "0fb1940eb311109d1cc10f1a9eae25c5591b36fbd46e645e89149b733d478213",
+    "root.applyGlobalPluginConfig": "928c27753688c316d7824e5c8a4139a7d97f8ab84f3edea3f577fb2873a06e3f",
+    "root.elyxActivationScope": "2402cf0b5db800a8e4dc770fd27e17c2d8a10e32519f98b9937ff74da2103833",
+    "root.init.developer": "9d42c5e65f82c145a0389434f6771ef78fdba716ca5dac9ff19b675cc9c74ffb",
+    "root.init.pluginConfig": "548072b4772b2474ea146c49ef28672ce42aad71d5844cd3f73bbe36df91247e",
+    "root.pluginExecutionRequested": "08d2b1b705fc5e4a9b03543b549ffc1aa25c35c86e3d72b79df0aced488e5b96",
+    "root.requirePluginExecution": "275a43050d020f289e1358f0b32a17465a0659f7240d3aaf07385c69c072fec3",
+    "root.retireElyxDeveloperService": "10f062e3e81169aafbb9ee1a80727dd609809e8e0567a64ec1c83beab9464da3",
+    "root.stopDeveloperServices": "744335b4265b99683045ae228249f738892bc61055800157c15698b32222841a",
+    "root.updateDeveloperServer": "5bb0a1e3b751c5f642e83528252645c7afbbea080916ed04406ebda836d685d0",
+    "root.updateManagerPreference": "b59f3a84cb2b3a5607ec944b89c7ee63574e3bec1e7fa600b3dcd8ca619f14d4"
+  },
+  "excluded_current_delta": "PluginElyxDeveloperFilesTests.swift waiter fix is outside the Mode fixture inputs; base test blob is inherited",
+  "expected_native_cases": [
+    "NativeElyxModeABATests.testTwoRealNativeQueuesCommitOffOnBeforeEitherActorContinuation",
+    "NativeElyxModeABATests.testFailedOffWritePropagatesErrorAndRestartUsesFreshAuthority",
+    "NativeElyxModeABATests.testRejectedPermissionAuthorityAndContextCannotRetireCurrentDeveloperService",
+    "NativeElyxModeABATests.testAlreadyOffAndCoalescedOnControlsPreserveCurrentAuthority"
+  ],
+  "files": [
+    {
+      "bytes": 4865,
+      "git_blob": "cc6a760e8c4fd332c29678f542b63d2539e90721",
+      "path": ".github/workflows/compat-tests.yml",
+      "sha256": "81aef76f048b91d4cdcadbb17edf18362a9de178a867640cf3ac5ebbda596a11"
+    },
+    {
+      "bytes": 59230,
+      "git_blob": "4df7e0f2d70b5c0937b8ed587a270b2fe339513c",
+      "path": "docs/wave-2/native-elyx-developer-remediation.md",
+      "sha256": "62986b688c64bf415bee5ee52c50685fab7a699504c25eb3c5d87b04f6a8ee6f"
+    },
+    {
+      "bytes": 14880,
+      "git_blob": "6966bb73e59491bc90a229148c2497a96b71acfc",
+      "path": "docs/wave-2/native-elyx-mode-aba-inputs.json",
+      "sha256": "f26bf2af05449bffc832f33f9da7ee615fe86693aaf68db837fe61f75bcbec45"
+    },
+    {
+      "bytes": 9984,
+      "git_blob": "4631ed2747ba6ca09a4c942b3b8ff365c95304ba",
+      "path": "swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift",
+      "sha256": "35eee798ab988f79f6a2d77e512b8fedda06c1d2f3f41f4cc65e345b8e4ffefe"
+    },
+    {
+      "bytes": 1436,
+      "git_blob": "fb9a37d93baacef3deb48c7320fb6369ea3c03dc",
+      "path": "swift/PluginHost/Package.swift",
+      "sha256": "fbc50ee84590add303641563b765c189fd1de71d47d8d4939bba42146734766c"
+    },
+    {
+      "bytes": 962,
+      "git_blob": "bb6b7a2c0904d16e887f7b87a415b5b03f9026f0",
+      "path": "swift/PluginHost/Sources/CPluginHostShims/include/ph_atomic.h",
+      "sha256": "7423467c23cd56374aef83f704b93d0396d2ff5e7d30e07cadbada6049485bd8"
+    },
+    {
+      "bytes": 962,
+      "git_blob": "aaabe80eaac6e84353c48c636644129f8f46dd96",
+      "path": "swift/PluginHost/Sources/CPluginHostShims/ph_atomic.c",
+      "sha256": "4bfed21b108e9a6443befa41f3211247dbea767e2562e30b88ecb4d06073234d"
+    },
+    {
+      "bytes": 55795,
+      "git_blob": "8cbc676deee55f1d97d09f585c202ec99e041cef",
+      "path": "swift/PluginHost/Sources/PluginHost/BridgeServices.swift",
+      "sha256": "73ba9424868df41d20a861fb57e5ffc0362dd7568ce7401d77b7d57a43414694"
+    },
+    {
+      "bytes": 9612,
+      "git_blob": "f20e462c2b290672f13115b30cb7be9bec2d0a5f",
+      "path": "swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift",
+      "sha256": "b6d6f6a295340292f6f6598beecbc5c892623472aae2f93f28a8856a3627f30d"
+    },
+    {
+      "bytes": 19791,
+      "git_blob": "74250b4e5871606fb39f559582d8b724ef6e818f",
+      "path": "swift/PluginHost/Sources/PluginHost/ExtensionPoints.swift",
+      "sha256": "a7f5ce2b5fd5495a505a548504a40c9cf8f83fbbfcbd95d22d727da5360dec5b"
+    },
+    {
+      "bytes": 4167,
+      "git_blob": "bd0b7520d87dda1aa1dbc339838d81ebdc0f4005",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeBridgeBinding.swift",
+      "sha256": "27f65038bf5c316494bcdbecbf4f1c0f83a567d01e3d471120c1a6d3b00d7246"
+    },
+    {
+      "bytes": 15097,
+      "git_blob": "dc2b9c8d34e68b73108c2420115b840e122edb4a",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceCallback.swift",
+      "sha256": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69"
+    },
+    {
+      "bytes": 2394,
+      "git_blob": "31c174db3123e2159b96635592b2e046c1c42832",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceCleanup.swift",
+      "sha256": "1b820dc298fe2442a456d6d6b483510dfe51ad6a27649b9d1a234952b0d10f39"
+    },
+    {
+      "bytes": 7072,
+      "git_blob": "b2a3e5b67294b32e78869ec82103cbd706cafe2b",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceEventDelivery.swift",
+      "sha256": "bdc197482f170d09687f78545d8aa6b35e1ff05ee9d3f358cd979f9cc5e502a7"
+    },
+    {
+      "bytes": 14136,
+      "git_blob": "a7e2766e015c6e6b76421b495f9e9c944a6a95fa",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceInterceptionModels.swift",
+      "sha256": "05ed1af2ac1d6418b4f80f3b9efc8054f07c3687daa2f101f30413a1d09d81fb"
+    },
+    {
+      "bytes": 4797,
+      "git_blob": "0fa9e9b43f0ae046268addd2c5a528eae1d1bbe5",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceLogEvent.swift",
+      "sha256": "83049e070f36d267d0c9f724681d419b5c443f8971aa197e5fdcd5fd37b17b40"
+    },
+    {
+      "bytes": 16030,
+      "git_blob": "f1749a1c7194db0bc9c3d45ec7be3585127e8215",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOpenBarrier.swift",
+      "sha256": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9"
+    },
+    {
+      "bytes": 8662,
+      "git_blob": "e28d3db848d14148b86e70466a346a307b52407c",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOperations.swift",
+      "sha256": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169"
+    },
+    {
+      "bytes": 2971,
+      "git_blob": "49b4557471f7ed9a76342bc2af88c511865e0b95",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServicePlayback.swift",
+      "sha256": "e710f7979e1d5606168ea5f5f9815f1c6876a51fd32646b5f9f152191f1c465b"
+    },
+    {
+      "bytes": 4181,
+      "git_blob": "15e2128a9a2dbf91df07c816302807e32de2100a",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceReleaseQueue.swift",
+      "sha256": "91b6e32299632e4960c581ddab40f02d15b13c4ac42e7fb26d899af43253f525"
+    },
+    {
+      "bytes": 5073,
+      "git_blob": "f0de11ccf95e21ef80b650f30e96771f7b62a3b6",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceScheduler.swift",
+      "sha256": "c64fda685439f416513b94c23b05bf64883cc986ba99d1dceddaa02e016ee83f"
+    },
+    {
+      "bytes": 9179,
+      "git_blob": "1cecee8940e676b914ef35fd6fcb1ed0b32d7bee",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceSnapshots.swift",
+      "sha256": "4dd80e363c8dd5579a35620d354e65578c9273cedccc262b26b1ec49c06012f5"
+    },
+    {
+      "bytes": 6215,
+      "git_blob": "de64641964281b9b9acb7a80ea5bae5985688fc9",
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceWire.swift",
+      "sha256": "e465bb340c8ac3c936677833881bba21011183c05530677e6807ce914d676a26"
+    },
+    {
+      "bytes": 13443,
+      "git_blob": "bc7aceb5e760a677c2a788e51bae0f75589be08f",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift",
+      "sha256": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc"
+    },
+    {
+      "bytes": 3204,
+      "git_blob": "e7195878f86c718c7923586de0a62f2d4a2cf078",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginBridgeExtension.swift",
+      "sha256": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f"
+    },
+    {
+      "bytes": 10006,
+      "git_blob": "919ec6e5e349ec1f22603573b60584cac33118c3",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift",
+      "sha256": "8fafbadf870bd85729d51629aceba85589763dbc08263b9940c06bd3c65c2c74"
+    },
+    {
+      "bytes": 14004,
+      "git_blob": "d7e3f5da0a818e6c942f4f893765679aca6b7dcf",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift",
+      "sha256": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21"
+    },
+    {
+      "bytes": 36357,
+      "git_blob": "704342580517e67556aedcec7c85df82e9ab72d0",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift",
+      "sha256": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9"
+    },
+    {
+      "bytes": 53225,
+      "git_blob": "645f61aabf5e3fca694ab80d28d408b00efb6cc0",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperFiles.swift",
+      "sha256": "56903232ceb9bd6c003fd4bb3b7328e5af363a4a095960969cbc697b56a6338f"
+    },
+    {
+      "bytes": 3091,
+      "git_blob": "ac890a1ca8540e9fb29a63a8aa9c14eed2f3140a",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperReadiness.swift",
+      "sha256": "903c323a091c3596b9f3f9bce7a5914fecd2091eabecabb892e73f9a539267e1"
+    },
+    {
+      "bytes": 14181,
+      "git_blob": "daa3649408055ccaaef0d6ee5c29348091a982bf",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperRequest.swift",
+      "sha256": "50aeafa90bfabe8924156bb001623b82d9709addd9902abfa436c740e46ed150"
+    },
+    {
+      "bytes": 10196,
+      "git_blob": "c96dd0e2a4ead9ddfcab461419f30c62026b4d45",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperService.swift",
+      "sha256": "10a6ee936bcb5d65fc9a046f6ec66865e9322346787069ff969d9320644cee26"
+    },
+    {
+      "bytes": 14759,
+      "git_blob": "9ea53911e2900bb24f63f57aa24efef01c98af5b",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperTransaction.swift",
+      "sha256": "739eb78e179d5130e1f2698e7627ee403f6aae646700758cd224391f2791e652"
+    },
+    {
+      "bytes": 10229,
+      "git_blob": "cfd4d47649330ec9f910451570cbf7126c24a2eb",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginEventExecution.swift",
+      "sha256": "882de607740cfd3eca62cd11d564519c987498bcd8fd862194dc21f1b6e73707"
+    },
+    {
+      "bytes": 13575,
+      "git_blob": "08507c9d96ad26404ebda76b3ce4c04ecb53046f",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginEventQueue.swift",
+      "sha256": "dc797e3ae31aab59e86e2d31ea2aa0afa44e78643c1fe4587abe6e2bde678f34"
+    },
+    {
+      "bytes": 129905,
+      "git_blob": "fae347f2f0973782423d2cb1cd9c409f491c9dc2",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginHost.swift",
+      "sha256": "6e3f9692792795761cb882ba040b7f065430a2918669ecdea56aed1d19758fc9"
+    },
+    {
+      "bytes": 13054,
+      "git_blob": "61b2c2dab90e1baff63ea7a432bfa8c93ac3bc93",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginHostLifecycle.swift",
+      "sha256": "dfa7484596853add073a7d6e66ef4c38d6cf3cd680f7a44865281cd6cd4872da"
+    },
+    {
+      "bytes": 27541,
+      "git_blob": "06e42868d57150ed9a35c673359b847a47ae6d84",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginModel.swift",
+      "sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0"
+    },
+    {
+      "bytes": 2872,
+      "git_blob": "628a8c3a5ee9b0a8b85925139c92fd2652cdfb3c",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginNativeEffectBudget.swift",
+      "sha256": "6dc6a7014d64cf28d33066d5dab475158210aa6bc094d656a61af38c860c97d5"
+    },
+    {
+      "bytes": 6573,
+      "git_blob": "0762aad234b90acdc9f8be4a82c2a933d5e1cba7",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginPermissionStorage.swift",
+      "sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de"
+    },
+    {
+      "bytes": 1700,
+      "git_blob": "b31b9b57204002240847f9af9b567e5d16315435",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginResourcePath.swift",
+      "sha256": "fd68d73978d46702f7a1a9e3e08f65e2d20189c0280c6a12b32b92436a6b0e45"
+    },
+    {
+      "bytes": 5676,
+      "git_blob": "3194646fe6a1c0d012e8a0eeeee4c38c17e48eea",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginRuntimeProtocol.swift",
+      "sha256": "1926e6aad7bd145cb0438ea56080e812e3e0fb962c963f1c7640a13b632f8c8e"
+    },
+    {
+      "bytes": 8776,
+      "git_blob": "20aa46a8f52cb5aac7a1facdf0bd8bb1874a96b9",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginRuntimeStartupContinuation.swift",
+      "sha256": "0e70f0c9d728eedff50d4e0d0553672842f0a7cc57699bd287aaa4f444a35c60"
+    },
+    {
+      "bytes": 13318,
+      "git_blob": "609473b776814e9bbec26c41dfed924360c9171d",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginServiceModels.swift",
+      "sha256": "d5cf1997b54359323a38db2dbe39002a59a59642514b8fc27db66dc7184c3815"
+    },
+    {
+      "bytes": 13966,
+      "git_blob": "d9d23cde6256bbfb19b97dee7ec7526843f7d596",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginServiceStorage.swift",
+      "sha256": "827ce0d50604b56694fbfa83fa7112b7943cf9c33b102de20c57ac9e4ea603d2"
+    },
+    {
+      "bytes": 2299,
+      "git_blob": "9b6a16d814fdefe12d618a34b7a53be4c8a87569",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginSettingsPageLease.swift",
+      "sha256": "d607bf036b27d3af74de54a0fce1f1614f7bdd73ab940d443feb074df0d5e19c"
+    },
+    {
+      "bytes": 4981,
+      "git_blob": "9c5958546a5e15b542a590b3cf888f3010f67c70",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTLHostPayload.swift",
+      "sha256": "e3935c527f2ed969ebd1898bdf85b817454563b504532216e508953498b96d76"
+    },
+    {
+      "bytes": 6022,
+      "git_blob": "72591cfb9c8230a6d2d98dbbea6f36c76facbb75",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTLInvocationOrigin.swift",
+      "sha256": "328d6f819ae6141529d334cb4ab9eb94536aad29617541ef2d9c92de18e12383"
+    },
+    {
+      "bytes": 4822,
+      "git_blob": "8db634f07666d65517b5dbfc43bff04a7333d6f2",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustLevel.swift",
+      "sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8"
+    },
+    {
+      "bytes": 1281,
+      "git_blob": "7200b4fc11f31b6e7ab6746dac7e0aff321d5ef3",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustSelection.swift",
+      "sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4"
+    },
+    {
+      "bytes": 16071,
+      "git_blob": "14f3f37661ea491db9d6afe6c15050578111747c",
+      "path": "swift/PluginHost/Sources/PluginHost/PluginWatchdog.swift",
+      "sha256": "4efb7cda74992219acde62f3de5b5fb72d0ff5c8d602a6bf2904c10c0ff3850c"
+    },
+    {
+      "bytes": 19886,
+      "git_blob": "ecaf6256f1d5d48a6fccdd91eb2560d47d5b03b8",
+      "path": "swift/PluginHost/Sources/PluginHost/PythonRuntime.swift",
+      "sha256": "1e9235e65f1fb860da218317a033d12e2b37f545b2b2dbdad33de29fce6544f1"
+    },
+    {
+      "bytes": 11697,
+      "git_blob": "591d69e71561c3d7ec391664792ced470a26cea4",
+      "path": "swift/PluginHost/Sources/PluginHost/SecurityGates.swift",
+      "sha256": "2467c87171c86cb7e9f1960afbd57f087000b2fcf5e33e6a98854d60fd7a7bba"
+    },
+    {
+      "bytes": 27671,
+      "git_blob": "bba6b6e9f44f4943559e89c5fa1dd2c95057a8ef",
+      "path": "swift/PluginHost/Sources/PluginHost/SubinterpreterManager.swift",
+      "sha256": "2f01f17fd5e12d1d561339097a25270f4277766cda58f38c36b0f0005dd43c60"
+    },
+    {
+      "bytes": 7196,
+      "git_blob": "ac5c669c2ce9000375c19e2ea3db655c1e9c7e62",
+      "path": "swift/PluginHost/Tests/PluginHostTests/HostLifecycleTestSupport.swift",
+      "sha256": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda"
+    },
+    {
+      "bytes": 77035,
+      "git_blob": "1930f8e010d6c6ea91d8001287ec287853824d5e",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift",
+      "sha256": "cd8829a64228253082717598b45e551e9b91c92e74684bef3734bd89678efbd7"
+    },
+    {
+      "bytes": 7980,
+      "git_blob": "769458eb5200cb74ad98cabb2d7a9ea3e4d24af6",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift",
+      "sha256": "48f6e7690a46474cae73a1bb13418b667cad645e2d0716ad534dd54c73ccabb9"
+    },
+    {
+      "bytes": 5630,
+      "git_blob": "5967ce57ab8ebe6220e881427297f382b8c20c6f",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift",
+      "sha256": "22e992036562e292b28132f94af671eafd3d81a4d55a3b8ebf86c5704af14356"
+    },
+    {
+      "bytes": 5031,
+      "git_blob": "e1f0e84ca83dc0c16d00b5d78807edb025a31d42",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift",
+      "sha256": "86d91a889d5a5ce2ef06e259b574a3db2cb95d0f6237203ed5aadd22ff04e482"
+    },
+    {
+      "bytes": 4208,
+      "git_blob": "6652de48a2506f980406673d06493e9da4969941",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginElyxDeveloperIngress.swift",
+      "sha256": "240832ce4b6b93e2f684e37938c5553de071e8d3394cc60c1d2f1e00b871db36"
+    },
+    {
+      "bytes": 8227,
+      "git_blob": "24c6d6873c57bad2d65a14c848056a95b7bfd655",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift",
+      "sha256": "3adb13b77a4fa351b9bfea3f0e21b9c7cf0f83b707795d095575d90797d3f962"
+    },
+    {
+      "bytes": 5659,
+      "git_blob": "8d7d769db1be34538ec2a77aa4d9f7322b0686b4",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift",
+      "sha256": "041c00c7f5f21610b0167b2f71338e86f881713ef7465e4de7ccf52b831ea43c"
+    },
+    {
+      "bytes": 32100,
+      "git_blob": "63c99a074b9516d3b8cdce11aa15492c693d332f",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIModel.swift",
+      "sha256": "a7772693585250a68b0c01e7c2d5e8e10e9acbd6f371d88f076fa5cf5b7dd3c6"
+    },
+    {
+      "bytes": 7059,
+      "git_blob": "f8b70661efaec5c284edd6e888db23674f32fdb3",
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift",
+      "sha256": "7c0d4e24b3230943b193d56bab5dd844a89ae706f47fb82a01c84009962a336e"
+    },
+    {
+      "bytes": 14339,
+      "git_blob": "50f704469edfe8107c4176d7b3d3e828b611e8b0",
+      "path": "tools/ci/elyx_mode_aba_ci.py",
+      "sha256": "c32e00ea85281715cf2232272f3f309606906514ffd354718e3ad56f1c38ba23"
+    },
+    {
+      "bytes": 21349,
+      "git_blob": "4ed0c756092073b68dc6ce7b0e551a0fd08064ef",
+      "path": "tools/compat/tests/fixtures/native_elyx_mode/ModeABATests.swift",
+      "sha256": "6ff47c162c7cd274f5361c3bed382b3f71daae004f201e08e19a4a1cf629506b"
+    },
+    {
+      "bytes": 3746,
+      "git_blob": "26d3ee219d748088d10895e14111530d234ee46c",
+      "path": "tools/compat/tests/fixtures/native_elyx_mode/RootFixture.swift",
+      "sha256": "39e5586750867ced1ced2d9347791515f7bd4cb4efbe708b0a96abb715702241"
+    },
+    {
+      "bytes": 8915,
+      "git_blob": "67a15f9c0ae9a375525b33f317be97f3630aeb2a",
+      "path": "tools/compat/tests/test_native_elyx_mode_aba.py",
+      "sha256": "016b79f1b6135587567e8a20bdbddfc5e6785fcf52219b330119ce8339faa2b3"
+    },
+    {
+      "bytes": 2213,
+      "git_blob": "544738eac54aaf49ab04c61f900f0493f1a9138b",
+      "path": "tools/compat/tests/test_sdk_developer_native.py",
+      "sha256": "eb57013f9f68a3e6bc1e43946d9e975601fae90f49e29f5d318a04bf3379ed93"
+    }
+  ],
+  "fixture_source_count": 64,
+  "schema": 1,
+  "seal": "docs/wave-2/native-elyx-mode-aba-inputs.json",
+  "seal_sha256": "f26bf2af05449bffc832f33f9da7ee615fe86693aaf68db837fe61f75bcbec45",
+  "source_sha256": {
+    ".github/workflows/compat-tests.yml": "81aef76f048b91d4cdcadbb17edf18362a9de178a867640cf3ac5ebbda596a11",
+    "docs/wave-2/native-elyx-developer-remediation.md": "62986b688c64bf415bee5ee52c50685fab7a699504c25eb3c5d87b04f6a8ee6f",
+    "docs/wave-2/native-elyx-mode-aba-inputs.json": "f26bf2af05449bffc832f33f9da7ee615fe86693aaf68db837fe61f75bcbec45",
+    "swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift": "35eee798ab988f79f6a2d77e512b8fedda06c1d2f3f41f4cc65e345b8e4ffefe",
+    "swift/PluginHost/Package.swift": "fbc50ee84590add303641563b765c189fd1de71d47d8d4939bba42146734766c",
+    "swift/PluginHost/Sources/CPluginHostShims/include/ph_atomic.h": "7423467c23cd56374aef83f704b93d0396d2ff5e7d30e07cadbada6049485bd8",
+    "swift/PluginHost/Sources/CPluginHostShims/ph_atomic.c": "4bfed21b108e9a6443befa41f3211247dbea767e2562e30b88ecb4d06073234d",
+    "swift/PluginHost/Sources/PluginHost/BridgeServices.swift": "73ba9424868df41d20a861fb57e5ffc0362dd7568ce7401d77b7d57a43414694",
+    "swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift": "b6d6f6a295340292f6f6598beecbc5c892623472aae2f93f28a8856a3627f30d",
+    "swift/PluginHost/Sources/PluginHost/ExtensionPoints.swift": "a7f5ce2b5fd5495a505a548504a40c9cf8f83fbbfcbd95d22d727da5360dec5b",
+    "swift/PluginHost/Sources/PluginHost/NativeBridgeBinding.swift": "27f65038bf5c316494bcdbecbf4f1c0f83a567d01e3d471120c1a6d3b00d7246",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceCallback.swift": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceCleanup.swift": "1b820dc298fe2442a456d6d6b483510dfe51ad6a27649b9d1a234952b0d10f39",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceEventDelivery.swift": "bdc197482f170d09687f78545d8aa6b35e1ff05ee9d3f358cd979f9cc5e502a7",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceInterceptionModels.swift": "05ed1af2ac1d6418b4f80f3b9efc8054f07c3687daa2f101f30413a1d09d81fb",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceLogEvent.swift": "83049e070f36d267d0c9f724681d419b5c443f8971aa197e5fdcd5fd37b17b40",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceOpenBarrier.swift": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceOperations.swift": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169",
+    "swift/PluginHost/Sources/PluginHost/NativeServicePlayback.swift": "e710f7979e1d5606168ea5f5f9815f1c6876a51fd32646b5f9f152191f1c465b",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceReleaseQueue.swift": "91b6e32299632e4960c581ddab40f02d15b13c4ac42e7fb26d899af43253f525",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceScheduler.swift": "c64fda685439f416513b94c23b05bf64883cc986ba99d1dceddaa02e016ee83f",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceSnapshots.swift": "4dd80e363c8dd5579a35620d354e65578c9273cedccc262b26b1ec49c06012f5",
+    "swift/PluginHost/Sources/PluginHost/NativeServiceWire.swift": "e465bb340c8ac3c936677833881bba21011183c05530677e6807ce914d676a26",
+    "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
+    "swift/PluginHost/Sources/PluginHost/PluginBridgeExtension.swift": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f",
+    "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift": "8fafbadf870bd85729d51629aceba85589763dbc08263b9940c06bd3c65c2c74",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperFiles.swift": "56903232ceb9bd6c003fd4bb3b7328e5af363a4a095960969cbc697b56a6338f",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperReadiness.swift": "903c323a091c3596b9f3f9bce7a5914fecd2091eabecabb892e73f9a539267e1",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperRequest.swift": "50aeafa90bfabe8924156bb001623b82d9709addd9902abfa436c740e46ed150",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperService.swift": "10a6ee936bcb5d65fc9a046f6ec66865e9322346787069ff969d9320644cee26",
+    "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperTransaction.swift": "739eb78e179d5130e1f2698e7627ee403f6aae646700758cd224391f2791e652",
+    "swift/PluginHost/Sources/PluginHost/PluginEventExecution.swift": "882de607740cfd3eca62cd11d564519c987498bcd8fd862194dc21f1b6e73707",
+    "swift/PluginHost/Sources/PluginHost/PluginEventQueue.swift": "dc797e3ae31aab59e86e2d31ea2aa0afa44e78643c1fe4587abe6e2bde678f34",
+    "swift/PluginHost/Sources/PluginHost/PluginHost.swift": "6e3f9692792795761cb882ba040b7f065430a2918669ecdea56aed1d19758fc9",
+    "swift/PluginHost/Sources/PluginHost/PluginHostLifecycle.swift": "dfa7484596853add073a7d6e66ef4c38d6cf3cd680f7a44865281cd6cd4872da",
+    "swift/PluginHost/Sources/PluginHost/PluginModel.swift": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0",
+    "swift/PluginHost/Sources/PluginHost/PluginNativeEffectBudget.swift": "6dc6a7014d64cf28d33066d5dab475158210aa6bc094d656a61af38c860c97d5",
+    "swift/PluginHost/Sources/PluginHost/PluginPermissionStorage.swift": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de",
+    "swift/PluginHost/Sources/PluginHost/PluginResourcePath.swift": "fd68d73978d46702f7a1a9e3e08f65e2d20189c0280c6a12b32b92436a6b0e45",
+    "swift/PluginHost/Sources/PluginHost/PluginRuntimeProtocol.swift": "1926e6aad7bd145cb0438ea56080e812e3e0fb962c963f1c7640a13b632f8c8e",
+    "swift/PluginHost/Sources/PluginHost/PluginRuntimeStartupContinuation.swift": "0e70f0c9d728eedff50d4e0d0553672842f0a7cc57699bd287aaa4f444a35c60",
+    "swift/PluginHost/Sources/PluginHost/PluginServiceModels.swift": "d5cf1997b54359323a38db2dbe39002a59a59642514b8fc27db66dc7184c3815",
+    "swift/PluginHost/Sources/PluginHost/PluginServiceStorage.swift": "827ce0d50604b56694fbfa83fa7112b7943cf9c33b102de20c57ac9e4ea603d2",
+    "swift/PluginHost/Sources/PluginHost/PluginSettingsPageLease.swift": "d607bf036b27d3af74de54a0fce1f1614f7bdd73ab940d443feb074df0d5e19c",
+    "swift/PluginHost/Sources/PluginHost/PluginTLHostPayload.swift": "e3935c527f2ed969ebd1898bdf85b817454563b504532216e508953498b96d76",
+    "swift/PluginHost/Sources/PluginHost/PluginTLInvocationOrigin.swift": "328d6f819ae6141529d334cb4ab9eb94536aad29617541ef2d9c92de18e12383",
+    "swift/PluginHost/Sources/PluginHost/PluginTrustLevel.swift": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8",
+    "swift/PluginHost/Sources/PluginHost/PluginTrustSelection.swift": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4",
+    "swift/PluginHost/Sources/PluginHost/PluginWatchdog.swift": "4efb7cda74992219acde62f3de5b5fb72d0ff5c8d602a6bf2904c10c0ff3850c",
+    "swift/PluginHost/Sources/PluginHost/PythonRuntime.swift": "1e9235e65f1fb860da218317a033d12e2b37f545b2b2dbdad33de29fce6544f1",
+    "swift/PluginHost/Sources/PluginHost/SecurityGates.swift": "2467c87171c86cb7e9f1960afbd57f087000b2fcf5e33e6a98854d60fd7a7bba",
+    "swift/PluginHost/Sources/PluginHost/SubinterpreterManager.swift": "2f01f17fd5e12d1d561339097a25270f4277766cda58f38c36b0f0005dd43c60",
+    "swift/PluginHost/Tests/PluginHostTests/HostLifecycleTestSupport.swift": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
+    "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift": "cd8829a64228253082717598b45e551e9b91c92e74684bef3734bd89678efbd7",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift": "48f6e7690a46474cae73a1bb13418b667cad645e2d0716ad534dd54c73ccabb9",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift": "22e992036562e292b28132f94af671eafd3d81a4d55a3b8ebf86c5704af14356",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift": "86d91a889d5a5ce2ef06e259b574a3db2cb95d0f6237203ed5aadd22ff04e482",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginElyxDeveloperIngress.swift": "240832ce4b6b93e2f684e37938c5553de071e8d3394cc60c1d2f1e00b871db36",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginManagerPreferences.swift": "3adb13b77a4fa351b9bfea3f0e21b9c7cf0f83b707795d095575d90797d3f962",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginRuntimeRecovery.swift": "041c00c7f5f21610b0167b2f71338e86f881713ef7465e4de7ccf52b831ea43c",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIModel.swift": "a7772693585250a68b0c01e7c2d5e8e10e9acbd6f371d88f076fa5cf5b7dd3c6",
+    "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift": "7c0d4e24b3230943b193d56bab5dd844a89ae706f47fb82a01c84009962a336e",
+    "tools/ci/elyx_mode_aba_ci.py": "c32e00ea85281715cf2232272f3f309606906514ffd354718e3ad56f1c38ba23",
+    "tools/compat/tests/fixtures/native_elyx_mode/ModeABATests.swift": "6ff47c162c7cd274f5361c3bed382b3f71daae004f201e08e19a4a1cf629506b",
+    "tools/compat/tests/fixtures/native_elyx_mode/RootFixture.swift": "39e5586750867ced1ced2d9347791515f7bd4cb4efbe708b0a96abb715702241",
+    "tools/compat/tests/test_native_elyx_mode_aba.py": "016b79f1b6135587567e8a20bdbddfc5e6785fcf52219b330119ce8339faa2b3",
+    "tools/compat/tests/test_sdk_developer_native.py": "eb57013f9f68a3e6bc1e43946d9e975601fae90f49e29f5d318a04bf3379ed93"
+  }
+}
