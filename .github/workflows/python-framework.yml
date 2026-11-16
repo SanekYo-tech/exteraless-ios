@@ -458,6 +458,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sdk-followup-tests-${{ github.run_id }}
-          path: ${{ env.SDK_FOLLOWUP_DIR }}/
+          # Compiler scratch directories made run33's report archive 1.44 GB.
+          # Sources, inputs, candidate ZIPs, logs and native result JSON stay at
+          # the fixture roots; the shipping runtime binaries have their own artifact.
+          path: |
+            ${{ env.SDK_FOLLOWUP_DIR }}/
+            !${{ env.SDK_FOLLOWUP_DIR }}/**/build/**
+            !${{ env.SDK_FOLLOWUP_DIR }}/**/swift-build/**
+            !${{ env.SDK_FOLLOWUP_DIR }}/**/.build/**
           if-no-files-found: ignore
           retention-days: 7

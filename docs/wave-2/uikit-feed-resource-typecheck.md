@@ -13,3 +13,11 @@ permit remain intact. No new network operation or renderer is introduced.
 The complete diagnostic log is retained at
 `build/artifacts/client-ui-43788169856/build/build.log`. Subsequent dependent
 Swift modules, native tests and recorded frames still need the next Apple pass.
+
+## Follow-up: 43793245829 / 53cab85a
+
+Feed compiled. This pass then reported an unused-mutation diagnostic for the Map
+fixture's local weak provider witness. The fixture now holds the existing
+SwiftSignalKit `Weak` container as a constant and inspects its weak value at
+cleanup. Provider release and overlay/loader assertions are retained. LocationUI
+already declares the SwiftSignalKit dependency; no new build edge is required.

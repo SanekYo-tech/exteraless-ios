@@ -4,6 +4,7 @@ import ExteralessCore
 import Foundation
 import ImageIO
 import MapKit
+import SwiftSignalKit
 import UIKit
 
 private struct MapAttributionFailure: Error, CustomStringConvertible {
@@ -240,7 +241,7 @@ public enum ExteralessMapAttributionFixture {
         let previousSubviews = Set(mapView.subviews.map(ObjectIdentifier.init))
         var provider: ExteralessLocationMapProvider? = ExteralessLocationMapProvider(mapView: mapView,
             policy: { MapPolicy(useOpenStreetMap: true) }, tileLoader: { url, completion in loader.fetch(url, completion: completion) })
-        weak var providerWitness = provider
+        let providerWitness = provider.map(Weak.init)
         let added = mapView.subviews.filter { !previousSubviews.contains(ObjectIdentifier($0)) }.compactMap { $0 as? UIButton }
         try mapAttributionRequire(added.count == 1, "Provider must create its one actual attribution UIButton")
         let button = added[0]
@@ -350,7 +351,7 @@ public enum ExteralessMapAttributionFixture {
         mapView.removeFromSuperview()
         loader.close()
         let final = loader.snapshot
-        try mapAttributionRequire(providerWitness == nil && final.failures == 2 && final.invalidRequests == 0
+        try mapAttributionRequire(providerWitness?.value == nil && final.failures == 2 && final.invalidRequests == 0
             && mapView.overlays.isEmpty && button.window == nil, "Map fixture failed scoped provider/overlay cleanup")
         try mapAttributionRequire(ProcessInfo.processInfo.systemUptime < overallDeadline, "Map fixture exceeded its 9s interaction cap")
         return ["completed": true, "fixture": "ExteralessMapAttributionFixture.run", "networkBoundary": networkBoundary,
@@ -359,7 +360,7 @@ public enum ExteralessMapAttributionFixture {
             "seconds": ProcessInfo.processInfo.systemUptime - start, "segments": segments,
             "loaderFailures": final.failures, "loaderSuccesses": final.successes, "invalidRequests": final.invalidRequests,
             "sources": Dictionary(uniqueKeysWithValues: requiredSources.map { ($0, sourceHashes[$0]!) }),
-            "cleanup": ["providerReleased": providerWitness == nil, "overlayCount": mapView.overlays.count,
+            "cleanup": ["providerReleased": providerWitness?.value == nil, "overlayCount": mapView.overlays.count,
                 "mapDetached": mapView.superview == nil, "buttonDetached": button.window == nil,
                 "delegateDetached": mapView.delegate == nil, "loaderClosed": final.closed]]
     }
