@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `93dcb653`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `bfcce7bc`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -25,11 +25,18 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43812503558 /93dcb653 failure**: полные native-test compiler/link/bundle diagnostics получены; fixes идут параллельно |
+| UIKit | **43822623419 /bfcce7bc failed-before-native-compile**: recovery исчерпал60s на мелкихLRUentries; большиеblobs ещё доступны |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43822623419 завершён; watcher завершён. Free2.75→9.31GB, удалено6.41GB/
+  37728cachefiles; осталось18.54GBeligiblecache. Floor20GiB не достигнут, compile не стартовал.
+  ses_e25088d28ffem4nSC3FcOP577B добавляет pressure-aware large-blob priority втотже60sbudget;
+  ownership/FD/free-space checks и37/434/20 не ослабляются.
+  Pressure policy готов и принят:3/3postimages,17tests(1POSIXskip), regression2000tiny
+  entries достигаетfloor за3big-blob deletes. `native-test-disk-pressure-followup.md`.
+- Compat43822586271/bfcce7bc завершён GREEN; watcher завершён.
 - UIKit43812503558 завершён; watcher завершён. Core fixtures —ses_e1d06c8f8ffehjPM0uMig1HERu;
   graphics —ses_e1d06c8a7ffekqpt3ouAeKRg28; AI —ses_e1d06c8a5ffeudGDP7qGkCTe8V;
   Feed/Presence/Chats —ses_e1d06c8a3ffezy3nUjXSB6kizy;

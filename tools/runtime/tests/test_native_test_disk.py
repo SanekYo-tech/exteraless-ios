@@ -62,7 +62,17 @@ class NativeDiskTests(unittest.TestCase):
             'generation': generation or self.generation, 'ready': True})
 
     def usage(self, path):
-        return SimpleNamespace(total=10000, used=10000-self.free, free=self.free)
+        total = 1024 ** 3
+        return SimpleNamespace(total=total, used=total-self.free, free=self.free)
+
+    def add_blob(self, name, size, modified_ns, *, store='cas'):
+        digest = hashlib.sha256(name.encode()).hexdigest()
+        path = self.cache / store / digest[:2] / digest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'x' * size)
+        os.utime(path, ns=(modified_ns, modified_ns))
+        self.entries.append(path)
+        return path
 
     def directory_link(self, link, target):
         try:
@@ -100,17 +110,96 @@ class NativeDiskTests(unittest.TestCase):
         self.idle.assert_not_called(); unlink.assert_not_called()
         self.assertTrue(all(p.exists() for p in self.entries + self.retained))
 
-    def test_lru_recovery_stops_on_actual_capacity_and_preserves_materialized_and_user_files(self):
+    def test_pressure_equal_allocation_size_ties_keep_lru_and_preserve_retained_files(self):
         report = self.recover()
         self.assertEqual(report['status'], 'recovered')
         self.assertEqual(report['deletedFiles'], 2)
         self.assertEqual(report['deletedBytes'], 128)
         self.assertEqual(report['keptCacheBytes'], 64)
+        self.assertEqual(report['selectionPolicy'], disk.SELECTION_POLICY)
+        self.assertEqual(report['pressureDeletedFiles'], 2)
+        self.assertEqual(report['lruDeletedFiles'], 0)
         self.assertFalse(self.entries[0].exists()); self.assertFalse(self.entries[1].exists())
         self.assertTrue(self.entries[2].exists())
         for path in self.retained: self.assertEqual(path.read_bytes(), b'retain actual fixture bytes')
         self.assertTrue((self.cache / disk.CACHE_MARKER).is_file())
         self.idle.assert_called_once()
+
+    def test_pressure_reaches_floor_in_three_unlinks_ahead_of_thousands_of_old_metadata_files(self):
+        mib = 1024 ** 2
+        tiny = [self.add_blob('old-metadata-' + str(i), 1, 100_000_000, store='ac') for i in range(2000)]
+        large = [self.add_blob('new-large-' + str(i), mib, (i + 10) * 1_000_000_000) for i in range(3)]
+        selected, measured = [], []
+        original_usage = self.usage
+        def observed_usage(path):
+            measured.append(self.free)
+            return original_usage(path)
+        self.usage = observed_usage
+        def unlink_with_stat_allocation(cache, entry):
+            path = cache.joinpath(*entry['parts'])
+            info = path.lstat()
+            allocated = getattr(info, 'st_blocks', (info.st_size + 511) // 512) * 512
+            self.assertEqual(entry['allocated'], allocated)
+            path.unlink()
+            self.free += allocated
+            selected.append(path)
+            return True
+        limits = disk.Limits(minimum_free=2 * mib + mib // 2, target_free=64 * mib,
+            maximum_cache=mib, phase_seconds=5, scan_entries=10000, delete_entries=3, delete_bytes=4 * mib)
+        report = self.recover(limits=limits, _unlink=unlink_with_stat_allocation)
+        self.assertEqual(selected, large)
+        self.assertEqual(report['status'], 'recovered')
+        self.assertEqual(report['deletedFiles'], 3)
+        self.assertEqual(report['pressureDeletedFiles'], 3)
+        self.assertEqual(report['lruDeletedFiles'], 0)
+        self.assertGreaterEqual(report['capacity']['bazelOutput']['free'], limits.minimum_free)
+        self.assertLessEqual(report['keptCacheBytes'], limits.maximum_cache)
+        self.assertFalse(report['targetFreeReached'])
+        self.assertFalse(report['targetEstimatedReachableAfterInventory'])
+        self.assertEqual(report['stopReason'], 'minimum-and-cache-cap-met-target-not-estimated-reachable')
+        self.assertNotIn('cutoff', report)
+        self.assertEqual(report['selectionThresholds']['pressureBelowFreeBytes'], limits.minimum_free)
+        self.assertTrue({mib, 2 * mib, 3 * mib} <= set(measured))
+        self.assertTrue(all(path.exists() for path in tiny))
+        for path in self.retained:
+            self.assertEqual(path.read_bytes(), b'retain actual fixture bytes')
+        persisted = json.loads((self.run / 'disk-capacity.json').read_text())
+        self.assertEqual(persisted['selectionPolicy'], disk.SELECTION_POLICY)
+        self.assertFalse(persisted['targetFreeReached'])
+
+    def test_after_floor_selection_returns_to_lru_for_the_reachable_goal(self):
+        smaller = self.add_blob('new-smaller', 8192, 10_000_000_000)
+        largest = self.add_blob('new-largest', 16384, 11_000_000_000)
+        selected = []
+        def unlink(cache, entry):
+            selected.append(cache.joinpath(*entry['parts']))
+            return self.fixture_unlink(cache, entry)
+        limits = disk.Limits(minimum_free=8192, target_free=16384 + 64, maximum_cache=10240,
+                             phase_seconds=5, scan_entries=100, delete_entries=3, delete_bytes=32768)
+        report = self.recover(limits=limits, _unlink=unlink)
+        self.assertEqual(selected, [largest, self.entries[0]])
+        self.assertEqual(report['pressureDeletedFiles'], 1)
+        self.assertEqual(report['lruDeletedFiles'], 1)
+        self.assertTrue(report['targetFreeReached'])
+        self.assertTrue(smaller.exists())
+
+    def test_changed_large_pressure_candidate_is_kept_and_not_retried(self):
+        changed = self.add_blob('changed-large', 8192, 10_000_000_000)
+        attempts = []
+        def unlink(cache, entry):
+            path = cache.joinpath(*entry['parts'])
+            attempts.append(path)
+            if path == changed:
+                path.write_bytes(b'new cache version')
+                return False  # The FD identity guard rejects this changed leaf.
+            return self.fixture_unlink(cache, entry)
+        limits = disk.Limits(minimum_free=80, target_free=100, maximum_cache=16384,
+                             phase_seconds=5, scan_entries=100, delete_entries=3, delete_bytes=32768)
+        report = self.recover(limits=limits, _unlink=unlink)
+        self.assertEqual(report['status'], 'recovered')
+        self.assertEqual(attempts.count(changed), 1)
+        self.assertEqual(report['skippedChangedOrLinked'], 1)
+        self.assertEqual(changed.read_bytes(), b'new cache version')
 
     def test_file_quota_failure_keeps_actual_counts_and_never_claims_capacity(self):
         limits = disk.Limits(minimum_free=80, target_free=100, maximum_cache=128,

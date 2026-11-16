@@ -25,6 +25,7 @@ TRUSTED_CACHE = Path('/Users/runner/Library/Caches/exteraless-bazel-disk')
 CACHE_MARKER = '.exteraless-native-action-cache.json'
 CLAIM_MARKER = '.native-test-cache-claim.json'
 CACHE_KEY = 'exteraless-bazel-9.2.0-sha256-actions-v1'
+SELECTION_POLICY = 'pressure-largest-allocated-then-lru-v1'
 # Bazel 9.2 RemoteExecutionService.getWriteCachePolicy ignores
 # remote_upload_local_results for disk writes. Empty disk_cache actually disables
 # DiskCacheClient (CombinedCacheClientFactory.isDiskCache). Use the same mode for
@@ -259,6 +260,12 @@ def _cache_entries(cache, limits, deadline, clock):
     return sorted(result, key=lambda item: (item['mtime'], item['parts'])), retained
 
 
+def _pressure_key(entry):
+    # Recover useful space per unlink before spending the budget on old metadata.
+    # Equal allocation/size retains LRU order, including a deterministic path tie.
+    return (-entry['allocated'], -entry['size'], entry['mtime'], entry['parts'])
+
+
 def _open_directory_fd(path):
     if os.name != 'posix' or not hasattr(os, 'O_NOFOLLOW') or os.open not in os.supports_dir_fd:
         raise ValueError('Actual cache deletion requires POSIX dirfd/O_NOFOLLOW support')
@@ -300,6 +307,7 @@ def _unlink_entry(cache, entry):
 def _publish(path, report):
     print('NATIVE_DISK ' + json.dumps({key: report[key] for key in (
         'status', 'minimumFreeBytes', 'targetFreeBytes', 'deletedFiles', 'deletedBytes', 'keptCacheBytes',
+        'selectionPolicy', 'pressureDeletedFiles', 'lruDeletedFiles', 'stopReason', 'targetFreeReached',
         'cutoff', 'error', 'capacity') if key in report}, sort_keys=True), flush=True)
     try:
         _write_json(path, report)
@@ -331,6 +339,11 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
         'minimumFreeBytes': limits.minimum_free, 'targetFreeBytes': limits.target_free,
         'maximumCacheBytes': limits.maximum_cache, 'phaseLimitSeconds': limits.phase_seconds,
         'deletedFiles': 0, 'deletedBytes': 0, 'deletedAllocatedBytes': 0, 'skippedChangedOrLinked': 0,
+        'selectionPolicy': SELECTION_POLICY,
+        'selectionThresholds': {'pressureBelowFreeBytes': limits.minimum_free,
+                                'targetFreeBytes': limits.target_free, 'maximumCacheBytes': limits.maximum_cache},
+        'pressureRanking': ['allocated-desc', 'logical-size-desc', 'mtime-asc', 'relative-path-asc'],
+        'pressureDeletedFiles': 0, 'lruDeletedFiles': 0,
         'nativeCacheFlags': list(NATIVE_CACHE_FLAGS), 'nativeExecutionVerified': False}
     try:
         report['capacity'] = _capacity(paths, usage)
@@ -347,6 +360,7 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
         free = lambda: min(report['capacity'][name]['free'] for name in target_names)
         if free() >= limits.minimum_free:
             report['status'] = 'sufficient-no-deletion'
+            report['targetFreeReached'] = free() >= limits.target_free
             return report
         deficient_devices = {report['capacity'][name]['device'] for name in target_names
                              if report['capacity'][name]['free'] < limits.minimum_free}
@@ -362,20 +376,49 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
         report['eligibleCacheBytesBefore'] = kept
         report['keptCacheBytes'] = kept
         report['cacheCapScope'] = 'verified SHA-256 AC/CAS leaves; tmp/gc/ownership metadata retained'
-        report['status'] = 'reclaiming-cache-lru'
+        candidates = [entry for entry in entries if entry['links'] == 1]
+        report['skippedChangedOrLinked'] += len(entries) - len(candidates)
+        lru_order = iter(candidates)  # The complete inventory is already in LRU order.
+        pressure_order = iter(sorted(candidates, key=_pressure_key))
+        considered = set()
+        # An optimistic effort estimate only: never add it to measured free space
+        # for the readiness gate. Shared extents may release less than this.
+        potential = sum(max(entry['allocated'], entry['size']) for entry in candidates)
+        report['remainingPotentialBytes'] = potential
+        report['capacity'] = _capacity(paths, usage)
+        report['targetEstimatedReachableAfterInventory'] = free() + potential >= limits.target_free
+        report['status'] = 'reclaiming-cache-pressure-aware'
         _publish(report_path, report)
-        for entry in entries:
-            if free() >= limits.target_free and kept <= limits.maximum_cache:
+        while True:
+            if free() >= limits.minimum_free and kept <= limits.maximum_cache:
+                if free() >= limits.target_free:
+                    report['stopReason'] = 'target-and-cache-cap-met'
+                    break
+                if free() + potential < limits.target_free:
+                    # The observed run had enough cache for the floor, but not
+                    # the optional 30 GiB target. Do not burn the remaining time
+                    # unlinking thousands of metadata files after floor+cap pass.
+                    report['stopReason'] = 'minimum-and-cache-cap-met-target-not-estimated-reachable'
+                    break
+            pressure = free() < limits.minimum_free
+            order = pressure_order if pressure else lru_order
+            entry = next((item for item in order if item['parts'] not in considered), None)
+            if entry is None:
+                report['stopReason'] = 'eligible-candidates-exhausted'
                 break
             if (clock() >= deadline or report['deletedFiles'] >= limits.delete_entries
                     or report['deletedBytes'] + entry['size'] > limits.delete_bytes):
                 report['cutoff'] = 'time/file/byte reclamation quota reached'
                 break
+            considered.add(entry['parts'])
+            potential -= max(entry['allocated'], entry['size'])
+            report['remainingPotentialBytes'] = potential
             _verify_claim(owned, repository, generation, cache)
             if entry['links'] != 1 or not _unlink(cache, entry):
                 report['skippedChangedOrLinked'] += 1
                 continue
             report['deletedFiles'] += 1
+            report['pressureDeletedFiles' if pressure else 'lruDeletedFiles'] += 1
             report['deletedBytes'] += entry['size']
             report['deletedAllocatedBytes'] += entry['allocated']
             kept -= entry['size']; report['keptCacheBytes'] = kept
@@ -384,11 +427,11 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
             if report['deletedFiles'] % 128 == 0:
                 _publish(report_path, report)
         report['capacity'] = _capacity(paths, usage)
+        report['targetFreeReached'] = free() >= limits.target_free
         if free() < limits.minimum_free or kept > limits.maximum_cache:
             raise DiskCapacityError('Native compile capacity insufficient: free={} bytes, minimum={} bytes, kept cache={} bytes; '
                                     'only verified AC/CAS leaves were reclaimable'.format(free(), limits.minimum_free, kept))
         report['status'] = 'recovered'
-        report['targetFreeReached'] = free() >= limits.target_free
         return report
     except BaseException as error:
         report.update(status='failed-before-compile', error=str(error),
