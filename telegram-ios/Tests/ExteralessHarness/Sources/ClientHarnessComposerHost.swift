@@ -6,6 +6,7 @@ import ChatRichTextEditorComposer
 import ChatTextInputPanelNode
 import Display
 import Foundation
+import Postbox
 import RichTextEngineEditor
 import TelegramCore
 import TelegramPresentationData

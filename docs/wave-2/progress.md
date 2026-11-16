@@ -25,12 +25,17 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43801470131 /039fc5da выполняется** после Custom-cell/reset identity corrections |
+| UIKit | **43801470131 /039fc5da failure**: TelegramUI compiled;4Harness type diagnostics и1writeSettings link symbol |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
-- UIKit43801470131/039fc5da: `sh_1e283d4a1001sXBZ54GfQ7YNxc`, `uikit-039fc5da-watch.log`.
+- UIKit43801470131 завершён. Composer импортирует Postbox RenderedPeer;
+  Feed использует isComplete и явные Engine-типы.29harness tests/import checkPASS.
+- writeSettings link cause подтверждён Xcode27.1 probe43804717243:
+  inferred preconcurrency стирал @Sendable в base symbol, но не в inherited vtable.
+  Explicit @MainActor даёт matching symbols/link0; тело и guards byte-identical.
+  `uikit-chat-table-link-remediation.md`; полная сборка ещё требуется.
 - UIKit43797987677 завершён; watcher завершён. CustomCell использует inherited
   gesture delegate/override; reset caller передаёт underlying AnyObject с nil-preserving
   Optional.map. `uikit-manager-reset-typecheck.md`; Postbox import checkPASS.

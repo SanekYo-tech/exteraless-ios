@@ -106,7 +106,7 @@ class ExteralessChatTableController: ViewController, UITableViewDataSource, UITa
     func reloadRows() { self.tableView.reloadData() }
 
     /// Durable ClientSettings writes can include fsync; keep them off the UI/layout queue.
-    func writeSettings(_ operation: @escaping @Sendable () throws -> Void, completion: @escaping () -> Void) {
+    @MainActor func writeSettings(_ operation: @escaping @Sendable () throws -> Void, completion: @escaping () -> Void) {
         guard self.accountIsValid, !self.settingsWriteInFlight else { return }
         self.settingsWriteInFlight = true
         Self.settingsWriter.async { [weak self] in

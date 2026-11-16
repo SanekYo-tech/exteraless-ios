@@ -26,10 +26,10 @@ final class ClientHarnessFeedStore {
         // The actual smoke renderer already populated this local media resource.
         // Read those bytes, rather than making a second image/canvas for the test.
         let resource = LocalFileMediaResource(fileId: 9_100_001)
-        let data = try await clientHarnessFirst(self.context.engine.resources.data(resource: EngineMediaResource(resource))
-            |> filter { $0.complete }, name: "Feed fixture local PNG")
+        let data: EngineMediaResource.ResourceData = try await clientHarnessFirst(self.context.engine.resources.data(resource: EngineMediaResource(resource))
+            |> filter { $0.isComplete }, name: "Feed fixture local PNG")
         let png = try Data(contentsOf: URL(fileURLWithPath: data.path))
-        let messages = self.permit.messages(png: png, edited: edited)
+        let messages: [EngineMessage] = self.permit.messages(png: png, edited: edited)
         try clientHarnessRequire(messages.count == 6, "native Feed fixture must supply six messages")
         self.ids = Set(messages.map(\.id))
         guard let reference = messages.first(where: { $0.groupingKey != nil }) else {
@@ -59,7 +59,7 @@ final class ClientHarnessFeedStore {
                 text: "LOCAL NAMESPACE MUST NOT ENTER FEED", attributes: [], media: [])], location: .Random)
             return true
         }, name: "owned Feed Postbox seed")
-        let projected = try await clientHarnessFirst(exteralessFeedFreshMessages(engine: self.context.engine,
+        let projected: [EngineMessage.Id: ExteralessFeedMessageProjection] = try await clientHarnessFirst(exteralessFeedFreshMessages(engine: self.context.engine,
             ids: self.ids.union([shadow])), name: "native Feed fresh projection")
         try clientHarnessRequire(projected.count == 6 && projected[shadow] == nil, "Feed admitted the wrong message namespace")
         try clientHarnessRequire(projected.values.allSatisfy { $0.isEligible && $0.peer != nil && $0.group == .root }, "Feed projection lost current membership/peers")
