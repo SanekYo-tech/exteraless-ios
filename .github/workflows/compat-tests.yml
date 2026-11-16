@@ -178,6 +178,10 @@ jobs:
         run: python -m tools.compat.feature_inventory || true
 
       - name: Run test suite
+        env:
+          # Archive fixtures use the same checksum-verified pure PyYAML bundle
+          # that was staged above; no separately installed host copy is required.
+          PYTHONPATH: ${{ github.workspace }}/python/vendor
         run: |
           set -euo pipefail
           # JDK нужен Java-харнес-тестам, но его установка не должна

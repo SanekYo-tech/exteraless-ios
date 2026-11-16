@@ -4,7 +4,7 @@
 
 ### Актуально: полный runtime gate GREEN, компиляция приложения продолжается
 
-**Общий Host/SDK/UIKit source cohort подготовлен к публикации:**286paths,
+**Общий Host/SDK/UIKit source cohort опубликован: `f704d76c1596eb0086d08e49dd049796a0220c2f`,288paths.**
 59SDKrawpins/10inputreceipts ивсеcurrentSDK/source-identityгруппы сверены поGitindex;
 30ConfigtestsPASS. ModeABA CI43783735908/11b87846:4nativePASS/0skip,64inputs/13spans.
 DEV-LIFECYCLE01 independentlysource-closed. ПоследняяfullIPA40independentPASS.
@@ -13,7 +13,7 @@ DEV-LIFECYCLE01 independentlysource-closed. ПоследняяfullIPA40independe
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **6de4ac36**: iOS DNS-SD linkage и narrow Rust resolver FFI allowance опубликованы |
+| HEAD | **f704d76c**: complete SDK/Host/UIKit source cohort published; 288paths |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
 | Последний разобранный Linux | **43764252538 / aca0eb38 GREEN:712 Core /180 Host /30 Hooks**; **43769700681 /31287b92:398 pytest PASS/23skip (48.45s)** |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
@@ -30,6 +30,11 @@ build/artifacts/telegram-43779402542 исоздаётipa-build40-acceptance.md.
 1418placements/419sourcepins. IPA-SHAe28940fdb017941525824ba1906d09e32da6bd973fa1c1c7c41bd294eeee3d99.
 Короткийdeliverypath:build/artifacts/telegram-43779402542/exteraless-ios-13.1.1-40-unsigned.ipa.
 НовыйHost/SDKcohort/UI20ещёнепокрываютсяэтойIPA. Rustpatch/gilbaseверны;неpoll.
+
+**FullCompat43784503847/f704d76c завершён:** SwiftjobSUCCESS712Core/273Host/30Hooks
+(9.176/5.545/0.356s), включаявсеFD47. Python428PASS/37skip/49fail из-заединственной
+причины:stagedPyYAMLненапутиимпорта. КоордобавилPYTHONPATH=python/vendorвpyteststep.
+Watcherзавершён. Mac5/UIKit20следуютпокогерентномусрезу;SDK276/0/32checkPASS.
 43769738884 завершиласьнадвухMessageMediaActionsdiagnostics; cacheработал:
 7216disk-cachehits из9654processes,675workeractions. Следующийbuildиспользуеттотжеcache.
 Linux/POSIX Host follow-up ведётотдельно `ses_e1ec1979effeHeE6OKLhF3XvXz` на
