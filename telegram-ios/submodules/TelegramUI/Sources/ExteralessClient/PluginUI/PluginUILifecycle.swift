@@ -550,7 +550,12 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         }
         event["id"] = .string(entry.state.id.uuidString)
         event["event"] = .string(name)
-        let permission: @Sendable () -> Bool = name == "closed" ? { true } : entry.permissionIsCurrent
+        let permission: @Sendable () -> Bool
+        if name == "closed" {
+            permission = { true }
+        } else {
+            permission = entry.permissionIsCurrent
+        }
         return Delivery(owner: entry.owner, handle: callback.handle, arguments: .array([.object(event)]), permissionIsCurrent: permission)
     }
 

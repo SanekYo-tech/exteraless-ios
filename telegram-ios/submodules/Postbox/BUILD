@@ -55,6 +55,7 @@ package_group(
     name = "test_clients",
     packages = [
         "//Tests/ComposerHarness",
+        "//Tests/ExteralessHarness",
         "//submodules/TelegramStringFormatting",
         "//submodules/TelegramUI/Components/Chat/ChatMessageItemCommon",
         "//submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer",

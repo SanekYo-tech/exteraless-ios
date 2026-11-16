@@ -288,12 +288,12 @@ private final class ElyxNamespaceWatch: @unchecked Sendable {
         fd = try ElyxFD(kqueue())
         guard fcntl(fd.raw, F_SETFD, FD_CLOEXEC) == 0 else { throw elyxIO("seal namespace watch fd") }
         for directory in directories {
-            var event = kevent()
+            var event = Darwin.kevent()
             event.ident = UInt(directory.fd.raw)
             event.filter = Int16(EVFILT_VNODE)
             event.flags = UInt16(EV_ADD | EV_ENABLE | EV_CLEAR)
             event.fflags = UInt32(NOTE_RENAME | NOTE_DELETE | NOTE_REVOKE)
-            guard Darwin.kevent(fd.raw, &event, 1, nil, 0, nil) == 0 else { throw elyxIO("watch native directory") }
+            guard kevent(fd.raw, &event, 1, nil, 0, nil) == 0 else { throw elyxIO("watch native directory") }
         }
         #else
         fd = try ElyxFD(elyxInotifyInit(O_NONBLOCK | O_CLOEXEC))
@@ -312,11 +312,11 @@ private final class ElyxNamespaceWatch: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         if revoked { throw PluginElyxDeveloperError.stale("native directory namespace was renamed/revoked") }
         #if canImport(Darwin)
-        var events = [kevent](repeating: kevent(), count: 32)
+        var events = [Darwin.kevent](repeating: Darwin.kevent(), count: 32)
         var timeout = timespec(tv_sec: 0, tv_nsec: 0)
         while true {
             let count = events.withUnsafeMutableBufferPointer {
-                Darwin.kevent(fd.raw, nil, 0, $0.baseAddress, Int32($0.count), &timeout)
+                kevent(fd.raw, nil, 0, $0.baseAddress, Int32($0.count), &timeout)
             }
             if count < 0, errno == EINTR { continue }
             guard count >= 0 else { revoked = true; throw elyxIO("poll native directory watch") }

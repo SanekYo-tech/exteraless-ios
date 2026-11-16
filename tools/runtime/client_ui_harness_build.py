@@ -10,6 +10,8 @@ in the same debug_sim_arm64 graph. Run only in a disposable CI source copy.
 from __future__ import annotations
 
 import argparse
+import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -32,6 +34,58 @@ from client_ui_harness_inputs import acceptance_identity, harness_inputs
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS = BUILD_SELECTION["target"]
 APPLICATION = "//Telegram:Telegram"
+DIAGNOSTIC_TAIL_BYTES = 16 * 1024
+
+
+def postbox_visibility_errors(telegram):
+    """Check the explicit test-client edge that failed the real initial aquery."""
+    path = Path(telegram) / "submodules/Postbox/BUILD"
+    try:
+        rules = {}
+        for node in ast.parse(path.read_text(encoding="utf-8")).body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                attrs = {item.arg: item.value for item in node.value.keywords}
+                if isinstance(attrs.get("name"), ast.Constant):
+                    rules[attrs["name"].value] = attrs
+        packages = ast.literal_eval(rules["test_clients"]["packages"])
+        visibility = ast.literal_eval(rules["Postbox"]["visibility"])
+        if "//Tests/ExteralessHarness" in packages and ":test_clients" in visibility:
+            return []
+    except (OSError, SyntaxError, KeyError, ValueError, TypeError):
+        pass
+    return ["submodules/Postbox/BUILD: Postbox must expose :test_clients to //Tests/ExteralessHarness"]
+
+
+def diagnostic_tail(path):
+    """Read at most 16 KiB of stderr/build log, with an exact byte-range receipt."""
+    path = Path(path)
+    with path.open("rb") as stream:
+        size = stream.seek(0, os.SEEK_END)
+        offset = max(0, size - DIAGNOSTIC_TAIL_BYTES)
+        stream.seek(offset)
+        data = stream.read(DIAGNOSTIC_TAIL_BYTES)
+    return {"path": str(path), "fileBytes": size, "byteOffset": offset, "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(), "text": data.decode("utf-8", errors="replace")}
+
+
+def logged_build_command(args, *, phase, output, log, **options):
+    """Surface redirected stderr while the partial/private aquery stdout stays private."""
+    try:
+        return command(args, log=log, **options)
+    except Exception as error:
+        log.flush()
+        try:
+            diagnostic = diagnostic_tail(Path(output) / "build.log")
+        except OSError as read_error:
+            diagnostic = {"path": str(Path(output) / "build.log"), "text": "", "readError": str(read_error)}
+        write_json(Path(output) / "build-failure.json", {
+            "status": "build-command-failed", "phase": phase, "configuration": "debug_sim_arm64",
+            "targets": [APPLICATION, HARNESS], "command": [str(arg) for arg in args],
+            "errorType": type(error).__name__, "error": str(error), "diagnostic": diagnostic,
+            "buildVerified": False, "uikitExecuted": False,
+        })
+        raise RuntimeError("UIKit {} failed; redirected diagnostics from {} (at most {} bytes):\n{}".format(
+            phase, diagnostic["path"], DIAGNOSTIC_TAIL_BYTES, diagnostic["text"])) from error
 
 
 def pinned_xcode_app(telegram):
@@ -72,7 +126,7 @@ def source_preflight(telegram):
             "#if DEBUG", "public func makeExteralessComposerPanel(",
             "inputPanelForChatPresentationIntefaceState(", "panel.loadTextInputNodeIfNeeded()"],
     }
-    errors = []
+    errors = postbox_visibility_errors(telegram)
     for relative, needles in required.items():
         path = telegram / relative
         text = path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -201,14 +255,16 @@ def build(telegram, output, cache, bazel_root, seconds):
             # The same platform/flags for validation and compilation. Include the
             # whole normal app (six extensions) plus the separate harness app.
             with graph.open("w", encoding="utf-8") as graph_file:
-                command([*startup, "aquery", "deps(set({} {}))".format(APPLICATION, HARNESS), *flags,
-                         "--nobuild", "--output=jsonproto", "--include_artifacts", "--include_commandline",
-                         "--include_param_files", "--include_file_write_contents"], cwd=telegram,
-                        stdout=graph_file, stderr=log, log=log, timeout=min(300, deadline - time.monotonic()))
+                logged_build_command([*startup, "aquery", "deps(set({} {}))".format(APPLICATION, HARNESS), *flags,
+                          "--nobuild", "--output=jsonproto", "--include_artifacts", "--include_commandline",
+                          "--include_param_files", "--include_file_write_contents"], cwd=telegram,
+                         phase="aquery", output=output, stdout=graph_file, stderr=log, log=log,
+                         timeout=min(300, deadline - time.monotonic()))
             unsigned = validate_unsigned_actions(graph)
             runtime = validate_runtime_actions(graph, manifest)
             domain_debug = validate_domain_debug_actions(graph)
-            command([*startup, "build", APPLICATION, HARNESS, *flags], cwd=telegram, stdout=log,
+            logged_build_command([*startup, "build", APPLICATION, HARNESS, *flags, "--keep_going"], cwd=telegram, stdout=log,
+                    phase="build", output=output, log=log,
                     timeout=deadline - time.monotonic())
             ipa = telegram / "bazel-bin/Tests/ExteralessHarness/ClientUIHarness.ipa"
             packaging = verify_ipa(ipa, telegram / "build-input/exteraless/runtime-staging.json", telegram)

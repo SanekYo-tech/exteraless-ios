@@ -8,10 +8,12 @@
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
-**Активный Mac-прогон43786995069/5fa35f34:** watcher
-`sh_1e1fd67a3001ifnSh496e6oNXi`, `python-5fa35f34-watch.log`. Workflow собирает
-независимые bounded-диагностики после ошибки соседнего fixture; failure остаётся
-failure, а зависимые этапы проверяют успешные prerequisites. Не poll.
+Mac43786995069/5fa35f34 завершён FAILED, watcher завершён.
+Отдельно **722 Core /30 Hooks PASS**, все297 source pins сверены с Git:
+`mac-core-722-acceptance.md`. Host заблокирован конфликтом `kevent`, standalone UI —
+closure inference. Оба source fixes готовы (`darwin-sdk-typecheck.md`).
+Listener readiness диагностирует отдельный owner. Независимые этапы сохраняют
+реальные результаты и failure общего gate; HNS/Mac5 ещё не выполнены.
 
 Предыдущие watchers завершены. Compat43786135131/a823e619 GREEN:
 478 passed,36 skipped,147.86s. Mac43786148988 прошёл91 packaging,63 plumbing
@@ -22,9 +24,11 @@ bounded Darwin-прогоном; production fake-readiness не допускае
 Mac43785374048 и Compat43785348360 остановились на импорте pytest из helper
 в изолированном child. Исправление опубликовано в a823e619; локально4PASS,
 10 явных Windows/C-пропусков и изолированный emitterPASS.
-UIKit43785534046 завершился до компиляции на `aquery`; tooling owner
-`ses_e25088d28ffem4nSC3FcOP577B` разбирает сохранённый `build.log` и исправляет граф.
-Документацию/Obsidian обновляет `ses_e1e097ef2ffel8U59jMlx2vf1a`.
+UIKit43785534046 завершился до компиляции на `aquery`: Postbox не разрешал
+ExteralessHarness в test_clients. Точное исключение и bounded diagnostics готовы;
+5/5 postimages сверены,29harness testsPASS. Следующий build использует --keep_going.
+README/PLAN/runtime docs и Obsidian обновлены; source closure overlays в parity
+сводит `ses_e1fc2b7aeffe9GcuqtB99tTZZz`.
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|

@@ -279,6 +279,7 @@ jobs:
             ${{ env.CLIENT_UI_RUN_DIR }}/build/preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build-result.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build.log
+            ${{ env.CLIENT_UI_RUN_DIR }}/build/build-failure.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/unsigned-preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-staging.json
