@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `84a0456a`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `039fc5da`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -14,6 +14,10 @@ Archive/developer fixtures получили штатный vendor root;
 Общий Host/SDK/UIKit cohort — `f704d76c` (288 файлов); hermetic parity overlay
 опубликован в `3daf8d97`:39 source-closed scopes,34 raw report snapshots,
 исторические567/925 и14/102/666 сохранены, verification promotions=0.
+Runtime33 evidence добавлен новым hermetic overlay:35-й snapshot,
+NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryhashes
+сверены; regeneration/check-data безGit и Config--checkPASS.
+`docs/parity/current-runtime33-handoff.md`; прежние34snapshots/pins сохранены.
 
 | Актуальная проверка | Подтверждённое состояние |
 |---|---|
@@ -21,11 +25,12 @@ Archive/developer fixtures получили штатный vendor root;
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43797987677 /84a0456a failure**: Map прошёл; три TelegramUI diagnostics в Custom cell/reset gate исправлены |
-| План приёмки | 5 real SDK children;434 native XCTest methods;20 записываемых сцен; исполнения/кадры ещё pending |
+| UIKit | **43801470131 /039fc5da выполняется** после Custom-cell/reset identity corrections |
+| План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43801470131/039fc5da: `sh_1e283d4a1001sXBZ54GfQ7YNxc`, `uikit-039fc5da-watch.log`.
 - UIKit43797987677 завершён; watcher завершён. CustomCell использует inherited
   gesture delegate/override; reset caller передаёт underlying AnyObject с nil-preserving
   Optional.map. `uikit-manager-reset-typecheck.md`; Postbox import checkPASS.

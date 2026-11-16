@@ -335,7 +335,8 @@ remain immutable; new overlay checks are stored at the `docs/parity/` root.
 versions. Every shipped pin additionally has `snapshot_path`, selecting exactly
 `docs/parity/source-report-snapshots/<captured-sha256>.md`. These are the original
 raw report bytes, including JSON origin reports, without wrappers, newline
-conversion or base64. The input sets `require_report_snapshots: true` for all 34.
+conversion or base64. The input sets `require_report_snapshots: true` for every
+declared report (initially 34; 35 after the Runtime33 evidence addition).
 The snapshot directory's `.gitattributes` disables text conversion for those raw
 files, preserving the same hashes across Windows and Linux checkouts.
 
@@ -378,3 +379,17 @@ remove/change live reviews, and exercise both ordinary and individual-only CLI
 regeneration with only JSON inventory inputs and captured snapshots. The original
 103-test receipts remain historical; the focused overlay module was rerun for this
 loader correction.
+
+### Runtime33 evidence successor
+
+`current-runtime33-checks.json` / `current-runtime33-handoff.md` record the additive
+runtime evidence join. The report published at `4c32f913` retains tested commit
+`d8705c51`, independent of the later UIKit fixture revision. Its full five-child
+runtime-component PASS supersedes the pending NativeSDK5 requirement, without
+changing source dispositions/ported status or completing UIKit/full Telegram IPA.
+
+The original 34 snapshots, old test/check outputs and `current-source-output.sha256`
+remain historical and unchanged. Current Runtime33 output hashes are in the new
+`current-runtime33-output.sha256`; old manifests must not be read as hashes of
+the subsequently extended projections. No generator or runtime code changes were
+needed for this evidence update.

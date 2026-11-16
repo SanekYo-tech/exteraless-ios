@@ -8,9 +8,12 @@ exteraless), поверх — Python-рантайм и портированна�
 
 ## Текущий handoff — 16.11.2026
 
-Координатор: в `5fa35f34` включён сбор независимых native-диагностик;
-[Mac43786995069](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43786995069)
-выполняется. Ниже — подтверждённые результаты предшествующего source/test-среза.
+**[Полный Mac gate33](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43795739683)
+на `d8705c51` — GREEN и независимый PASS:**722 Core /273 Host /30 Hooks,
+23 HNS, пять реальных SDK-процессов и C219. [Проверка артефактов](docs/wave-2/runtime-native-acceptance-33.md).
+UIKit20/434 и новая полная Telegram IPA остаются следующими gates.
+
+### Предшествующий source/test-срез
 
 Статусы CI переданы координатором при назначении и последующем уточнении.
 Окно чтения handoff, ревью и уточнений: **01:26:56–01:32:15 UTC**, без опроса CI.

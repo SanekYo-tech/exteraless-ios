@@ -91,14 +91,14 @@
       "implementation_source_pins": 64,
       "registered_scopes": 39,
       "remaining_source_scopes": 0,
-      "report_documents": 34,
+      "report_documents": 35,
       "source_closed_scopes": 39,
       "verification_promotions": 0
     },
     "input_receipt": {
-      "bytes": 127198,
+      "bytes": 134857,
       "path": "docs/parity/current-source-followups.json",
-      "sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd"
+      "sha256": "e8fe8de2b34d19318cfc88628e0fac687e5b067c162f8c4c86fc1e729d142037"
     },
     "report": "docs/parity/current-source-reconciliation.json"
   },

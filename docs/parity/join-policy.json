@@ -2,7 +2,7 @@
   "schema_version": 1,
   "current_source_overlay": {
     "path": "docs/parity/current-source-followups.json",
-    "sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd"
+    "sha256": "e8fe8de2b34d19318cfc88628e0fac687e5b067c162f8c4c86fc1e729d142037"
   },
   "individual_manifests": [
     {"kind":"sdk","owner":"core-api","path":"docs/wave-2/sdk-symbols/core-api.json","sha256":"27d04bd9b7d39fff971842592982445f2d39e3cf5bda4996eca9ba0b6ee6c783","expected_count":249,"captured_revision":"e16f380836c10de3fb1d08f468f1242788eb245d","inventory_revision":"9bfce05f708fba472ca942bcfe355914847a347d","source_pin_note":"Code/source/test lines are captured Git e16; inventory is Git 9bf; owner boundary remains authoritative."},

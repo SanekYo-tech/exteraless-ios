@@ -11,7 +11,7 @@
     "implementation_source_pins": 64,
     "registered_scopes": 39,
     "remaining_source_scopes": 0,
-    "report_documents": 34,
+    "report_documents": 35,
     "source_closed_scopes": 39,
     "verification_promotions": 0
   },
@@ -3462,6 +3462,14 @@
         "snapshot_path": "docs/parity/source-report-snapshots/e8657e9f7d654a0e0fb24f62f73e9085cca378f1a112bb53172c9388f4345358.md",
         "version_scope": "report-bytes-present-at-f704"
       },
+      "docs/wave-2/runtime-native-acceptance-33.md": {
+        "bytes": 16074,
+        "captured_at": "2026-11-16T03:59:21.386526+00:00",
+        "git_revision": "4c32f9136fabdc46b3e2e33d3117b6879f522ae5",
+        "sha256": "15d27c9dcc9fcf451b3be4d482fdedc3e4efe5b831f2dc87d15497dfd7f411e4",
+        "snapshot_path": "docs/parity/source-report-snapshots/15d27c9dcc9fcf451b3be4d482fdedc3e4efe5b831f2dc87d15497dfd7f411e4.md",
+        "version_scope": "Runtime33 evidence publication; tested code remains d8705c51, not the later report or UIKit fixture revision"
+      },
       "docs/wave-2/sdk-symbols/core-api.json": {
         "bytes": 283885,
         "captured_at": "2026-11-16T01:49:43.708751+00:00",
@@ -3489,23 +3497,131 @@
     },
     "execution_blockers": [
       {
-        "commit": "d296e45695e15f5952f6efd4632808d614591dc2",
-        "id": "Full-Mac-NativeSDK5",
-        "run_id": "43788170016",
-        "scope": "The current full Mac/Host/HNS and five real SDK-child pipeline is active under the coordinator and is not completed. The published d296 Host/UI compiler corrections and separate isolated listener PASS do not constitute its acceptance. No status query was performed by this join.",
+        "id": "PostRuntime33-Telegram-IPA",
+        "scope": "A new full Telegram app/IPA acceptance after the Runtime33 source cohort remains pending. Runtime33's diagnostic Python smoke IPA is not Telegram IPA build40; the last separately accepted full Telegram IPA remains build40/6de4ac36.",
         "source": "coordinator-handoff",
-        "status": "pending-active-coordinator-watched-run"
+        "status": "pending-new-full-Telegram-IPA-acceptance"
       },
       {
-        "commit": "d296e45695e15f5952f6efd4632808d614591dc2",
+        "commit": "84a0456a494f0a6d8ce7df3cfb3a309f51effa23",
         "id": "UIKit-434-scenes",
-        "run_id": "43788169856",
-        "scope": "The successor UIKit run is active after the earlier aquery-before-compile failure and tooling corrections. The 20 scenes / 434 XCTest methods and native frames have no completed acceptance receipt; none were observed here.",
+        "run_id": "43797987677",
+        "scope": "The coordinator reports the UIKit 20-scene / 434-XCTest run active at 84a0456a; no frames or completed UIKit acceptance were supplied. Its source-only MapWeak fixture correction does not replace Runtime33's tested d8705c51 snapshot. This data join did not query the run.",
         "source": "coordinator-handoff",
         "status": "pending-active-coordinator-watched-run"
       }
     ],
     "execution_evidence": [
+      {
+        "anchor": "**Независимый PASS в указанных runtime/native-component границах**:",
+        "bounded_evidence_limits": {
+          "archive_child_payloads_not_locally_rehashed": 5,
+          "full_cohort_verifier": "Fourth/fifth semantic predicates replayed; verify_native_sdk_cohort.verify was not invoked wholesale on unavailable CI filesystem paths",
+          "live_filesystem_predicates_ci_only": 4,
+          "optional_pytest": {
+            "passed": 49,
+            "skip_scope": "12 explicit C-extension fixture cases and one Python3.14 concurrent.interpreters case remain skipped",
+            "skipped": 13,
+            "total": 62
+          },
+          "platform": "SDK children and engine use macOS CPython3.12.10; standalone iOS probes use3.12.16. Darwin FD flags do not meet the actual_ios_fd_paths requirement",
+          "sdk_followup_zip": {
+            "downloaded_range_bytes": 7052333,
+            "full_bytes": 1443986607,
+            "full_crc_sweep_performed": false,
+            "full_digest_locally_recomputed": false,
+            "range_blocks": 53,
+            "selected_files": 49,
+            "selected_uncompressed_bytes": 302515
+          },
+          "staged_alias_copies_not_retained": 9,
+          "ui_and_network": "No full Telegram app/IPA, UIKit scenes/frames, physical-device lifecycle, APNs, live account/RPC/update acceptance inferred",
+          "vendor_payload": "Absent from runtime artifacts/probe IPA; 479 files not locally rehashed and all 12 distribution imports on iOS not established"
+        },
+        "c_probe": {
+          "baseline_callbacks": 169,
+          "callbacks": 219,
+          "owner_bound_callbacks": 41,
+          "platform": "iOS standalone probe; application installation not verified",
+          "terminal_payloads_created": 2,
+          "terminal_payloads_freed": 2
+        },
+        "commit": "d8705c51d4ca4b07730fa6cccc1d9885fb453937",
+        "diagnostic_probe_ipa": {
+          "bytes": 11570004,
+          "frameworks": 55,
+          "mach_o": 56,
+          "scope": "Unsigned Python smoke diagnostic IPA; not the full Telegram IPA build40",
+          "sha256": "9a303832fc4831b8c549924e39f65a97cbc4a18bfd0e4fc1a466e4b2663b98a9"
+        },
+        "fd_cases_are_also_in_host_suite": true,
+        "final_fd_custody": {
+          "capabilities": 0,
+          "file_authorities": 0,
+          "read_tickets": 0,
+          "source_receipts": 0,
+          "stages": 0
+        },
+        "id": "Runtime33-NativeSDK5",
+        "passed_components": {
+          "Core": 722,
+          "FD_cases": 47,
+          "HNS_scenarios": 23,
+          "Hooks": 30,
+          "Host": 273,
+          "Ingress_cases": 7,
+          "Java_codec_cases": 7,
+          "Mode_cases": 4,
+          "native_listener_seconds": 0.191
+        },
+        "publication_commit": "4c32f9136fabdc46b3e2e33d3117b6879f522ae5",
+        "report": "docs/wave-2/runtime-native-acceptance-33.md",
+        "run_id": "43795739683",
+        "runtime_fingerprint_git_matches": {
+          "matched": 629,
+          "revision": "d8705c51d4ca4b07730fa6cccc1d9885fb453937",
+          "total": 629
+        },
+        "scope": "Runtime33/d870: 722 Core / 273 Host / 30 Hooks, HNS23, Java7, FD47, Ingress7, Mode4 and real Darwin listener 0.191 s. Five SDK children passed in 4.227/2.672/0.997/7.159/5.566 s; 35 interpreter / 13 owner lifetimes, five final FD custody counters zero, C219/169 baseline/41 bound and terminal 2/2. This closes the pending NativeSDK5 runtime-component gate only. The full report preserves 13 pytest skips, absent staged/archive/vendor payloads, four CI-only filesystem checks and partial Range retrieval; Darwin FD does not establish iOS FD. UIKit20/434, actual frames and new full Telegram IPA acceptance remain pending.",
+        "sdk_children": [
+          {
+            "budget_seconds": 30,
+            "interpreter_lifetimes": 3,
+            "name": "Initial SDK",
+            "owner_lifetimes": 2,
+            "seconds": 4.227
+          },
+          {
+            "budget_seconds": 30,
+            "interpreter_lifetimes": 4,
+            "name": "TL phase 2",
+            "owner_lifetimes": 2,
+            "seconds": 2.672
+          },
+          {
+            "budget_seconds": 30,
+            "interpreter_lifetimes": 3,
+            "name": "HNS remediation",
+            "owner_lifetimes": 2,
+            "seconds": 0.997
+          },
+          {
+            "budget_seconds": 30,
+            "interpreter_lifetimes": 13,
+            "name": "Archive lifecycle",
+            "owner_lifetimes": 5,
+            "seconds": 7.159
+          },
+          {
+            "budget_seconds": 30,
+            "interpreter_lifetimes": 12,
+            "name": "Elyx developer",
+            "owner_lifetimes": 2,
+            "seconds": 5.566
+          }
+        ],
+        "status": "independent runtime/native-component PASS; five real SDK children complete"
+      },
       {
         "anchor": "| ExteralessCore | 722 | 282/282 |",
         "commit": "5fa35f34aebd578cfc4578abfa45abf358b9a070",
@@ -3614,6 +3730,24 @@
         "source": "coordinator-handoff",
         "status": "failed-before-compile; tooling correction active",
         "successor_run_id": "43788169856"
+      },
+      {
+        "commit": "d296e45695e15f5952f6efd4632808d614591dc2",
+        "id": "Full-Mac-NativeSDK5",
+        "run_id": "43788170016",
+        "scope": "The current full Mac/Host/HNS and five real SDK-child pipeline is active under the coordinator and is not completed. The published d296 Host/UI compiler corrections and separate isolated listener PASS do not constitute its acceptance. No status query was performed by this join.",
+        "source": "coordinator-handoff",
+        "status": "pending-active-coordinator-watched-run",
+        "superseded_by_scoped_evidence": "Runtime33-NativeSDK5"
+      },
+      {
+        "commit": "d296e45695e15f5952f6efd4632808d614591dc2",
+        "id": "UIKit-434-scenes",
+        "run_id": "43788169856",
+        "scope": "The successor UIKit run is active after the earlier aquery-before-compile failure and tooling corrections. The 20 scenes / 434 XCTest methods and native frames have no completed acceptance receipt; none were observed here.",
+        "source": "coordinator-handoff",
+        "status": "pending-active-coordinator-watched-run",
+        "successor_run_id": "43797987677"
       }
     ],
     "generated_capture": {
@@ -3623,6 +3757,19 @@
       "method": "Explicit source/ID selectors and raw read-time report hashes; implementation bytes pinned from immutable f704 Git blobs; no native execution or CI query.",
       "observed_head": "78f37532643004b18e9854607cb77975fc8f65a9"
     },
+    "historical_pending_acceptance": [
+      {
+        "overlay_sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd",
+        "scope": "Prior handoff context, preserved verbatim; subsequent Runtime33 evidence supplies only its exact runtime-component acceptance.",
+        "statements": [
+          "Current plan: 37 labels / 89 sources / 92 classes / 434 XCTest methods, 20 scenes and five real SDK children; source/tooling readiness is not execution.",
+          "Native scene frames observed by this join: none. UIKit/animation/physical device/Telegram network-state acceptance remains separate.",
+          "Build40 is the accepted earlier full IPA; the f704 SDK/Host/UIKit changes require their own full-client and native acceptance receipts.",
+          "Config contract stays 37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40; 508 bindings and 276/0/32 across 308 overloads. No SDK Config input or root pin is repaired by this data task.",
+          "Later scope: Mac 43786995069/5fa35f34 is globally FAILED despite Core722/Hooks30 PASS; isolated Darwin listener 43787862250/bbc54817 passed. Active Mac43788170016 and UIKit43788169856/d296 remain coordinator-watched and unqueried here; full NativeSDK5 is not complete."
+        ]
+      }
+    ],
     "later_evidence_source_deltas": [
       {
         "changes_original_route_assignments": false,
@@ -4008,11 +4155,11 @@
       }
     ],
     "pending_acceptance": [
-      "Current plan: 37 labels / 89 sources / 92 classes / 434 XCTest methods, 20 scenes and five real SDK children; source/tooling readiness is not execution.",
+      "UIKit plan remains 37 labels / 89 sources / 92 classes / 434 XCTest methods and 20 scenes. The separate five-child runtime gate now has Runtime33/d870 scoped PASS; it does not execute this UIKit plan.",
       "Native scene frames observed by this join: none. UIKit/animation/physical device/Telegram network-state acceptance remains separate.",
-      "Build40 is the accepted earlier full IPA; the f704 SDK/Host/UIKit changes require their own full-client and native acceptance receipts.",
+      "Build40/6de4ac36 remains the separately accepted full Telegram IPA. Runtime33's 56-Mach-O/55-framework diagnostic probe IPA does not replace it; new full Telegram app/IPA acceptance is still pending.",
       "Config contract stays 37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40; 508 bindings and 276/0/32 across 308 overloads. No SDK Config input or root pin is repaired by this data task.",
-      "Later scope: Mac 43786995069/5fa35f34 is globally FAILED despite Core722/Hooks30 PASS; isolated Darwin listener 43787862250/bbc54817 passed. Active Mac43788170016 and UIKit43788169856/d296 remain coordinator-watched and unqueried here; full NativeSDK5 is not complete."
+      "Runtime33 retains tested SHA d8705c51d4ca4b07730fa6cccc1d9885fb453937. UIKit43797987677/84a0456a is active as reported, with no frames yet; the later MapWeak fixture correction is not substituted into Runtime33's execution identity."
     ],
     "previous_individual_join": {
       "path": "docs/parity/individual-source-join.json",
@@ -4816,9 +4963,9 @@
     }
   },
   "input_receipt": {
-    "bytes": 127198,
+    "bytes": 134857,
     "path": "docs/parity/current-source-followups.json",
-    "sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd"
+    "sha256": "e8fe8de2b34d19318cfc88628e0fac687e5b067c162f8c4c86fc1e729d142037"
   },
   "kind": "current-review-scoped-source-overlay",
   "report_anchors": [
@@ -5404,6 +5551,13 @@
       "text": "**Вердикт: source-closed** для legacy non-atomic toggle и locked-value/default-presence counterexamples в `1afee5f9`. В этом focused scope оставшихся конкретных P1/P2 не найдено. **Девять новых Core tests и native UI/presence execution здесь не выполнялись.**"
     },
     {
+      "anchor": "**Независимый PASS в указанных runtime/native-component границах**:",
+      "line": 3,
+      "path": "docs/wave-2/runtime-native-acceptance-33.md",
+      "sha256": "15d27c9dcc9fcf451b3be4d482fdedc3e4efe5b831f2dc87d15497dfd7f411e4",
+      "text": "**Независимый PASS в указанных runtime/native-component границах**:"
+    },
+    {
       "anchor": "| ExteralessCore | 722 | 282/282 |",
       "line": 9,
       "path": "docs/wave-2/mac-core-722-acceptance.md",
@@ -5474,6 +5628,6 @@
       "text": "**Независимый PASS в границах runtime/component gate**:"
     }
   ],
-  "report_anchors_fingerprint": "79b3bfd37c318571e06631b85dd6810d7a8118589c749eaaea4f6b04cf80c205",
+  "report_anchors_fingerprint": "2f003ba154af9b088ae285d139b80f405ffffe6a44aede456bbdcb5a8582ec79",
   "schema_version": 1
 }

@@ -1,0 +1,22 @@
+{
+  "documents_after": 35,
+  "documents_before": 34,
+  "f704_source_pins_unchanged": 64,
+  "kind": "runtime33-report-evidence-capture",
+  "old_pending_states_retained_in_history": true,
+  "original_34_document_pins_and_snapshots_unchanged": true,
+  "previous_execution_evidence_unchanged": 10,
+  "previous_overlay_sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd",
+  "publication_commit": "4c32f9136fabdc46b3e2e33d3117b6879f522ae5",
+  "report": "docs/wave-2/runtime-native-acceptance-33.md",
+  "report_bytes": 16074,
+  "report_sha256": "15d27c9dcc9fcf451b3be4d482fdedc3e4efe5b831f2dc87d15497dfd7f411e4",
+  "run_id": "43795739683",
+  "schema_version": 1,
+  "scope": "Raw publication Git bytes copied once locally. No native/runtime test, network, CI query, archive verification or Source SDK map rewrite.",
+  "snapshot": "docs/parity/source-report-snapshots/15d27c9dcc9fcf451b3be4d482fdedc3e4efe5b831f2dc87d15497dfd7f411e4.md",
+  "source_closed_scopes_unchanged": 39,
+  "tested_commit": "d8705c51d4ca4b07730fa6cccc1d9885fb453937",
+  "total_snapshot_bytes": 3523817,
+  "updated_overlay_sha256": "e8fe8de2b34d19318cfc88628e0fac687e5b067c162f8c4c86fc1e729d142037"
+}

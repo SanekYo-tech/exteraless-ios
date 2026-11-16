@@ -1,5 +1,10 @@
 # f704 — current source remediation/evidence DATA overlay
 
+**Runtime33 successor:** [current-runtime33-handoff.md](current-runtime33-handoff.md)
+records the scoped five-child runtime PASS and the remaining UIKit/new Telegram IPA
+gates. The source/hermetic delivery below and its old check/manifest hashes remain
+historical; current output hashes are in `current-runtime33-output.sha256`.
+
 **Готово: 39 effective source-closed scopes; registered source scopes still open — 0.
 Все 17 прежних assigned scopes представлены. Verified/native-verified/ported promotions — 0.**
 
