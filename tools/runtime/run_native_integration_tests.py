@@ -171,6 +171,9 @@ def run_logged(command, cwd, directory, timeout, *, case=None, contract=None, ca
                     raise ValueError('Native test/compiler log exceeded its bounded size')
                 log.write(line)
                 log.flush()
+                # Preserve the last compiler/test events in the Actions log if
+                # the runner disappears before the artifact-upload step.
+                print(line, end='', flush=True)
                 if clock:
                     clock.observe(line, observed)
         if process.wait(timeout=5) != 0:
