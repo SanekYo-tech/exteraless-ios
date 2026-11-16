@@ -21,12 +21,14 @@ Archive/developer fixtures получили штатный vendor root;
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43797987677 /84a0456a выполняется** после Weak-container correction Map fixture |
+| UIKit | **43797987677 /84a0456a failure**: Map прошёл; три TelegramUI diagnostics в Custom cell/reset gate исправлены |
 | План приёмки | 5 real SDK children;434 native XCTest methods;20 записываемых сцен; исполнения/кадры ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
-- UIKit43797987677/84a0456a: `sh_1e2628e14001isHjNPvGQX2TbS`, `uikit-84a0456a-watch.log`.
+- UIKit43797987677 завершён; watcher завершён. CustomCell использует inherited
+  gesture delegate/override; reset caller передаёт underlying AnyObject с nil-preserving
+  Optional.map. `uikit-manager-reset-typecheck.md`; Postbox import checkPASS.
 - Mac43795739683/d8705c51 завершён GREEN; watcher завершён.
 - Compat43795725685/d8705c51 завершён GREEN; watcher завершён.
 - Compat43795070738/78e76dbe завершён GREEN; его watcher завершён.

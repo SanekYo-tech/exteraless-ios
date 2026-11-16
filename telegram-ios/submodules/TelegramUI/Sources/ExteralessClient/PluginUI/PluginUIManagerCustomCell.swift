@@ -3,7 +3,7 @@ import UIKit
 
 /// A table slot for the shipping PluginUIWidgetView/Container renderer. No Python
 /// or factory invocation occurs here, including sizing and resource failures.
-@MainActor final class PluginUIManagerCustomCell: UITableViewCell, UIGestureRecognizerDelegate {
+@MainActor final class PluginUIManagerCustomCell: UITableViewCell {
     private var container: PluginUIWidgetContainer?
     var rootLongAction: (() -> Void)?
     private lazy var rootLongPress: UILongPressGestureRecognizer = {
@@ -59,7 +59,7 @@ import UIKit
         self.rootLongAction = nil
     }
 
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+    override func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard self.rootLongAction != nil else { return false }
         var view = touch.view
         while let current = view, current !== self {

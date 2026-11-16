@@ -27,7 +27,8 @@ public final class SettingsResetIntegration {
         ExteralessSettingsUI.registerActions([
             ExteralessSettingsAction(id: Self.actionID, title: "Reset settings…", section: "General", action: { [weak self] context, presenter in
                 guard let self else { return }
-                let opened = CoreSettingsResetActionGate.open(requested: context, current: self.context, authority: self.authority,
+                let opened = CoreSettingsResetActionGate.open(requested: context as AnyObject,
+                    current: self.context.map { $0 as AnyObject }, authority: self.authority,
                     make: { authority in settingsResetController(context: context, settings: self.settings, authority: authority) },
                     present: { presenter.push($0) })
                 if !opened {
