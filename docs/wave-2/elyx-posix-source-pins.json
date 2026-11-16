@@ -1,21 +1,19 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-posix-report-20261116-2df0648b",
+  "branch": "ci/elyx-fd-final-posix-20261116-86dc4a19",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
     "swift/ExteralessCore": "637a8dde7485c78ef5cfdaa2559651c216d8d09e"
   },
   "handoff_receipt_sha256": "7c9474064d6afede795502b022f8a4e20ecde27fe44d92cd27d88b299fd927d5",
-  "scope": "Owned Linux/POSIX archive and ready Host components; service/engine contract recorders are explicit",
+  "scope": "Sealed native FD provider/registry/Host startup and Foundation ingress on Linux; explicit Python execution and inspector recorders",
   "excluded": [
-    "PluginElyxDeveloperFiles.swift",
-    "PluginElyxDeveloperDescriptor.swift",
-    "PluginElyxDeveloperRegistry*.swift",
-    "PluginElyxDeveloperFilesTests.swift",
-    "Apple/UIKit app",
-    "production native FD authority registry"
+    "C/CPython fifth-child execution",
+    "private app Root/UI/account/listener startup",
+    "Darwin rename/kqueue execution",
+    "shared fifth-child tooling refresh"
   ],
   "bounds_seconds": {
     "python_outer": 120,
@@ -27,11 +25,38 @@
     {
       "path": ".github/workflows/compat-tests.yml",
       "origin": "workflow",
-      "raw_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
-      "raw_bytes": 9687,
-      "canonical_sha256": "c23d06637cc13f9f6320319875d26f36d9a7837ad755de73516b24fde91c9fd5",
-      "canonical_bytes": 9687,
-      "git_blob": "67c2d7ca3cc1b28625a56405388eacd886b98f09"
+      "raw_sha256": "3f4493a07795fb64c8c8b081994aa5ec51a62726e164eda311f8f06d5da86a17",
+      "raw_bytes": 13032,
+      "canonical_sha256": "3f4493a07795fb64c8c8b081994aa5ec51a62726e164eda311f8f06d5da86a17",
+      "canonical_bytes": 13032,
+      "git_blob": "64a68c44122b9c1ae129dd9e14746b72d1bea43c"
+    },
+    {
+      "path": "docs/wave-2/elyx-nfd02-inputs.json",
+      "origin": "sealed-manifest",
+      "raw_sha256": "3d81fa189e30fa98d90c7abc9551b2709e2af8d6a5da8bf2c20b9cea47d342fe",
+      "raw_bytes": 1012,
+      "canonical_sha256": "3d81fa189e30fa98d90c7abc9551b2709e2af8d6a5da8bf2c20b9cea47d342fe",
+      "canonical_bytes": 1012,
+      "git_blob": "37ea889e9a0bfef6f082f0505d25854c98d794f6"
+    },
+    {
+      "path": "docs/wave-2/elyx-source-descriptor-v1.json",
+      "origin": "sealed-manifest",
+      "raw_sha256": "7c1d62d040f75b900bdd0ece50335797fd0596fde5ddb38f8e77b449c3e3c83c",
+      "raw_bytes": 5536,
+      "canonical_sha256": "7c1d62d040f75b900bdd0ece50335797fd0596fde5ddb38f8e77b449c3e3c83c",
+      "canonical_bytes": 5536,
+      "git_blob": "549f4f46be57c4e88f4b90112292386bf43f0a14"
+    },
+    {
+      "path": "docs/wave-2/native-elyx-developer-final-inputs.json",
+      "origin": "sealed-handoff",
+      "raw_sha256": "15082e16ba5fd4d4edcd285ff685d3b7a1b9910a4b71405f47d91e8ae4b290a2",
+      "raw_bytes": 8970,
+      "canonical_sha256": "15082e16ba5fd4d4edcd285ff685d3b7a1b9910a4b71405f47d91e8ae4b290a2",
+      "canonical_bytes": 8970,
+      "git_blob": "cdc060801a43472890b25411121d14a4f4384eac"
     },
     {
       "path": "python/bridge/__init__.py",
@@ -42,7 +67,7 @@
     },
     {
       "path": "python/bridge/_exteraless_bridge.c",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "2d4ea9f3f7f43da2c8c621c90df153a73a15509218639c24e9a7dee1a50326a2",
       "raw_bytes": 131552,
       "canonical_sha256": "2d4ea9f3f7f43da2c8c621c90df153a73a15509218639c24e9a7dee1a50326a2",
@@ -65,7 +90,7 @@
     },
     {
       "path": "python/exteraless_runtime/__init__.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
       "raw_bytes": 18952,
       "canonical_sha256": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
@@ -74,21 +99,21 @@
     },
     {
       "path": "python/exteraless_runtime/_archives.py",
-      "origin": "working-tree",
-      "raw_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
-      "raw_bytes": 67917,
-      "canonical_sha256": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
-      "canonical_bytes": 67917,
-      "git_blob": "e040597787c369e598a96f60027dda9dbce081a6"
+      "origin": "sealed-manifest",
+      "raw_sha256": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "raw_bytes": 69918,
+      "canonical_sha256": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "canonical_bytes": 69918,
+      "git_blob": "d6a703af7d8631e9aaa50de7edf675f82a921312"
     },
     {
       "path": "python/exteraless_runtime/_audit_paths.py",
-      "origin": "working-tree",
-      "raw_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
-      "raw_bytes": 19972,
-      "canonical_sha256": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
-      "canonical_bytes": 19972,
-      "git_blob": "0256fd519439ab2857554b166ae58df5c6974ce1"
+      "origin": "sealed-manifest",
+      "raw_sha256": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "raw_bytes": 19990,
+      "canonical_sha256": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "canonical_bytes": 19990,
+      "git_blob": "2760ebf7ec57f1a463ea4bc4f21434e4c7c49df2"
     },
     {
       "path": "python/exteraless_runtime/_callbacks.py",
@@ -146,7 +171,7 @@
     },
     {
       "path": "python/exteraless_runtime/_developer.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "22611badcf6c3be224e68c3f9acdefeae7edff937e1aa5a278b68b0eed27ff2d",
       "raw_bytes": 4976,
       "canonical_sha256": "22611badcf6c3be224e68c3f9acdefeae7edff937e1aa5a278b68b0eed27ff2d",
@@ -155,7 +180,7 @@
     },
     {
       "path": "python/exteraless_runtime/_elyx_developer.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "a2b999fb1113249c557a5c9fb90e57476b06bac05b597b9bbebb3e688e926690",
       "raw_bytes": 6312,
       "canonical_sha256": "a2b999fb1113249c557a5c9fb90e57476b06bac05b597b9bbebb3e688e926690",
@@ -164,12 +189,21 @@
     },
     {
       "path": "python/exteraless_runtime/_elyx_helpers.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "f9a9cd73cbaf0d7ab987a1158e090935ec4fdd936f837e1801b04a2d4f0abaee",
       "raw_bytes": 905,
       "canonical_sha256": "f9a9cd73cbaf0d7ab987a1158e090935ec4fdd936f837e1801b04a2d4f0abaee",
       "canonical_bytes": 905,
       "git_blob": "2688ac63b0b53a006821dcf896e282fd84914912"
+    },
+    {
+      "path": "python/exteraless_runtime/_elyx_readiness.py",
+      "origin": "sealed-manifest",
+      "raw_sha256": "0e13c61acd071e765eb267d0feaea1bf397314d31d7b37ca5f0b114400ac6d20",
+      "raw_bytes": 2717,
+      "canonical_sha256": "0e13c61acd071e765eb267d0feaea1bf397314d31d7b37ca5f0b114400ac6d20",
+      "canonical_bytes": 2717,
+      "git_blob": "a19c0cc956f2927d560532d8068ceb7997ba25eb"
     },
     {
       "path": "python/exteraless_runtime/_facades.py",
@@ -236,7 +270,7 @@
     },
     {
       "path": "python/exteraless_runtime/_platform.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "2b6050b372f8923bb7efb965bb0b79af73e29dad551e0ff85270359ad4d16932",
       "raw_bytes": 14351,
       "canonical_sha256": "2b6050b372f8923bb7efb965bb0b79af73e29dad551e0ff85270359ad4d16932",
@@ -303,6 +337,15 @@
       "canonical_sha256": "222da84eea828044f5af0e8d034945662fd74aae6414bc91f67d6311f14ef924",
       "canonical_bytes": 8949,
       "git_blob": "91cd9446281a37cbc65950cebcddaa6be775743a"
+    },
+    {
+      "path": "python/runtime/include/EXLPythonBridge.h",
+      "origin": "sealed-manifest",
+      "raw_sha256": "6ecab9d92438e62bd3f0d7218f9646b78f9e3f764cc5d4e9f9e5a78b85b6166d",
+      "raw_bytes": 4964,
+      "canonical_sha256": "6ecab9d92438e62bd3f0d7218f9646b78f9e3f764cc5d4e9f9e5a78b85b6166d",
+      "canonical_bytes": 4964,
+      "git_blob": "d620c1f83addd90d7423a49e80487fce90d1dc4c"
     },
     {
       "path": "python/sdk/.gitignore",
@@ -601,7 +644,7 @@
     },
     {
       "path": "python/virtualjava/proxy.py",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "025acce2920244788ec5f69874228b5db459fc3a3c5b5555edeb85f10d32de92",
       "raw_bytes": 8870,
       "canonical_sha256": "025acce2920244788ec5f69874228b5db459fc3a3c5b5555edeb85f10d32de92",
@@ -646,12 +689,12 @@
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/BridgeServices.swift",
-      "origin": "working-tree",
-      "raw_sha256": "99073359cebca56ff2847ec2a54a78a44d0f40ba719f22eac62a09ea2edc1393",
-      "raw_bytes": 54908,
-      "canonical_sha256": "99073359cebca56ff2847ec2a54a78a44d0f40ba719f22eac62a09ea2edc1393",
-      "canonical_bytes": 54908,
-      "git_blob": "3a9c219fac35534ea950931e14f0d6fc4c70ef25"
+      "origin": "sealed-manifest",
+      "raw_sha256": "73ba9424868df41d20a861fb57e5ffc0362dd7568ce7401d77b7d57a43414694",
+      "raw_bytes": 55795,
+      "canonical_sha256": "73ba9424868df41d20a861fb57e5ffc0362dd7568ce7401d77b7d57a43414694",
+      "canonical_bytes": 55795,
+      "git_blob": "8cbc676deee55f1d97d09f585c202ec99e041cef"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/CPythonXCFrameworkEngine.swift",
@@ -790,7 +833,7 @@
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
       "raw_bytes": 13443,
       "canonical_sha256": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
@@ -817,7 +860,7 @@
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
       "raw_bytes": 14004,
       "canonical_sha256": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
@@ -825,22 +868,58 @@
       "git_blob": "d7e3f5da0a818e6c942f4f893765679aca6b7dcf"
     },
     {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
+      "raw_bytes": 36144,
+      "canonical_sha256": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
+      "canonical_bytes": 36144,
+      "git_blob": "fb099fd4e62b18fbedd98e147ad7cb0c9233af4c"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperFiles.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "56903232ceb9bd6c003fd4bb3b7328e5af363a4a095960969cbc697b56a6338f",
+      "raw_bytes": 53225,
+      "canonical_sha256": "56903232ceb9bd6c003fd4bb3b7328e5af363a4a095960969cbc697b56a6338f",
+      "canonical_bytes": 53225,
+      "git_blob": "645f61aabf5e3fca694ab80d28d408b00efb6cc0"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperReadiness.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "903c323a091c3596b9f3f9bce7a5914fecd2091eabecabb892e73f9a539267e1",
+      "raw_bytes": 3091,
+      "canonical_sha256": "903c323a091c3596b9f3f9bce7a5914fecd2091eabecabb892e73f9a539267e1",
+      "canonical_bytes": 3091,
+      "git_blob": "ac890a1ca8540e9fb29a63a8aa9c14eed2f3140a"
+    },
+    {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperRequest.swift",
-      "origin": "working-tree",
-      "raw_sha256": "82f9655ccd392d4b76cd6df46e547d8d9e1b494a03e5256994f05be7b5e85eca",
-      "raw_bytes": 8644,
-      "canonical_sha256": "82f9655ccd392d4b76cd6df46e547d8d9e1b494a03e5256994f05be7b5e85eca",
-      "canonical_bytes": 8644,
-      "git_blob": "2c91bbca0e2332b80671fd2629459df0d6e617e2"
+      "origin": "sealed-manifest",
+      "raw_sha256": "50aeafa90bfabe8924156bb001623b82d9709addd9902abfa436c740e46ed150",
+      "raw_bytes": 14181,
+      "canonical_sha256": "50aeafa90bfabe8924156bb001623b82d9709addd9902abfa436c740e46ed150",
+      "canonical_bytes": 14181,
+      "git_blob": "daa3649408055ccaaef0d6ee5c29348091a982bf"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperService.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "10a6ee936bcb5d65fc9a046f6ec66865e9322346787069ff969d9320644cee26",
+      "raw_bytes": 10196,
+      "canonical_sha256": "10a6ee936bcb5d65fc9a046f6ec66865e9322346787069ff969d9320644cee26",
+      "canonical_bytes": 10196,
+      "git_blob": "c96dd0e2a4ead9ddfcab461419f30c62026b4d45"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperTransaction.swift",
-      "origin": "working-tree",
-      "raw_sha256": "ed22be0fe9deb8abb60d5614dc29ad96c1a40f4f4b59425654a6fd5d26b650d4",
-      "raw_bytes": 13546,
-      "canonical_sha256": "ed22be0fe9deb8abb60d5614dc29ad96c1a40f4f4b59425654a6fd5d26b650d4",
-      "canonical_bytes": 13546,
-      "git_blob": "c49a85ce1f91035cef3789389c828264b5665cca"
+      "origin": "sealed-manifest",
+      "raw_sha256": "739eb78e179d5130e1f2698e7627ee403f6aae646700758cd224391f2791e652",
+      "raw_bytes": 14759,
+      "canonical_sha256": "739eb78e179d5130e1f2698e7627ee403f6aae646700758cd224391f2791e652",
+      "canonical_bytes": 14759,
+      "git_blob": "9ea53911e2900bb24f63f57aa24efef01c98af5b"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginEventExecution.swift",
@@ -862,12 +941,12 @@
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginHost.swift",
-      "origin": "working-tree",
-      "raw_sha256": "5c256b20fc4ecce58c6e460aa1989836450abf499d9f3c7deb135fd5c2421de6",
-      "raw_bytes": 121819,
-      "canonical_sha256": "5c256b20fc4ecce58c6e460aa1989836450abf499d9f3c7deb135fd5c2421de6",
-      "canonical_bytes": 121819,
-      "git_blob": "2098a1d7d05f2f9efb97451b3cef92f9ad1aa704"
+      "origin": "sealed-manifest",
+      "raw_sha256": "6e3f9692792795761cb882ba040b7f065430a2918669ecdea56aed1d19758fc9",
+      "raw_bytes": 129905,
+      "canonical_sha256": "6e3f9692792795761cb882ba040b7f065430a2918669ecdea56aed1d19758fc9",
+      "canonical_bytes": 129905,
+      "git_blob": "fae347f2f0973782423d2cb1cd9c409f491c9dc2"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginHostLifecycle.swift",
@@ -1051,7 +1130,7 @@
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/HostLifecycleTestSupport.swift",
-      "origin": "working-tree",
+      "origin": "sealed-manifest",
       "raw_sha256": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
       "raw_bytes": 7196,
       "canonical_sha256": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
@@ -1158,13 +1237,31 @@
       "git_blob": "ccfa9c0f18e996f1b2fd0db49b0de1cfc8617ce7"
     },
     {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperActivationTests.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "e96d851e86c12fab2ecf632fb2fdfd82b968c78ada7cbda18a276d74e897fc85",
+      "raw_bytes": 12046,
+      "canonical_sha256": "e96d851e86c12fab2ecf632fb2fdfd82b968c78ada7cbda18a276d74e897fc85",
+      "canonical_bytes": 12046,
+      "git_blob": "7dabcb34c0ea19c34a17522261f8a527b373f971"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
+      "raw_bytes": 48223,
+      "canonical_sha256": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
+      "canonical_bytes": 48223,
+      "git_blob": "a3c61d9c0170def860eca29682e0c733c6e25b39"
+    },
+    {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperTests.swift",
-      "origin": "working-tree",
-      "raw_sha256": "3de3e85b1d06b6edb22c817b5f84e4545ae02a4396ab259288dd131201526c7a",
-      "raw_bytes": 17130,
-      "canonical_sha256": "3de3e85b1d06b6edb22c817b5f84e4545ae02a4396ab259288dd131201526c7a",
-      "canonical_bytes": 17130,
-      "git_blob": "3ba8435fa3034d0eb6963d7afe2cb0b5046730a6"
+      "origin": "sealed-manifest",
+      "raw_sha256": "9c7bf8f9e7fda67d7af92a780b5436c5dfae8a9b62a436b4b069d77275f73927",
+      "raw_bytes": 25803,
+      "canonical_sha256": "9c7bf8f9e7fda67d7af92a780b5436c5dfae8a9b62a436b4b069d77275f73927",
+      "canonical_bytes": 25803,
+      "git_blob": "14bf0aaa45d3027f47a22ce7b49510bf8e0305d3"
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginEventIngressTests.swift",
@@ -1347,6 +1444,47 @@
       "git_blob": "57a2a3312529ef33b9f79e06fe20df6d9a4664d0"
     },
     {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "86d91a889d5a5ce2ef06e259b574a3db2cb95d0f6237203ed5aadd22ff04e482",
+      "raw_bytes": 5031,
+      "canonical_sha256": "86d91a889d5a5ce2ef06e259b574a3db2cb95d0f6237203ed5aadd22ff04e482",
+      "canonical_bytes": 5031,
+      "git_blob": "e1f0e84ca83dc0c16d00b5d78807edb025a31d42"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginElyxDeveloperIngress.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "240832ce4b6b93e2f684e37938c5553de071e8d3394cc60c1d2f1e00b871db36",
+      "raw_bytes": 4208,
+      "canonical_sha256": "240832ce4b6b93e2f684e37938c5553de071e8d3394cc60c1d2f1e00b871db36",
+      "canonical_bytes": 4208,
+      "git_blob": "6652de48a2506f980406673d06493e9da4969941"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIModel.swift",
+      "origin": "parent-driver-support",
+      "canonical_sha256": "934e219922091da4b78aba3cc5a13f0e6ee09a9fdea60afa845baf9b4e357606",
+      "canonical_bytes": 31070,
+      "git_blob": "daa6689fc6ca35c2fa85ac54ee8b7a9286651beb"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift",
+      "origin": "parent-driver-support",
+      "canonical_sha256": "7c0d4e24b3230943b193d56bab5dd844a89ae706f47fb82a01c84009962a336e",
+      "canonical_bytes": 7059,
+      "git_blob": "f8b70661efaec5c284edd6e888db23674f32fdb3"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Tests/PluginElyxDeveloperProtocolTests.swift",
+      "origin": "sealed-manifest",
+      "raw_sha256": "89dc526819e5b4f6185fcafb45f612ed3fee61454ad46a3a7aff1b642948a640",
+      "raw_bytes": 8464,
+      "canonical_sha256": "89dc526819e5b4f6185fcafb45f612ed3fee61454ad46a3a7aff1b642948a640",
+      "canonical_bytes": 8464,
+      "git_blob": "33487087c09053d4e12329fe5bdd2525cd542966"
+    },
+    {
       "path": "tools/compat/tests/conftest.py",
       "origin": "base",
       "canonical_sha256": "09a576673973c53bef1a7be1ce10f5281bded53e5bc25f4d9515eca8f8be98a5",
@@ -1409,12 +1547,12 @@
     },
     {
       "path": "tools/compat/tests/test_ios_elyx_source_authority.py",
-      "origin": "working-tree",
-      "raw_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
-      "raw_bytes": 13677,
-      "canonical_sha256": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
-      "canonical_bytes": 13677,
-      "git_blob": "9b7665d5dd94a00113f0020ac24123c1ed4e6127"
+      "origin": "sealed-manifest",
+      "raw_sha256": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "raw_bytes": 20496,
+      "canonical_sha256": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "canonical_bytes": 20496,
+      "git_blob": "058a2336652e119b39974e82188a4324fea35f2f"
     },
     {
       "path": "tools/compat/tests/test_ios_runtime.py",
@@ -1424,6 +1562,24 @@
       "canonical_sha256": "1936648c55f336a4bac0c9abcedfbb804c424a17dc81eb38eb7a0c95ee1a32c2",
       "canonical_bytes": 44794,
       "git_blob": "357236173c9000da5c7025ca8027f6690d0a1209"
+    },
+    {
+      "path": "tools/compat/tests/test_native_elyx_ingress.py",
+      "origin": "sealed-manifest",
+      "raw_sha256": "6d7955a9009afd8e65610bcca4b99f38b4a1c54d98f6c9e20ce48f47eea39110",
+      "raw_bytes": 2964,
+      "canonical_sha256": "6d7955a9009afd8e65610bcca4b99f38b4a1c54d98f6c9e20ce48f47eea39110",
+      "canonical_bytes": 2964,
+      "git_blob": "75ff3ac1280906d5f2972306824a6334acf85b0a"
+    },
+    {
+      "path": "tools/compat/tests/test_sdk_developer_native.py",
+      "origin": "sealed-manifest",
+      "raw_sha256": "eb57013f9f68a3e6bc1e43946d9e975601fae90f49e29f5d318a04bf3379ed93",
+      "raw_bytes": 2213,
+      "canonical_sha256": "eb57013f9f68a3e6bc1e43946d9e975601fae90f49e29f5d318a04bf3379ed93",
+      "canonical_bytes": 2213,
+      "git_blob": "544738eac54aaf49ab04c61f900f0493f1a9138b"
     },
     {
       "path": "tools/runtime/vendor_dependencies.py",
@@ -1480,5 +1636,130 @@
     "reason": "Native XCTest ran all 53 cases successfully in run 43770534123; serial Swift 6.4 emitted only empty Swift Testing XML, so derive explicitly labeled JUnit from complete native XCTest case events",
     "expected_cases": 53,
     "native_commands_unchanged": true
+  },
+  "native_fd_final": {
+    "parent_verification_commit": "0ad00c3ef8e856d3a95cd33d43a059c4bc0c648f",
+    "captured_utc": "2026-11-16T00:12:57.463811+00:00",
+    "seal_path": "docs/wave-2/native-elyx-developer-final-inputs.json",
+    "seal_sha256": "15082e16ba5fd4d4edcd285ff685d3b7a1b9910a4b71405f47d91e8ae4b290a2",
+    "selected_sealed_sha256": {
+      "swift/PluginHost/Sources/PluginHost/BridgeServices.swift": "73ba9424868df41d20a861fb57e5ffc0362dd7568ce7401d77b7d57a43414694",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxArchiveCandidate.swift": "adebf1552551bbc7faa826821596dfec50fbcded9ed59cc369da6613e8029e21",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperFiles.swift": "56903232ceb9bd6c003fd4bb3b7328e5af363a4a095960969cbc697b56a6338f",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperReadiness.swift": "903c323a091c3596b9f3f9bce7a5914fecd2091eabecabb892e73f9a539267e1",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperRequest.swift": "50aeafa90bfabe8924156bb001623b82d9709addd9902abfa436c740e46ed150",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperService.swift": "10a6ee936bcb5d65fc9a046f6ec66865e9322346787069ff969d9320644cee26",
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperTransaction.swift": "739eb78e179d5130e1f2698e7627ee403f6aae646700758cd224391f2791e652",
+      "swift/PluginHost/Sources/PluginHost/PluginHost.swift": "6e3f9692792795761cb882ba040b7f065430a2918669ecdea56aed1d19758fc9",
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperActivationTests.swift": "e96d851e86c12fab2ecf632fb2fdfd82b968c78ada7cbda18a276d74e897fc85",
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperTests.swift": "9c7bf8f9e7fda67d7af92a780b5436c5dfae8a9b62a436b4b069d77275f73927",
+      "docs/wave-2/elyx-nfd02-inputs.json": "3d81fa189e30fa98d90c7abc9551b2709e2af8d6a5da8bf2c20b9cea47d342fe",
+      "docs/wave-2/elyx-source-descriptor-v1.json": "7c1d62d040f75b900bdd0ece50335797fd0596fde5ddb38f8e77b449c3e3c83c",
+      "python/bridge/_exteraless_bridge.c": "2d4ea9f3f7f43da2c8c621c90df153a73a15509218639c24e9a7dee1a50326a2",
+      "python/exteraless_runtime/__init__.py": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
+      "python/exteraless_runtime/_archives.py": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+      "python/exteraless_runtime/_audit_paths.py": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+      "python/exteraless_runtime/_platform.py": "2b6050b372f8923bb7efb965bb0b79af73e29dad551e0ff85270359ad4d16932",
+      "python/runtime/include/EXLPythonBridge.h": "6ecab9d92438e62bd3f0d7218f9646b78f9e3f764cc5d4e9f9e5a78b85b6166d",
+      "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
+      "swift/PluginHost/Tests/PluginHostTests/HostLifecycleTestSupport.swift": "04169c2cdd57e4c41ae4f30c400ac574242a44e0366121b300b3d6a564991cda",
+      "tools/compat/tests/test_ios_elyx_source_authority.py": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23",
+      "python/exteraless_runtime/_developer.py": "22611badcf6c3be224e68c3f9acdefeae7edff937e1aa5a278b68b0eed27ff2d",
+      "python/exteraless_runtime/_elyx_developer.py": "a2b999fb1113249c557a5c9fb90e57476b06bac05b597b9bbebb3e688e926690",
+      "python/exteraless_runtime/_elyx_helpers.py": "f9a9cd73cbaf0d7ab987a1158e090935ec4fdd936f837e1801b04a2d4f0abaee",
+      "python/exteraless_runtime/_elyx_readiness.py": "0e13c61acd071e765eb267d0feaea1bf397314d31d7b37ca5f0b114400ac6d20",
+      "python/virtualjava/proxy.py": "025acce2920244788ec5f69874228b5db459fc3a3c5b5555edeb85f10d32de92",
+      "tools/compat/tests/test_native_elyx_ingress.py": "6d7955a9009afd8e65610bcca4b99f38b4a1c54d98f6c9e20ce48f47eea39110",
+      "tools/compat/tests/test_sdk_developer_native.py": "eb57013f9f68a3e6bc1e43946d9e975601fae90f49e29f5d318a04bf3379ed93",
+      "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift": "86d91a889d5a5ce2ef06e259b574a3db2cb95d0f6237203ed5aadd22ff04e482",
+      "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginElyxDeveloperIngress.swift": "240832ce4b6b93e2f684e37938c5553de071e8d3394cc60c1d2f1e00b871db36",
+      "telegram-ios/submodules/TelegramUI/Tests/PluginElyxDeveloperProtocolTests.swift": "89dc526819e5b4f6185fcafb45f612ed3fee61454ad46a3a7aff1b642948a640"
+    },
+    "parent_driver_support": {
+      "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIModel.swift": "934e219922091da4b78aba3cc5a13f0e6ee09a9fdea60afa845baf9b4e357606",
+      "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift": "7c0d4e24b3230943b193d56bab5dd844a89ae706f47fb82a01c84009962a336e"
+    },
+    "expected_tests": {
+      "host": {
+        "count": 47,
+        "case_ids": [
+          "PluginElyxDeveloperActivationTests.testConcurrentPublicActivationUsesOneWorkerAndOneProvider",
+          "PluginElyxDeveloperActivationTests.testDispatcherABAInvalidatesReadinessAndOldInvalidationCannotRemoveReplacement",
+          "PluginElyxDeveloperActivationTests.testFileConstructionFailureRetainsDataAndRetriesWithFreshReadiness",
+          "PluginElyxDeveloperActivationTests.testMaintenanceAndHostSwapRevokeOnlyTheirOwnService",
+          "PluginElyxDeveloperActivationTests.testOldQueuedScopeCannotReplaceOrRemoveNewActivation",
+          "PluginElyxDeveloperActivationTests.testPublicActivationRejectsPythonOnlyWrongIdentityAndRepeatedReceiptsThenRetries",
+          "PluginElyxDeveloperFilesTests.testBridgeReadinessAndMetadataFailurePrecedePublication",
+          "PluginElyxDeveloperFilesTests.testCancelledLoadWaiterCannotRecycleRetainedDescriptor",
+          "PluginElyxDeveloperFilesTests.testCancelledWaiterRetainsActualInspectorFDThroughCompletion",
+          "PluginElyxDeveloperFilesTests.testCandidateReplacementBeforeInspectionIsRetainedNotUnlinked",
+          "PluginElyxDeveloperFilesTests.testCandidateSurvivesOldArchiveCachePurge",
+          "PluginElyxDeveloperFilesTests.testCleanupRejectsStageABAAtBothHookBoundaries",
+          "PluginElyxDeveloperFilesTests.testConsentRetirementDuringInspectionDoesNotPublish",
+          "PluginElyxDeveloperFilesTests.testDirectorySyncErrorKeepsStructuredCommittedOutcome",
+          "PluginElyxDeveloperFilesTests.testFailedInitializationCleanupDoesNotDeleteStolenNamespace",
+          "PluginElyxDeveloperFilesTests.testFailedInitializationWithIntactCustodyReclaimsAndPermitsRetry",
+          "PluginElyxDeveloperFilesTests.testForgedFdDigestPurposeAndInspectionContextNeverAuthorize",
+          "PluginElyxDeveloperFilesTests.testInspectorCannotReturnSuccessWithoutNativeResolution",
+          "PluginElyxDeveloperFilesTests.testManifestReadRefusesSourceReplacementAndAllowsRetiringRelease",
+          "PluginElyxDeveloperFilesTests.testManifestRejectsAmbiguousReceiptsAndActualFinishReclaimsTickets",
+          "PluginElyxDeveloperFilesTests.testParentSwapAfterExchangeRollsBackOnlyHeldNamespace",
+          "PluginElyxDeveloperFilesTests.testPreparedCandidateCannotSurviveBridgeEpochReplacement",
+          "PluginElyxDeveloperFilesTests.testRealStagingPublicationAndNewOwnerDescriptor",
+          "PluginElyxDeveloperFilesTests.testRefusedPublicationHasStructuredZeroWriteOutcome",
+          "PluginElyxDeveloperFilesTests.testRegistryRetirementRevokesReaderButRetainsItsRealFDThroughCompletion",
+          "PluginElyxDeveloperFilesTests.testRevocationAtAtomicExchangeRollsBackCapturedInodes",
+          "PluginElyxDeveloperFilesTests.testSHA256KnownVectors",
+          "PluginElyxDeveloperFilesTests.testSameDigestReplacementAndNamespaceABAInvalidateCapture",
+          "PluginElyxDeveloperFilesTests.testSourcesAndStagesHaveIndependentFiniteBudgets",
+          "PluginElyxDeveloperFilesTests.testStageStolenAfterCleanupLookupIsNotRenamedOrDeleted",
+          "PluginElyxDeveloperFilesTests.testStolenStageBeforeCleanupRetainsCandidateAndClosesAdmission",
+          "PluginElyxDeveloperFilesTests.testSymlinkAndParentSwapCannotRedirectReadsOrWrites",
+          "PluginElyxDeveloperFilesTests.testUnrecoverableRacingSlotAndPostCommitFailureReportTruthfully",
+          "PluginElyxDeveloperFilesTests.testV1InspectionClaimUsesExactProofAndChunkTransport",
+          "PluginElyxDeveloperFilesTests.testV1ManifestChunkCheckReleaseExactShapesAndNoRawFD",
+          "PluginElyxDeveloperTests.testActualHostPersistenceFailureAfterPublicationKeepsCommit",
+          "PluginElyxDeveloperTests.testActualHostVerifiedLoadFailureKeepsOriginalTypeAndCommit",
+          "PluginElyxDeveloperTests.testCapturedOwnerReplacementInvalidatesList",
+          "PluginElyxDeveloperTests.testCompareUsesVerifiedSourceHashesAndRechecksSourceVersion",
+          "PluginElyxDeveloperTests.testFailureWireRetainsOriginalFieldsButRedactsNativeProofsAndPaths",
+          "PluginElyxDeveloperTests.testMissingFDAuthorityFailsBeforeReadStageOrPublication",
+          "PluginElyxDeveloperTests.testNativeZIPChangesKeepUnchangedBodiesAndRejectCollisions",
+          "PluginElyxDeveloperTests.testOriginalCommandShapesAndRefusedParameters",
+          "PluginElyxDeveloperTests.testPostPublicationSessionOwnerModelAndSourceGuardsCannotReportNoWrite",
+          "PluginElyxDeveloperTests.testPublicationFailureKeepsEveryTypedOutcomeAtTransactionBoundary",
+          "PluginElyxDeveloperTests.testReloadedTrueRequiresAnActualNewHostOwner",
+          "PluginElyxDeveloperTests.testRetiredSessionOrConsentCannotStageChanges"
+        ],
+        "classes": {
+          "PluginElyxDeveloperFilesTests": 29,
+          "PluginElyxDeveloperActivationTests": 6,
+          "PluginElyxDeveloperTests": 12
+        }
+      },
+      "ingress": {
+        "count": 7,
+        "case_ids": [
+          "PluginElyxDeveloperProtocolTests.testActualIngressLateSessionAndActorGuardsKeepSuccessfulPublication",
+          "PluginElyxDeveloperProtocolTests.testActualIngressPostPublishPersistenceOrLoadErrorKeepsKnownState",
+          "PluginElyxDeveloperProtocolTests.testActualIngressPreAdmissionRefusalNeverExecutesAndReportsZeroWrite",
+          "PluginElyxDeveloperProtocolTests.testActualIngressPreservesAllPublicationFailureOutcomesAndOriginalEnvelope",
+          "PluginElyxDeveloperProtocolTests.testAuthenticationPrecedesElyxCommandParsing",
+          "PluginElyxDeveloperProtocolTests.testNativeResponseDoesNotTurnFailedReloadIntoSuccess",
+          "PluginElyxDeveloperProtocolTests.testSessionRevocationAndUnknownCommandsStayExplicit"
+        ]
+      }
+    },
+    "bounds_seconds": {
+      "host_build": 180,
+      "host_test": 30,
+      "ingress_build": 120,
+      "ingress_test": 30
+    },
+    "ingress_driver": "tools/compat/tests/test_native_elyx_ingress.py",
+    "ingress_linux_capable": true,
+    "context": "Real native provider/registry/filesystem and Host/TLS; fixture inspectors/Python engine recorders remain explicit. Ingress compiles production Foundation code with invocation outcome recorders, no live account/listener."
   }
 }

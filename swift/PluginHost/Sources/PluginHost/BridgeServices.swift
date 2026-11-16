@@ -111,6 +111,7 @@ public final class BridgeServices: @unchecked Sendable {
     private var ownedCallback: OwnedCallback?
     private var additionalProvider: (any PluginBridgeExtension)?
     private var sourceDispatcher: (@Sendable (String, String, String?) -> String)?
+    private var sourceDispatcherEpoch = UUID()
     private var validateOwner: (@Sendable (String, String?, Bool) -> Bool)?
     private var validateEffectOwner: (@Sendable (String, String) -> Bool)?
     private var instances: [Int64: InstanceRecord] = [:]
@@ -203,7 +204,28 @@ public final class BridgeServices: @unchecked Sendable {
     /// permission flags and Python envelope fields cannot issue capabilities.
     public var elyxSourceDispatcher: (@Sendable (String, String, String?) -> String)? {
         get { lock.lock(); defer { lock.unlock() }; return sourceDispatcher }
-        set { lock.lock(); sourceDispatcher = newValue; lock.unlock() }
+        set { lock.lock(); sourceDispatcher = newValue; sourceDispatcherEpoch = UUID(); lock.unlock() }
+    }
+
+    public var elyxSourceDispatcherBindingEpoch: UUID {
+        lock.lock(); defer { lock.unlock() }; return sourceDispatcherEpoch
+    }
+
+    /// Atomic native binding/epoch capture. No Python registration operation.
+    func installElyxSourceDispatcher(_ dispatcher: @escaping @Sendable (String, String, String?) -> String) -> UUID {
+        lock.lock(); defer { lock.unlock() }
+        sourceDispatcher = dispatcher
+        sourceDispatcherEpoch = UUID()
+        return sourceDispatcherEpoch
+    }
+
+    @discardableResult
+    func removeElyxSourceDispatcher(expectedEpoch: UUID) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard sourceDispatcherEpoch == expectedEpoch else { return false }
+        sourceDispatcher = nil
+        sourceDispatcherEpoch = UUID()
+        return true
     }
 
     /// Returns {ok:true,value:...} or {ok:false,error:{kind,message}}.

@@ -546,6 +546,7 @@ public final class PluginHost: @unchecked Sendable {
     private let persistenceLock = NSLock()
     private let delegateBox = WeakDelegateBox()
     private let log: (@Sendable (String) -> Void)?
+    private let elyxDeveloperServices = PluginElyxDeveloperServiceSlot()
 
     /// Делегат UI-слоя (слабая ссылка, вызовы — на главном акторе).
     public var delegate: (any PluginHostDelegate)? {
@@ -699,6 +700,7 @@ public final class PluginHost: @unchecked Sendable {
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
     /// Терминальная операция. При pending/abandoned CPython не финализируется.
     public func stop() async {
+        elyxDeveloperServices.invalidate()
         var loggedWaiting = false
         while true {
             switch lifecycle.requestStop() {
@@ -732,6 +734,7 @@ public final class PluginHost: @unchecked Sendable {
         let seconds = configured.isFinite && configured > 0 ? min(configured, 86_400) : 5
         let deadline = try! PluginLifecycleDeadline(seconds: seconds)
         let active = state.beginStopping()
+        elyxDeveloperServices.invalidate()
         gate.reset()
         await queue.stop()
         await watchdog.stop()
@@ -784,6 +787,7 @@ public final class PluginHost: @unchecked Sendable {
         try Task.checkCancellation()
         let deadline = try PluginLifecycleDeadline(seconds: timeout)
         let context = try lifecycle.beginMaintenance()
+        elyxDeveloperServices.invalidate()
         recomputeGate()
         do {
             try await deadline.run { try await self.lifecycle.waitUntilIdle(context.attempt) }
@@ -918,6 +922,74 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Жизненный цикл плагинов
 
+    /// The actual production activation path: install a new native registry
+    /// binding, probe it on a fresh trusted worker, then construct native FD IO.
+    /// A failed probe remains retryable for this same captured scope.
+    public func activateElyxDeveloper(scope: UUID, isCurrent: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperService {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        guard isRunning, isCurrent() else { throw PluginElyxDeveloperError.stale("Elyx activation has no current running Host") }
+        let service = try elyxDeveloperServices.acquire(host: self, scope: scope, isCurrent: isCurrent,
+            diagnostic: { [log = self.log] text in log?(text) })
+        _ = try await service.prepare()
+        guard isCurrent(), service.isActive else { throw PluginElyxDeveloperError.stale("Elyx activation scope retired") }
+        return service
+    }
+
+    /// Native-only, synchronous revocation before mode/context/Host transitions.
+    public func deactivateElyxDeveloper(scope: UUID? = nil) { elyxDeveloperServices.invalidate(scope: scope) }
+
+    /// No source file, plugin, archive entry or Python mapping is evaluated.
+    /// The probe's unknown-ticket check must reach this exact installed registry.
+    public func probeElyxSourceReadiness(registry: PluginElyxDeveloperDescriptorRegistry, bindingEpoch: UUID,
+                                         shouldExecute: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperBridgeReadiness {
+        let activity = try lifecycle.enter()
+        let retained = PluginInvocationRetention(batch: nil) { activity.finish() }
+        let cancellation = PluginEventRevocation(external: shouldExecute)
+        let handle = PluginElyxProbeHandle()
+        let challenge = try registry.beginReadinessChallenge()
+        let current: @Sendable () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return self.isRunning && shouldExecute() && cancellation.error == nil
+                && self.bridge.elyxSourceDispatcherBindingEpoch == bindingEpoch
+        }
+        let timeout = min(8, max(0.1, configuration.interpreters.callTimeout))
+        do {
+            return try await withTaskCancellationHandler(operation: {
+                try await withDispatchTimeout(timeout) { [self, retained] in
+                    defer { withExtendedLifetime(retained) {}; challenge.finished() }
+                    guard current() else { throw PluginElyxDeveloperError.stale("Elyx readiness retired before inspector creation") }
+                    var policy = PythonInterpreterConfiguration()
+                    policy.allowThreads = false
+                    let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
+                        bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
+                    handle.set(inspector)
+                    do {
+                        let source = "__import__('exteraless_runtime._elyx_readiness', fromlist=['probe_json']).probe_json("
+                            + PluginRuntimeScript.quote(challenge.nonce) + ")"
+                        let output = try await self.interpreters.invoke(inspector, script: source, shouldExecute: {
+                            PluginElyxDeveloperDescriptorExecution.install(nil)
+                            guard current() else { return false }
+                            PluginElyxDeveloperDescriptorExecution.install(.inspection(challenge.context), isCurrent: current)
+                            return true
+                        }, maintenanceEpoch: nil, onExecutionFinished: {
+                            PluginElyxDeveloperDescriptorExecution.install(nil)
+                            challenge.finished()
+                            retained.nativeFinished()
+                        })
+                        await self.interpreters.destroy(inspector)
+                        guard current() else { throw PluginElyxDeveloperError.stale("Elyx readiness retired before its receipt") }
+                        return try challenge.validate(output, registryID: registry.identifier, epoch: bindingEpoch)
+                    } catch { await self.interpreters.destroy(inspector); throw error }
+                }
+            }, onCancel: { cancellation.revoke(.superseded("Elyx readiness waiter cancelled")) })
+        } catch is DispatchTimeoutError {
+            cancellation.revoke(.timeout("Elyx readiness"))
+            if let inspector = handle.current { await interpreters.abandon(inspector) }
+            throw PluginHostError.timeout("Elyx source readiness")
+        }
+    }
+
     /// Native authenticated ingress captures these values synchronously.
     /// This API and the file capabilities have no Python bridge registration.
     public func elyxDeveloperTargets(_ request: PluginElyxDeveloperRequest) throws -> [PluginElyxDeveloperTarget] {
@@ -957,11 +1029,25 @@ public final class PluginHost: @unchecked Sendable {
         let inspector = try await interpreters.createInterpreter(for: "exteralessMetadataInspector",
             bootstrapScript: configuration.runtime.metadataBootstrapScript(), configuration: policy)
         do {
+            guard let issued = descriptor as? PluginElyxDeveloperDescriptor else {
+                throw PluginElyxDeveloperError.stale("inspection requires a native-issued descriptor lease")
+            }
+            let consumer = try issued.bindNativeInspection()
             let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['inspect_fd_json']).inspect_fd_json("
                 + PluginRuntimeScript.quote(descriptorJSON) + ")"
             let output = try await interpreters.invoke(inspector, script: source,
-                shouldExecute: { shouldExecute() && (try? descriptor.checkCurrent()) != nil }, maintenanceEpoch: nil,
-                onExecutionFinished: { withExtendedLifetime(descriptor) {} })
+                shouldExecute: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    guard shouldExecute(), (try? descriptor.checkCurrent()) != nil else { return false }
+                    PluginElyxDeveloperDescriptorExecution.install(consumer, isCurrent: {
+                        shouldExecute() && (try? descriptor.checkCurrent()) != nil
+                    })
+                    return true
+                }, maintenanceEpoch: nil,
+                onExecutionFinished: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    withExtendedLifetime(descriptor) {}
+                })
             await interpreters.destroy(inspector)
             guard shouldExecute() else { throw PluginElyxDeveloperError.stale("Elyx inspection scope retired") }
             return try PluginRuntimeScript.metadata(output, format: format)
@@ -970,49 +1056,58 @@ public final class PluginHost: @unchecked Sendable {
 
     public func elyxDeveloper(_ request: PluginElyxDeveloperRequest, targets: [PluginElyxDeveloperTarget], account: Int32,
                               files: (any PluginElyxDeveloperFileAuthority)?, deadline: TimeInterval,
-                              shouldExecute: @escaping @Sendable () -> Bool) async throws -> [String: PluginJSONValue] {
-        let activity = try lifecycle.enter()
-        defer { activity.finish() }
-        guard account >= 0 else { throw PluginElyxDeveloperError.malformed("developer account must be a nonnegative Int32") }
-        let live: @Sendable () -> Bool = { shouldExecute() && ProcessInfo.processInfo.systemUptime < deadline && self.state.isRunning }
-        return try await PluginElyxDeveloperTransaction.run(request, targets: targets, files: files,
-            current: { self.isCurrentElyxDeveloperTarget($0) },
-            installedCurrent: { installed, consent in
-                guard let plugin = self.state.plugin(id: installed.plugin.id), PluginElyxDeveloperTarget.sameInstallation(plugin, installed.plugin) else { return false }
-                return self.currentCallbackOwner(id: plugin.id) == installed.owner && self.permissions.snapshot(plugin.id) == consent
-            }, session: live,
-            read: { target, digest in
-                guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired before worker admission") }
-                let name = digest == nil ? "_elyx_developer.read_json" : "_elyx_developer.manifest_json"
-                var args = [target.plugin.id, target.owner.wireToken]
-                if let digest { args.append(digest) }
-                args.append(String(account))
-                let output = try await self.invokePlugin(target.plugin, PluginRuntimeScript.call(name, args),
-                    expectedHandle: target.owner.interpreter,
-                    shouldExecute: { live() && self.isCurrentElyxDeveloperTarget(target) },
-                    timeout: min(self.configuration.interpreters.callTimeout, max(0.01, deadline - ProcessInfo.processInfo.systemUptime)))
-                guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired after worker read") }
-                return output
-            }, ping: {
-                guard live() else { throw PluginElyxDeveloperError.stale("Elyx ping session retired") }
-                var policy = PythonInterpreterConfiguration()
-                policy.allowThreads = false
-                let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
-                    bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
-                do {
-                    let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['ping_json']).ping_json()"
-                    let value = try await self.interpreters.invoke(inspector, script: source, shouldExecute: live)
-                    await self.interpreters.destroy(inspector)
-                    return value
-                } catch { await self.interpreters.destroy(inspector); throw error }
-            }, publish: { target, source, prepared in
-                try await self.publishElyxDeveloper(target: target, source: source, prepared: prepared, shouldExecute: live)
-            })
+                              shouldExecute: @escaping @Sendable () -> Bool,
+                              publication: PluginElyxDeveloperPublicationState? = nil) async throws -> [String: PluginJSONValue] {
+        let publication = publication ?? (request.kind == .changes ? PluginElyxDeveloperPublicationState(pluginId: request.pluginId) : nil)
+        do {
+            let activity = try lifecycle.enter()
+            defer { activity.finish() }
+            guard account >= 0 else { throw PluginElyxDeveloperError.malformed("developer account must be a nonnegative Int32") }
+            let live: @Sendable () -> Bool = { shouldExecute() && ProcessInfo.processInfo.systemUptime < deadline && self.state.isRunning }
+            return try await PluginElyxDeveloperTransaction.run(request, targets: targets, files: files,
+                current: { self.isCurrentElyxDeveloperTarget($0) },
+                installedCurrent: { installed, consent in
+                    guard let plugin = self.state.plugin(id: installed.plugin.id), PluginElyxDeveloperTarget.sameInstallation(plugin, installed.plugin) else { return false }
+                    return self.currentCallbackOwner(id: plugin.id) == installed.owner && self.permissions.snapshot(plugin.id) == consent
+                }, session: live,
+                read: { target, digest in
+                    guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired before worker admission") }
+                    let name = digest == nil ? "_elyx_developer.read_json" : "_elyx_developer.manifest_json"
+                    var args = [target.plugin.id, target.owner.wireToken]
+                    if let digest { args.append(digest) }
+                    args.append(String(account))
+                    let output = try await self.invokePlugin(target.plugin, PluginRuntimeScript.call(name, args),
+                        expectedHandle: target.owner.interpreter,
+                        shouldExecute: { live() && self.isCurrentElyxDeveloperTarget(target) },
+                        timeout: min(self.configuration.interpreters.callTimeout, max(0.01, deadline - ProcessInfo.processInfo.systemUptime)))
+                    guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired after worker read") }
+                    return output
+                }, ping: {
+                    guard live() else { throw PluginElyxDeveloperError.stale("Elyx ping session retired") }
+                    var policy = PythonInterpreterConfiguration()
+                    policy.allowThreads = false
+                    let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
+                        bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
+                    do {
+                        let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['ping_json']).ping_json()"
+                        let value = try await self.interpreters.invoke(inspector, script: source, shouldExecute: live)
+                        await self.interpreters.destroy(inspector)
+                        return value
+                    } catch { await self.interpreters.destroy(inspector); throw error }
+                }, publish: { target, source, prepared in
+                    guard let publication else { throw PluginHostError.internalInconsistency("missing native publication state") }
+                    return try await self.publishElyxDeveloper(target: target, source: source, prepared: prepared, shouldExecute: live, publication: publication)
+                }, publication: publication)
+        } catch {
+            if let publication { throw publication.failure(error) }
+            throw error
+        }
     }
 
     private func publishElyxDeveloper(target: PluginElyxDeveloperTarget, source: any PluginElyxDeveloperSource,
                                       prepared: any PluginElyxDeveloperPrepared,
-                                      shouldExecute: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperInstalled {
+                                      shouldExecute: @escaping @Sendable () -> Bool,
+                                      publication: PluginElyxDeveloperPublicationState) async throws -> PluginElyxDeveloperInstalled {
         try Task.checkCancellation()
         try state.beginMutation(target.plugin.id)
         defer { state.endMutation(target.plugin.id) }
@@ -1042,21 +1137,26 @@ public final class PluginHost: @unchecked Sendable {
         guard publishCurrent() else { throw PluginElyxDeveloperError.stale("Elyx publication scope retired") }
         try source.checkCurrent()
         try prepared.checkBeforePublication()
-        try prepared.publish(shouldExecute: publishCurrent)
-        try prepared.checkPublished()
-        // Consent is preserved exactly. Metadata requests never select a new tier
-        // or grant. The captured revision is checked at publication and load.
-        plugin = try persistInstalledPlugin(plugin)
-        let loadCurrent: @Sendable () -> Bool = {
-            shouldExecute() && self.permissions.snapshot(target.plugin.id) == target.consent
-                && (try? prepared.checkPublished()) != nil
-        }
-        if plugin.enabled {
-            plugin = await loadPlugin(plugin, duringMutation: true, shouldExecute: loadCurrent, verifiedArchive: prepared)
-        }
-        notifyReload()
-        guard loadCurrent() else { throw PluginElyxDeveloperError.stale("Elyx installed source/session retired before receipt") }
-        return PluginElyxDeveloperInstalled(plugin: plugin, owner: currentCallbackOwner(id: plugin.id))
+        do {
+            try prepared.publish(shouldExecute: publishCurrent)
+            publication.record(.committed)
+            try prepared.checkPublished()
+            // Consent is preserved exactly. Metadata requests never select a new tier
+            // or grant. The captured revision is checked at publication and load.
+            plugin = try persistInstalledPlugin(plugin)
+            let loadCurrent: @Sendable () -> Bool = {
+                shouldExecute() && self.permissions.snapshot(target.plugin.id) == target.consent
+                    && (try? prepared.checkPublished()) != nil
+            }
+            if plugin.enabled {
+                plugin = await loadPlugin(plugin, duringMutation: true, shouldExecute: loadCurrent, verifiedArchive: prepared,
+                                          onFailure: { publication.recordLoadFailure($0) })
+            }
+            notifyReload()
+            if let failure = publication.loadFailure { throw failure }
+            guard loadCurrent() else { throw PluginElyxDeveloperError.stale("Elyx installed source/session retired before receipt") }
+            return PluginElyxDeveloperInstalled(plugin: plugin, owner: currentCallbackOwner(id: plugin.id))
+        } catch { throw publication.failure(error) }
     }
 
     /// Static SDK metadata inspection (source AST or bounded Elyx ZIP data).
@@ -1601,7 +1701,8 @@ public final class PluginHost: @unchecked Sendable {
     @discardableResult
     private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false,
                             shouldExecute: @escaping @Sendable () -> Bool = { true },
-                            verifiedArchive: (any PluginElyxDeveloperPrepared)? = nil) async -> Plugin {
+                            verifiedArchive: (any PluginElyxDeveloperPrepared)? = nil,
+                            onFailure: (@Sendable (Error) -> Void)? = nil) async -> Plugin {
         var plugin = plugin
         var created: InterpreterHandle?
         var publishedHandle = false
@@ -1612,6 +1713,7 @@ public final class PluginHost: @unchecked Sendable {
         } catch {
             // A rejected duplicate owns no generation and must not publish a
             // failed copy over an active/in-progress load or release its handles.
+            onFailure?(error)
             log?("PluginHost skipped load \(plugin.id): \(error)")
             return state.plugin(id: plugin.id) ?? plugin
         }
@@ -1660,6 +1762,7 @@ public final class PluginHost: @unchecked Sendable {
                 throw PluginHostError.superseded("Load owner was retired: \(plugin.id)")
             }
         } catch {
+            onFailure?(error)
             var expectedForFailure = created
             if let created {
                 if await unloadPlugin(id: plugin.id, expectedHandle: created, duringMutation: duringMutation) {
@@ -2001,6 +2104,16 @@ public final class PluginHost: @unchecked Sendable {
                 // the same handle, never resolve pluginId to a newer interpreter.
                 try self.state.checkInvocation(handle, allowUnloading: allowUnloading)
                 return try await self.interpreters.invoke(handle, script: script, shouldExecute: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    let elyxConsumer: PluginElyxDeveloperDescriptorConsumer?
+                    if let retainingElyxSource {
+                        guard let issued = retainingElyxSource as? PluginElyxDeveloperDescriptor,
+                              let consumer = try? issued.nativeLoadConsumer() else { return false }
+                        elyxConsumer = consumer
+                    } else if let target = self.state.target(id: plugin.id, expected: handle, allowLoading: true) {
+                        elyxConsumer = .owner(CallbackOwner(wireToken: target.wireToken,
+                            hostIdentity: self.callbackHostIdentity, interpreter: handle))
+                    } else { elyxConsumer = nil }
                     // Recheck after the FIFO wait, on the actual owner worker.
                     guard invocationCancellation.error == nil,
                           (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil,
@@ -2010,10 +2123,15 @@ public final class PluginHost: @unchecked Sendable {
                         return false
                     }
                     PluginTLNativeOrigin.install(originScope)
+                    PluginElyxDeveloperDescriptorExecution.install(elyxConsumer, isCurrent: {
+                        invocationCancellation.error == nil && shouldExecute()
+                            && (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil
+                    })
                     PluginNativeExecutionContext.install(batch?.revocation ?? (settingsEffectGuard == nil ? nil : invocationCancellation))
                     return true
                 }, maintenanceEpoch: maintenanceEpoch, onExecutionFinished: {
                     retained.nativeFinished()
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
                     PluginTLNativeOrigin.install(nil)
                     PluginNativeExecutionContext.install(nil)
                 })

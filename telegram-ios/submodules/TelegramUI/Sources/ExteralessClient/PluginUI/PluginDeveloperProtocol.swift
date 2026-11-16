@@ -52,7 +52,12 @@ enum PluginDeveloperProtocol {
     static func response(id: PluginUIJSON, value: [String: PluginUIJSON]? = nil, error: String? = nil) -> PluginUIJSON {
         var result = value ?? [:]
         result["#"] = id
-        result["ok"] = .bool(error == nil)
+        if error != nil { result["ok"] = .bool(false) }
+        else if result["ok"] == nil { result["ok"] = .bool(true) }
+        else if result["ok"]?.bool == nil {
+            result["ok"] = .bool(false)
+            result["error"] = .string("Malformed developer response status")
+        }
         if let error { result["error"] = .string(error) }
         return .object(result)
     }

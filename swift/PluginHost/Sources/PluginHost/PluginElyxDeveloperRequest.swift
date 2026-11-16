@@ -135,21 +135,110 @@ public struct PluginElyxChange: Sendable {
 public struct PluginElyxDeveloperError: Error, Sendable, CustomStringConvertible {
     public let kind: String
     public let message: String
+    public init(kind: String, message: String) { self.kind = kind; self.message = message }
     public var description: String { "\(kind): \(message)" }
     public static func malformed(_ message: String) -> Self { .init(kind: "MalformedRequest", message: message) }
     public static func unsupported(_ message: String) -> Self { .init(kind: "Unimplemented", message: message) }
     public static func stale(_ message: String) -> Self { .init(kind: "Superseded", message: message) }
     public static func unavailable(_ message: String) -> Self { .init(kind: "ServiceUnavailable", message: message) }
 
-    public static func response(_ error: Error, request: PluginElyxDeveloperRequest?) -> [String: PluginJSONValue] {
-        let failure = error as? Self
-        var value: [String: PluginJSONValue] = ["ok": .bool(false), "error": .string(String(describing: error)),
-                                               "error_kind": .string(failure?.kind ?? "RuntimeError")]
-        if request?.kind == .changes {
-            value["plugin_id"] = request?.pluginId.map(PluginJSONValue.string) ?? .null
+    public static func response(_ error: Error, request: PluginElyxDeveloperRequest?,
+                                publication: PluginElyxDeveloperPublicationState? = nil) -> [String: PluginJSONValue] {
+        let state = publication ?? (request?.kind == .changes ? PluginElyxDeveloperPublicationState(pluginId: request?.pluginId) : nil)
+        let contextual = state?.failure(error) ?? (error as? PluginElyxDeveloperOperationFailure)
+        let failure = contextual ?? PluginElyxDeveloperOperationFailure(error, pluginId: request?.pluginId, outcome: nil)
+        var value: [String: PluginJSONValue] = ["ok": .bool(false), "error": .string(failure.message), "error_kind": .string(failure.kind)]
+        if request?.kind == .changes || failure.outcome != nil {
+            value["plugin_id"] = (request?.pluginId ?? failure.pluginId).map(PluginJSONValue.string) ?? .null
             value["reloaded"] = .bool(false)
-            value["errors"] = .array([.string(String(describing: error))])
+            value["errors"] = .array([.string(failure.message)])
+        }
+        if let outcome = failure.outcome {
+            value["publication_outcome"] = .string(outcome.rawValue)
+            value["source_changed"] = PluginElyxDeveloperPublicationState.changed(outcome)
         }
         return value
+    }
+}
+
+/// Native commit knowledge follows the whole invocation through persistence,
+/// load and final actor/session guards. It never derives authority from request
+/// fields, nor converts a successful publication into a later no-write refusal.
+public final class PluginElyxDeveloperPublicationState: @unchecked Sendable {
+    public let pluginId: String?
+    private let lock = NSLock()
+    private var value = PluginElyxDeveloperPublicationFailure.Outcome.refused
+    private var loadError: PluginElyxDeveloperOperationFailure?
+    public init(pluginId: String?) {
+        self.pluginId = pluginId.flatMap { Plugin.isValidID($0, format: .elyx) && !Plugin.isReservedID($0) ? $0 : nil }
+    }
+    public var outcome: PluginElyxDeveloperPublicationFailure.Outcome { lock.lock(); defer { lock.unlock() }; return value }
+    public func record(_ next: PluginElyxDeveloperPublicationFailure.Outcome) {
+        lock.lock(); defer { lock.unlock() }
+        if next == .recoveryRequired { value = next }
+        else if value != .recoveryRequired, next == .committed { value = next }
+        else if value == .refused { value = next }
+    }
+    var loadFailure: PluginElyxDeveloperOperationFailure? { lock.lock(); defer { lock.unlock() }; return loadError }
+    func recordLoadFailure(_ error: Error) {
+        let failure = failure(error)
+        lock.lock(); if loadError == nil { loadError = failure }; lock.unlock()
+    }
+    public func recordReply(_ reply: [String: PluginJSONValue]) {
+        if case let .string(text)? = reply["publication_outcome"], let value = PluginElyxDeveloperPublicationFailure.Outcome(rawValue: text) { record(value) }
+        else if reply["source_changed"] == .bool(true) { record(.committed) }
+    }
+    public func failure(_ error: Error) -> PluginElyxDeveloperOperationFailure {
+        if let file = error as? PluginElyxDeveloperPublicationFailure { record(file.outcome) }
+        if let operation = error as? PluginElyxDeveloperOperationFailure, let prior = operation.outcome { record(prior) }
+        return PluginElyxDeveloperOperationFailure(error, pluginId: pluginId, outcome: outcome)
+    }
+    public static func changed(_ outcome: PluginElyxDeveloperPublicationFailure.Outcome) -> PluginJSONValue {
+        switch outcome {
+        case .committed: return .bool(true)
+        case .refused, .rolledBack: return .bool(false)
+        case .recoveryRequired: return .null
+        }
+    }
+}
+
+public struct PluginElyxDeveloperOperationFailure: Error, Sendable, CustomStringConvertible {
+    public let kind: String
+    public let message: String
+    public let pluginId: String?
+    public let outcome: PluginElyxDeveloperPublicationFailure.Outcome?
+    public var description: String { message }
+
+    init(_ error: Error, pluginId: String?, outcome: PluginElyxDeveloperPublicationFailure.Outcome?) {
+        self.pluginId = pluginId ?? (error as? Self)?.pluginId
+        self.outcome = outcome ?? (error as? Self)?.outcome ?? (error as? PluginElyxDeveloperPublicationFailure)?.outcome
+        let raw: String
+        if let value = error as? Self { kind = value.kind; raw = value.message }
+        else if let value = error as? PluginElyxDeveloperError { kind = value.kind; raw = value.description }
+        else if let value = error as? PluginElyxDeveloperPublicationFailure { kind = value.kind; raw = value.description }
+        else if let value = error as? BridgeFailure { kind = value.kind; raw = value.description }
+        else if let value = error as? PluginHostError {
+            switch value {
+            case .superseded: kind = "Superseded"
+            case .timeout: kind = "Timeout"
+            case .invalidPlugin: kind = "MalformedRequest"
+            case .notRunning: kind = "ServiceUnavailable"
+            default: kind = "RuntimeError"
+            }
+            raw = String(describing: value)
+        } else if error is CancellationError {
+            kind = "Superseded"; raw = String(describing: error)
+        } else { kind = "RuntimeError"; raw = String(describing: error) }
+        message = Self.publicMessage(raw)
+    }
+
+    public static func publicMessage(_ raw: String) -> String {
+        var text = raw.replacingOccurrences(of: "(?i)\\b[0-9a-f]{64}\\b", with: "<native proof>", options: .regularExpression)
+        text = text.replacingOccurrences(of: "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b", with: "<native epoch>", options: .regularExpression)
+        // Include whitespace inside paths from Foundation errors/tracebacks;
+        // stopping at the first space would disclose the rest of a private path.
+        text = text.replacingOccurrences(of: #"(?<![A-Za-z0-9])(?:file://)?(?:/|[A-Za-z]:[\\/])[^\r\n\"'<>]*"#,
+            with: "<private path>", options: .regularExpression)
+        return String(decoding: text.utf8.prefix(4096), as: UTF8.self)
     }
 }

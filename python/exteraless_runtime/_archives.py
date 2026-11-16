@@ -691,6 +691,56 @@ def read_metadata(path, string_lookup=None):
     return snapshot.metadata if string_lookup is None else _sdk().metadata.build_metadata(snapshot.raw_metadata, string_lookup)
 
 
+def _preflight_load_policy(inspection, dependencies):
+    """Known admission constraints, without entry execution or path mutation.
+
+    The approved dependency inventory is an explicit caller-owned input. This
+    function neither discovers/installs packages nor grants permissions. Ordinary
+    metadata preview deliberately does not call it; FD candidate inspection and
+    the actual SDK record loader both do.
+    """
+    metadata = inspection.metadata
+    if metadata["requires"]:
+        raise UnsupportedSurfaceError("Elyx requires cross-plugin imports have no iOS cross-owner module provider: "
+            + ", ".join(metadata["requires"]) + "; dependency URLs are metadata only")
+    for wheel in inspection.wheels:
+        if wheel.requires_python:
+            try:
+                from packaging.specifiers import InvalidSpecifier, SpecifierSet
+                from packaging.version import Version
+            except ImportError as error:
+                raise UnsupportedSurfaceError("bundled packaging is unavailable for local wheel Requires-Python") from error
+            current = Version(".".join(map(str, sys.version_info[:3])))
+            try:
+                supported = SpecifierSet(wheel.requires_python).contains(current)
+            except InvalidSpecifier as error:
+                raise UnsupportedSurfaceError(f"invalid local wheel Requires-Python {wheel.requires_python!r}: {error}") from error
+            if not supported:
+                raise UnsupportedSurfaceError(f"local wheel requires Python {wheel.requires_python}; running {current}")
+    dependencies.ensure_requirements(metadata["id"], metadata["requirements"])
+    for wheel in inspection.wheels:
+        dependencies.ensure_requirements(metadata["id"], wheel.requirements)
+
+
+def _inspection_dependencies():
+    """Read the existing approved bundle and snapshot only its policy metadata."""
+    from email.message import Message
+    from . import _dependencies
+    provided = _dependencies.create_provider()
+    distributions = {}
+    for name, distribution in provided.distributions.items():
+        source = distribution.metadata
+        metadata = Message()
+        for key in ("Name", "Requires-Python", "Provides-Extra"):
+            for value in source.get_all(key, []):
+                metadata[key] = value
+        distributions[name] = SimpleNamespace(version=distribution.version,
+            metadata=metadata, requires=tuple(distribution.requires or ()))
+    # No vendor path restoration or lazy filesystem reads occur in the shared
+    # preflight. This is the same read-only version/marker resolver used at load.
+    return _dependencies.ProvidedDependencies(distributions)
+
+
 def _source_json(value):
     result = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     if len(result.encode("utf-8")) > 4096:
@@ -822,6 +872,7 @@ def inspect_developer_descriptor(descriptor):
         inspection = _inspect_archive_bytes("<native-elyx-inspection>." + descriptor["format"], reader.read())
         if inspection.metadata["id"] != descriptor["plugin_id"]:
             raise ArchiveValidationError("inspected native archive ID differs from its capability")
+        _preflight_load_policy(inspection, _inspection_dependencies())
         reader.check()
         return inspection.metadata
 
@@ -910,7 +961,7 @@ class _Directory:
         # Only documented aliases at the actual OS root may be followed. Their
         # link inode/value is pinned, and /private plus all descendants are opened
         # with openat(NO_FOLLOW). No arbitrary descendant symlink is canonicalized.
-        if sys.platform == "darwin" and parts and parts[0] in ("var", "tmp", "etc"):
+        if sys.platform in ("darwin", "ios") and parts and parts[0] in ("var", "tmp", "etc"):
             name = parts[0]
             info = root.stat(name)
             if stat.S_ISLNK(info.st_mode):
@@ -1203,19 +1254,9 @@ class ArchiveAdapter:
         self._check()
         if self.snapshot is None or os.path.abspath(path) != self.snapshot.path:
             raise RuntimeStateError("Elyx SDK load requires the host's inspected archive snapshot")
-        metadata = self.snapshot.metadata
-        if metadata["requires"]:
-            raise UnsupportedSurfaceError("Elyx requires cross-plugin imports have no iOS cross-owner module provider: "
-                + ", ".join(metadata["requires"]) + "; dependency URLs are metadata only")
         provider = self.platform.dependencies
         provider.restore_path()
-        provider.ensure_requirements(self.platform.plugin_id, metadata["requirements"])
-        for wheel in self.snapshot.wheels:
-            provider.ensure_requirements(self.platform.plugin_id, wheel.requirements)
-            if wheel.requires_python:
-                from packaging.specifiers import SpecifierSet
-                if not SpecifierSet(wheel.requires_python).contains(".".join(map(str, sys.version_info[:3]))):
-                    raise UnsupportedSurfaceError(f"local wheel requires Python {wheel.requires_python}")
+        _preflight_load_policy(self.snapshot, provider)
         return self.original_load(record, path)
 
     def _open(self, path):

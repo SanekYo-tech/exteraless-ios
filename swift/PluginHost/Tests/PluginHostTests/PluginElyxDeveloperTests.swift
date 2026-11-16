@@ -15,8 +15,9 @@ private final class ElyxFileRecorder: PluginElyxDeveloperFileAuthority, PluginEl
     private let lock = NSLock()
     private var counts = [0, 0, 0]
     private var candidate: Data?
+    private let onPublish: @Sendable () throws -> Void
 
-    init(_ plugin: Plugin) { metadata = plugin }
+    init(_ plugin: Plugin, onPublish: @escaping @Sendable () throws -> Void = {}) { metadata = plugin; self.onPublish = onPublish }
     var operations: [Int] { lock.lock(); defer { lock.unlock() }; return counts }
     var preparedBytes: Data? { lock.lock(); defer { lock.unlock() }; return candidate }
     func open(_ target: PluginElyxDeveloperTarget) throws -> any PluginElyxDeveloperSource {
@@ -37,6 +38,7 @@ private final class ElyxFileRecorder: PluginElyxDeveloperFileAuthority, PluginEl
         guard shouldExecute() else { throw PluginElyxDeveloperError.stale("fixture publication refused") }
         try checkCurrent()
         lock.lock(); counts[2] += 1; lock.unlock()
+        try onPublish()
     }
     func checkPublished() throws { try checkCurrent() }
     func loadSource(owner: PluginHost.CallbackOwner) throws -> any PluginElyxDeveloperDescriptorLease {
@@ -52,6 +54,11 @@ final class PluginElyxDeveloperTests: HostLifecycleTestCase {
             }
             if source.hasPrefix("_exteraless_runtime.load_json(") {
                 return "{\"metadata\":{\"id\":\"elyxFixture\",\"name\":\"Owned fixture\",\"version\":\"1.0\"},\"handles\":{},\"has_settings\":false}"
+            }
+            let manifest = "_exteraless_runtime._elyx_developer.manifest_json("
+            if source.hasPrefix(manifest) {
+                let values = try JSONDecoder().decode([String].self, from: Data(("[" + source.dropFirst(manifest.count).dropLast() + "]").utf8))
+                return try PluginRuntimeScript.encodeJSON(["ok": true, "source_digest": values[2], "files": [:]])
             }
             return nil
         })
@@ -140,9 +147,10 @@ final class PluginElyxDeveloperTests: HostLifecycleTestCase {
                 ping: { throw PluginHostError.internalInconsistency("unexpected ping") },
                 publish: { _, _, _ in throw PluginHostError.internalInconsistency("unexpected publication") })
             XCTFail("missing authority was accepted")
-        } catch let error as PluginElyxDeveloperError {
+        } catch let error as PluginElyxDeveloperOperationFailure {
             XCTAssertEqual(error.kind, "ServiceUnavailable")
             XCTAssertTrue(error.message.contains("FD-backed"))
+            XCTAssertEqual(error.outcome, .refused)
         }
     }
 
@@ -198,7 +206,10 @@ final class PluginElyxDeveloperTests: HostLifecycleTestCase {
                         return response
                     }, ping: { response }, publish: { _, _, _ in throw PluginHostError.internalInconsistency("retired command cannot publish") })
                 XCTFail("retired change command staged bytes")
-            } catch let error as PluginElyxDeveloperError { XCTAssertEqual(error.kind, "Superseded") }
+            } catch let error as PluginElyxDeveloperOperationFailure {
+                XCTAssertEqual(error.kind, "Superseded")
+                XCTAssertEqual(PluginElyxDeveloperError.response(error, request: command)["source_changed"], .bool(false))
+            }
             XCTAssertEqual(files.operations, [1, 0, 0])
         }
     }
@@ -225,6 +236,126 @@ final class PluginElyxDeveloperTests: HostLifecycleTestCase {
         XCTAssertEqual(host.pluginList().first?.path, target.plugin.path)
         XCTAssertEqual(host.pluginList().first?.fileFormat, .elyx)
         XCTAssertNotEqual(host.callbackOwner(id: target.plugin.id), target.owner)
+    }
+
+    func testPublicationFailureKeepsEveryTypedOutcomeAtTransactionBoundary() async throws {
+        let (_, target) = try await owner()
+        let command = try request("elyx_changes", ["plugin_id": target.plugin.id, "changes": []])
+        for (outcome, changed) in [(PluginElyxDeveloperPublicationFailure.Outcome.refused, PluginJSONValue.bool(false)),
+                                   (.rolledBack, .bool(false)), (.committed, .bool(true)), (.recoveryRequired, .null)] {
+            let files = ElyxFileRecorder(target.plugin)
+            let response = try workerReply(target, digest: files.sha256)
+            let cause = PluginElyxDeveloperError.stale("owned publication witness")
+            let failure = PluginElyxDeveloperPublicationFailure(outcome: outcome, detail: cause.description, underlying: cause)
+            do {
+                _ = try await PluginElyxDeveloperTransaction.run(command, targets: [target], files: files,
+                    current: { _ in true }, installedCurrent: { _, _ in true }, session: { true },
+                    read: { _, _ in response }, ping: { response }, publish: { _, _, _ in throw failure })
+                XCTFail("publication failure returned success")
+            } catch {
+                let value = PluginElyxDeveloperError.response(error, request: command)
+                XCTAssertEqual(value["error_kind"], .string(cause.kind))
+                XCTAssertEqual(value["error"], .string(failure.description))
+                XCTAssertEqual(value["errors"], .array([.string(failure.description)]))
+                XCTAssertEqual(value["plugin_id"], .string(target.plugin.id))
+                XCTAssertEqual(value["publication_outcome"], .string(outcome.rawValue))
+                XCTAssertEqual(value["source_changed"], changed)
+                XCTAssertEqual(value["reloaded"], .bool(false))
+            }
+        }
+    }
+
+    func testPostPublicationSessionOwnerModelAndSourceGuardsCannotReportNoWrite() async throws {
+        let (_, target) = try await owner()
+        let command = try request("elyx_changes", ["plugin_id": target.plugin.id, "changes": []])
+        for boundary in ["session", "owner", "model", "source"] {
+            let files = ElyxFileRecorder(target.plugin)
+            let session = MaintenanceTestFlag()
+            let response = try workerReply(target, digest: files.sha256)
+            do {
+                _ = try await PluginElyxDeveloperTransaction.run(command, targets: [target], files: files,
+                    current: { _ in true }, installedCurrent: { _, _ in boundary != "owner" }, session: { session.value },
+                    read: { _, _ in response }, ping: { response }, publish: { _, _, prepared in
+                        try prepared.publish(shouldExecute: { true })
+                        if boundary == "session" { session.set(false) }
+                        if boundary == "source" { files.valid.set(false) }
+                        var plugin = target.plugin
+                        if boundary == "model" { plugin.enabled.toggle() }
+                        return PluginElyxDeveloperInstalled(plugin: plugin, owner: target.owner)
+                    })
+                XCTFail("late \(boundary) guard accepted a receipt")
+            } catch {
+                let value = PluginElyxDeveloperError.response(error, request: command)
+                XCTAssertEqual(value["publication_outcome"], .string("committed"), boundary)
+                XCTAssertEqual(value["source_changed"], .bool(true), boundary)
+                XCTAssertEqual(value["error_kind"], .string("Superseded"), boundary)
+                XCTAssertEqual(value["reloaded"], .bool(false), boundary)
+            }
+            XCTAssertEqual(files.operations, [1, 1, 1])
+        }
+    }
+
+    func testActualHostPersistenceFailureAfterPublicationKeepsCommit() async throws {
+        let (fixture, target) = try await owner()
+        let store = fixture.root.appendingPathComponent("plugins.json")
+        let files = ElyxFileRecorder(target.plugin, onPublish: {
+            // Fault the real throwing persistInstalledPlugin write AFTER the
+            // Host has retired the old owner and the native recorder published.
+            try FileManager.default.removeItem(at: store)
+            try FileManager.default.createDirectory(at: store, withIntermediateDirectories: false)
+        })
+        let command = try request("elyx_changes", ["plugin_id": target.plugin.id, "changes": []])
+        do {
+            _ = try await fixture.host.elyxDeveloper(command, targets: [target], account: 2, files: files,
+                deadline: ProcessInfo.processInfo.systemUptime + 5, shouldExecute: { true })
+            XCTFail("model persistence failure returned success")
+        } catch {
+            let value = PluginElyxDeveloperError.response(error, request: command)
+            XCTAssertEqual(value["publication_outcome"], .string("committed"))
+            XCTAssertEqual(value["source_changed"], .bool(true))
+            XCTAssertEqual(value["reloaded"], .bool(false))
+            XCTAssertFalse(String(describing: value).contains(fixture.root.path))
+        }
+        XCTAssertEqual(files.operations, [1, 1, 1])
+        XCTAssertNil(fixture.host.callbackOwner(id: target.plugin.id))
+        XCTAssertEqual(fixture.engine.calls.filter { $0.source.hasPrefix("_exteraless_runtime.load_json(") }.count, 1)
+    }
+
+    func testActualHostVerifiedLoadFailureKeepsOriginalTypeAndCommit() async throws {
+        let (fixture, target) = try await owner()
+        let files = ElyxFileRecorder(target.plugin)
+        let command = try request("elyx_changes", ["plugin_id": target.plugin.id, "changes": []])
+        do {
+            _ = try await fixture.host.elyxDeveloper(command, targets: [target], account: 2, files: files,
+                deadline: ProcessInfo.processInfo.systemUptime + 5, shouldExecute: { true })
+            XCTFail("recorder unexpectedly supplied a verified-load descriptor")
+        } catch {
+            let value = PluginElyxDeveloperError.response(error, request: command)
+            XCTAssertEqual(value["publication_outcome"], .string("committed"))
+            XCTAssertEqual(value["source_changed"], .bool(true))
+            XCTAssertEqual(value["error_kind"], .string("ServiceUnavailable"))
+            XCTAssertEqual(value["reloaded"], .bool(false))
+            XCTAssertTrue((error as? PluginElyxDeveloperOperationFailure)?.message.contains("recorder does not implement") == true)
+        }
+        XCTAssertEqual(files.operations, [1, 1, 1])
+        XCTAssertNil(fixture.host.callbackOwner(id: target.plugin.id))
+        XCTAssertEqual(fixture.engine.counts.live, 0)
+    }
+
+    func testFailureWireRetainsOriginalFieldsButRedactsNativeProofsAndPaths() throws {
+        let command = try request("elyx_changes", ["plugin_id": "elyxFixture", "changes": []])
+        let failure = PluginElyxDeveloperError.stale("owned safe message")
+        let original = PluginElyxDeveloperError.response(failure, request: command)
+        XCTAssertEqual(original["error"], .string(failure.description))
+        XCTAssertEqual(original["errors"], .array([.string(failure.description)]))
+        XCTAssertEqual(original["error_kind"], .string(failure.kind))
+        let proof = String(repeating: "b", count: 64), epoch = UUID().uuidString
+        let unsafe = PluginElyxDeveloperError.stale("failed '/private/owned path/candidate.elyx' \(proof) \(epoch)")
+        let response = PluginElyxDeveloperError.response(unsafe, request: command)
+        let wire = try PluginRuntimeScript.encodeJSON(response.mapValues(\.jsonObject))
+        for secret in ["/private/", "owned path", "candidate.elyx", proof, epoch] { XCTAssertFalse(wire.contains(secret)) }
+        XCTAssertEqual(response["publication_outcome"], .string("refused"))
+        XCTAssertEqual(response["source_changed"], .bool(false))
     }
 
     /// Independent minimal reader for stored-fixture bodies, not a ZIP writer or

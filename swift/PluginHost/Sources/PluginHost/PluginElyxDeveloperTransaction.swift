@@ -88,11 +88,14 @@ public struct PluginElyxDeveloperInvocation: Sendable {
     public let files: (any PluginElyxDeveloperFileAuthority)?
     public let deadline: TimeInterval
     public let isCurrent: @Sendable () -> Bool
+    public let publication: PluginElyxDeveloperPublicationState?
 
     public init(request: PluginElyxDeveloperRequest, targets: [PluginElyxDeveloperTarget], account: Int32,
-                files: (any PluginElyxDeveloperFileAuthority)?, deadline: TimeInterval, isCurrent: @escaping @Sendable () -> Bool) {
+                files: (any PluginElyxDeveloperFileAuthority)?, deadline: TimeInterval, isCurrent: @escaping @Sendable () -> Bool,
+                publication: PluginElyxDeveloperPublicationState? = nil) {
         self.request = request; self.targets = targets; self.account = account
         self.files = files; self.deadline = deadline; self.isCurrent = isCurrent
+        self.publication = publication ?? (request.kind == .changes ? PluginElyxDeveloperPublicationState(pluginId: request.pluginId) : nil)
     }
 }
 
@@ -107,96 +110,107 @@ public enum PluginElyxDeveloperTransaction {
                            current: @escaping @Sendable (PluginElyxDeveloperTarget) -> Bool,
                            installedCurrent: @Sendable (PluginElyxDeveloperInstalled, PluginPermissionSnapshot) -> Bool,
                            session: @escaping @Sendable () -> Bool,
-                           read: Read, ping: @Sendable () async throws -> String, publish: Publish) async throws -> [String: PluginJSONValue] {
-        try checkSession(session)
-        guard targets.count <= 64, Set(targets.map { $0.plugin.id }).count == targets.count,
-              targets.allSatisfy({ $0.plugin.fileFormat.isArchive && $0.plugin.loaded && $0.plugin.isEnabled && current($0) }) else {
-            throw PluginElyxDeveloperError.stale("Elyx target set is stale, duplicated or exceeds 64 owners")
-        }
-        if let id = request.pluginId {
-            guard targets.count == 1, targets[0].plugin.id == id else { throw PluginElyxDeveloperError.stale("selected Elyx plugin is not loaded") }
-        }
-        switch request.kind {
-        case .ping:
-            let result: [String: PluginJSONValue]
-            if let target = targets.first {
-                let value = try decode(await read(target, nil))
-                guard current(target), case let .string(version)? = value["version"] else { throw PluginElyxDeveloperError.stale("Elyx ping owner/version changed") }
-                result = ["ok": .bool(true), "elyx": .bool(true), "version": .string(version)]
-            } else {
-                result = try decode(await ping())
-                guard result["elyx"] == .bool(true), case .string? = result["version"] else { throw PluginElyxDeveloperError.malformed("invalid Original Elyx ping result") }
-            }
+                           read: Read, ping: @Sendable () async throws -> String, publish: Publish,
+                           publication: PluginElyxDeveloperPublicationState? = nil) async throws -> [String: PluginJSONValue] {
+        let publication = publication ?? (request.kind == .changes ? PluginElyxDeveloperPublicationState(pluginId: request.pluginId) : nil)
+        do {
             try checkSession(session)
-            return try bounded(result)
-        case .list:
-            var plugins: [PluginJSONValue] = []
-            for target in targets {
-                try checkSession(session)
-                guard current(target) else { throw PluginElyxDeveloperError.stale("Elyx list owner retired before read") }
-                let value = try decode(await read(target, nil))
-                guard current(target), case let .object(plugin)? = value["plugin"], plugin["id"] == .string(target.plugin.id) else {
-                    throw PluginElyxDeveloperError.stale("Elyx list returned a retired/different owner")
+            guard targets.count <= 64, Set(targets.map { $0.plugin.id }).count == targets.count,
+                  targets.allSatisfy({ $0.plugin.fileFormat.isArchive && $0.plugin.loaded && $0.plugin.isEnabled && current($0) }) else {
+                throw PluginElyxDeveloperError.stale("Elyx target set is stale, duplicated or exceeds 64 owners")
+            }
+            if let id = request.pluginId {
+                guard targets.count == 1, targets[0].plugin.id == id else { throw PluginElyxDeveloperError.stale("selected Elyx plugin is not loaded") }
+            }
+            switch request.kind {
+            case .ping:
+                let result: [String: PluginJSONValue]
+                if let target = targets.first {
+                    let value = try decode(await read(target, nil))
+                    guard current(target), case let .string(version)? = value["version"] else { throw PluginElyxDeveloperError.stale("Elyx ping owner/version changed") }
+                    result = ["ok": .bool(true), "elyx": .bool(true), "version": .string(version)]
+                } else {
+                    result = try decode(await ping())
+                    guard result["elyx"] == .bool(true), case .string? = result["version"] else { throw PluginElyxDeveloperError.malformed("invalid Original Elyx ping result") }
                 }
-                plugins.append(.object(plugin))
-                _ = try bounded(["plugins": .array(plugins)])
-            }
-            try checkSession(session)
-            guard targets.allSatisfy(current) else { throw PluginElyxDeveloperError.stale("Elyx list snapshot changed before delivery") }
-            return ["ok": .bool(true), "plugins": .array(plugins)]
-        case .compare, .changes:
-            let target = targets[0]
-            guard let files else { throw PluginElyxDeveloperError.unavailable("FD-backed Elyx developer file authority is not installed") }
-            let source = try files.open(target)
-            guard PluginElyxDeveloperRequest.isDigest(source.sha256), source.archiveBytes.count <= PluginElyxArchiveCandidate.maximumBytes else {
-                throw PluginElyxDeveloperError.malformed("invalid native Elyx source lease")
-            }
-            try source.checkCurrent()
-            let value = try decode(await read(target, source.sha256))
-            try checkSession(session)
-            guard current(target), value["source_digest"] == .string(source.sha256), case let .object(raw)? = value["files"], raw.count <= 2048 else {
-                throw PluginElyxDeveloperError.stale("verified Elyx manifest does not match the captured source/owner")
-            }
-            var hashes: [String: String] = [:]
-            for (path, value) in raw {
-                guard try PluginElyxDeveloperRequest.path(path) == path, case let .string(hash) = value, PluginElyxDeveloperRequest.isDigest(hash) else {
-                    throw PluginElyxDeveloperError.malformed("invalid verified Elyx file manifest")
-                }
-                hashes[path] = hash
-            }
-            try source.checkCurrent()
-            if request.kind == .compare {
-                let changed = request.hashes.keys.filter { hashes[$0] != request.hashes[$0] }.sorted()
-                let deleted = hashes.keys.filter { request.hashes[$0] == nil }.sorted()
                 try checkSession(session)
-                guard current(target) else { throw PluginElyxDeveloperError.stale("Elyx compare owner retired") }
+                return try bounded(result)
+            case .list:
+                var plugins: [PluginJSONValue] = []
+                for target in targets {
+                    try checkSession(session)
+                    guard current(target) else { throw PluginElyxDeveloperError.stale("Elyx list owner retired before read") }
+                    let value = try decode(await read(target, nil))
+                    guard current(target), case let .object(plugin)? = value["plugin"], plugin["id"] == .string(target.plugin.id) else {
+                        throw PluginElyxDeveloperError.stale("Elyx list returned a retired/different owner")
+                    }
+                    plugins.append(.object(plugin))
+                    _ = try bounded(["plugins": .array(plugins)])
+                }
+                try checkSession(session)
+                guard targets.allSatisfy(current) else { throw PluginElyxDeveloperError.stale("Elyx list snapshot changed before delivery") }
+                return ["ok": .bool(true), "plugins": .array(plugins)]
+            case .compare, .changes:
+                let target = targets[0]
+                guard let files else { throw PluginElyxDeveloperError.unavailable("FD-backed Elyx developer file authority is not installed") }
+                let source = try files.open(target)
+                guard PluginElyxDeveloperRequest.isDigest(source.sha256), source.archiveBytes.count <= PluginElyxArchiveCandidate.maximumBytes else {
+                    throw PluginElyxDeveloperError.malformed("invalid native Elyx source lease")
+                }
                 try source.checkCurrent()
-                return try bounded(["ok": .bool(true), "plugin_id": .string(target.plugin.id),
-                                    "created_or_modified": .array(changed.map(PluginJSONValue.string)),
-                                    "deleted": .array(deleted.map(PluginJSONValue.string))])
+                let value = try decode(await read(target, source.sha256))
+                try checkSession(session)
+                guard current(target), value["source_digest"] == .string(source.sha256), case let .object(raw)? = value["files"], raw.count <= 2048 else {
+                    throw PluginElyxDeveloperError.stale("verified Elyx manifest does not match the captured source/owner")
+                }
+                var hashes: [String: String] = [:]
+                for (path, value) in raw {
+                    guard try PluginElyxDeveloperRequest.path(path) == path, case let .string(hash) = value, PluginElyxDeveloperRequest.isDigest(hash) else {
+                        throw PluginElyxDeveloperError.malformed("invalid verified Elyx file manifest")
+                    }
+                    hashes[path] = hash
+                }
+                try source.checkCurrent()
+                if request.kind == .compare {
+                    let changed = request.hashes.keys.filter { hashes[$0] != request.hashes[$0] }.sorted()
+                    let deleted = hashes.keys.filter { request.hashes[$0] == nil }.sorted()
+                    try checkSession(session)
+                    guard current(target) else { throw PluginElyxDeveloperError.stale("Elyx compare owner retired") }
+                    try source.checkCurrent()
+                    return try bounded(["ok": .bool(true), "plugin_id": .string(target.plugin.id),
+                                        "created_or_modified": .array(changed.map(PluginJSONValue.string)),
+                                        "deleted": .array(deleted.map(PluginJSONValue.string))])
+                }
+                // This transforms authoritative archive bytes, never extracted files.
+                let candidate = try PluginElyxArchiveCandidate.applying(request.changes, to: source.archiveBytes)
+                let valid: @Sendable () -> Bool = { session() && current(target) && (try? source.checkCurrent()) != nil }
+                guard valid() else { throw PluginElyxDeveloperError.stale("Elyx source/owner retired before staging") }
+                let prepared = try await source.prepare(candidate, shouldExecute: valid)
+                try prepared.checkBeforePublication()
+                guard valid(), prepared.metadata.id == target.plugin.id, prepared.metadata.fileFormat == target.plugin.fileFormat else {
+                    throw PluginElyxDeveloperError.stale("Elyx candidate changed identity/format or its source retired")
+                }
+                let installed = try await publish(target, source, prepared)
+                publication?.record(.committed)
+                try checkSession(session)
+                try prepared.checkPublished()
+                guard installedCurrent(installed, target.consent) else { throw PluginElyxDeveloperError.stale("replacement owner/consent retired before delivery") }
+                let plugin = installed.plugin
+                guard plugin.id == target.plugin.id, plugin.fileFormat == target.plugin.fileFormat,
+                      plugin.path == target.plugin.path, plugin.enabled == target.plugin.enabled else {
+                    throw PluginElyxDeveloperError.stale("Elyx replacement receipt has different native installation state")
+                }
+                let reloaded = plugin.loaded && plugin.loadError == nil && installed.owner != nil && installed.owner != target.owner
+                if !reloaded {
+                    return PluginElyxDeveloperError.response(PluginHostError.runtimeFailure(plugin.loadError ?? "native archive replacement did not load a new owner"),
+                        request: request, publication: publication)
+                }
+                return ["ok": .bool(true), "plugin_id": .string(plugin.id), "reloaded": .bool(true),
+                        "errors": .array([]), "publication_outcome": .string("committed"), "source_changed": .bool(true)]
             }
-            // This transforms authoritative archive bytes, never extracted files.
-            let candidate = try PluginElyxArchiveCandidate.applying(request.changes, to: source.archiveBytes)
-            let valid: @Sendable () -> Bool = { session() && current(target) && (try? source.checkCurrent()) != nil }
-            guard valid() else { throw PluginElyxDeveloperError.stale("Elyx source/owner retired before staging") }
-            let prepared = try await source.prepare(candidate, shouldExecute: valid)
-            try prepared.checkBeforePublication()
-            guard valid(), prepared.metadata.id == target.plugin.id, prepared.metadata.fileFormat == target.plugin.fileFormat else {
-                throw PluginElyxDeveloperError.stale("Elyx candidate changed identity/format or its source retired")
-            }
-            let installed = try await publish(target, source, prepared)
-            try checkSession(session)
-            try prepared.checkPublished()
-            guard installedCurrent(installed, target.consent) else { throw PluginElyxDeveloperError.stale("replacement owner/consent retired before delivery") }
-            let plugin = installed.plugin
-            guard plugin.id == target.plugin.id, plugin.fileFormat == target.plugin.fileFormat,
-                  plugin.path == target.plugin.path, plugin.enabled == target.plugin.enabled else {
-                throw PluginElyxDeveloperError.stale("Elyx replacement receipt has different native installation state")
-            }
-            let reloaded = plugin.loaded && plugin.loadError == nil && installed.owner != nil && installed.owner != target.owner
-            let errors: [PluginJSONValue] = reloaded ? [] : [.string(plugin.loadError ?? "native archive replacement did not load a new owner")]
-            return ["ok": .bool(reloaded), "plugin_id": .string(plugin.id), "reloaded": .bool(reloaded),
-                    "errors": .array(errors), "source_changed": .bool(true)]
+        } catch {
+            if let publication { throw publication.failure(error) }
+            throw error
         }
     }
 
