@@ -4,6 +4,12 @@ name: Client UIKit Acceptance
 # after the complete source cohort and the matching Xcode build are ready.
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic_recordings:
+        description: Collect diagnostic frames if the native gate fails
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -74,7 +80,9 @@ jobs:
         run: >-
           python -B -m unittest tools.ci.tests.test_native_test_workflow
           tools.ci.tests.test_native_fixture_classes tools.ci.tests.test_client_ui_batches
+          tools.ci.tests.test_native_composer_cohorts
           tools.ci.tests.test_native_input_identity tools.ci.tests.test_client_ui_supplements
+          tools.ci.tests.test_client_ui_recording_fallback
           tools.ci.tests.test_client_ui_map tools.runtime.tests.test_native_test_disk
           tools.runtime.tests.test_native_test_cache -v
 
@@ -122,6 +130,7 @@ jobs:
           --cache "$BAZEL_DISK_CACHE" --output "$CLIENT_UI_RUN_DIR/build/native-cache-claim.json"
 
       - name: Build full Telegram plus loginless UIKit app, unsigned
+        id: app_build
         timeout-minutes: 112
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -131,6 +140,7 @@ jobs:
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
 
       - name: Compile and run required native IntegrationTests, unsigned iOS 27
+        id: native
         timeout-minutes: 35
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -143,6 +153,8 @@ jobs:
           --output "$CLIENT_UI_RUN_DIR/native-tests" --compile-seconds 900 --execution-seconds 900
 
       - name: Install checksum-pinned CI frame tools
+        id: frame_tools
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -150,47 +162,59 @@ jobs:
           "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -m pip install --require-hashes --only-binary=:all: --no-deps -r telegram-ios/Tests/ExteralessHarness/Tools/frame-requirements.txt
           python tools/runtime/client_ui_harness_tools.py --output "$CLIENT_UI_RUN_DIR/tools" --cache "$CLIENT_UI_RUN_DIR/tools-cache"
           echo "$CLIENT_UI_RUN_DIR/tools" >> "$GITHUB_PATH"
+          if [ '${{ steps.native.outcome }}' = 'success' ]; then
+            echo "CLIENT_UI_RECORDING_ROOT=$CLIENT_UI_RUN_DIR/evidence" >> "$GITHUB_ENV"
+          else
+            echo "CLIENT_UI_RECORDING_ROOT=$CLIENT_UI_RUN_DIR/diagnostic-recordings" >> "$GITHUB_ENV"
+          fi
 
       - name: Record baseline core-light, core-dark and SDK scenarios
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 10
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
           --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
           --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/baseline"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/baseline"
           --scenario core-light --scenario core-dark --scenario sdk-ui
 
       - name: Record Feed, Player and Pill domains serially from the same IPA
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 10
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
           --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
           --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/domains"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/domains"
           --scenario feed-render --scenario player-render --scenario pill-render
 
       - name: Record Avatar and Composer from the same IPA in the final serial batch
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 10
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
           --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
           --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/final-visuals"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/final-visuals"
           --scenario avatar-render --scenario composer-render
 
       - name: Verify all three recorded batches and publish the shared evidence identity
+        if: ${{ !cancelled() && steps.native.outcome == 'success' && steps.frame_tools.outcome == 'success' }}
         timeout-minutes: 1
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -203,72 +227,85 @@ jobs:
           --output "$CLIENT_UI_RUN_DIR/evidence/batches.json" --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Record Reset supplement 1 of 4, ready and held prepare return
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 4
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-1"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-1"
           --scenario reset-ready-cancelled --scenario reset-prepare-before-return --scenario reset-prepare-after-return
 
       - name: Record Reset supplement 2 of 4, reset reply return and actual pop
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 4
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-2"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-2"
           --scenario reset-reply-before-return --scenario reset-reply-after-return --scenario reset-prepare-actual-pop
 
       - name: Record Reset supplement 3 of 4, pop and retired-context witnesses
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 4
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-3"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-3"
           --scenario reset-reply-actual-pop --scenario reset-retired-ready --scenario reset-retired-prepare
 
       - name: Record Reset supplement 4 of 4, retired reset reply
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 3
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 120 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 120 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 120
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-4"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-4"
           --scenario reset-retired-reply
 
       - name: Record secondary trust permissions in one fresh owned process
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 3
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 150
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/trust-secondary"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/trust-secondary"
           --scenario trust-secondary-permissions
 
       - name: Record native Map attributions, light and dark, in one fresh owned process
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 3
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 150
+          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
           --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/map-attribution"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/map-attribution"
           --scenario map-attribution
 
       - name: Verify all base and supplemental scenes from the single IPA
+        if: ${{ !cancelled() && steps.native.outcome == 'success' && steps.frame_tools.outcome == 'success' }}
         timeout-minutes: 1
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -285,6 +322,7 @@ jobs:
           name: client-ui-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.CLIENT_UI_RUN_DIR }}/evidence/
+            ${{ env.CLIENT_UI_RUN_DIR }}/diagnostic-recordings/
             ${{ env.CLIENT_UI_RUN_DIR }}/native-tests/
             ${{ env.CLIENT_UI_RUN_DIR }}/tools/frame-tools.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/preflight.json

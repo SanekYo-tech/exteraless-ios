@@ -8,6 +8,7 @@ import HarnessAppContext
 public final class HarnessRootViewController: UIViewController {
     public private(set) var panelHost: HarnessPanelHost?
     public private(set) var scenario: HarnessScenario = HarnessScenario.all[0]
+    private(set) var startupFailure: HarnessStartupFailure?
 
     private let settings = HarnessSettings()
     private var harnessAccount: HarnessAccount?
@@ -41,18 +42,39 @@ public final class HarnessRootViewController: UIViewController {
 
         self.setUpToolbar()
 
+        do {
+            try self.requireStartup()
+            try HarnessBootstrap.shared.requirePrepared()
+        } catch {
+            self.recordStartupFailure(error as? HarnessStartupFailure ?? .bootstrapRequired)
+            return
+        }
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(self.keyboardFrameChanged(_:)),
             name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
 
-        self.accountDisposable = (HarnessAccount.make()
+        self.accountDisposable = (composerHarnessAccountWithReadiness()
         |> deliverOnMainQueue).start(next: { [weak self] harnessAccount in
             guard let self else {
                 return
             }
             self.harnessAccount = harnessAccount
             self.rebuildPanelHost()
+        }, error: { [weak self] failure in
+            self?.recordStartupFailure(failure)
         })
+    }
+
+    func recordStartupFailure(_ failure: HarnessStartupFailure) {
+        guard self.startupFailure == nil else { return }
+        self.startupFailure = failure
+        self.refreshReadout()
+        NSLog("COMPOSER_HARNESS_STARTUP_FAILED %@", failure.description)
+    }
+
+    func requireStartup() throws {
+        if let startupFailure = self.startupFailure { throw startupFailure }
     }
 
     // MARK: - Panel lifecycle
@@ -169,6 +191,10 @@ public final class HarnessRootViewController: UIViewController {
     /// Re-renders the inspection surface. Called after the panel's layout pass, so
     /// `lastMeasuredHeight` is current — calling it before would report the previous pass.
     public func refreshReadout() {
+        if let startupFailure = self.startupFailure {
+            self.readoutView.update(text: startupFailure.description)
+            return
+        }
         guard let host = self.panelHost else {
             self.readoutView.update(text: "dump v\(ComposerModelDump.formatVersion) <no panel>")
             return

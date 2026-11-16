@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `f1c28499`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `b06bb000`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -25,11 +25,36 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43827361709 /f1c28499 capacity PASS**, native compile timeout послеcache-mode invalidation; cache-reuse fix готовится |
+| UIKit | **43834798503 /b06bb000 FAILED**: native compile получил orphan cache hits (`Lost inputs`); один Glass actor diagnostic |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43834798503 завершён; watcher завершён. Cache: 40818 hits /562 misses,
+  2.22GB прочитано; native result FAILED, классы/кадры не исполнялись.
+- Cache completeness после reclamation готова и проверена на реальном Bazel.
+  Реальный Linux Bazel воспроизвёл orphan `AC200 + CAS404 → Lost inputs`.
+  AC-completeness→404, eager downloads и NEO-01 применены; 50 local /25 Linux
+  tooling checks PASS. Два прежних run failed на probe assertions сохранены;
+  третий короткий Linux run завершил end-to-end проверку.
+  **43846695323 /219080d9 PASS**: 8 сценариев /25 Linux tests; baseline failure
+  воспроизведён, fixed AC404 пересчитывает producer/consumer, после GC повторяется
+  только consumer. Координатор сверил 5 delivery hashes, Git source bytes,
+  16 artifact hashes, события всех восьми cases и семь закрытых server lifetimes.
+- Glass fixture готов: три `@MainActor`-аннотации, 4 ID /25 assertions сохранены;
+  `native-glass-actor-followup.md`, postimage `cf6a1e64…`.
+- Orchestration review готов: `native-execution-orchestration-review.md`.
+  NEO-01 (run-only test_env) передан cache/driver owner; NEO-02 (Composer process
+  bootstrap) готов: 6/6 raw postimages сверены, 8 source checks PASS,
+  37 targets /92 classes /434 methods сохранены. `native-composer-bootstrap-followup.md`.
+- NEO-03: diagnostic recording fallback реализован координатором; 27 tooling
+  checks PASS. Следующий dispatch использует `diagnostic_recordings=true` для
+  ранней диагностики кадров. Финальная приёмка требует полного native PASS.
+  Независимое ревью не нашло admission bypass; три P2 аварийных paths (SIGTERM,
+  driver-path loss, CLI exit preservation) исправлены. Девять envelope arguments
+  добавлены в workflow; 81 coordinator tests (77PASS/4POSIXskip),1743inputscovered,
+  Config276/0/32 неизменён. `native-cache-orchestration-integration.md`.
+- Compat43834762569/b06bb000 завершён GREEN; watcher завершён.
 - UIKit43827361709 завершён. Recovery25.038s:10.01GB/7120deletes, free22.39GB,
   kept8.59GB. ENOSPCнет; compile785s завершилсяна2926/8887actions (Abseil rebuild).
   disk_cache= изменилcache-enabledaction-salt. Ownerпроверяетreadonlyenabled-cache

@@ -387,7 +387,7 @@ def execute(args, plan, paths):
                     test_filter = None if target['build_test_filter'] else case['class']
                     command = native_args(line, line.get_test_arguments(target['label'], run_only=True, test_filter=test_filter,
                         test_arguments=['--destination=platform=ios_simulator,id=' + record['udid']],
-                        test_environment=['STARTUP_TIMEOUT_SEC=150'], test_timeout=270, streamed=True), cache)
+                        test_timeout=270, streamed=True), cache)
                     try:
                         result = run_logged(command, telegram, directory, max(1, deadline - time.monotonic()),
                                             case=case, contract=contract, cancel_test=lambda: shutdown_device(record))

@@ -153,6 +153,7 @@ swift_library(
     ],
     deps = [
         ":HarnessAppContext",
+        "//third-party/exteraless:ExteralessCore",
         "//submodules/AsyncDisplayKit",
         "//submodules/Display",
         "//submodules/SSignalKit/SwiftSignalKit",

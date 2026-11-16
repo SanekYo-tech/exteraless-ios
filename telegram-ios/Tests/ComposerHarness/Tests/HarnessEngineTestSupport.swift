@@ -10,12 +10,15 @@ import ChatInputTextNode
 enum HarnessEngine {
     static func root() throws -> HarnessRootViewController {
         let value = try XCTUnwrap(AppDelegate.harnessRootViewController)
+        try value.requireStartup()
         value.loadViewIfNeeded()
         value.view.frame = CGRect(x: 0.0, y: 0.0, width: 402.0, height: 874.0)
         let deadline = Date().addingTimeInterval(30.0)
         while value.panelHost == nil && Date() < deadline {
+            try value.requireStartup()
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
+        try value.requireStartup()
         value.view.layoutIfNeeded()
         return value
     }

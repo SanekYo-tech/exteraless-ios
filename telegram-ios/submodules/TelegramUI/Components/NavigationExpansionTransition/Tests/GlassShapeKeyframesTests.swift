@@ -5,6 +5,7 @@ import ExteralessCore
 import GlassBackgroundComponent
 
 final class GlassShapeKeyframesTests: XCTestCase {
+    @MainActor
     private func layers(_ layer: CALayer) -> [CALayer] {
         return [layer] + ((layer.sublayers ?? []) + [layer.mask].compactMap { $0 }).flatMap { self.layers($0) }
     }
@@ -18,6 +19,7 @@ final class GlassShapeKeyframesTests: XCTestCase {
     }
 
     // The card's corners: capsule while short, the screen's once tall — keyframed as given, not half the shorter side.
+    @MainActor
     func test_animateShape_keyframesTheGivenRadii() {
         let glass = GlassBackgroundView()
         glass.frame = CGRect(x: 0.0, y: 0.0, width: 140.0, height: 44.0)
@@ -36,6 +38,7 @@ final class GlassShapeKeyframesTests: XCTestCase {
 
     // Four radii per sample (iPhone Duo's cover screen, 8 pt on the hinge side): keyframed as the layer's own per-corner
     // radii, and the model (a custom shape) is the last of them.
+    @MainActor
     func test_animateShape_fourRadii_keyframesTheLayersCornerRadii() throws {
         try XCTSkipUnless(CALayer.cornerRadiiSupported)
         let glass = GlassBackgroundView()

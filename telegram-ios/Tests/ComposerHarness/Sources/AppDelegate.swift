@@ -42,7 +42,11 @@ public final class SceneDelegate: NSObject, UIWindowSceneDelegate {
             return
         }
         let window = UIWindow(windowScene: windowScene)
+        let preparation = HarnessBootstrap.shared.prepare()
         let root = HarnessRootViewController()
+        if case let .failure(failure) = preparation {
+            root.recordStartupFailure(failure)
+        }
         AppDelegate.setRootViewController(root)
         window.rootViewController = root
         self.window = window
