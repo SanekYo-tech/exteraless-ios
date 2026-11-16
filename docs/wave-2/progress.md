@@ -4,7 +4,8 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `53cab85a`**: исправлен resource ID в debug Feed fixture.
+**HEAD `78e76dbe`**: опубликован проверенный Darwin identity-selector для archive fixture;
+53cab85a исправляет resource ID в debug Feed fixture.
 Общий Host/SDK/UIKit cohort — `f704d76c` (288 файлов); hermetic parity overlay
 опубликован в `3daf8d97`:39 source-closed scopes,34 raw report snapshots,
 исторические567/925 и14/102/666 сохранены, verification promotions=0.
@@ -20,13 +21,17 @@
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- Compat43795070738/78e76dbe завершён GREEN; его watcher завершён.
 - UIKit watcher `sh_1e23732e9001n8wBLzVGAxUL79`, `uikit-53cab85a-watch.log`.
 - Archive swap fixture завершён: **Darwin43794021047/cef03eec 7/7PASS**.
   Наблюдения подтвердили один inode при разных /var и /private/var labels;
   fixture выбирает захваченную identity и проверяет точный отказ storage.
   Testpostimage b9b101e1 и artifact conclusion сверены с Git/receipt.
-- `ses_e25088ca2ffeapc0yZ2vwlbKAh`: отдельный actual Swift/C/CPython five-child gate
-  на опубликованных inputs; этот прогон не зависит от test-only swap selector.
+- Независимый SDK run43794176737/3daf завершён: actual baseline/TL/HNS PASS;
+  archive failed на отсутствующем vendor root в fixture bootstrap, fifth не запущен.
+  Все374 source pins сверены; production standard() уже содержит vendor.
+  Две fixture configurations исправлены,13tooling+1fixture checksPASS.
+  Следующий общий Mac gate включает эти исправления и проверенный swap fixture.
 
 ### История промежуточных gates до 53cab85a
 

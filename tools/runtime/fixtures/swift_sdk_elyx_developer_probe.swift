@@ -174,7 +174,7 @@ enum SDKElyxDeveloperNativeProbe {
             try report.write(reportURL)
             let plugins = try services.serviceStorage.pluginsDirectory()
             let configuration = PythonRuntimeConfiguration(programName: "exteraless-native-elyx-developer-probe", frameworkHome: arguments[2],
-                stdlibDirectories: [arguments[3], arguments[4]], compatibilityDirectories: [arguments[5], arguments[5] + "/sdk"],
+                stdlibDirectories: [arguments[3], arguments[4]], compatibilityDirectories: [arguments[5], arguments[5] + "/sdk", arguments[5] + "/vendor"],
                 pluginRootDirectory: plugins.path, writeBytecode: false, installSignalHandlers: false,
                 manifestPath: work.appendingPathComponent("manifest.json").path, executablePath: arguments[0])
             let current = try PluginHost(engine: engine, configuration: .init(runtime: configuration,
