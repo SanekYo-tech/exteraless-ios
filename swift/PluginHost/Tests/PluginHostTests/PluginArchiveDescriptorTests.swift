@@ -8,6 +8,37 @@ final class PluginArchiveDescriptorTests: XCTestCase {
     private let owner = String(repeating: "a", count: 64)
     private let load = String(repeating: "b", count: 64) + "-" + String(repeating: "c", count: 32)
 
+    private struct FixtureIdentity: Equatable, Sendable {
+        let device: UInt64
+        let inode: UInt64
+        let kind: String
+    }
+
+    private static func fixtureIdentity(_ url: URL) throws -> FixtureIdentity {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return FixtureIdentity(
+            device: try XCTUnwrap(attributes[.systemNumber] as? NSNumber).uint64Value,
+            inode: try XCTUnwrap(attributes[.systemFileNumber] as? NSNumber).uint64Value,
+            kind: try XCTUnwrap(attributes[.type] as? FileAttributeType).rawValue)
+    }
+
+    private static func fixtureDiagnostic(_ event: String, _ url: URL, expected: FixtureIdentity?, pathMatch: Bool? = nil) -> String {
+        var value: [String: Any] = ["event": event, "url": url.absoluteString, "path": url.path]
+        value["filesystem"] = url.withUnsafeFileSystemRepresentation { pointer in
+            pointer.map { String(cString: $0) } ?? "<unavailable>"
+        }
+        do {
+            let identity = try fixtureIdentity(url)
+            value["device"] = String(identity.device)
+            value["inode"] = String(identity.inode)
+            value["kind"] = identity.kind
+            if let expected { value["identityMatch"] = identity == expected }
+        } catch { value["metadataError"] = String(describing: error) }
+        if let pathMatch { value["pathMatch"] = pathMatch }
+        let data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        return "ARCHIVE_SWAP_DIAGNOSTIC " + String(decoding: data, as: UTF8.self)
+    }
+
     private func fixture() throws -> (PluginServiceStorage, URL, URL, URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("owned-archive-fds-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -44,6 +75,10 @@ final class PluginArchiveDescriptorTests: XCTestCase {
         // Resolve only the newly created, trusted fixture before installing the
         // swap. Darwin's descriptor walk reports the /private OS-root spelling.
         let openedTarget = target.resolvingSymlinksInPath()
+        let targetIdentity = try Self.fixtureIdentity(target)
+        let observations = Recorder<String>()
+        observations.append(Self.fixtureDiagnostic("target-before", target, expected: targetIdentity))
+        observations.append(Self.fixtureDiagnostic("resolved-target-before", openedTarget, expected: targetIdentity))
         let saved = root.appendingPathComponent("saved-owner")
         let outside = root.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
@@ -51,12 +86,24 @@ final class PluginArchiveDescriptorTests: XCTestCase {
         try Data("outside".utf8).write(to: marker)
         let swapped = MaintenanceTestFlag(false)
         let hooks = PluginArchiveFileHooks { point, path in
+            guard case .directoryOpened = point, !swapped.value else { return }
+            if observations.values.count < 64 {
+                observations.append(Self.fixtureDiagnostic("directory-opened", path, expected: targetIdentity,
+                                                          pathMatch: path.path == openedTarget.path))
+            }
             guard case .directoryOpened = point, path.path == openedTarget.path, !swapped.value else { return }
             swapped.set(true)
             try FileManager.default.moveItem(at: target, to: saved)
             try FileManager.default.createSymbolicLink(at: target, withDestinationURL: outside)
         }
-        XCTAssertThrowsError(try storage.captureArchiveCache(pluginId: "_archive", hooks: hooks))
+        var captureError = "<none>"
+        XCTAssertThrowsError(try storage.captureArchiveCache(pluginId: "_archive", hooks: hooks)) { error in
+            captureError = String(describing: error)
+        }
+        for observation in observations.values { print(observation) }
+        print("ARCHIVE_SWAP_RESULT observations=\(observations.values.count) swapped=\(swapped.value) captureError=\(captureError)")
+        print(Self.fixtureDiagnostic("target-after", target, expected: nil))
+        print(Self.fixtureDiagnostic("saved-after", saved, expected: nil))
         XCTAssertTrue(swapped.value)
         XCTAssertEqual(try Data(contentsOf: marker), Data("outside".utf8))
         XCTAssertTrue(FileManager.default.fileExists(atPath: saved.appendingPathComponent(tree.lastPathComponent + "/contents/main.py").path))
