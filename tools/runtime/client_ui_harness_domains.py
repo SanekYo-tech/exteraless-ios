@@ -3,8 +3,11 @@
 import hashlib
 import json
 import re
+from client_ui_control_frames import validate_control_probes
 
 from client_ui_harness_visuals import VISUAL_SCENARIOS, check_visual_sources
+from client_ui_harness_map import MAP_SCENARIOS, check_map_asset
+from client_ui_harness_supplements import SUPPLEMENT_SCENARIOS, SUPPLEMENT_BATCHES, check_sources as check_supplement_sources
 
 DOMAIN_SCENARIOS = ("feed-render", "player-render", "pill-render")
 PROBES = {
@@ -28,15 +31,16 @@ def selected_scenarios(requested, baseline):
     selected = tuple(requested) if requested else tuple(baseline)
     if len(selected) > 3 or len(set(selected)) != len(selected):
         raise ValueError("A batch contains at most three distinct scenarios")
-    if any(name not in tuple(baseline) + DOMAIN_SCENARIOS + VISUAL_SCENARIOS for name in selected):
+    if any(name not in tuple(baseline) + DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS for name in selected):
         raise ValueError("Unknown UI scenario")
-    if sum(bool(set(selected) & set(group)) for group in (baseline, DOMAIN_SCENARIOS, VISUAL_SCENARIOS)) != 1:
-        raise ValueError("Select one explicit batch: baseline (3), domains (3), or final visuals (2)")
+    groups = (baseline, DOMAIN_SCENARIOS, VISUAL_SCENARIOS) + tuple(group for _, _, group in SUPPLEMENT_BATCHES)
+    if sum(bool(set(selected) & set(group)) for group in groups) != 1:
+        raise ValueError("Select exactly one explicit base or supplement batch")
     return selected
 
 
 def batch_name(selected, baseline):
-    for name, group in (("baseline-3", baseline), ("domains-3", DOMAIN_SCENARIOS), ("final-visuals-2", VISUAL_SCENARIOS)):
+    for name, group in (("baseline-3", baseline), ("domains-3", DOMAIN_SCENARIOS), ("final-visuals-2", VISUAL_SCENARIOS)) + tuple((name, group) for _, name, group in SUPPLEMENT_BATCHES):
         if set(selected) <= set(group):
             return name
     raise ValueError("Unrecognized scenario batch")
@@ -68,12 +72,17 @@ def check_manifest(value):
 def manifest_from_ipa(archive, app_root, scenarios=()):
     value = check_manifest(json.loads(archive.read(app_root + "/" + MANIFEST_RESOURCE)))
     check_visual_sources(value, scenarios)
+    check_supplement_sources(value, scenarios)
+    if set(scenarios) & set(MAP_SCENARIOS):
+        check_map_asset(archive, app_root, value)
     return value
 
 
 def validate_domain(state, scenario):
     if [probe.get("name") for probe in state.get("probes", [])] != PROBES[scenario]:
         raise ValueError("Missing/reordered domain UIKit probes")
+    if scenario == 'pill-render':
+        validate_control_probes(state['probes'], scenario)
     facts = state.get("facts", {})
     if state.get("pythonRequested") is not False:
         raise ValueError("Native domain scenarios must not start the SDK plugin runtime")

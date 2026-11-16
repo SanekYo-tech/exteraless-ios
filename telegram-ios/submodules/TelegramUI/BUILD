@@ -40,6 +40,7 @@ filegroup(
         "Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift",
         "Sources/ExteralessClient/PluginUI/PluginUIMenuModel.swift",
         "Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsUpdate.swift",
         "Sources/ExteralessClient/PluginUI/PluginUINavigation.swift",
         "Sources/ExteralessClient/PluginUI/PluginUIRequest.swift",
         "Sources/ExteralessClient/PluginUI/PluginUIShareFiles.swift",
@@ -58,13 +59,40 @@ filegroup(
         "Sources/ExteralessClient/Feed/*.swift",
         "Sources/ExteralessClient/Player/*.swift",
         "Sources/ExteralessClient/Pills/*.swift",
+        "Sources/ExteralessClient/SettingsReset*.swift",
     ]) + [
         "Sources/ExteralessClient/Chats/ExteralessPillStack.swift",
         "Sources/ExteralessClient/Chats/ExteralessChatTableController.swift",
         "Sources/ExteralessClient/ExteralessSettingsController.swift",
         "Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift",
+        "Sources/ExteralessClient/ExteralessSettingsSearch.swift",
         "Sources/ExteralessClient/ExteralessClientRuntime.swift",
         "Sources/ExteralessClient/ClientSettingsBridgeExtension.swift",
+        "Sources/ExteralessClient/Appearance/ExteralessMainMenu.swift",
+        "Sources/AppDelegate.swift",
+        "Sources/OpenUrl.swift",
+    ],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
+filegroup(
+    name = "ClientHarnessSDKFollowupSources",
+    srcs = glob(["Sources/ExteralessClient/PluginUI/PluginUIManager*.swift"]) + [
+        "Sources/Exteraless/PluginManagerController.swift",
+        "Sources/Exteraless/PluginTrustControls.swift",
+        "Sources/Exteraless/PluginSettingsController.swift",
+        "Sources/Exteraless/PluginSettingsModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsActionAuthority.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsTargetFocus.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsUpdate.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIBridgeExtension.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIContentController.swift",
+        "Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift",
+        "Sources/ExteralessClient/PluginUI/PluginElyxDeveloperIngress.swift",
+        "Sources/ExteralessClient/PluginUI/Tests/PluginTrustUIFixture.swift",
+        "Sources/ExteralessClient/PluginUI/Tests/PluginTrustSecondaryUIFixture.swift",
     ],
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
@@ -123,6 +151,30 @@ filegroup(
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )
 
+filegroup(
+    name = "ExteralessManagerCustomAliasSources",
+    srcs = [
+        "Sources/ExteralessClient/PluginUI/PluginUIManagerEventFIFO.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsUpdate.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIReleaseQueue.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIMenuModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUINavigation.swift",
+        "Sources/Exteraless/PluginSettingsModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIStyleModel.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIViews.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIWidgetContainer.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIResources.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsActionGate.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsDocument.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIManagerSettingsDocument.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUIManagerCustomCell.swift",
+        "Sources/ExteralessClient/PluginUI/PluginUISettingsTargetFocus.swift",
+    ],
+    visibility = ["//Tests/ManagerCustomAlias:__pkg__"],
+)
+
 swift_library(
     name = "TelegramUI",
     module_name = "TelegramUI",
@@ -131,7 +183,10 @@ swift_library(
     ]),
     copts = [
         "-warnings-as-errors",
-    ],
+    ] + select({
+        "//Telegram:debug": ["-DPLUGIN_TRUST_SECONDARY_UI_FIXTURE"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//third-party/exteraless:ExteralessCore",
         "//third-party/exteraless:PluginHost",
@@ -791,7 +846,7 @@ swift_library(
     name = "ExteralessTLModelTestsLib",
     testonly = True,
     module_name = "ExteralessTLModelTests",
-    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift"],
+    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift", "Tests/PluginElyxDeveloperProtocolTests.swift", "Tests/PluginTLSecondaryPermissionTests.swift"],
     copts = ["-swift-version", "6"],
     deps = [
         ":TelegramUI",

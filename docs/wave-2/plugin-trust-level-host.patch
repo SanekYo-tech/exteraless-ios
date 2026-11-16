@@ -1,0 +1,194 @@
+*** Begin Patch
+*** Update File: swift/PluginHost/Sources/PluginHost/PluginHost.swift
+@@
+         let permissionModel = PermissionsModel(unsafeMode: unsafePermissionsMode, log: log)
+-        permissionModel.load(from: self.store)
++        try permissionModel.load(from: self.store)
+@@
+-        for plugin in self.store.loadPlugins() {
++        let installed = self.store.loadPlugins()
++        try self.permissions.migrateInstalled(installed.map(\.id), to: self.store)
++        for plugin in installed {
+             self.state.upsert(plugin)
+         }
+@@
+-    public func installPlugin(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
++    public func installPlugin(sourceURL: URL, metadata: Plugin, selection: PluginPermissionRecord? = nil,
++                              admission: @escaping @Sendable () -> Bool = { true },
++                              shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> Plugin {
+         let activity = try lifecycle.enter()
+         defer { activity.finish() }
+-        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata)
++        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata,
++                                           selection: selection, admission: admission, shouldExecute: shouldExecute)
+     }
+ 
+-    private func installPluginImpl(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
++    private func installPluginImpl(sourceURL: URL, metadata: Plugin, selection: PluginPermissionRecord? = nil,
++                                   admission: @escaping @Sendable () -> Bool = { true },
++                                   shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> Plugin {
+@@
+         try state.beginMutation(metadata.id)
+         defer { state.endMutation(metadata.id) }
+         let oldPlugin = state.plugin(id: metadata.id)
++        guard admission(), shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
++        if oldPlugin == nil {
++            // Pin fresh consent before any possible bootstrap. Existing owners
++            // receive a replacement selection only AFTER their unload below.
++            try commitInstallConsent(id: metadata.id, replacing: false, selection: selection, isCurrent: shouldExecute)
++        }
+@@
+             await unloadPlugin(id: metadata.id, duringMutation: true)
++            guard shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
++            if oldPlugin != nil {
++                try commitInstallConsent(id: metadata.id, replacing: true, selection: selection, isCurrent: shouldExecute)
++            }
+             try rejectPluginSymlink(target)
+@@
+             await unloadPlugin(id: metadata.id, duringMutation: true)
++            if oldPlugin != nil {
++                try commitInstallConsent(id: metadata.id, replacing: true, selection: selection, isCurrent: shouldExecute)
++            }
+         }
++        guard shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
+         if let oldPlugin, let previous = oldPlugin.path, previous != target.path {
+@@
+         plugin.path = target.path
+-        plugin = state.upsert(plugin)
+-        persistPlugins()
++        plugin = try persistInstalledPlugin(plugin)
+         if plugin.enabled {
+@@
+     public func uninstallPlugin(id: String) async throws {
+         let activity = try lifecycle.enter()
+         defer { activity.finish() }
+         try state.beginMutation(id)
+         defer { state.endMutation(id) }
++        guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
++        let previousPermissions = permissions.effective(id)
++        // Fail BEFORE destructive archive/model cleanup if consent cannot be
++        // removed. Both the level and raw grants are forgotten in one commit.
++        try permissions.clear(id, in: store)
++        permissionsChanged(id: id, previous: previousPermissions)
+         await unloadPlugin(id: id, duringMutation: true)
+@@
+-        if let plugin = state.plugin(id: id), let path = plugin.path {
+-            try? FileManager.default.removeItem(atPath: path)
++        if let plugin = state.plugin(id: id), let path = plugin.path, FileManager.default.fileExists(atPath: path) {
++            try FileManager.default.removeItem(atPath: path)
+         }
+@@
+-        state.removePlugin(id: id)
+-        persistPlugins()
+-        permissions.clear(id, in: store)
++        try persistUninstalledPlugin(id: id)
+         notifyReload()
+@@
+     public func grantedPermissions(id: String) -> [PluginPermission] {
+-        PluginPermission.allCases.filter { permissions.has(id, $0) }
++        let effective = permissions.snapshot(id).effective
++        return PluginPermission.allCases.filter { effective.contains($0) }
+     }
+ 
++    public func permissionSnapshot(id: String) -> PluginPermissionSnapshot { permissions.snapshot(id) }
++
++    /// Legacy explicit NATIVE consent includes the necessary tier. Python has no
++    /// setter for this operation; level-aware native UI uses the overload below.
+     public func setGrantedPermissions(id: String, permissions grants: [PluginPermission]) throws {
++        try mutatePluginConsent(id: id) { current in
++            try self.permissions.setGranted(id, grants, to: self.store, isCurrent: current)
++        }
++    }
++
++    public func setGrantedPermissions(id: String, permissions grants: [PluginPermission], atLevel level: PluginTrustLevel,
++                                      expected: PluginPermissionSnapshot,
++                                      shouldExecute: @escaping @Sendable () -> Bool) throws {
++        try mutatePluginConsent(id: id, expected: expected, shouldExecute: shouldExecute) { current in
++            try self.permissions.setConsent(id, level: level, permissions: grants, to: self.store, isCurrent: current)
++        }
++    }
++
++    public func setPluginTrustLevel(id: String, level: PluginTrustLevel,
++                                   expected: PluginPermissionSnapshot? = nil,
++                                   shouldExecute: @escaping @Sendable () -> Bool = { true }) throws {
++        try mutatePluginConsent(id: id, expected: expected, shouldExecute: shouldExecute) { current in
++            try self.permissions.setLevel(id, level, to: self.store, isCurrent: current)
++        }
++    }
++
++    private func mutatePluginConsent(id: String, expected: PluginPermissionSnapshot? = nil,
++                                     shouldExecute: @escaping @Sendable () -> Bool = { true },
++                                     _ change: (@Sendable () -> Bool) throws -> Void) throws {
+         let activity = try lifecycle.enter()
+         defer { activity.finish() }
++        try state.beginMutation(id)
++        defer { state.endMutation(id) }
+         guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
+-        permissions.setGranted(id, grants, to: store)
++        let current: @Sendable () -> Bool = { [self] in
++            !state.isStopping && shouldExecute()
++                && (expected.map { permissions.snapshot(id) == $0 } ?? true)
++        }
++        guard current() else { throw PluginPermissionStoreError.authorityExpired }
++        let previous = permissions.effective(id)
++        try change(current)
++        // No throwing/cancellation check after the durable permission commit.
++        permissionsChanged(id: id, previous: previous)
++    }
++
++    private func commitInstallConsent(id: String, replacing: Bool, selection: PluginPermissionRecord?,
++                                      isCurrent: @Sendable () -> Bool) throws {
++        let previous = permissions.effective(id)
++        try permissions.prepareInstall(id, replacing: replacing, selection: selection, to: store, isCurrent: isCurrent)
++        permissionsChanged(id: id, previous: previous)
++    }
++
++    private func permissionsChanged(id: String, previous: Set<PluginPermission>) {
++        if !previous.subtracting(permissions.effective(id)).isEmpty {
++            bridge.permissionsChanged(pluginId: id)
++        }
+         recomputeGate()
+         notifyReload()
+     }
+@@
++    /// Publish installed/removed metadata only after the throwing native write.
++    /// The archive owner's staged source-file transaction calls these helpers.
++    private func persistInstalledPlugin(_ plugin: Plugin) throws -> Plugin {
++        persistenceLock.lock()
++        defer { persistenceLock.unlock() }
++        var next = state.pluginList()
++        if let index = next.firstIndex(where: { $0.id == plugin.id }) { next[index] = plugin }
++        else { next.append(plugin) }
++        try store.savePlugins(next)
++        return state.upsert(plugin)
++    }
++
++    private func persistUninstalledPlugin(id: String) throws {
++        persistenceLock.lock()
++        defer { persistenceLock.unlock() }
++        let next = state.pluginList().filter { $0.id != id }
++        try store.savePlugins(next)
++        state.removePlugin(id: id)
++    }
++
+     private func persistPlugins() {
+*** Update File: swift/PluginHost/Tests/PluginHostTests/PluginHostTests.swift
+@@
+-        model.load(from: store)
++        try model.load(from: store)
+@@
+-        model.setGranted("p1", [.messagesRead, .messagesSend, .ui], to: store)
++        try model.setGranted("p1", [.messagesRead, .messagesSend, .ui], to: store)
+@@
+-        store.saveGrants(["ab": [.messagesRead, .network]])
+-        XCTAssertEqual(store.loadGrants()["ab"] ?? [], [.messagesRead, .network])
++        try store.saveGrants(["ab": [.messagesRead, .network]])
++        XCTAssertEqual(try store.loadGrants()["ab"] ?? [], [.messagesRead, .network])
+*** Update File: swift/PluginHost/Tests/PluginHostTests/BridgeServiceConformanceTests.swift
+@@
+-        permissions.setGranted("alpha", [.intents], to: store)
++        try permissions.setGranted("alpha", [.intents], to: store)
+@@
+-        permissions.setGranted("alpha", [], to: store)
++        try permissions.setGranted("alpha", [], to: store)
+*** End Patch

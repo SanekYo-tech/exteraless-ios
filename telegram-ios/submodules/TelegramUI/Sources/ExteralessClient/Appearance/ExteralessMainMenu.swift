@@ -378,8 +378,8 @@ final class ExteralessMainMenuController: ExteralessAppearanceListController, UI
             }
         case 110:
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.navigate(exteralessSettingsController(context: self.context))
+                guard let self, let settings = exteralessSettingsController(context: self.context) else { return }
+                self.navigate(settings)
             }
         default:
             self.errorText = "This shortcut is not available on iOS."

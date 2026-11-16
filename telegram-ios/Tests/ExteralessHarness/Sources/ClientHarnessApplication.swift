@@ -173,6 +173,7 @@ final class ClientHarnessSession {
     private(set) var navigation: NavigationController!
     private(set) var driver: ClientHarnessUIKit!
     private(set) var runtime: ClientHarnessRuntime?
+    private(set) var settingsSearchChecks: SettingsSearchUIViewRouteChecks?
     private var started = false
     let viewIdentities = ClientHarnessViewIdentities()
 
@@ -235,9 +236,21 @@ final class ClientHarnessSession {
         self.window.overrideUserInterfaceStyle = data.theme.overallDarkAppearance ? .dark : .light
         self.navigation = NavigationController(mode: .single, theme: NavigationControllerTheme(presentationTheme: data.theme))
         self.driver = ClientHarnessUIKit(window: self.window, navigation: self.navigation, journal: self.report.journal)
+        if ["core-light", "core-dark"].contains(self.report.scenario) {
+            let checks = SettingsSearchUIViewRouteChecks(context: self.context, settings: self.settings, navigation: self.navigation)
+            self.settingsSearchChecks = checks
+            ExteralessSettingsEntry.setControllerFactory { context in exteralessSettingsController(context: context) }
+            ExteralessSettingsSearchEntry.install(checks.session)
+        }
         let home = ClientHarnessHomeController(data: data, settings: { [weak self] in
             guard let self else { return }
-            self.navigation.pushViewController(exteralessSettingsController(context: self.context, settings: self.settings))
+            do {
+                guard let controller = try self.settingsSearchChecks?.root()
+                    ?? exteralessSettingsController(context: self.context, settings: self.settings) else {
+                    throw ClientHarnessFailure(description: "settings Root has no matching live scope")
+                }
+                self.navigation.pushViewController(controller)
+            } catch { self.report.fail(error) }
         }, plugins: { [weak self] in
             guard let self else { return }
             guard let runtime = self.runtime else {
@@ -256,6 +269,10 @@ final class ClientHarnessSession {
         try await self.driver.settle(0.5)
         try clientHarnessRequire(home.view.window === self.window, "Display root never appeared")
         self.report.facts["screenScale"] = self.window.screen.scale
+        if ClientHarnessScenario.isReset(self.report.scenario) || ClientHarnessScenario.isTrustSupplement(self.report.scenario)
+            || ClientHarnessScenario.isMapSupplement(self.report.scenario) {
+            try self.loadDomainSourceEvidence()
+        }
         self.report.phase = "ready"
         self.report.journal.record("ready")
         try self.report.flush()

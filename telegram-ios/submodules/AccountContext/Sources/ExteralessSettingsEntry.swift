@@ -6,13 +6,13 @@ import Foundation
 public enum ExteralessSettingsEntry {
     private final class Storage: @unchecked Sendable {
         let lock = NSLock()
-        var factory: (@MainActor (AccountContext) -> ViewController)?
+        var factory: (@MainActor (AccountContext) -> ViewController?)?
     }
 
     private static let storage = Storage()
 
     /// Install at application composition, after configuring/registering settings.
-    public static func setControllerFactory(_ factory: @escaping @MainActor (AccountContext) -> ViewController) {
+    public static func setControllerFactory(_ factory: @escaping @MainActor (AccountContext) -> ViewController?) {
         self.storage.lock.lock()
         self.storage.factory = factory
         self.storage.lock.unlock()

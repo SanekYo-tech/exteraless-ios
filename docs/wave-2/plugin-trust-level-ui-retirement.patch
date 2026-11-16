@@ -1,0 +1,180 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift
+@@
+         let callbacks: [String: PluginUICallback]
++        let permissionIsCurrent: @Sendable () -> Bool
+         var terminalActionDelivered = false
+@@
+     struct Delivery: Sendable {
+         let owner: Owner
+         let handle: Int64
+         let arguments: PluginUIJSON
++        let permissionIsCurrent: @Sendable () -> Bool
++        init(owner: Owner, handle: Int64, arguments: PluginUIJSON,
++             permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) {
++            self.owner = owner; self.handle = handle; self.arguments = arguments
++            self.permissionIsCurrent = permissionIsCurrent
++        }
+@@
+-    func accept(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], expectedScope: PluginUIScope? = nil, admission: () throws -> Void = {}) throws -> Entry {
++    func accept(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], expectedScope: PluginUIScope? = nil, admission: () throws -> Void = {}, permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) throws -> Entry {
+         return try self.locked {
+             try self.requireScopeLocked(expectedScope)
+             try admission()
+-            return try self.acceptLocked(pluginId: pluginId, owner: owner, content: content, callbacks: callbacks)
++            guard permissionIsCurrent() else { throw PluginUIFailure.permission("UI permission admission expired") }
++            return try self.acceptLocked(pluginId: pluginId, owner: owner, content: content, callbacks: callbacks, permissionIsCurrent: permissionIsCurrent)
+         }
+     }
+ 
+-    private func acceptLocked(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], replacing: Set<UUID> = []) throws -> Entry {
++    private func acceptLocked(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], replacing: Set<UUID> = [], permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) throws -> Entry {
+@@
+-        let entry = Entry(owner: owner, state: state, content: content, callbacks: callbacks)
++        let entry = Entry(owner: owner, state: state, content: content, callbacks: callbacks, permissionIsCurrent: permissionIsCurrent)
+@@
+             guard var entry = self.entries[id], entry.state.scope == self.scope, entry.state.phase == .accepted else { return nil }
++            guard entry.permissionIsCurrent() else { return nil }
+@@
+             guard var entry = self.entries[id], scope == self.scope, entry.state.scope == scope,
+@@
+                 return (false, nil)
+             }
++            guard entry.permissionIsCurrent() else { return (false, nil) }
+             if let key = payload["key"]?.string, let value = payload["value"] {
+@@
+     func release(pluginId: String) -> [Retirement] {
+@@
+     }
+ 
++    func retirePermissions(pluginId: String) -> [Retirement] {
++        self.locked {
++            let ids = self.entries.values.filter { $0.state.pluginId == pluginId && !$0.permissionIsCurrent() }.map { $0.state.id }
++            return ids.compactMap {
++                self.retireLocked($0, reason: "permissionsChanged", notify: true,
++                    failure: .permission("Plugin access was reduced"))
++            }
++        }
++    }
++
+     func menus() -> [Entry] {
+@@
+-        return Delivery(owner: entry.owner, handle: callback.handle, arguments: .array([.object(event)]))
++        let permission: @Sendable () -> Bool = name == "closed" ? { true } : entry.permissionIsCurrent
++        return Delivery(owner: entry.owner, handle: callback.handle, arguments: .array([.object(event)]), permissionIsCurrent: permission)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIBridgeExtension.swift
+@@
+     public typealias Callback = @Sendable (PluginHost.CallbackOwner, Int64, String, String) -> Bool
++    public typealias ControlledCallback = @Sendable (PluginHost.CallbackOwner, Int64, String, String, @escaping @Sendable () -> Bool) -> Bool
+@@
+-    private let callback: Callback
++    private let deliveryCallback: @Sendable (Store.Delivery) -> Bool
++    private let permissionAdmission: PluginPermissionAdmission
+@@
+-                effectBudget: PluginNativeEffectBudget = PluginNativeEffectBudget()) {
++                effectBudget: PluginNativeEffectBudget = PluginNativeEffectBudget(),
++                permissionAdmission: PluginPermissionAdmission? = nil,
++                controlledCallback: ControlledCallback? = nil) {
+         self.captureOwner = captureOwner
+-        self.callback = callback
++        self.permissionAdmission = permissionAdmission ?? { id, required in
++            { required.allSatisfy { hasPermission(id, $0) } }
++        }
++        let deliveryCallback: @Sendable (Store.Delivery) -> Bool = { delivery in
++            guard let json = try? delivery.arguments.encoded() else { return false }
++            if let controlledCallback {
++                return controlledCallback(delivery.owner, delivery.handle, "__call__", json, delivery.permissionIsCurrent)
++            }
++            // Legacy synchronous native fixture transport: a revoked body is
++            // consumed, not retried forever ahead of its owner-FIFO release.
++            guard delivery.permissionIsCurrent() else { return true }
++            return callback(delivery.owner, delivery.handle, "__call__", json)
++        }
++        self.deliveryCallback = deliveryCallback
+         let leases = Store()
+         self.leases = leases
+-        self.releaseQueue = PluginUIReleaseQueue(isCurrent: { captureOwner($0.pluginId) == $0 }, callback: { delivery in
+-            guard let json = try? delivery.arguments.encoded() else { return false }
+-            return callback(delivery.owner, delivery.handle, "__call__", json)
+-        }, release: release, completed: { retirement in
++        self.releaseQueue = PluginUIReleaseQueue(isCurrent: { captureOwner($0.pluginId) == $0 }, callback: deliveryCallback, release: release, completed: { retirement in
+@@
+             let scope = try self.scope()
+             try self.requireModelPermissions(model, pluginId: pluginId)
++            let required = self.modelPermissions(model, pluginId: pluginId)
++            let permissionCurrent = self.permissionAdmission(pluginId, required)
+             let effect = try self.retainedEffect(owner: acceptedOwner, scope: scope, execution: execution,
+-                bytes: args[1].encoded().utf8.count, intents: kind == .share)
++                bytes: args[1].encoded().utf8.count, intents: kind == .share, additionalPermissions: required)
+             try self.validateAssets(model, effect: effect, scope: scope)
+             let entry = try self.leases.accept(pluginId: pluginId, owner: acceptedOwner, content: .presentation(model), callbacks: callbacks,
+-                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) })
++                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) },
++                permissionIsCurrent: permissionCurrent)
+@@
+             let effect = try self.retainedEffect(owner: acceptedOwner, scope: scope, execution: execution,
+-                bytes: patch.encoded().utf8.count + PluginUIJSON.object(candidate.raw).encoded().utf8.count)
++                bytes: patch.encoded().utf8.count + PluginUIJSON.object(candidate.raw).encoded().utf8.count,
++                additionalPermissions: self.modelPermissions(candidate, pluginId: pluginId))
+@@
+         case "uiNavigate":
+             guard args.count == 1 || args.count == 2 else { throw PluginUIFailure.malformed("uiNavigate expects a route model and optional callbacks") }
+             try self.require(.intents, pluginId: pluginId)
++            let permissionCurrent = self.permissionAdmission(pluginId, [.ui, .intents])
+@@
+             let entry = try self.leases.accept(pluginId: pluginId, owner: acceptedOwner, content: content, callbacks: callbacks,
+-                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) })
++                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) },
++                permissionIsCurrent: permissionCurrent)
+@@
+     private func requireOwner(_ entry: Store.Entry) throws {
++        guard entry.permissionIsCurrent() else { throw PluginUIFailure.permission("UI permission lease expired") }
+         guard self.isCurrent(owner: entry.owner, scope: entry.state.scope) else { throw PluginUIFailure.invalidHandle("UI lease belongs to a retired plugin/account lifetime") }
+@@
+     private func retainedEffect(owner: PluginHost.CallbackOwner, scope: PluginUIScope, execution: PluginNativeCallLease,
+-                                bytes: Int, intents: Bool = false) throws -> PluginUIRetainedEffect {
++                                bytes: Int, intents: Bool = false, additionalPermissions: Set<PluginPermission> = []) throws -> PluginUIRetainedEffect {
++        let required: Set<PluginPermission> = intents ? [.ui, .intents] : [.ui]
++        let permissionCurrent = self.permissionAdmission(owner.pluginId, required.union(additionalPermissions))
+         return try PluginUIRetainedEffect(budget: self.effectBudget, pluginId: owner.pluginId, bytes: bytes, isCurrent: { [weak self] in
+             guard let self else { return false }
+             return execution.isCurrent && self.isCurrent(owner: owner, scope: scope)
+-                && (!intents || self.hasPermission(owner.pluginId, .intents))
++                && permissionCurrent()
+         })
+     }
++
++    private func modelPermissions(_ model: PluginUIModel, pluginId: String) -> Set<PluginPermission> {
++        var required: Set<PluginPermission> = [.ui]
++        if model.kind == .share {
++            required.insert(.intents)
++            if !model.files.isEmpty && self.hasPermission(pluginId, .files) { required.insert(.files) }
++        }
++        return required
++    }
++
++    public func permissionsChanged(pluginId: String) {
++        let retired = self.leases.retirePermissions(pluginId: pluginId)
++        for retirement in retired { self.retire(retirement) }
++        DispatchQueue.main.async { [weak self] in
++            guard let self else { return }
++            for retirement in retired { self.removeNative(id: retirement.id, animated: false) }
++        }
++    }
+@@
+-            if !self.deliver(Store.Delivery(owner: entry.owner, handle: back.handle, arguments: .array([.object(event)]))) {
++            if !self.deliver(Store.Delivery(owner: entry.owner, handle: back.handle, arguments: .array([.object(event)]), permissionIsCurrent: entry.permissionIsCurrent)) {
+@@
+-        guard let json = try? delivery.arguments.encoded() else { return false }
+-        return self.callback(delivery.owner, delivery.handle, "__call__", json)
++        return self.deliveryCallback(delivery)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+-                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
++                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) },
++                    controlledCallback: { owner, handle, method, json, permissionCurrent in
++                        callbacks.callback(owner, handle, method, json,
++                            shouldExecute: { permissionCurrent() && uiGate.permits(owner: owner, argumentsJSON: json) },
++                            guaranteed: PluginUICallbackGate.isTerminal(argumentsJSON: json))
++                    })
+*** End Patch

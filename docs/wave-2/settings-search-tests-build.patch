@@ -1,0 +1,12 @@
+diff --git a/telegram-ios/Tests/Exteraless/BUILD b/telegram-ios/Tests/Exteraless/BUILD
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@ -6,3 +6,8 @@
+ package(default_visibility = ["//visibility:public"])
+ 
++exports_files(
++    ["SettingsSearchUIViewRouteChecks.swift"],
++    visibility = ["//Tests/ExteralessHarness:__pkg__"],
++)
++
+ ios_test_runner(

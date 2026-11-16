@@ -12,6 +12,8 @@ filegroup(
         "Sources/AccountContext.swift",
         "Sources/ExteralessContentOcclusions.swift",
         "Sources/ExteralessPillEntry.swift",
+        "Sources/ExteralessSettingsEntry.swift",
+        "Sources/ExteralessSettingsSearchEntry.swift",
     ],
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )

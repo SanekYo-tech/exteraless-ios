@@ -26,7 +26,7 @@ enum PluginRuntimeScript {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func metadata(_ source: String) throws -> Plugin {
+    static func metadata(_ source: String, format: PluginFileFormat = .source) throws -> Plugin {
         guard let envelope = try jsonValue(source) as? [String: Any] else {
             throw PluginHostError.invalidPlugin("metadata must be a JSON object")
         }
@@ -37,8 +37,12 @@ enum PluginRuntimeScript {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let data = try JSONSerialization.data(withJSONObject: raw)
-        let plugin = try decoder.decode(Plugin.self, from: data)
-        guard Plugin.isValidID(plugin.id), plugin.engine == "python" else {
+        var plugin = try decoder.decode(Plugin.self, from: data)
+        plugin.fileFormat = format
+        guard !Plugin.isReservedID(plugin.id) else {
+            throw PluginHostError.invalidPlugin("plugin id is reserved for the native metadata inspector")
+        }
+        guard Plugin.isValidID(plugin.id, format: format), plugin.engine == "python" else {
             throw PluginHostError.invalidPlugin("unsupported plugin id or engine")
         }
         return plugin
@@ -53,6 +57,14 @@ enum PluginRuntimeScript {
             throw PluginHostError.runtimeFailure("Invalid plugin load result or mismatched plugin id")
         }
         var plugin = installed
+        if installed.fileFormat.isArchive {
+            // Reload may see different bytes at the installed archive path.
+            // Keep native installation state while refreshing the inspected SDK
+            // metadata (including Elyx's requires object codec).
+            plugin = try Self.metadata(encodeJSON(metadata), format: installed.fileFormat)
+            plugin.path = installed.path
+            plugin.enabled = installed.enabled
+        }
         plugin.loaded = true
         plugin.loadError = nil
         plugin.loadDebug = nil

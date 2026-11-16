@@ -47,6 +47,7 @@ private final class TLGuardScenario: @unchecked Sendable {
                 return "{\"metadata\":{\"id\":\"\(name)\"},\"handles\":{\"app_event\":true,\"send_message\":true},\"has_settings\":false}"
             }
         }
+        if source.hasPrefix("_exteraless_runtime.hook_priority_json("), source.contains("on_send_message_hook") { return "0" }
         let trigger = self.sendEvent ? source.contains("on_send_message_hook") : source.contains("tl_f01_case")
         guard source.hasPrefix("_exteraless_runtime.dispatch_json("), trigger else { return nil }
         switch self.names.with({ $0[reference.raw] }) {

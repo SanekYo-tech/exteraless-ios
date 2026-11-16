@@ -300,3 +300,237 @@ omitted `DialogFeatures.definitions` from the fixture's simulated Root registrat
 so three archive-policy keys were absent (145 instead of148). The fixture now
 registers that actual group; the148-key and exact unavailable-field assertions are
 retained. No reset resolver or production scope was changed for this correction.
+
+## RSR01 / RSR02 postfix — 2026-11-16 source-freeze handoff
+
+The independent request is `reviews/settings-reset-source-closure.md` (read-only).
+The accepted **148 native / 154 selected Original / 512 All Original** scopes are
+retained. Coordinator's **43759513734 / 1880b663: 704 Core, including 17 reset
+fixtures, passed** is prior evidence; it does not cover these new witnesses.
+
+### RSR01 — actual Display return and completion ordering
+
+`SettingsResetController.viewDidAppear` now handles Display's cancelled-pop return
+without `viewWillAppear` (`NavigationContainer.interactivePopEnded`, ordinary and
+expansion cancel branches). It renews an invalid child authority and discards the
+old plan/session/result. A normal Will+Did pair prepares only once. If old work is
+still busy, the fresh preview is queued, not run concurrently or substituted with
+the old session.
+
+The production base's actual finish order is important:
+`operationTask = nil` → `isBusy = false` → completion → render. The stale-result
+branch can therefore start its one queued preview from completion. Recovery
+additionally requires `isScreenVisible`, a valid parent/child and idle state. A
+reply finishing while the swipe is still in progress waits for DidAppear. An
+actual pop or context retirement cannot start a replacement preparation.
+
+The public factory and registered `general.settingsReset` action are unchanged.
+The existing Original Other/General search alias remains in
+`ClientSettingsSourceRoutes.swift`. Native instrumentation is internal to the
+debug/testable module:
+
+- `SettingsResetWorkHooks(afterPrepare:afterReset:)` holds **completed actual
+  provider replies** in the new fixture; shipping callers supply neither hook.
+- `SettingsResetController.navigationStateForTesting` exposes only authority/plan/
+  session IDs, validity and queued-preview state.
+- `applyConfirmedPlan(_:authorityID:)` is the real UIAlert positive-confirmation
+  continuation. The lifecycle fixture invokes this same guarded continuation for
+  its pending-reset cases; it does not substitute a reset result.
+- The fixture's subclass records lifecycle callbacks and calls the production
+  superclass. It never synthesizes callback ordering itself.
+
+### RSR02 — withdraw an indeterminate destructive retry
+
+Additive result API: **`CoreSettingsResetReport.requiresNewPreview: Bool`**.
+The first reply retains its typed `.storage(.storageFailure(...))` and observed/
+confirmed/pending progress. If a public storage failure is followed by a snapshot
+different from the intended absent/default post-state, Core latches a fresh-preview
+requirement. The subsequent `session.run()` returns `settingsChanged` without
+calling the writer. It cannot fall back to `plan.before`, even when a synchronous
+observer restored the exact previous payload **and** stored presence after rename.
+
+| Failure observation | Permitted continuation |
+|---|---|
+| Complete intended reset remains observed | Retry uses only `resetExpected`; existing durability confirmation remains supported. |
+| Different/indeterminate state, including restored `2 + present` | Preserve the typed storage error, set `requiresNewPreview`, disable Retry, require a newly confirmed preview. |
+| Injected pre-rename error with the old file intact | Conservatively require a new preview too. This wrapper has no committed-outcome receipt and does not infer one from an error's operation label. The old file is preserved. |
+| Malformed JSON before mutation | Existing parse failure/CAS behavior still preserves the file; an explicit retry after restoring it remains guarded. |
+
+The page keeps the storage error visible, adds “Refresh the preview before
+continuing”, and disables its old reset/retry row using the new result flag.
+`ClientSettings`, SCF/SCR and the concurrent Search definition-version work are not
+part of this patch.
+
+### Regressions prepared
+
+Core now has **19 reset test methods**. New real-file witnesses:
+
+- `testRSR02PostRenameErrorAndObserverRestorationWithdrawOldRetry`: the one-shot
+  post-rename hook only throws. A synchronous observer sees absence and makes a
+  real CAS write restoring `tools.downloadSpeedBoost = 2` with presence. The second
+  run must retain its exact file bytes, value and presence; no external-thread
+  wait or hook reentry is used.
+- `testRSR02PreRenameFailurePreservesFileAndRequiresFreshPreview`: the pre-replace
+  fault leaves the complete old file intact; the old session is refused, while a
+  newly prepared/confirmed session succeeds.
+- The existing post-rename/unchanged-intent fixture now uses the actual Tools
+  definition and asserts the typed error plus `requiresNewPreview == false` before
+  its successful, no-extra-replacement durability retry.
+
+New given-context native fixture:
+`telegram-ios/Tests/Exteraless/SettingsResetNavigationChecks.swift`.
+It mounts the shipping reset renderer in a real `Display.NavigationContainer` in
+the supplied harness window. It invokes the same `interactivePopBegan/Changed/Ended`
+entry points used by Display's own navigation tests and lets the actual transition
+completion deliver DidAppear/DidDisappear. It asserts the observed cancelled
+sequence is exactly `willDisappear, didAppear`, with no intervening WillAppear.
+It checks the real mounted UIKit reset cell, plan/authority identity, actual file
+bytes and provider call counts.
+
+Ten independently selectable cases (one fresh bounded process per case):
+
+```text
+reset-ready-cancelled
+reset-prepare-before-return
+reset-prepare-after-return
+reset-reply-before-return
+reset-reply-after-return
+reset-prepare-actual-pop
+reset-reply-actual-pop
+reset-retired-ready
+reset-retired-prepare
+reset-retired-reply
+```
+
+Reply gates have a **6 s** upper bound and never hold a settings/main-thread lock.
+The interaction checks have an **18 s** deadline; ordinary readiness waits are
+at most 2 s, cleanup waits at most 5 s, and the existing **30 s process limit** is
+required. Setup uses a new private temporary settings file, actual General
+definitions, a backend that rejects any secret access, and the supplied offline
+AccountContext. No account construction, Keychain, network or plugin operation
+belongs to the fixture.
+
+### Coordinator BUILD / ready inputs (shared files remain coordinator-owned)
+
+The existing production source globs and reset fingerprint patterns already
+include the changed Core/controller. Add the fixture and its actual dependency
+inputs:
+
+```diff
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@
+-    ["SettingsSearchUIViewRouteChecks.swift"],
++    ["SettingsSearchUIViewRouteChecks.swift", "SettingsResetNavigationChecks.swift"],
+--- a/telegram-ios/Tests/ExteralessHarness/BUILD
++++ b/telegram-ios/Tests/ExteralessHarness/BUILD
+@@
+-    srcs = glob(["Sources/*.swift"]) + ["//Tests/Exteraless:SettingsSearchUIViewRouteChecks.swift"],
++    srcs = glob(["Sources/*.swift"]) + [
++        "//Tests/Exteraless:SettingsSearchUIViewRouteChecks.swift",
++        "//Tests/Exteraless:SettingsResetNavigationChecks.swift",
++    ],
+@@
+         "//submodules/SettingsUI:ClientHarnessSettingsSearchSources",
+         "//submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen:ClientHarnessSettingsSearchSources",
+         "//Tests/Exteraless:SettingsSearchUIViewRouteChecks.swift",
++        "//Tests/Exteraless:SettingsResetNavigationChecks.swift",
+--- a/swift/ExteralessCore/BUILD.bazel
++++ b/swift/ExteralessCore/BUILD.bazel
+@@
+         "Sources/ExteralessCore/CoreSettingsReset*.swift",
++        "Sources/ExteralessCore/ToolsFeatures.swift",
++        "Sources/ExteralessCore/PrivacyFeatures.swift",
+--- a/telegram-ios/submodules/Display/BUILD
++++ b/telegram-ios/submodules/Display/BUILD
+@@
+         "Source/TransformImageNode.swift",
++        "Source/Navigation/NavigationContainer.swift",
++        "Source/NavigationTransitionCoordinator.swift",
++        "Source/NavigationTransitionSpring.swift",
++        "Source/NavigationInteractivePopTracker.swift",
+```
+
+The second Harness BUILD hunk belongs to **DomainFingerprintInputs**. Debug
+`@testable import Display/TelegramUI` uses the existing rules_swift behavior:
+`features_for_build_modes` enables `swift.enable_testing` for `dbg`/`fastbuild`.
+These libraries are existing harness dependencies; no release/internal-symbol
+export policy change is requested.
+
+Native-gate owner: admit the ten case IDs in `ClientHarnessScenario` and the host
+driver whitelist, require source evidence for them, then dispatch to the new
+given-context API rather than the old `default: coreScenario()` fallback:
+
+```swift
+try self.loadDomainSourceEvidence()
+guard let resetCase = SettingsResetNavigationChecks.Scenario(rawValue: self.report.scenario),
+      let layout = self.navigation.validLayout,
+      let manifest = self.report.facts["domainSources"] as? [String: Any],
+      let files = manifest["files"] as? [String: String] else {
+    throw ClientHarnessFailure(description: "Missing reset scenario/layout/source evidence")
+}
+try await SettingsResetNavigationChecks.run(resetCase, context: self.context,
+    hostView: self.navigation.view, layout: layout, sourceHashes: files,
+    probe: { name, payload in try self.probe(name, extra: payload) })
+```
+
+`requiredSources` lists **22** exact source/config paths. Pass the real verified
+manifest `files`, not hand-authored revision labels. The probes are
+`reset-before-swipe`, `reset-dragging`, optional `reset-old-reply-before-return`,
+`reset-navigation-ended`, and either `reset-returned-ready` or `reset-retired-idle`.
+The first contains the required hashes; all include actual lifecycle, authority/
+plan/session IDs, worker counts, visibility and persisted fixture state. Include
+these probes in the host ready/report validation and frame extraction selection.
+
+### New frame expectations (specified before recording)
+
+- **Ready:** the native reset page follows the finger to roughly 22% of its width
+  and returns left to rest on cancellation. `isCancelled: true` uses Display's
+  critically damped noninteractive cancel spring: roughly 0.5 s, no body overshoot.
+  Navigation chrome and table follow their existing transition together; there is
+  no bright flash, clipped row edge or duplicate title. The returned page obtains
+  a new plan and one usable Reset row automatically.
+- **Prepare reply before return:** the old reply is discarded while the swipe is
+  still active. Replacement work begins only after the actual DidAppear ending;
+  no final blank page or disabled Reset remains.
+- **Prepare reply after return:** the page first rests with its ordinary busy row.
+  Releasing the old reply produces exactly one fresh preview, not the old plan and
+  not a second preparation from a Will+Did pair.
+- **Reset reply before/after return:** the actual file is already at absent/default.
+  The old session/result is not revived. After idle, the new preview shows default
+  state and a fresh reset action; no old completion badge/Retry session appears,
+  and navigation itself makes no additional settings write.
+- **Actual pop / retired context:** the removed page stays removed, or the returned
+  retired page shows its context message with reset unavailable. Late worker
+  replies do not remount it, recreate a preview or perform another reset.
+- **RSR02 error UI:** the typed storage error and partial progress remain visible.
+  A different/indeterminate post-state disables Retry and asks for Refresh preview;
+  unchanged intended post-state keeps its guarded durability retry. The Core
+  injected-fault evidence is not itself a claimed UIKit frame pass.
+
+Record with the existing `simctl io recordVideo` / ffprobe-labelled frame workflow.
+The new probes locate the before/after-return races; old settings-root or Core
+passes cannot be relabelled as these clips. Fresh native compilation, execution
+and frame evaluation are still required; this agent has not dispatched CI.
+
+### Current patch identities and verification boundary
+
+Raw SHA-256 of the current source files (recompute from the final packaged source
+cohort if coordinator merges further edits):
+
+| Source | SHA-256 |
+|---|---|
+| `CoreSettingsResetOperation.swift` | `fd6b6d648c032e9026f8fab63448b6106200cd8488b26ce746e24db7d11eaeef` |
+| `CoreSettingsResetTests.swift` | `3a31732cf54a17efe6e160a6bff76d9a8e7911afd854397d771dd86eebfb1b11` |
+| `SettingsResetController.swift` | `ddf63e8843dca995003485d03df13bb112ae68e466f21aa633581a0a446a215d` |
+| `SettingsResetNavigationChecks.swift` | `b8f42aedbf80a9d4b555323eefd331d1c8bf93ddfded650d8813e88f53aaeb32` |
+| `SettingsResetIntegration.swift` (existing action binding) | `bbbdae624a8a00ac07bc30e5402efee0347013ade5273b2a81618bd18cb67e4d` |
+
+Bounded local checks passed: scoped diff/whitespace and Swift delimiters, append-only
+handoff prefix, 19 unique Core methods, ten distinct native cases, all 22 required
+ready-source paths, accepted catalogue identity, and the actual base idle-before-
+completion ordering. Swift/Swiftc are unavailable on this Windows host; **the new
+Core witnesses and native fixture have not executed here**. After coordinator's
+build, run the 19-case `CoreSettingsResetTests` filter under the existing 30 s
+subprocess limit, then the fresh native cases/recorded frames. The supplied earlier
+17-case Linux pass is not evidence for RSR01/RSR02 remediation.

@@ -4,18 +4,36 @@
 
 ### Актуально: полный runtime gate GREEN, компиляция приложения продолжается
 
+**Общий Host/SDK/UIKit source cohort подготовлен к публикации:**286paths,
+59SDKrawpins/10inputreceipts ивсеcurrentSDK/source-identityгруппы сверены поGitindex;
+30ConfigtestsPASS. ModeABA CI43783735908/11b87846:4nativePASS/0skip,64inputs/13spans.
+DEV-LIFECYCLE01 independentlysource-closed. ПоследняяfullIPA40independentPASS.
+Послеcommit:полныйCompatCI, затемMac5children иUIKit20/434methods. FD47timeout
+диагностируетсянаfrozenCI; дваcancellationwaiterfixturecyclesисправленывготовомсрезе.
+
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **aca0eb38**: reset post-commit retry guard +2Corefixtures; search6deltaGREEN на4bd2f7e3 |
+| HEAD | **6de4ac36**: iOS DNS-SD linkage и narrow Rust resolver FFI allowance опубликованы |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
-| Последний разобранный Linux | **43764252538 / aca0eb38 GREEN:712 Core /180 Host /30 Hooks** (14.319/5.507/0.749s); Python baseline1af:363/23skip |
+| Последний разобранный Linux | **43764252538 / aca0eb38 GREEN:712 Core /180 Host /30 Hooks**; **43769700681 /31287b92:398 pytest PASS/23skip (48.45s)** |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
-| Native XCTest / UIKit | **1f97255c** публикует frozen delta: 36 labels / 85 sources / 88 classes / 410 методов, записи **3+3+2**; execution/frames ожидаются |
-| Полная IPA | **43761767575 / f05473ea выполняется**; Bubble прошёл, PeerInfo unused-result correction проверяется |
-| Последняя проверенная Telegram IPA | **build23 / 43635233046 / 68bb1adf** |
+| Native XCTest / UIKit | Finaltooling: **37labels /89sources /92classes /434methods**,20scenes и5realSDKchildren; delivery10/10verified, execution/framespending |
+| Полная IPA | **43779402542 /6de4ac36 GREEN, build40**, independentlyPASS; artifact14187634135 |
+| Последняя проверенная Telegram IPA | **build40 /43779402542 /6de4ac36**, 98 177 711байт |
 
-**Активен только IPA watcher:** 43761767575 — `sh_1e10e81bc001WehODDwluZmbGo`
-(`ipa-f05473ea-watch-resumed-1.log`, до3ограниченных retries только transport errors).
+**IPA watcher завершён SUCCESS.** `43779402542/6de4ac36`,build40:
+`exteraless-ios-13.1.1-40`/14187634135,ZIP273790711bytes/SHA
+03c89e65e136ab7ae8388b377097b0cdb296ca936d6a68ec0ed3d1665be969d6.
+Preflight14188291130. `ses_e1fc5a762ffed9YFp10GajDrY0` скачивает/проверяетв
+build/artifacts/telegram-43779402542 исоздаётipa-build40-acceptance.md.
+Проверка завершенаPASS:67unsignedarm64Mach-O/60frameworks/6extensions,
+1418placements/419sourcepins. IPA-SHAe28940fdb017941525824ba1906d09e32da6bd973fa1c1c7c41bd294eeee3d99.
+Короткийdeliverypath:build/artifacts/telegram-43779402542/exteraless-ios-13.1.1-40-unsigned.ipa.
+НовыйHost/SDKcohort/UI20ещёнепокрываютсяэтойIPA. Rustpatch/gilbaseверны;неpoll.
+43769738884 завершиласьнадвухMessageMediaActionsdiagnostics; cacheработал:
+7216disk-cachehits из9654processes,675workeractions. Следующийbuildиспользуеттотжеcache.
+Linux/POSIX Host follow-up ведётотдельно `ses_e1ec1979effeHeE6OKLhF3XvXz` на
+изолированнойci-ветке; основнойHEAD/indexоннеменяет. Неpoll.
 Первый watcher f05473ea завершился поTLS handshake timeout; GitHub подтвердил
 `in_progress`, сам build не перезапускался. 43758245026 завершилась на unused rawHeight вPeerInfo;
 исправленоf05473ea. Core/Compat43759513734 GREEN; егоwatcherзавершён. Не poll.
@@ -85,8 +103,23 @@ join опубликован в `8b726b75`: обычная регенерация
 ### Активные исправления конкретных SDK/route findings
 
 **Состояние последних review findings:**
+- NFD-01/03 independentlysource-closed иstartup/TLSjoined; последнийP2
+  **DEV-LIFECYCLE-01**: конкурентныеoff/onскрываютoffотactorcontinuations.
+  **DEV-LIFECYCLE01 исправлен иsource-closed**, actual4-testLinuxgateGREEN.
+  `reviews/native-elyx-mode-aba-closure.md`, `elyx-mode-aba-posix-ci.md`.
+- **Новый FD-provider review: NFD-01 P1 +NFD-02/03 P2**, см.
+  `reviews/native-elyx-fd-authority-review.md`. **NFD-01/03 fixes готовы иsealed**:
+  native-elyx-developer-final-inputs.json,41postimages/58pinscoorPASS.
+  Actualstartup/TLS/epoch/readiness/teardownAPPLIED;повторныйFDreviewвработе.
+  **NFD-02fixготов**:
+  FDinspectionприменяетsharedload-policyдоreturn;ordinarypreviewсохранён.
+  Sealedinputs`elyx-nfd02-inputs.json`;12PythonPASS/3POSIXskip.
+  **Независимоеsource-closureNFD-02получено:** `reviews/elyx-nfd02-closure.md`.
+  **Linux43774694321/ff0c9fbd GREEN:50/50,0skip,19.238s,167pins**, включаяNFD02
+  иplatformsuite. `elyx-load-preflight-posix-ci.md`;NFD01/03повторныйreviewpending.
+  Startup/5-йchildпродолжаются.
 - Независимо source-closed: Search R1–R5, Reset RSR01–02, Custom MCA-F01/F02
-  и восемь ранее проверенных SDK контрпримеров. Native/render acceptance pending.
+  Trust S1–S3 и восемь ранее проверенных SDK контрпримеров. Native/render acceptance pending.
 - Reset RSR01–02:2P2 (`reviews/settings-reset-source-closure.md`) — cancelled-pop
   preview recovery и post-commit same-payload restoration перед retry. Fixesготовы;
   Coreaca0eb38вCI(19resetmethods), UIViewDidAppear recoveryвworkingtree.
@@ -97,24 +130,72 @@ join опубликован в `8b726b75`: обычная регенерация
 - Trust secondary permissions:3P2 S1–S3 (`reviews/plugin-trust-level-source-closure.md`)
   — TL external media.files, deferred UI link.intents и late-grant Share.files.
   Consumer fixesготовы; RuntimeclassifyShareFile+BUILD3hunksAPPLIED. Полный набор
-  зависимостей capturedприadmission, carriedчерезprep/open/callback. Повторноеreview
-  `ses_e1f1c511cffeeQHqwH0UJjDrme` → `plugin-trust-secondary-closure.md`.
+  зависимостей capturedприadmission, carriedчерезprep/open/callback.
+  **Независимоеsource-closureполучено:** `reviews/plugin-trust-secondary-closure.md`,
+  8readyhashes/36inputpins и actual Runtime wiring подтверждены.
 - SettingsSearch MS-ROUTE-01:5P2sourcewitnessesR1–R5(`settings-search-source-closure.md`)
   — launchconsumer-before-intents,pendingURLsessionABA,schemaeventABA,defaultRoot
   nilauthorityfallback,explicitclassqualification. Production fixesAPPLIED19paths;
   Core16+6fixturesGREEN4bd2f7e3. **Независимоеsource-closureR1–R5получено**:
   `reviews/settings-search-r1-r5-closure.md`; в этихпятиcounterexamplesнетP1/P2.
 - Archive GAP01:3P1 (`reviews/elyx-archive-source-closure.md`) — cached.pyc filenames,
-  immutable/code-protected execution, fd/nofollow extraction/cleanup. Archiveowner
-  исправляетдоsourcefreeze; новыйarchiveкодНЕвключёнвпроверяемыйcommit.
+  immutable/code-protected execution, fd/nofollow extraction/cleanup —
+  **ARCH01/02/03 source-closed** в `reviews/elyx-archive-p1-closure.md`.
+  P2 sys.platform=ios исправленвтрёхselectors;4portabletestsPASS/1POSIXskip.
+  РеальныйDarwin/iOS SDK FD-probe APPLIEDвnative_plugin_probe/native_wave_probe;
+  **Независимоеsource-closureполучено:** `reviews/elyx-ios-platform-closure.md`.
+  Actual iOS FD flag ещёожидаетсвежегоAppleпрогона.
+  Cgate+Swiftregistryhook+Hostcapture-before-unloadhunksAPPLIED.
 - ManagerCustom/alias:2P2 (`reviews/manager-custom-alias-source-closure.md`) —
   callbacksnapshot refreshдоnativecommit иrootclickобгоняетinlineFIFO. Fixesполучены:
   commitACK +единыйinline/rootFIFO;17sharedpostimagesAPPLIED,10ownedpinsсовпали.
   15PythoncasesPASS,7newnativecasespending. **Независимоеsource-closureполучено:**
   `reviews/manager-custom-ordering-closure.md`,5focusedPythoncasesPASS.
 - NativeElyxdevelopercommand ingress: P2;8остальныхSDKcounterexamplesclosedsource.
-  Developerownerделаетnativeworker-routing, файловыеchangesдолжныопиратьсяна
-  исправленнуюarchiveFD/manifestauthority;онуведомлёнобэтихP1.
+  FDprovider/registryv1 реализованы(21nativeFSfixtures). Developerowner завершает
+  реальныйstartup/readiness/TLS/teardown join и5-йbounded realSwift/C/SDKchild;
+  контракт `elyx-source-descriptor-v1.json`, opaque11-keycapability,безrawFDwire.
+
+**Выполненные дополнительные gates:**
+- Linux43768124344/ff913492:42PythonPASS/0skip,все17бывшихPOSIXskipsвыполнены,
+  freshCbuild. Swiftcompilefailedнаclosureinference;отчёт`elyx-posix-ci.md`.
+- Swift-only43769449668/ec1131cf прошёлпервуюпроблемуиостановилсянааналогичном
+  `BridgeServices.nativeEffectLease`;обаfuturePredicateexpressions исправлены,
+  **43771162142/0ad00c3e GREEN:53HostPASS/0skip**,7actualdescriptorcases,
+  build17.88s/run0.569s,166pinsverified. `elyx-posix-host-final.md`.
+  Capture21-caseFDprovider/registryсрезаостановлен:2активноизменённыхфайла
+  отличаютсяотстарыхhandoffpins. Ветка/CIнесоздавались;
+  `elyx-fd-provider-posix-ci.md`. Новыesealedpins придутсготовымstartup/5th-childhandoff.
+- Fresh instrumentedCgate:7/7наPy3.12и3.14,61nativecalls/60buffersfreed/
+  33contextsreleasedнаверсию,дваOWN_GILowners. `elyx-c-gate-validation.md`.
+  ЭтоCtransportproof; productionFDregistry/Appleещётребуютисполнения.
+
+**Последний compiler cohort:**33Swiftpaths,27authorposthashes,2scopedindexhunks
+дляRoot/MainMenu и59SDKrawpins/10receiptsпроверены. Counts276/0/32,508bindings.
+`ios-telegram-ui-compiler-cohort.md`ссылаетсянавсе5groupreceipts.
+SourceSearch/Reset иновыйHost/SDKWIPсохраненыдляследующегосогласованногосреза.
+
+NativeFDv1provider/startup/TLS теперьAPPLIED:47Host+7Ingressnativecasesподготовлены,
+новыйPOSIXCIнаsealedinputsведёт `ses_e1ec1979effeHeE6OKLhF3XvXz`.
+43779077310/ecaa9d85проверил184pins, compilefailedнаCoreFoundation/GlibcS_IFREG
+ambiguity. КоординаторявноуказалDarwin/Glibcconsts;повторяетсятотже47+7gate.
+43780298237/a5720a43прошёлэтотsite, затемнашёлtest391throwing`||`безобщегоtry.
+Однострочныйfixturefixприменён;deadlineиassertionsсохранены,47+7CIповторяется.
+CoordinatorAPPLIED12toolinghunksпятогоrealSwift/C/FD/SDKchild;11,416bytesownedinputs,
+30sprocess; тотжеpublicHost activation APIпроверяетreadiness/compare/changes/reload.
+Finalsource-review — `ses_e1f405489ffeax73Cv9nGJs0Se`; native execution pending.
+Toolingowner сводитfinalfive-child/sparseinputs иupdatednative-testmap.
+Finaltoolingполучен:1731inputs,10deliverypathsбезdrift,ZIP
+70a05606b7f2011810e0ece439cd512e549f89cb902d0569d77c153f534aaa66.
+16tooling+5fixture/readinesschecksPASS;передMacпубликациейнужнаRootpinregeneration.
+Map20-йscene: actualMKMapViewвфиксированномтестовомрегионе, локальныеOSMtile
+inputs/failure; стандартныеpublicMapKit/GeoServicesзапросыдопущены, egress-disabled
+неутверждается. Entry/framevalidationготовы:20scenes/430XCTestmethods,
+32-pathdeltaSHA86e7eafdced3291a8fd38cb054a266a0936a8a96a6e43969bdd49f3cbb945ba1.
+UIKitFDpacketAPPLIEDиcoordinatorverified:14/14pathsбезdrift,
+ZIPdaac64f977e2bba45612f1ca92cc8063606fa4ae50216f2143c2cd0dccaf3123.
+1397inputs,7driver+4FDchecksPASS;actual_ios_fd_pathsобязателендляобоихiOSowners.
+20scenes/430XCTestmethods/30sprocessсохранены;Native/framesнеисполнялись.
 
 Последний follow-up `reviews/sdk-symbol-remediation-source-closure.md`:
 **8 counterexamples source-closed**, остаётся P2 native Elyx command ingress.

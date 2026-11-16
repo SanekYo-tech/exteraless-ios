@@ -17,6 +17,8 @@ extension ClientHarnessSession {
         self.navigation.pushViewController(host)
         defer { host.stop(); UIPasteboard.general.items = [] }
         try await self.driver.settle()
+        try await self.runInlineMathConfigurationSegment(host: host)
+        try await self.driver.settle(0.35)
         let seed = self.composerContent()
         host.seed(seed)
         try await self.driver.settle(0.4)

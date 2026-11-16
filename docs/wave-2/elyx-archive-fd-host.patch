@@ -1,0 +1,31 @@
+diff --git a/swift/PluginHost/Sources/PluginHost/PluginHost.swift b/swift/PluginHost/Sources/PluginHost/PluginHost.swift
+--- a/swift/PluginHost/Sources/PluginHost/PluginHost.swift
++++ b/swift/PluginHost/Sources/PluginHost/PluginHost.swift
+@@ -1051,7 +1051,16 @@
+         defer { activity.finish() }
+         try state.beginMutation(id)
+         defer { state.endMutation(id) }
+-        guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
++        guard let installed = state.plugin(id: id) else { throw PluginHostError.pluginNotFound(id) }
++        // Pin existing archive inodes before retirement can suspend. A late
++        // filesystem replacement must never become a new purge target by name.
++        let storageRoot = URL(fileURLWithPath: configuration.runtime.pluginRootDirectory).deletingLastPathComponent()
++        let archiveCache: PluginArchiveCacheLease?
++        if installed.fileFormat.isArchive {
++            archiveCache = try PluginServiceStorage(rootDirectory: storageRoot).captureArchiveCache(pluginId: id)
++        } else {
++            archiveCache = nil
++        }
+         let previousPermissions = permissions.effective(id)
+         // Fail before destructive archive/model cleanup if consent cannot be
+         // removed. Both level and raw grants are forgotten in one commit.
+@@ -1060,8 +1069,7 @@
+         await unloadPlugin(id: id, duringMutation: true)
+         // No await after this cleanup: a replacement cannot acquire this ID
+         // until all old archive resources and model state have been retired.
+-        let storageRoot = URL(fileURLWithPath: configuration.runtime.pluginRootDirectory).deletingLastPathComponent()
+-        try PluginServiceStorage(rootDirectory: storageRoot).purgeArchiveCache(pluginId: id)
++        try archiveCache?.purge()
+         if let plugin = state.plugin(id: id), let path = plugin.path, FileManager.default.fileExists(atPath: path) {
+             try FileManager.default.removeItem(atPath: path)
+         }

@@ -6,7 +6,7 @@ from pathlib import Path
 import time
 
 
-MANIFEST = "docs/wave-2/plugin-ui-followup-postimage.json"
+MANIFEST = "docs/wave-2/plugin-ui-final-cohort-postimage.json"
 RUNTIME = "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift"
 HARNESS = "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift"
 

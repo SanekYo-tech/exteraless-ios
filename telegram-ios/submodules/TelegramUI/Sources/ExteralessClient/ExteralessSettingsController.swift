@@ -32,6 +32,7 @@ public enum ExteralessSettingsUI {
         for action in actions {
             if self.actionsById[action.id] == nil { self.actionOrder.append(action.id) }
             self.actionsById[action.id] = action
+            ExteralessSettingsSearchRegistry.registered(action.id)
         }
         if !actions.isEmpty { NotificationCenter.default.post(name: self.actionsDidChange, object: nil) }
     }
@@ -39,6 +40,7 @@ public enum ExteralessSettingsUI {
     public static func unregisterActions(ids: Set<String>) {
         for id in ids { self.actionsById.removeValue(forKey: id) }
         self.actionOrder.removeAll { ids.contains($0) }
+        ExteralessSettingsSearchRegistry.removed(ids)
         if !ids.isEmpty { NotificationCenter.default.post(name: self.actionsDidChange, object: nil) }
     }
 
@@ -50,14 +52,60 @@ public enum ExteralessSettingsUI {
 /// Composition registers domains separately; opening this screen invents no
 /// settings, starts no plugin runtime and assumes no singleton AccountContext.
 @MainActor
-public func exteralessSettingsController(context: AccountContext) -> ViewController {
-    return ExteralessClientSettingsController(context: context, settings: .shared, mode: .root)
+public func exteralessSettingsController(context: AccountContext) -> ViewController? {
+    return ExteralessSettingsSearchEntry.makeRoot(context: context)
 }
 
-/// Injection seam for a controlled native UI fixture using the actual store.
+/// An explicitly requested store must belong to the installed live scope. An
+/// independently owned fixture uses the explicit searchSession overload below.
 @MainActor
-public func exteralessSettingsController(context: AccountContext, settings: ClientSettings) -> ViewController {
-    return ExteralessClientSettingsController(context: context, settings: settings, mode: .root)
+public func exteralessSettingsController(context: AccountContext, settings: ClientSettings) -> ViewController? {
+    return ExteralessSettingsSearchEntry.makeRoot(context: context, settings: settings)
+}
+
+@MainActor
+public func exteralessSettingsController(context: AccountContext, settings: ClientSettings, searchSession: ExteralessSettingsSearchSession) -> ViewController? {
+    guard searchSession.matches(context: context, settings: settings),
+          let ticket = try? searchSession.resolve(.canonical(.root)).ticket else { return nil }
+    return ExteralessClientSettingsController(context: context, settings: settings, mode: .root,
+        searchSession: searchSession, routeTicket: ticket)
+}
+
+@MainActor
+func exteralessSettingsDestinationController(context: AccountContext, settings: ClientSettings, route: ClientSettingsRoute,
+                                            searchSession: ExteralessSettingsSearchSession, ticket: ClientSettingsSearchTicket) -> ViewController? {
+    guard searchSession.matches(context: context, settings: settings), searchSession.accepts(ticket) else { return nil }
+    let mode: ExteralessClientSettingsController.Mode
+    let focus: String?
+    switch route {
+    case .root:
+        mode = .root
+        focus = nil
+    case let .row(key), let .setting(key):
+        let snapshot = settings.readSnapshot()
+        guard let definition = snapshot.definitions.first(where: { $0.key == key }),
+              ClientSettingsSearchIndex.isGenericVisible(definition) else { return nil }
+        if case .row = route {
+            mode = .root
+            focus = "setting:" + key
+        } else if snapshot.secretKeys.contains(key) {
+            mode = .editor(key)
+            focus = "input:" + key
+        } else if !definition.options.isEmpty {
+            mode = .selector(key)
+            focus = nil
+        } else if case .bool = definition.defaultValue {
+            mode = .root
+            focus = "setting:" + key
+        } else {
+            mode = .editor(key)
+            focus = "input:" + key
+        }
+    default: return nil
+    }
+    guard searchSession.accepts(ticket) else { return nil }
+    return ExteralessClientSettingsController(context: context, settings: settings, mode: mode,
+        searchSession: searchSession, routeTicket: ticket, focusRowID: focus)
 }
 
 @MainActor
@@ -75,11 +123,22 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
     private var draftWasEdited = false
     private var editingSecret = false
     private var exportButton: UIBarButtonItem?
+    private var searchButton: UIBarButtonItem?
+    private let searchSession: ExteralessSettingsSearchSession
+    private let routeTicket: ClientSettingsSearchTicket
+    private var routeFocus: ExteralessSettingsRowFocus?
 
-    init(context: AccountContext, settings: ClientSettings, mode: Mode) {
+    init?(context: AccountContext, settings: ClientSettings, mode: Mode, searchSession: ExteralessSettingsSearchSession,
+          routeTicket: ClientSettingsSearchTicket, focusRowID: String? = nil) {
+        guard searchSession.matches(context: context, settings: settings), searchSession.accepts(routeTicket) else { return nil }
         self.settings = settings
         self.mode = mode
+        self.searchSession = searchSession
+        self.routeTicket = routeTicket
         super.init(context: context)
+        if let focusRowID {
+            self.routeFocus = ExteralessSettingsRowFocus(rowID: focusRowID, valid: { [weak self] in self?.routeIsCurrent == true })
+        }
         // Subscribe before the initial coherent read; callbacks only invalidate.
         self.observation = settings.observe { [weak self] _ in
             Task { @MainActor [weak self] in self?.render() }
@@ -93,13 +152,29 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
             }
         }
         NotificationCenter.default.addObserver(self, selector: #selector(self.actionsChanged), name: ExteralessSettingsUI.actionsDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(self.actionsChanged), name: ExteralessSettingsSearchSession.didChange, object: self.searchSession)
     }
 
     required init(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     deinit { self.observation?.cancel() }
 
+    private var routeIsCurrent: Bool {
+        self.searchSession.matches(context: self.context, settings: self.settings) && self.searchSession.accepts(self.routeTicket)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        self.routeFocus?.apply(to: self)
+    }
+
+    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+        self.routeFocus?.apply(to: self)
+    }
+
     override func refresh() {
+        guard self.routeIsCurrent else { self.render(); return }
         if case .editor = self.mode {
             self.render()
             return
@@ -110,6 +185,14 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
     }
 
     override func render() {
+        guard self.routeIsCurrent else {
+            self.navigationItem.rightBarButtonItems = nil
+            self.draft = ""
+            self.draftWasEdited = false
+            if self.isNodeLoaded { self.view.endEditing(true) }
+            self.setSections([ExteralessSettingsSection(rows: [ExteralessSettingsRow(id: "settings.route.changed", title: clientSettingsText("Search.Changed", "Reopen this setting from the current search results."))])])
+            return
+        }
         let snapshot = self.settings.readSnapshot()
         switch self.mode {
         case .root:
@@ -119,6 +202,7 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         case let .editor(key):
             self.renderEditor(key, snapshot: snapshot)
         }
+        self.routeFocus?.apply(to: self)
     }
 
     private func renderRoot(_ snapshot: ClientSettingsSnapshot) {
@@ -132,8 +216,21 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         }
         export.accessibilityLabel = clientSettingsText("Export", "Export settings")
         export.isEnabled = !self.isBusy && snapshot.definitions.contains(where: { !$0.isSecret })
-        self.navigationItem.rightBarButtonItem = export
+        let search: UIBarButtonItem
+        if let current = self.searchButton { search = current }
+        else {
+            search = UIBarButtonItem(barButtonSystemItem: .search, target: self, action: #selector(self.searchPressed))
+            self.searchButton = search
+        }
+        search.accessibilityIdentifier = "settings.search.open"
+        search.accessibilityLabel = clientSettingsText("Search.Open", "Search settings")
+        search.isEnabled = !self.isBusy && self.searchSession.isCurrent
+        self.navigationItem.rightBarButtonItems = [export, search]
         var sections = self.operationSections(storageError: snapshot.lastError)
+        let tickets = self.searchSession.items(context: self.context).reduce(into: [String: ClientSettingsSearchTicket]()) { result, item in
+            if item.isAvailable { result[item.ticket.identifier] = item.ticket }
+        }
+        let versions = self.settings.readSnapshot().definitionVersions
         var groups: [ExteralessSettingsSection] = []
         var sectionIndices: [String: Int] = [:]
         func append(_ row: ExteralessSettingsRow, section: String) {
@@ -144,20 +241,22 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
                 groups.append(ExteralessSettingsSection(title: clientSettingsText("Section." + section, section), rows: [row]))
             }
         }
-        for definition in snapshot.definitions where definition.section != "AI state"
-            && !ClientAPIFeatures.requiresNativeEditor(definition.key)
-            && !ExteraConfigCompatibility.keys.contains(definition.key) {
-            append(self.settingRow(definition, snapshot: snapshot), section: definition.section)
+        for definition in snapshot.definitions where ClientSettingsSearchIndex.isGenericVisible(definition) {
+            let ticket = versions[definition.key] == snapshot.definitionVersions[definition.key] ? tickets["setting:" + definition.key] : nil
+            append(self.settingRow(definition, snapshot: snapshot, ticket: ticket), section: definition.section)
         }
-        for action in ExteralessSettingsUI.registeredActions {
+        for action in self.searchSession.rootActions {
+            let ticket = tickets["action:" + action.id]
             var row = ExteralessSettingsRow(id: "action:" + action.id, title: clientSettingsText("Action." + action.id, action.title))
             row.accessory = .disclosure
-            row.enabled = !self.isBusy
+            row.enabled = !self.isBusy && ticket != nil
+            row.longAction = { [weak self] in
+                guard let self, let ticket, self.routeIsCurrent, self.searchSession.accepts(ticket) else { return }
+                self.searchSession.presentRowMenu(request: .canonical(.action(action.id)), from: self, reset: nil)
+            }
             row.action = { [weak self] in
-                guard let self, !self.isBusy else { return }
-                // Re-query the registry so a replaced account action is current.
-                guard let current = ExteralessSettingsUI.registeredActions.first(where: { $0.id == action.id }) else { return }
-                current.action(self.context, self)
+                guard let self, let ticket, !self.isBusy, self.routeIsCurrent else { return }
+                _ = self.searchSession.open(ticket: ticket, context: self.context, from: self)
             }
             append(row, section: action.section)
         }
@@ -172,13 +271,21 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         self.setSections(sections)
     }
 
-    private func settingRow(_ definition: ClientSettingDefinition, snapshot: ClientSettingsSnapshot) -> ExteralessSettingsRow {
+    private func settingRow(_ definition: ClientSettingDefinition, snapshot: ClientSettingsSnapshot, ticket: ClientSettingsSearchTicket?) -> ExteralessSettingsRow {
         let key = definition.key
         let value = snapshot.values[key] ?? definition.defaultValue
         let explanation = self.explanation(definition)
         var row = ExteralessSettingsRow(id: "setting:" + key, title: self.settingTitle(definition), detail: explanation)
-        row.enabled = !self.isBusy
-        row.reset = { [weak self] in self?.confirmReset(key) }
+        row.enabled = !self.isBusy && ticket != nil
+        row.reset = { [weak self] in
+            guard let ticket else { return }
+            self?.confirmReset(key, ticket: ticket)
+        }
+        row.longAction = { [weak self] in
+            guard let self, let ticket, self.routeIsCurrent, self.searchSession.accepts(ticket) else { return }
+            self.searchSession.presentRowMenu(request: .canonical(.row(key)), from: self,
+                reset: { [weak self] in self?.confirmReset(key, ticket: ticket) })
+        }
         if snapshot.secretKeys.contains(key) {
             let status: String
             if !definition.isSecret {
@@ -194,32 +301,32 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
             }
             row.detail = [explanation, status].compactMap { $0 }.joined(separator: "\n")
             row.accessory = .disclosure
-            row.action = { [weak self] in self?.open(.editor(key)) }
+            row.action = { [weak self] in self?.open(ticket) }
         } else if !definition.options.isEmpty {
             let option = definition.options.enumerated().first { (try? definition.validatedValue($0.element.value)) == value }
             let label = option.map { clientSettingsText("Setting." + key + ".Option.\($0.offset)", $0.element.title) }
                 ?? clientSettingsText("NoSelection", "No selection")
             row.detail = [explanation, label].compactMap { $0 }.joined(separator: "\n")
             row.accessory = .disclosure
-            row.action = { [weak self] in self?.open(.selector(key)) }
+            row.action = { [weak self] in self?.open(ticket) }
         } else {
             switch definition.defaultValue {
             case .bool:
                 if case let .bool(enabled) = value {
-                    row.toggle = (enabled, { [weak self] updated in self?.update(.bool(updated), key: key) })
+                    row.toggle = (enabled, { [weak self] updated in self?.update(.bool(updated), key: key, ticket: ticket) })
                 }
             case .integer, .number:
                 row.slider = ExteralessSettingsSlider(definition: definition, value: value, commit: { [weak self] number in
                     // The core performs the final exact integer/step validation.
-                    self?.update(.number(number), key: key)
+                    self?.update(.number(number), key: key, ticket: ticket)
                 })
                 if row.slider == nil { row.detail = [explanation, self.summary(value)].compactMap { $0 }.joined(separator: "\n") }
                 row.accessory = .disclosure
-                row.action = { [weak self] in self?.open(.editor(key)) }
+                row.action = { [weak self] in self?.open(ticket) }
             case .string, .array, .object, .null:
                 row.detail = [explanation, self.summary(value)].compactMap { $0 }.joined(separator: "\n")
                 row.accessory = .disclosure
-                row.action = { [weak self] in self?.open(.editor(key)) }
+                row.action = { [weak self] in self?.open(ticket) }
             }
         }
         return row
@@ -238,7 +345,10 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
             var row = ExteralessSettingsRow(id: "option:\(key):\(index)", title: clientSettingsText("Setting." + key + ".Option.\(index)", option.title))
             row.enabled = !self.isBusy
             if (try? definition.validatedValue(option.value)) == selected { row.accessory = .checkmark }
-            row.action = { [weak self] in self?.update(option.value, key: key, closeOnSuccess: true) }
+            row.action = { [weak self] in
+                guard let self else { return }
+                self.update(option.value, key: key, ticket: self.routeTicket, closeOnSuccess: true)
+            }
             return row
         }
         sections.append(ExteralessSettingsSection(footer: self.explanation(definition), rows: rows))
@@ -276,9 +386,10 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         let placeholder = secret
             ? clientSettingsText("Secret.Replacement", "Enter a replacement value") : clientSettingsText("EnterValue", "Enter a value")
         row.input = ExteralessSettingsInput(text: self.draft, placeholder: placeholder, kind: kind, updated: { [weak self] text in
-            self?.draft = text
-            self?.draftWasEdited = true
-            self?.updateSaveButton()
+            guard let self, self.routeIsCurrent else { return }
+            self.draft = text
+            self.draftWasEdited = true
+            self.updateSaveButton()
         }, submitted: { [weak self] in self?.savePressed() })
         var hints: [String] = []
         if secret { hints.append(clientSettingsText("Secret.Hint", "The stored value is not displayed. Save replaces it; reset removes it.")) }
@@ -292,7 +403,10 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         var reset = ExteralessSettingsRow(id: "reset:" + key, title: clientSettingsText("Reset", "Reset to default"))
         reset.style = .destructive
         reset.enabled = !self.isBusy
-        reset.action = { [weak self] in self?.confirmReset(key) }
+        reset.action = { [weak self] in
+            guard let self else { return }
+            self.confirmReset(key, ticket: self.routeTicket)
+        }
         sections.append(ExteralessSettingsSection(rows: [reset]))
         self.setSections(sections)
     }
@@ -332,20 +446,25 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func open(_ mode: Mode) {
-        guard !self.isBusy else { return }
-        self.push(ExteralessClientSettingsController(context: self.context, settings: self.settings, mode: mode))
+    private func open(_ ticket: ClientSettingsSearchTicket?) {
+        guard !self.isBusy, self.routeIsCurrent, let ticket else { return }
+        _ = self.searchSession.open(ticket: ticket, context: self.context, from: self)
     }
 
-    private func update(_ value: ClientSettingValue, key: String, closeOnSuccess: Bool = false) {
-        guard !self.isBusy else { return }
+    @objc private func searchPressed() {
+        guard !self.isBusy, self.routeIsCurrent, let controller = self.searchSession.makeSearchController() else { return }
+        self.push(controller)
+    }
+
+    private func update(_ value: ClientSettingValue, key: String, ticket: ClientSettingsSearchTicket?, closeOnSuccess: Bool = false) {
+        guard !self.isBusy, self.routeIsCurrent, let ticket, self.searchSession.accepts(ticket) else { return }
         do {
             guard let definition = self.settings.definitions().first(where: { $0.key == key }) else { throw ClientSettingsError.unregisteredKey(key) }
             let validated = try definition.validatedValue(value)
             try NewNetworkFeatures.validate(validated, for: key)
             let settings = self.settings
             self.perform({ try settings.set(validated, for: key) }, completion: { [weak self] _ in
-                guard let self else { return }
+                guard let self, self.routeIsCurrent else { return }
                 // Every page re-queries all registered values after mutation,
                 // including dependent settings updated by domain observers.
                 if closeOnSuccess, self.isScreenVisible { self.dismiss(animated: true) }
@@ -353,17 +472,18 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
         } catch { self.showError(error) }
     }
 
-    private func confirmReset(_ key: String) {
-        guard !self.isBusy, let definition = self.settings.definitions().first(where: { $0.key == key }) else { return }
+    private func confirmReset(_ key: String, ticket: ClientSettingsSearchTicket) {
+        guard !self.isBusy, self.routeIsCurrent, self.searchSession.accepts(ticket),
+              let definition = self.settings.definitions().first(where: { $0.key == key }) else { return }
         let alert = UIAlertController(title: clientSettingsText("Reset", "Reset to default"), message: self.settingTitle(definition), preferredStyle: .alert)
         alert.overrideUserInterfaceStyle = self.presentationData.theme.overallDarkAppearance ? .dark : .light
         alert.view.tintColor = self.presentationData.theme.list.itemAccentColor
         alert.addAction(UIAlertAction(title: self.presentationData.strings.Common_Cancel, style: .cancel))
         alert.addAction(UIAlertAction(title: clientSettingsText("Reset.Action", "Reset"), style: .destructive, handler: { [weak self] _ in
-            guard let self else { return }
+            guard let self, self.routeIsCurrent, self.searchSession.accepts(ticket) else { return }
             let settings = self.settings
             self.perform({ try settings.reset(key) }, completion: { [weak self] _ in
-                guard let self else { return }
+                guard let self, self.routeIsCurrent else { return }
                 if case .editor = self.mode {
                     let current = self.settings.readSnapshot()
                     if let definition = current.definitions.first(where: { $0.key == key }) {
@@ -377,6 +497,10 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
     }
 
     private func updateSaveButton() {
+        guard self.routeIsCurrent else {
+            self.navigationItem.rightBarButtonItem?.isEnabled = false
+            return
+        }
         guard case let .editor(key) = self.mode,
               let definition = self.settings.definitions().first(where: { $0.key == key }) else { return }
         self.navigationItem.rightBarButtonItem?.isEnabled = !self.isBusy && (!self.editingSecret || self.draftWasEdited)
@@ -384,7 +508,7 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
     }
 
     @objc private func savePressed() {
-        guard !self.isBusy, case let .editor(key) = self.mode else { return }
+        guard !self.isBusy, self.routeIsCurrent, case let .editor(key) = self.mode else { return }
         let snapshot = self.settings.readSnapshot()
         guard let definition = snapshot.definitions.first(where: { $0.key == key }) else { return }
         let secret = snapshot.secretKeys.contains(key)
@@ -408,17 +532,17 @@ private final class ExteralessClientSettingsController: ExteralessSettingsListCo
             }
             _ = try definition.validatedValue(value)
             self.view.endEditing(true)
-            self.update(value, key: key, closeOnSuccess: true)
+            self.update(value, key: key, ticket: self.routeTicket, closeOnSuccess: true)
         } catch { self.showError(error) }
     }
 
     @objc private func actionsChanged() { self.render() }
 
     @objc private func exportPressed() {
-        guard !self.isBusy else { return }
+        guard !self.isBusy, self.routeIsCurrent else { return }
         let settings = self.settings
         self.perform({ try settings.exportJSON() }, completion: { [weak self] data in
-            guard let self, self.isScreenVisible, self.presentedViewController == nil else { return }
+            guard let self, self.routeIsCurrent, self.isScreenVisible, self.presentedViewController == nil else { return }
             let controller = UIActivityViewController(activityItems: [String(decoding: data, as: UTF8.self)], applicationActivities: nil)
             controller.overrideUserInterfaceStyle = self.presentationData.theme.overallDarkAppearance ? .dark : .light
             controller.popoverPresentationController?.barButtonItem = self.navigationItem.rightBarButtonItem

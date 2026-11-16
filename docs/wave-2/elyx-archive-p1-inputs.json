@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "date": "2026-11-16",
+  "status": "source handoff; positive POSIX/Swift/native capability acceptance pending",
+  "native_execution_claimed": false,
+  "sdk_byte_identical": 36,
+  "elyx_sdk_byte_identical": 12,
+  "required_coordinator_patches": [
+    "docs/wave-2/elyx-archive-fd-host.patch",
+    "docs/wave-2/elyx-source-capability-coordinator.patch"
+  ],
+  "native_provider_owner": "Native developer owner implements and installs PluginElyxDeveloperFiles.swift against elyx-source-descriptor-v1.json",
+  "checks": {
+    "windows_owned_suites": {"passed": 25, "skipped_posix": 17, "seconds": 17.27, "child_timeout_seconds": 20},
+    "native_developer_state_unit_protocol": {"passed": 3, "deselected": 9, "seconds": 2.24},
+    "coordinator_patch_apply_checks": "passed without applying",
+    "python_ast_json_whitespace": "passed",
+    "sdk_original_raw_byte_comparison": "passed"
+  },
+  "sha256": {
+    "python/exteraless_runtime/__init__.py": "dc63398bc3a00ded23c94dbde615aa6cb45c528094b5c54b8b95670f299fe87a",
+    "python/exteraless_runtime/_archives.py": "04a0403b7df7977b22714156394430a7760559252745a16d7d7bbcc3e5c9f824",
+    "python/exteraless_runtime/_audit_paths.py": "3e0d7444eb0dd7a035f55e92d438e1dcf54c62f79b7a83b1a68f4ccf87921e03",
+    "swift/PluginHost/Sources/PluginHost/PluginArchiveStorage.swift": "ecde8c195dfd7fbc5ec6aaa66705b4be4e74324e9d8de3306bae6b046d7625dc",
+    "swift/PluginHost/Sources/PluginHost/PluginServiceStorage.swift": "827ce0d50604b56694fbfa83fa7112b7943cf9c33b102de20c57ac9e4ea603d2",
+    "swift/PluginHost/Tests/PluginHostTests/PluginArchiveDescriptorTests.swift": "2925286baf7e3707f1e51b8c8f835a4450f5db7b5d623dd17e68576a0c5cf8fd",
+    "swift/PluginHost/Tests/PluginHostTests/PluginArchiveHostTests.swift": "0a1a4d02683f4908b80b86b20761975cd96e82f827b394b74ff546f69835692d",
+    "tools/compat/tests/test_ios_elyx_archives.py": "a235d6a114fef36ae3ed08cb0adac3a967d99d6d4f7301ed5f96308843d1a29e",
+    "tools/compat/tests/test_ios_elyx_p1.py": "46ff2ceccd6483fb2c3e7983e40db4ea05f8a578bcead8de0122d2abb535a295",
+    "tools/compat/tests/test_ios_elyx_source_authority.py": "cd6d8ad16cb9504b58bff7bc46be3fac8b71893c863135c58714eeb8bb20b6e9",
+    "docs/wave-2/elyx-archive-fd-host.patch": "64ba745bbddc10ce4ea062f76589c33b103a6eab3ac5f6b7c88db76466f98ad8",
+    "docs/wave-2/elyx-source-capability-coordinator.patch": "105b1854b0e369ab13d4b5ed449c2e7a7d1f757dbea8d7c092853af3d64e43ef",
+    "docs/wave-2/elyx-source-descriptor-v1.json": "7c1d62d040f75b900bdd0ece50335797fd0596fde5ddb38f8e77b449c3e3c83c",
+    "docs/wave-2/elyx-archive-remediation.md": "3f0e5db2da0870d1b2cb20754ba7e683aab30406d6b1a6cf47dae05bc3a7b7db"
+  },
+  "unchanged_review_sha256": {
+    "docs/wave-2/reviews/elyx-archive-source-closure.md": "f76ec27837b44776e0f2bee18d84e9da480962c3e9214a77b3eefdc0db327cfb"
+  }
+}

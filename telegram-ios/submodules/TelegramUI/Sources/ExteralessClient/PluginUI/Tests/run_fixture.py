@@ -25,7 +25,7 @@ def main():
         return 77
     root = Path(__file__).resolve().parent.parent
     sources = [root / name for name in (
-        "PluginUIModel.swift", "PluginUIStyleModel.swift", "PluginUIMenuModel.swift", "PluginUILifecycle.swift",
+        "PluginUIModel.swift", "PluginUIStyleModel.swift", "PluginUIMenuModel.swift", "PluginUILifecycle.swift", "PluginUISettingsUpdate.swift",
         "PluginUINavigation.swift", "PluginUIRequest.swift", "PluginUIShareFiles.swift", "PluginManagerPreferences.swift",
         "PluginDeveloperProtocol.swift", "PluginRuntimeRecovery.swift", "PluginRuntimeMaintenance.swift",
         "PluginUIReleaseQueue.swift", "Tests/PluginUIFixture.swift",

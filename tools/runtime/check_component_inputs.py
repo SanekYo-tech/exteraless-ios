@@ -73,7 +73,14 @@ def module_at(name, path):
 def fixture_compiler_inputs():
     """Read the same declarations the fixture compilers actually consume."""
     from check_java_tl_codec import COMPILE_SOURCES
+    from sdk_followup_inputs import (DEVELOPER_NATIVE_TEST, developer_native_sources,
+        NATIVE_FILES_TEST, NATIVE_INGRESS_TEST, NATIVE_MODE_TEST, host_compile_inputs,
+        ingress_native_sources, mode_aba_native_sources)
     result = {JAVA_FIXTURE_RUNNER: [ROOT / name for name in COMPILE_SOURCES]}
+    result[DEVELOPER_NATIVE_TEST] = developer_native_sources()
+    result[NATIVE_FILES_TEST] = host_compile_inputs(tests=True)
+    result[NATIVE_INGRESS_TEST] = host_compile_inputs(tests=False) + ingress_native_sources()
+    result[NATIVE_MODE_TEST] = host_compile_inputs(tests=False) + mode_aba_native_sources()
     with module_at('component_tl_fixture_inputs', ROOT / TL_FIXTURE_RUNNER) as runner:
         result[TL_FIXTURE_RUNNER] = list(runner.SOURCE_NAMES)
     with module_at('component_ui_remediation_inputs', ROOT / UI_REMEDIATION_RUNNER) as runner:
@@ -93,7 +100,12 @@ def fixture_compiler_inputs():
 
 def inventory(*, compiler_inputs=None, records=None):
     from check_java_tl_codec import source_fingerprint as java_inputs
-    from check_swift_plugin_embedding import JAVA_COHORT_INPUTS, JAVA_RUNTIME_INPUTS
+    from check_swift_plugin_embedding import (JAVA_COHORT_INPUTS, JAVA_RUNTIME_INPUTS,
+        ARCHIVE_SWIFT_PROBE, ARCHIVE_HELPER, ARCHIVE_FIXTURE_EMITTER, ARCHIVE_PYTHON_INPUTS, SDK_TL_CODEC_SOURCES)
+    from sdk_followup_inputs import (SDK_PYTESTS, SWIFTPM_FOLLOWUP_TESTS, NATIVE_CANDIDATE_TEST,
+        NATIVE_CANDIDATE_INPUTS, NATIVE_DEVELOPER_TESTS)
+    from fixtures import elyx_developer_probe_driver
+    from client_ui_harness_inputs import harness_inputs
     from native_test_plan import Declarations, build_plan
     from prepare_telegram_runtime import application_resources, source_inventory
     from UnsignedBuild import RULES_APPLE_REVISION
@@ -133,13 +145,23 @@ def inventory(*, compiler_inputs=None, records=None):
             add((Path(parent) / name for name in names if Path(name).suffix in (
                 '.py', '.swift', '.c', '.h', '.modulemap', '.json', '.plugin', '.bzl')
                 or name in ('BUILD', 'BUILD.bazel')), directory)
-    add(JAVA_COHORT_INPUTS, 'three-native-sdk-children/java-receipt')
-    add(('python/' + path for path in JAVA_RUNTIME_INPUTS), 'three-native-sdk-children/java-adapter')
+    add(JAVA_COHORT_INPUTS, 'native-sdk-children/java-receipt')
+    add(('python/' + path for path in JAVA_RUNTIME_INPUTS), 'native-sdk-children/java-adapter')
+    add([ARCHIVE_SWIFT_PROBE, ARCHIVE_HELPER, ARCHIVE_FIXTURE_EMITTER], 'fourth-native-sdk-child/owned-archives')
+    add(SDK_TL_CODEC_SOURCES, 'native-sdk-children/actual-compiled-tl-codec')
+    add(('python/' + path for path in ARCHIVE_PYTHON_INPUTS), 'fourth-native-sdk-child/production-archive-inputs')
+    add(elyx_developer_probe_driver.source_inputs(ROOT / 'python'), 'fifth-native-sdk-child/actual-readiness-fd-inputs')
+    add(['docs/wave-2/native-elyx-developer-final-inputs.json', 'tools/runtime/verify_native_sdk_cohort.py'],
+        'five-native-sdk-children/final-evidence-contract')
+    add(SDK_PYTESTS, 'bounded-sdk-followup-pytests')
+    add(NATIVE_DEVELOPER_TESTS, 'bounded-native-files-ingress-readiness-selectors')
+    add(SWIFTPM_FOLLOWUP_TESTS, 'automatic-swiftpm-followup-tests')
+    add([NATIVE_CANDIDATE_TEST, *NATIVE_CANDIDATE_INPUTS], 'darwin-native-archive-candidate')
     pins = {}
     registration = root_registration(pins)
-    add(pins, 'three-native-sdk-children/root-registration')
+    add(pins, 'native-sdk-children/root-registration')
     add([CLIENT_ROOT.replace('ExteralessClientRuntime.swift', 'ClientSettingsBridgeExtension.swift')],
-        'three-native-sdk-children/compiled-config-provider')
+        'native-sdk-children/compiled-config-provider')
     add(java_inputs(ROOT), 'java-foundation-tl-codec')
     with module_at('component_ui_fixture', ROOT / UI_REMEDIATION_RUNNER) as ui:
         add(ui.source_inventory(), 'ui-remediation-23')
@@ -160,6 +182,8 @@ def inventory(*, compiler_inputs=None, records=None):
     # no aggregate XCTest plan or method total is emitted here.
     plan, paths = build_plan(ROOT / 'telegram-ios', source_checkout=True)
     add(paths.values(), 'native-planner-unittests')
+    add(harness_inputs(ROOT / 'telegram-ios', source_checkout=True)['input_sha256'],
+        'uikit-source-contract-unittests/actual-harness-inputs')
     tbf = '//Tests/Exteraless:RuntimeRecoveryContinuationTests'
     if plan['contract']['required_sources'].get('Tests/Exteraless/RuntimeRecoveryContinuationTests.swift') != tbf:
         raise ValueError('Missing published TBF05 native source binding')
@@ -209,7 +233,9 @@ def main():
               'scope': 'Python Framework component inputs; not an IPA source freeze',
               'generated_inputs': {
                   'python/vendor/exteraless-dependencies.json': 'vendor_dependencies.py step before SDK audit-path pytests and native children',
-                  'SDKConfigRootRegistration.swift': 'check_swift_plugin_embedding.py from the inspected shipping root expression',
+                   'SDKConfigRootRegistration.swift': 'check_swift_plugin_embedding.py from the inspected shipping root expression',
+                    'owned archive ZIP/wheel fixtures': 'test_ios_elyx_archives.py --emit-fixtures; fourth isolated native child',
+                    'owned developer ZIP/JSON fixtures': 'emit_elyx_developer_probe.py; six bounded inputs for the fifth child',
                   'CPython support slices': 'support.py fetch using support-lock.json before simulator/device compilation',
               }}
     try:

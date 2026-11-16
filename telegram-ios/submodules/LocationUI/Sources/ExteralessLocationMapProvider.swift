@@ -8,6 +8,8 @@ import UIKit
 /// the basemap is replaced. MapKit's public coordinate contract stays WGS84.
 final class ExteralessLocationMapProvider {
     private weak var mapView: MKMapView?
+    private let policy: () -> MapPolicy
+    private let tileLoader: @Sendable (URL, @escaping MapResourceCache.Completion) -> NetworkResolverCancellation
     private let namespace = "map-view:" + UUID().uuidString
     private let attribution = UIButton(type: .system)
     private var overlay: ExteralessOSMTileOverlay?
@@ -17,8 +19,13 @@ final class ExteralessLocationMapProvider {
     private var size = CGSize.zero
     private var topInset: CGFloat = 0
 
-    init(mapView: MKMapView) {
+    init(mapView: MKMapView, policy: @escaping () -> MapPolicy = { MapPolicy.current() },
+         tileLoader: @escaping @Sendable (URL, @escaping MapResourceCache.Completion) -> NetworkResolverCancellation = {
+             MapProviderHTTP.shared.fetch(url: $0, completion: $1)
+         }) {
         self.mapView = mapView
+        self.policy = policy
+        self.tileLoader = tileLoader
         var configuration = UIButton.Configuration.plain()
         configuration.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6)
         configuration.baseForegroundColor = .darkGray
@@ -60,11 +67,11 @@ final class ExteralessLocationMapProvider {
     private func apply() {
         guard let mapView else { return }
         if let overlay { mapView.removeOverlay(overlay); overlay.invalidate(); self.overlay = nil }
-        let policy = MapPolicy.current()
+        let policy = self.policy()
         let standard = mapType == .standard
         let title: String
         if policy.useOpenStreetMap && standard && !fallback {
-            let overlay = ExteralessOSMTileOverlay(namespace: namespace, epoch: MapPolicyRuntime.shared.epoch)
+            let overlay = ExteralessOSMTileOverlay(namespace: namespace, epoch: MapPolicyRuntime.shared.epoch, tileLoader: tileLoader)
             overlay.failed = { [weak self, weak overlay] in
                 DispatchQueue.main.async {
                     guard let self, let overlay, self.overlay === overlay else { return }
@@ -101,12 +108,15 @@ private final class ExteralessOSMTileOverlay: MKTileOverlay, @unchecked Sendable
     private let lock = NSLock()
     private let namespace: String
     private let epoch: UInt64
+    private let tileLoader: @Sendable (URL, @escaping MapResourceCache.Completion) -> NetworkResolverCancellation
     private var pending: [UUID: Pending] = [:]
     private var retired = false
     var failed: (() -> Void)?
 
-    init(namespace: String, epoch: UInt64) {
+    init(namespace: String, epoch: UInt64,
+         tileLoader: @escaping @Sendable (URL, @escaping MapResourceCache.Completion) -> NetworkResolverCancellation) {
         self.namespace = namespace; self.epoch = epoch
+        self.tileLoader = tileLoader
         super.init(urlTemplate: nil)
         tileSize = CGSize(width: 256, height: 256)
         minimumZ = 0; maximumZ = 19
@@ -121,7 +131,7 @@ private final class ExteralessOSMTileOverlay: MKTileOverlay, @unchecked Sendable
         pending[id] = Pending(completion: result)
         lock.unlock()
         let key = MapResourceCache.Key(namespace: namespace, resource: "osm:\(epoch):\(path.z):\(path.x):\(path.y)")
-        let token = MapResourceCache.shared.load(key: key, start: { completion in MapProviderHTTP.shared.fetch(url: url, completion: completion) }, completion: { [weak self] value in
+        let token = MapResourceCache.shared.load(key: key, start: { [tileLoader] completion in tileLoader(url, completion) }, completion: { [weak self] value in
             guard let self else { return }
             self.lock.lock(); let pending = self.pending.removeValue(forKey: id); let retired = self.retired; self.lock.unlock()
             guard let pending, !retired else { return }

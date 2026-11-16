@@ -5,7 +5,7 @@ fixtures. The CPython engine, NativeBridgeBinding, BridgeServices, disk settings
 SDK loader/serializer and the local nativeWaveProbe plugin execute real code.
 Stage python/vendor with vendor_dependencies.py before running this probe; its
 fixture imports the provided requests/cachetools packages without network I/O.
-Each of the three fresh native child processes has a hard 30-second timeout; no corpus or
+Each of the five fresh native child processes has a hard 30-second timeout; no corpus or
 network operation is used. --output must be empty; its run-* directory retains
 the isolated install/settings files and helper for inspection after the run.
 """
@@ -23,6 +23,7 @@ import time
 import uuid
 
 from vendor_dependencies import digest, verify_bundle
+from fixtures import elyx_developer_probe_driver as elyx_developer
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +38,24 @@ JAVA_COHORT_INPUTS = (
     "tools/compat/tests/fixtures/java_values/schema.json",
     "tools/compat/tests/fixtures/java_values/native_codec.swift",
     "docs/wave-2/sdk-java-remediation.md",
+)
+ARCHIVE_SWIFT_PROBE = 'tools/runtime/fixtures/swift_sdk_archive_probe.swift'
+ARCHIVE_HELPER = 'tools/runtime/fixtures/native_archive_probe.py'
+ARCHIVE_FIXTURE_EMITTER = 'tools/compat/tests/test_ios_elyx_archives.py'
+SDK_TL_CODEC_SOURCES = tuple('telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime/' + name for name in (
+    'TLCodec.swift', 'TLSchemaGenerated.swift', 'TLTransformCodec.swift', 'TLUpdatePolicy.swift'))
+ARCHIVE_PYTHON_INPUTS = (
+    'exteraless_runtime/__init__.py', 'exteraless_runtime/_platform.py',
+    'exteraless_runtime/_archives.py', 'exteraless_runtime/_audit_paths.py',
+    'exteraless_runtime/_dependencies.py', 'exteraless_runtime/_elyx_helpers.py',
+    'exteraless_runtime/_elyx_developer.py',
+    'sdk/elyx_runtime/loader.py', 'sdk/elyx_runtime/namespace.py',
+    'sdk/extera_utils/plugin_loader.py', 'sdk/extera_utils/metadata_parser.py',
+)
+REQUIRED_ARCHIVE_CHECKS = (
+    'ok', 'metadata_zero_entry', 'format_ids', 'staged_metadata_and_trust', 'settings',
+    'reload', 'replacement_module_and_wheel', 'owner_cache_cleanup', 'requires_rejected',
+    'native_bridge', 'cleanup',
 )
 REQUIRED_CHECKS = (
     "ok", "metadata_ast_only", "disabled_install", "native_bridge",
@@ -95,6 +114,28 @@ def stage_java_sdk_cohort(python_root, output):
     return rows
 
 
+def archive_source_inputs(python_root):
+    """The native child must use the current FD-backed adapter and audit paths."""
+    result = []
+    for name in ARCHIVE_PYTHON_INPUTS:
+        actual, reference = python_root / name, ROOT / 'python' / name
+        if not actual.is_file() or digest(actual) != digest(reference):
+            raise RuntimeError('Staged archive production input differs: ' + name)
+        result.append(actual)
+    return result
+
+
+def emit_archive_fixtures(directory, *, python=Path(sys.executable)):
+    subprocess.run([str(python), '-I', '-S', '-B', str(ROOT / ARCHIVE_FIXTURE_EMITTER),
+                    '--emit-fixtures', str(directory)], check=True, timeout=20,
+                   stdout=subprocess.DEVNULL)
+    expected = {'owned.elyx', 'owned-next.elyx', 'literal.eaf', 'requires.elyx', 'source.plugin'}
+    files = {path.name: path for path in directory.iterdir()}
+    if set(files) != expected or any(not path.is_file() or path.stat().st_size > 32_768 for path in files.values()):
+        raise RuntimeError('The native archive child requires the five tiny owned EMIT fixtures')
+    return {name: digest(path) for name, path in sorted(files.items())}
+
+
 def run(command, *, log, timeout=180, **kwargs):
     command = [str(item) for item in command]
     log.write("COMMAND " + json.dumps(command, ensure_ascii=False) + "\n")
@@ -124,6 +165,27 @@ def python_configuration(python):
     config["linked_library"] = str(library)
     config["dynload"] = config["dynload"] or str(Path(config["stdlib"]) / "lib-dynload")
     return config
+
+
+REQUIRED_SDK_OBSERVATIONS = (
+    "immutable_c_owner", "bulk_opaque_settings", "terminal_ui_lease", "owner_task_result",
+    "request_response_dto", "c_reflection_extension", "unadvertised_extension", "transient_handles_released",
+    "ui_live_models", "darwin_family_fd_paths",
+)
+
+
+def validate_sdk_observations(checks):
+    missing = [name for name in REQUIRED_SDK_OBSERVATIONS if checks.get(name) is not True]
+    if missing:
+        raise RuntimeError("Missing real SDK/native helper observations: " + ", ".join(missing))
+
+
+def validate_cohort_inputs(source_hashes):
+    if not source_hashes:
+        raise RuntimeError("Missing five-child source input inventory")
+    changed = [name for name, sha in source_hashes.items() if not Path(name).is_file() or digest(Path(name)) != sha]
+    if changed:
+        raise RuntimeError("Native SDK source/staged inputs changed during the five-child cohort: " + ", ".join(changed[:10]))
 
 
 def validate_report(report, python_root, work):
@@ -159,10 +221,7 @@ def validate_report(report, python_root, work):
     if set(dto.get("epochs", [])) != set(epochs) or callbacks[0].get("owner_token") != epochs[0]:
         raise RuntimeError("C/SDK/provider/callback owner provenance differs")
     checks = plugin_records[0]["observation"].get("sdk_checks", {})
-    if any(checks.get(key) is not True for key in (
-        "immutable_c_owner", "bulk_opaque_settings", "terminal_ui_lease", "owner_task_result",
-        "request_response_dto", "c_reflection_extension", "unadvertised_extension", "transient_handles_released", "ui_live_models")):
-        raise RuntimeError("Missing real SDK/native helper observations")
+    validate_sdk_observations(checks)
     if plugin_records[0]["observation"].get("bridge_backend_calls", 0) < 1:
         raise RuntimeError("Extension reflection bypassed the actual C BridgeBackend")
     ids = [record["native_reference"] for record in plugin_records]
@@ -262,6 +321,53 @@ def validate_hns_report(report, python_root, work):
                 raise RuntimeError("Wrong native HNS SDK source: " + key)
 
 
+def validate_archive_report(report, python_root, work):
+    if any(report.get(key) is not True for key in REQUIRED_ARCHIVE_CHECKS):
+        raise RuntimeError('Real Host archive lifecycle checks did not pass')
+    if report.get('boundary') != 'Real Host/C/CPython Elyx SDK; local generated ZIP/wheel fixtures; no UIKit/network':
+        raise RuntimeError('Archive probe must retain its actual execution boundary')
+    traces = report.get('traces', [])
+    owners = [row.get('observation', {}) for row in traces if row.get('observation', {}).get('plugin_id') is not None]
+    if (report.get('initializations') != 1 or report.get('finalizations') != 1
+            or len(traces) != 13 or len(owners) != 5):
+        raise RuntimeError('Archive child did not retain one CPython process lifetime and the declared Host operations')
+    if any(row.get('destroyed') is not True or row.get('own_gil') is not True for row in traces):
+        raise RuntimeError('Archive inspector/owner cleanup failed')
+    for row in traces:
+        observation = row.get('observation', {})
+        if any(observation.get(key) != 0 for key in ('handle_count', 'callback_leases', 'mock_calls', 'legacy_service_count')) or observation.get('loaded_plugins') != []:
+            raise RuntimeError('Archive interpreter leaked state or used a fake/legacy backend')
+    if len({owner.get('owner_token') for owner in owners}) != 5:
+        raise RuntimeError('Archive lifecycle reused a native C owner epoch')
+    for owner in owners:
+        uuid.UUID(owner['owner_token'])
+        if owner.get('bridge_builtin') is not True or owner.get('backend_installed') is not True:
+            raise RuntimeError('Archive did not use the real C BridgeBackend')
+    snapshots = report.get('snapshots', {})
+    if set(snapshots) != {'first', 'reload', 'replacement', 'literal'}:
+        raise RuntimeError('Archive lifecycle omitted an actual SDK snapshot')
+    for phase, value in snapshots.items():
+        expected_id = '_archive' if phase == 'literal' else '7_archive'
+        expected_value = 'later' if phase == 'replacement' else 'first'
+        if (value.get('pluginId') != expected_id or value.get('moduleName') != 'ElyxPlugins.' + expected_id + '.entry.main'
+                or value.get('seen', [])[:2] != [expected_value, expected_value]
+                or value.get('entryCalls') != 1 or value.get('nativeCalls', 0) <= 0
+                or value.get('networkAttempts') != [] or value.get('neighborCalls') != 0):
+            raise RuntimeError('Archive entry/module/wheel evidence differs: ' + phase)
+        if not Path(value['cacheDir']).is_relative_to(work / 'native-storage/cache'):
+            raise RuntimeError('Archive cache did not use the public native per-owner directory')
+        if Path(value['extractDir']).exists():
+            raise RuntimeError('A retired archive extraction survived final Host cleanup')
+        for name in ('_archives', '_audit_paths'):
+            if Path(value.get('requiredRuntimeSources', {}).get(name, '')).resolve() != (python_root / 'exteraless_runtime' / (name + '.py')).resolve():
+                raise RuntimeError('Archive used a stale production helper: ' + name)
+    for key in ('moduleSource', 'wheelSource', 'archiveDigest', 'ownerToken'):
+        if snapshots['reload'].get(key) == snapshots['replacement'].get(key):
+            raise RuntimeError('Same-name archive replacement reused ' + key)
+    if not (Path(snapshots['literal']['cacheDir']) / 'keep-unrelated-cache.txt').is_file() or report.get('unexpected_effects') != []:
+        raise RuntimeError('Archive cleanup crossed its scope or an external effect was attempted')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
@@ -287,11 +393,14 @@ def main():
         "vendor/exteraless-dependencies.json",
     )]
     required_python.extend(python_root / relative for relative in JAVA_RUNTIME_INPUTS)
+    required_python.extend(archive_source_inputs(python_root))
+    elyx_sources = elyx_developer.source_inputs(python_root)
+    required_python.extend(path for path in elyx_sources if path.suffix == '.py')
     schema = python_root / "tl-schema.json"
     if not schema.is_file():
         schema = python_root / "runtime/tl-schema.json"
     required_python.append(schema)
-    for path in [plugin, *required_python]:
+    for path in [plugin, *required_python, *elyx_sources]:
         if not path.is_file():
             parser.error("Missing integration input: " + str(path))
     schema_metadata = json.loads(schema.read_text(encoding="utf-8"))
@@ -306,6 +415,8 @@ def main():
     work = Path(tempfile.mkdtemp(prefix="run-", dir=output)).resolve()
     tl_work = Path(tempfile.mkdtemp(prefix="run-tl-", dir=output)).resolve()
     hns_work = Path(tempfile.mkdtemp(prefix="run-hns-", dir=output)).resolve()
+    archive_work = Path(tempfile.mkdtemp(prefix="run-archive-", dir=output)).resolve()
+    elyx_work = Path(tempfile.mkdtemp(prefix="run-elyx-developer-", dir=output)).resolve()
     build = output / "build"
     build.mkdir()
     (work / "input").mkdir()
@@ -315,6 +426,8 @@ def main():
     helper_source = ROOT / "python/runtime/smoke/native_plugin_probe.py"
     helper = work / "probe-support/native_plugin_probe.py"
     shutil.copyfile(helper_source, helper)
+    if digest(helper) != digest(helper_source) or digest(staged_plugin) != digest(plugin):
+        raise RuntimeError("The staged native FD helper/plugin differs from its current source")
     (tl_work / "input").mkdir()
     (tl_work / "probe-support").mkdir()
     tl_fixtures = [ROOT / "python/runtime/smoke/plugins" / name for name in ("native_tl_first.plugin", "native_tl_second.plugin")]
@@ -331,6 +444,11 @@ def main():
     hns_helper = hns_work / "probe-support/native_hns_probe.py"
     shutil.copyfile(hns_fixture, staged_hns)
     shutil.copyfile(hns_helper_source, hns_helper)
+    archive_fixtures = emit_archive_fixtures(archive_work / 'input', python=args.python)
+    (archive_work / 'probe-support').mkdir()
+    archive_helper = archive_work / 'probe-support/native_archive_probe.py'
+    shutil.copyfile(ROOT / ARCHIVE_HELPER, archive_helper)
+    elyx_helper, elyx_fixtures = elyx_developer.stage(elyx_work, args.python)
     for source in [*tl_fixtures, hns_fixture]:
         if source.stat().st_size > 32_768:
             parser.error("Own native fixture exceeds 32 KiB: " + str(source))
@@ -341,6 +459,8 @@ def main():
     }})
     shutil.copyfile(work / "manifest.json", tl_work / "manifest.json")
     shutil.copyfile(work / "manifest.json", hns_work / "manifest.json")
+    shutil.copyfile(work / "manifest.json", archive_work / "manifest.json")
+    shutil.copyfile(work / "manifest.json", elyx_work / "manifest.json")
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
     env.pop("PYTHONPATH", None)
     env.pop("PYTHONHOME", None)
@@ -369,10 +489,9 @@ def main():
         "        return result\n    }\n}\n", encoding="utf-8")
     core_package = ROOT / "swift/ExteralessCore"
     core_sources = sorted((core_package / "Sources/ExteralessCore").glob("*.swift"))
-    codec_root = ROOT / "telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime"
-    codec_sources = [codec_root / "TLCodec.swift", codec_root / "TLSchemaGenerated.swift",
-                     codec_root / "TLTransformCodec.swift", codec_root / "TLUpdatePolicy.swift"]
-    sdk_swift_sources = [probe, dto_fixture, tl_probe, tl_fixture, hns_probe, hns_native_fixture, config_fixture, config_provider, root_fixture, *codec_sources]
+    codec_sources = [ROOT / name for name in SDK_TL_CODEC_SOURCES]
+    sdk_swift_sources = [probe, dto_fixture, tl_probe, tl_fixture, hns_probe, hns_native_fixture, config_fixture, config_provider, root_fixture,
+                         ROOT / ARCHIVE_SWIFT_PROBE, elyx_developer.SWIFT_PROBE, *codec_sources]
     # Compile only the reviewed version-pinned compatibility translation unit.
     compat_sources = [native / "cpython312_compat.c"]
     c_sources = [ROOT / "python/bridge/_exteraless_bridge.c", native / "register_bridge.c",
@@ -384,16 +503,41 @@ def main():
                    *python_sources, dependency_lock,
                     *sorted((native / "include").glob("*.h")), native / "cpython312_compat.h"])
     sources.update(Path(row["source"]) for row in java_cohort)
+    sources.update([ROOT / ARCHIVE_HELPER, ROOT / ARCHIVE_FIXTURE_EMITTER, *sorted((archive_work / 'input').iterdir())])
+    sources.update([*elyx_sources, elyx_helper, *sorted((elyx_work / 'input').iterdir())])
+    staged_copies = [(helper_source, helper), (plugin, staged_plugin),
+        (tl_helper_source, tl_helper), (hns_helper_source, hns_helper), (hns_fixture, staged_hns),
+        (ROOT / ARCHIVE_HELPER, archive_helper), (elyx_developer.HELPER, elyx_helper)]
+    staged_copies.extend((source, tl_work / 'input' / source.name) for source in tl_fixtures)
+    if any(digest(source) != digest(staged) for source, staged in staged_copies):
+        raise RuntimeError('An actual child helper/plugin copy differs from its current source')
+    sources.update(staged for _, staged in staged_copies)
+    sources.update(folder / 'manifest.json' for folder in (work, tl_work, hns_work, archive_work, elyx_work))
+    sources.update([Path(__file__), ROOT / 'tools/runtime/check_swift_components.py'])
     try:
         config = python_configuration(args.python.expanduser())
         write_json(output / "host-python.json", config)
+        source_hashes = {str(path.resolve()): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)}
         write_json(output / "build-inputs.json", {
-            "source_sha256": {str(path.resolve()): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(sources)},
+            "source_sha256": source_hashes,
             "dependency_bundle_sha256": dependencies["bundle_sha256"],
             "compat_sources": [str(path) for path in compat_sources],
             "python_root": str(python_root), "plugin": str(plugin), "work_directory": str(work),
             "runtime_timeout_seconds": TIMEOUT,
-            "native_children": 3, "tl_work_directory": str(tl_work), "hns_work_directory": str(hns_work),
+            "native_children": 5, "tl_work_directory": str(tl_work), "hns_work_directory": str(hns_work),
+            "elyx_work_directory": str(elyx_work), "elyx_fixture_sha256": elyx_fixtures,
+            "elyx_production_inputs": list(elyx_developer.PYTHON_INPUTS),
+            "elyx_required_checks": list(elyx_developer.REQUIRED_CHECKS),
+            "elyx_input_sources": [str(path.resolve()) for path in elyx_sources],
+            "staged_copies": [{"source": str(source.resolve()), "staged": str(staged.resolve()),
+                               "sha256": digest(source)} for source, staged in staged_copies],
+            "first_child_required_sdk_observations": list(REQUIRED_SDK_OBSERVATIONS),
+            "darwin_family_fd_inputs": {str(path.resolve()): digest(path) for path in (
+                helper_source, helper, plugin, staged_plugin,
+                python_root / 'exteraless_runtime/_audit_paths.py', python_root / 'exteraless_runtime/_archives.py')},
+            "ios_fd_acceptance": "separate actual-ios observation required; Mac darwin_family_fd_paths is not an iOS pass",
+            "archive_work_directory": str(archive_work), "archive_fixture_sha256": archive_fixtures,
+            "archive_production_inputs": list(ARCHIVE_PYTHON_INPUTS),
             "root_registration": registered_root, "root_source_sha256": root_pins,
             "java_sdk_cohort": java_cohort,
         })
@@ -426,6 +570,7 @@ def main():
                  *swift_sources, *sdk_swift_sources, *objects, *core_objects, "-Xlinker", library,
                  "-Xlinker", "-rpath", "-Xlinker", library.parent, "-o", executable],
                 log=log, timeout=240, cwd=build, env=env)
+        validate_cohort_inputs(source_hashes)
         started = time.monotonic()
         with (output / "swift-plugin-console.log").open("w", encoding="utf-8") as log:
             run([executable, report_path, config["home"], config["stdlib"], config["dynload"],
@@ -464,7 +609,35 @@ def main():
             raise RuntimeError("Native HNS SDK probe did not emit its completion marker")
         hns_report.update(native_process_seconds=round(time.monotonic() - hns_started, 3), runtime_timeout_seconds=TIMEOUT)
         write_json(hns_report_path, hns_report)
-        report.update(ok=True, phase="complete", hns_remediation=True, hns_report=hns_report_path.name, native_children=3)
+        report.update(ok=False, phase="archive-lifecycle", hns_remediation=True, hns_report=hns_report_path.name)
+        write_json(report_path, report)
+        from check_swift_components import run_phase
+        archive_report_path = output / 'swift-sdk-archive-smoke.json'
+        archive_seconds = run_phase([str(item) for item in (
+            executable, archive_report_path, config['home'], config['stdlib'], config['dynload'],
+            python_root, archive_work / 'input', archive_work, archive_helper, '--archive-lifecycle')],
+            output, 'swift-sdk-archive-console', TIMEOUT, cwd=archive_work, env=env)
+        archive_report = json.loads(archive_report_path.read_text(encoding='utf-8'))
+        validate_archive_report(archive_report, python_root, archive_work)
+        if 'EXTERALESS_SWIFT_SDK_ARCHIVE_PROBE_OK' not in (output / 'swift-sdk-archive-console.log').read_text(encoding='utf-8'):
+            raise RuntimeError('Native archive child did not emit its completion marker')
+        archive_report.update(native_process_seconds=archive_seconds, runtime_timeout_seconds=TIMEOUT)
+        write_json(archive_report_path, archive_report)
+        report.update(ok=False, phase="elyx-developer", archive_lifecycle=True, archive_report=archive_report_path.name)
+        write_json(report_path, report)
+        elyx_report_path = output / 'swift-sdk-elyx-developer-smoke.json'
+        elyx_seconds = run_phase([str(item) for item in (
+            executable, elyx_report_path, config['home'], config['stdlib'], config['dynload'],
+            python_root, elyx_work / 'input', elyx_work, elyx_helper, '--elyx-developer')],
+            output, 'swift-sdk-elyx-developer-console', TIMEOUT, cwd=elyx_work, env=env)
+        elyx_report = json.loads(elyx_report_path.read_text(encoding='utf-8'))
+        elyx_developer.validate_report(elyx_report, python_root, elyx_work)
+        if 'EXTERALESS_SWIFT_SDK_ELYX_DEVELOPER_PROBE_OK' not in (output / 'swift-sdk-elyx-developer-console.log').read_text(encoding='utf-8'):
+            raise RuntimeError('Native Elyx developer child did not emit its completion marker')
+        validate_cohort_inputs(source_hashes)
+        elyx_report.update(native_process_seconds=elyx_seconds, runtime_timeout_seconds=TIMEOUT)
+        write_json(elyx_report_path, elyx_report)
+        report.update(ok=True, phase="complete", elyx_developer=True, elyx_report=elyx_report_path.name, native_children=5)
         report["native_process_seconds"] = round(elapsed, 3)
         report["runtime_timeout_seconds"] = TIMEOUT
         report["build_inputs"] = "build-inputs.json"

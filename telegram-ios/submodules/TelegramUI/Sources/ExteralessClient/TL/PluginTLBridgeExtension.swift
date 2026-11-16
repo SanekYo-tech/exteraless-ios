@@ -40,6 +40,7 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
     private let callback: Callback
     private let release: Release
     private let hasPermission: HasPermission
+    private let permissionAdmission: PluginPermissionAdmission
     private let accountLookup: AccountLookup
     private let resolveAccount: AccountResolver
     private let diagnostic: @Sendable (String) -> Void
@@ -59,20 +60,25 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
     public convenience init(storage: PluginServiceStorage, hasPermission: @escaping HasPermission,
                 captureOwner: @escaping CaptureOwner, callback: @escaping Callback, release: @escaping Release,
                 accountLookup: @escaping AccountLookup, resolveAccount: @escaping AccountResolver,
-                diagnostic: @escaping @Sendable (String) -> Void = { NSLog("[Exteraless TL] %@", $0) }) {
+                diagnostic: @escaping @Sendable (String) -> Void = { NSLog("[Exteraless TL] %@", $0) },
+                permissionAdmission: PluginPermissionAdmission? = nil) {
         self.init(storage: storage, hasPermission: hasPermission, captureOwner: captureOwner, callback: callback,
             release: release, accountLookup: accountLookup, resolveAccount: resolveAccount, diagnostic: diagnostic,
-            scheduleStart: { work in DispatchQueue.main.async { work() } })
+            scheduleStart: { work in DispatchQueue.main.async { work() } }, permissionAdmission: permissionAdmission)
     }
 
     init(storage: PluginServiceStorage, hasPermission: @escaping HasPermission,
          captureOwner: @escaping CaptureOwner, callback: @escaping Callback, release: @escaping Release,
          accountLookup: @escaping AccountLookup, resolveAccount: @escaping AccountResolver,
          diagnostic: @escaping @Sendable (String) -> Void,
-         scheduleStart: @escaping @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void) {
+         scheduleStart: @escaping @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void,
+         permissionAdmission: PluginPermissionAdmission? = nil) {
         self.scheduleStart = scheduleStart
         self.storage = storage
         self.hasPermission = hasPermission
+        self.permissionAdmission = permissionAdmission ?? { id, required in
+            { required.allSatisfy { hasPermission(id, $0) } }
+        }
         self.captureOwner = captureOwner
         self.callback = callback
         self.release = release
@@ -101,6 +107,12 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
     public func releaseInstances(pluginId: String) {
         for ticket in self.registry.takeAll(pluginId: pluginId) {
             _ = self.release(ticket.owner, [ticket.callbackHandle])
+        }
+    }
+
+    public func permissionsChanged(pluginId: String) {
+        for ticket in self.registry.runningTickets where ticket.pluginId == pluginId && !ticket.permitsExecution {
+            self.finish(ticket, error: .local("PERMISSION_REVOKED"))
         }
     }
 
@@ -168,23 +180,23 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
                     ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.common, permission: .messagesSend)
                     self.scheduleStart { [weak self] in self?.startText(ticket, model: model) }
                 } else if model.kind == .album {
-                    for item in model.items { _ = try self.mediaURL(item.path, pluginId: pluginId) }
+                    let sources = try model.items.map { try self.mediaResource($0.path, pluginId: pluginId) }
                     let cache = try self.storage.cacheDirectory(pluginId: pluginId)
-                    ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.common, permission: .messagesSend, media: true)
-                    self.scheduleStart { [weak self] in self?.startAlbum(ticket, model: model, cache: cache) }
+                    ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.common, permission: .messagesSend, media: true, resources: sources)
+                    self.scheduleStart { [weak self] in self?.startAlbum(ticket, model: model, sources: sources, cache: cache) }
                 } else {
-                    let source = try self.mediaURL(model.path, pluginId: pluginId)
+                    let source = try self.mediaResource(model.path, pluginId: pluginId)
                     let cache = try self.storage.cacheDirectory(pluginId: pluginId)
-                    ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.common, permission: .messagesSend, media: true)
+                    ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.common, permission: .messagesSend, media: true, resources: [source])
                     self.scheduleStart { [weak self] in self?.startMedia(ticket, model: model, source: source, cache: cache) }
                 }
             case "editMedia":
                 try self.require(pluginId, .messagesSend, member: member)
                 let model = try PluginTLEditMediaModel(arguments[0])
-                let source = model.content.kind == .text ? nil : try self.mediaURL(model.content.path, pluginId: pluginId)
+                let source = model.content.kind == .text ? nil : try self.mediaResource(model.content.path, pluginId: pluginId)
                 let cache = try self.storage.cacheDirectory(pluginId: pluginId)
                 ticket = try self.admit(pluginId, ownerToken: ownerToken, callbackHandle: callbackHandle, common: model.content.common,
-                    permission: .messagesSend, media: source != nil || model.spoiler != nil)
+                    permission: .messagesSend, media: source != nil || model.spoiler != nil, resources: source.map { [$0] } ?? [])
                 self.scheduleStart { [weak self] in self?.startEditMedia(ticket, model: model, source: source, cache: cache) }
             default:
                 throw BridgeFailure.unimplemented("Unsupported TL runtime method: \(member)")
@@ -209,7 +221,8 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
         guard self.hasPermission(pluginId, permission) else { throw BridgeFailure.permission("\(member) requires \(permission.rawValue)") }
     }
 
-    private func admit(_ pluginId: String, ownerToken: String, callbackHandle: Int64, common: PluginTLCommonModel, permission: PluginPermission, media: Bool = false) throws -> Ticket {
+    private func admit(_ pluginId: String, ownerToken: String, callbackHandle: Int64, common: PluginTLCommonModel, permission: PluginPermission, media: Bool = false,
+                       resources: [PluginResourcePath] = []) throws -> Ticket {
         // Capture on the calling C owner-worker, before ANY main/Task hop. A
         // later capture would see nil and accidentally grant permanent execution.
         let parentExecution = PluginNativeExecutionContext.captureGuard()
@@ -220,9 +233,14 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
         let recordId = try self.accountLookup(common.account)
         let origin = try PluginTLNativeOrigin.capture(owner: owner)
         let captureOwner = self.captureOwner
-        let hasPermission = self.hasPermission
+        var required: Set<PluginPermission> = [permission]
+        if permission == .messagesSend { required.insert(.ui) }
+        if resources.contains(where: \.requiresFiles) { required.insert(.files) }
+        // Classification is metadata-only and never consults current grants.
+        // This single full predicate owns preparation, cancellation and delivery.
+        let permissionCurrent = self.permissionAdmission(pluginId, required)
         let execution: @Sendable () -> Bool = {
-            parentExecution() && accountExecution() && hasPermission(pluginId, permission)
+            parentExecution() && accountExecution() && permissionCurrent()
         }
         guard execution(), captureOwner(pluginId) == owner else { throw PluginHostError.superseded("TL native execution revoked before admission") }
         let ticket = try self.registry.reserve(pluginId: pluginId, owner: owner, callbackHandle: callbackHandle,
@@ -301,7 +319,7 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
             isCancelled: self.nativeCancellation(ticket)), ticket: ticket)
     }
 
-    @MainActor private func startMedia(_ ticket: Ticket, model: PluginTLMediaModel, source: URL, cache: URL) {
+    @MainActor private func startMedia(_ ticket: Ticket, model: PluginTLMediaModel, source: PluginResourcePath, cache: URL) {
         guard let context = self.account(ticket, permission: .messagesSend) else { return }
         let registry = self.registry
         let isCancelled = self.nativeCancellation(ticket)
@@ -315,8 +333,8 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
                     self.finish(ticket, error: .local("ACCOUNT_UNAVAILABLE"))
                     return
                 }
-                // Check file permission again after preparation, before the native effect.
-                _ = try self.mediaURL(model.path, pluginId: ticket.pluginId)
+                // Prepared bytes and this ticket's original permission predicate
+                // remain authoritative; never select a fresh files grant here.
                 self.start(exteralessTLSendMedia(account: current.account, reference: model.peer, media: prepared,
                     caption: model.caption, entities: model.entities, silent: model.silent, replyToId: model.replyToId,
                     threadId: model.threadId, scheduleTime: model.scheduleTime,
@@ -337,7 +355,7 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
         registry.bindCancellation(ticket) { task.cancel() }
     }
 
-    @MainActor private func startAlbum(_ ticket: Ticket, model: PluginTLMediaModel, cache: URL) {
+    @MainActor private func startAlbum(_ ticket: Ticket, model: PluginTLMediaModel, sources: [PluginResourcePath], cache: URL) {
         guard let context = self.account(ticket, permission: .messagesSend) else { return }
         let registry = self.registry
         let isCancelled = self.nativeCancellation(ticket)
@@ -346,9 +364,9 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
             do {
                 var items: [ExteralessTLPreparedMessage] = []
                 var size = 0
-                for item in model.items {
+                guard sources.count == model.items.count else { throw BridgeFailure.malformed("Album resource admission mismatch") }
+                for (item, source) in zip(model.items, sources) {
                     guard !isCancelled(), !Task.isCancelled else { throw CancellationError() }
-                    let source = try self.mediaURL(item.path, pluginId: ticket.pluginId)
                     let media = try await self.mediaPreparation.prepare(model: item, source: source, cacheDirectory: cache,
                         isActive: { !isCancelled() }, bindCancellation: { registry.bindCancellation(ticket, $0) })
                     size += media.data.count
@@ -359,7 +377,6 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
                 guard let current = self.account(ticket, permission: .messagesSend), current === context else {
                     self.finish(ticket, error: .local("ACCOUNT_UNAVAILABLE")); return
                 }
-                for item in model.items { _ = try self.mediaURL(item.path, pluginId: ticket.pluginId) }
                 self.start(exteralessTLSendAlbum(account: current.account, reference: model.peer, items: items, silent: model.silent,
                     replyToId: model.replyToId, replyToNamespace: model.replyToNamespace, threadId: model.threadId, scheduleTime: model.scheduleTime,
                     origin: self.origin(ticket),
@@ -373,7 +390,7 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
         registry.bindCancellation(ticket) { task.cancel() }
     }
 
-    @MainActor private func startEditMedia(_ ticket: Ticket, model: PluginTLEditMediaModel, source: URL?, cache: URL) {
+    @MainActor private func startEditMedia(_ ticket: Ticket, model: PluginTLEditMediaModel, source: PluginResourcePath?, cache: URL) {
         guard let context = self.account(ticket, permission: .messagesSend) else { return }
         let registry = self.registry
         let isCancelled = self.nativeCancellation(ticket)
@@ -384,7 +401,6 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
                 if let source {
                     media = try await self.mediaPreparation.prepare(model: model.content, source: source, cacheDirectory: cache,
                         isActive: { !isCancelled() }, bindCancellation: { registry.bindCancellation(ticket, $0) })
-                    _ = try self.mediaURL(model.content.path, pluginId: ticket.pluginId)
                 } else { media = nil }
                 guard let current = self.account(ticket, permission: .messagesSend), current === context else {
                     self.finish(ticket, error: .local("ACCOUNT_UNAVAILABLE")); return
@@ -520,16 +536,8 @@ public final class PluginTLBridgeExtension: PluginBridgeExtension, @unchecked Se
         return true
     }
 
-    private func mediaURL(_ path: String, pluginId: String) throws -> URL {
-        let source = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-        let directories = [try self.storage.filesDirectory(pluginId: pluginId), try self.storage.cacheDirectory(pluginId: pluginId)]
-        let owned = directories.contains { root in
-            let components = root.standardizedFileURL.resolvingSymlinksInPath().pathComponents
-            return source.pathComponents.count > components.count && source.pathComponents.starts(with: components)
-        }
-        guard owned || self.hasPermission(pluginId, .files) else {
-            throw BridgeFailure.permission("sendMedia.path requires files permission outside this plugin's files/cache directories")
-        }
-        return source
+    private func mediaResource(_ path: String, pluginId: String) throws -> PluginResourcePath {
+        try PluginResourcePath(path: path, allowedRoots: [self.storage.filesDirectory(pluginId: pluginId),
+                                                       self.storage.cacheDirectory(pluginId: pluginId)])
     }
 }

@@ -168,6 +168,7 @@ final class ExteralessClientRuntime {
     private var identity: ExteralessIdentityIntegration?
     private var retention: ExteralessRetentionIntegration?
     private var cloud: ExteralessCloudIntegration?
+    private var settingsReset: SettingsResetIntegration?
     private var backupBindings: ExteralessToolsBackupBindings?
     private var shortcutsBound = false
     private var contextToken: ExteralessClientContextToken?
@@ -315,6 +316,12 @@ final class ExteralessClientRuntime {
         identity?.update(context: context)
         retention?.update(context: context)
         cloud?.update(context: context)
+        if settingsReset == nil { settingsReset = SettingsResetIntegration() }
+        settingsReset?.update(context: context)
+        ExteralessSettingsSearch.install(context: context, isCurrent: { [weak self, weak context] in
+            guard let self, let context else { return false }
+            return !self.terminated && self.isPrepared && self.currentContext === context
+        })
     }
 
     /// AppDelegate calls after Runtime publishes this context. The returned
@@ -373,6 +380,8 @@ final class ExteralessClientRuntime {
     }
 
     private func clearAccountDomains() {
+        settingsReset?.clearContext()
+        ExteralessSettingsSearch.retire()
         contextToken?.invalidate()
         contextToken = nil
         backupBindings = nil

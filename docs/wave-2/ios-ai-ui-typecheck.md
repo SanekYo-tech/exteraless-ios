@@ -84,6 +84,10 @@ and settings/sidebar registration retain their existing implementation.
 
 ## COOR: exact shared-runtime patch (not applied here)
 
+Coordinator applied the deletion and published the compiler-only Root hunk with
+the three AI files in31287b92. SDK raw pins were regenerated against that Git index.
+The working-tree Search/Reset additions retain their separate upcoming cohort.
+
 Apply this deletion together with the adapter declaration change, before native
 compilation; until then the old extension duplicates the new conformance.
 The current runtime has the extension at line 445. The patch removes only that

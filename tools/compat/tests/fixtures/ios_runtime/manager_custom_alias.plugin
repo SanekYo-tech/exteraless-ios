@@ -1,0 +1,78 @@
+__id__ = "manager_custom_alias"
+__name__ = "Owned Manager Custom/alias fixture"
+
+import weakref
+from base_plugin import BasePlugin
+from client_utils import get_hook_account
+from java import jclass
+from ui.settings import Custom, SimpleSettingFactory, Switch, Text
+
+
+class ManagerCustomAliasPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.events, self.weak_widgets = [], []
+        self.version, self.mode, self.factory_calls = 1, "normal", 0
+
+    def note(self, value):
+        self.events.append((get_hook_account(), value))
+
+    def bound_click(self, view):
+        self.note(["bound-original-instance", view.getText()])
+
+    def widget(self, context=None):
+        self.factory_calls += 1
+        version = self.version
+        root = jclass("android.widget.LinearLayout")(context)
+        editor = jclass("android.widget.EditText")(context)
+        editor.setText("initial")
+        editor.model["callback"] = lambda value: self.note(["input", version, value])
+        label = jclass("android.widget.TextView")(context)
+        label.setText("nested")
+        label.model["callback"] = lambda view: self.note(["nested", version, view.getText()])
+        if self.mode == "bound_callback": label.model["callback"] = self.bound_click
+        label.model["long_callback_id"] = lambda view: self.note(["long", version, view.getText()])
+        root.addView(editor)
+        root.addView(label)
+        self.weak_widgets.extend(map(weakref.ref, (root, editor, label)))
+        return root
+
+    def create_settings(self):
+        version = self.version
+        if self.mode == "oversize": return [Text("x" * (1024 * 1024 + 1))]
+        if self.mode == "bad_view": return [Custom(view=object(), link_alias="bad")]
+        if self.mode == "bad_factory":
+            def fail(context):
+                self.widget(context)
+                raise ValueError("owned factory error")
+            return [Custom(factory=SimpleSettingFactory(create_view=fail), on_click=lambda: None, link_alias="bad")]
+        if self.mode == "too_many_callbacks":
+            root = jclass("android.widget.LinearLayout")()
+            for index in range(129):
+                child = jclass("android.widget.TextView")()
+                child.setText(str(index))
+                child.model["callback"] = lambda: None
+                root.addView(child)
+            return [Custom(view=root, link_alias="budget")]
+        if self.mode == "too_deep":
+            root = jclass("android.widget.LinearLayout")()
+            child = root
+            for _ in range(9):
+                value = jclass("android.widget.LinearLayout")()
+                child.addView(value)
+                child = value
+            return [Custom(view=root, link_alias="depth")]
+        if self.mode == "duplicate":
+            return [Text("one", link_alias="duplicate"), Text("two", create_sub_fragment=lambda: [Text("inner", link_alias="duplicate")])]
+        if self.mode == "unknown": return [Text("gone", link_alias="elsewhere")]
+        if self.mode == "unicode": return [Text("composed", link_alias="\u00e9"), Text("decomposed", link_alias="e\u0301")]
+        root_click = None if self.mode == "portable" else lambda view: self.note(["root", version, view.children[0].getText()])
+        if self.mode == "root_zero": root_click = lambda: self.note(["root-zero", version])
+        nested = [
+            Switch("known_key", "Toggle", False, on_change=lambda value: self.note(["switch", version, value, self.get_setting("known_key")]), link_alias="known_alias"),
+            Custom(view=self.widget(), on_click=root_click,
+                   on_long_click=lambda view: self.note(["root-long", version, view.children[0].getText()]), link_alias="view_alias"),
+            Custom(item=self.widget(), link_alias="item_alias"),
+            Custom(factory=SimpleSettingFactory(create_view=self.widget, bind_view=lambda view: self.note(["bind", version])), link_alias="factory_alias"),
+        ]
+        return [Text("Open nested", on_click=lambda view: self.note(["ordinary", view is None]),
+                     create_sub_fragment=lambda: nested, link_alias="parent_alias")]

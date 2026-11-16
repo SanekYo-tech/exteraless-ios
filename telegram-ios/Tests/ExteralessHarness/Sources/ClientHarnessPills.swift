@@ -105,7 +105,7 @@ extension ClientHarnessSession {
         defer { pills.close() }
         try await self.driver.settle()
         try await self.driver.until("real Cache header") { pills.header.preferredHeight > 0 }
-        try self.probe("pill-cache-initial", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-cache-initial", pills: pills)
         try self.driver.press("Open client settings")
         try await self.driver.settle()
         try await self.driver.row("action:pills.status")
@@ -131,10 +131,10 @@ extension ClientHarnessSession {
         try self.driver.back(); try await self.driver.settle()
         try self.driver.back(); try await self.driver.settle()
         try await self.driver.until("Cache header returned") { pills.header.preferredHeight > 0 }
-        try self.probe("pill-cache-enabled", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-cache-enabled", pills: pills)
         self.setDark(true)
         try await self.driver.settle(0.3)
-        try self.probe("pill-dark-header", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-dark-header", pills: pills)
 
         try pills.register(generation: "one")
         try ClientSettings.shared.applyPublic(PillLayout(active: [10041], hidden: [5], selected: 10041).patch,
@@ -142,12 +142,12 @@ extension ClientHarnessSession {
         try await self.driver.until("native Pill loading", timeout: 1) {
             (pills.header.view.accessibilityLabel ?? "").contains("Loading")
         }
-        try self.probe("pill-provider-loading", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-provider-loading", pills: pills)
         try await self.driver.until("native Pill trailing ready") {
             (pills.header.view.accessibilityLabel ?? "").contains("Ready one")
         }
         try await self.driver.settle(0.2)
-        try self.probe("pill-provider-ready", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-provider-ready", pills: pills)
 
         pills.setVisible(false)
         try await self.driver.until("native Pill cancellation") { pills.providers[0].counts["cancellations"] == 1 }
@@ -170,7 +170,7 @@ extension ClientHarnessSession {
         pills.providers[1].publishRetiredValue()
         try await self.driver.settle(0.4)
         try clientHarnessRequire(!(pills.header.view.accessibilityLabel ?? "").contains("RETIRED"), "old Pill owner reached native header")
-        try self.probe("pill-reloaded", extra: pills.snapshot)
+        try self.pillConfigurationProbe("pill-reloaded", pills: pills)
         pills.close()
         try await self.driver.settle(0.25)
         try await self.driver.until("Pill provider cleanup") { pills.providers.allSatisfy { $0.counts["cancellations"] == $0.counts["starts"] } }

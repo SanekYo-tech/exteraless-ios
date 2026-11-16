@@ -102,10 +102,15 @@ def dynamic_proxy(*interfaces):
     if any(isinstance(base, JavaClass) for base in interfaces):
         if not all(isinstance(base, JavaClass) for base in interfaces):
             raise TypeError("cannot mix native proxies and Python interfaces")
+        def initialize(self):
+            # DynamicProxyMeta already bound the interface/backend. SDK helpers
+            # may call base.__init__(self); this is not a Java constructor.
+            pass
         def missing(self, member): raise AttributeError(member)
         return DynamicProxyMeta(name, interfaces,
                                 {"__module__": "java.chaquopy", "__qualname__": name,
                                  "_interfaces": tuple(base.__name__ for base in interfaces),
+                                 "__init__": initialize,
                                  "__setattr__": object.__setattr__, "__getattr__": missing})
     # Стаб-класс или другой тип: наследуем как есть, обычным классом.
     return type(name, interfaces,

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "date": "2026-11-16",
+  "finding": "P2-01: Darwin-family platform selectors omit ios",
+  "production_change": "Exactly three selector expressions in two Python files: darwin or ios; inverse edit matches both previous P1 input hashes",
+  "darwin_family": ["darwin", "ios"],
+  "linux_backend": "unchanged /proc/self/fd route; never an iOS fallback",
+  "ios_execution_claimed": false,
+  "checks": {
+    "platform_selection_suite": {"passed": 4, "skipped_actual_posix": 1, "seconds": 1.20, "child_timeout_seconds": 20, "host": "Windows CPython 3.12"},
+    "native_probe_patch_apply_check": "passed, not applied here",
+    "native_probe_in_memory_ast_projection": "passed for both owned fixture targets; no source files overwritten",
+    "sdk_original_byte_identical": 36,
+    "prior_p1_binding_inverse_hash_check": "passed"
+  },
+  "coordinator_reported_history": {
+    "linux_posix_run": "43768124344",
+    "source": "ff913492",
+    "passed": 42,
+    "skipped": 0,
+    "fresh_c_compiled": true,
+    "scope": "before this platform selector fix; not queried and not an iOS execution receipt"
+  },
+  "coordinator_probe_patch": "docs/wave-2/elyx-ios-fd-probe-coordinator.patch",
+  "sha256": {
+    "python/exteraless_runtime/_archives.py": "f68ed0c19989f959fd376fe94a3ca75365ade9be0e68244de3c29ab5a204773e",
+    "python/exteraless_runtime/_audit_paths.py": "da7fcc6c4c5ea4cef9fbb7576f26f858eb63276961569a7fe1d8f6aef0b8b40e",
+    "tools/compat/tests/test_ios_elyx_platform.py": "27500bfa24b106ae4bc742a3adc2bfa2a39c7a881c0b5d6ef5e26b09df46e96d",
+    "docs/wave-2/elyx-ios-fd-probe-coordinator.patch": "b866f2d05bc22edd858eee9642c6b52d8a5da06e17557b6e2f595e4fdc19f138",
+    "docs/wave-2/elyx-archive-remediation.md": "60b5cfe07246fac7d7a924723bee0091d39c03f0193ed86a6dd9a3ca37c98d92"
+  }
+}

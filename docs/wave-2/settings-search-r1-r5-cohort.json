@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "id": "settings-search-r1-r5-core22",
+  "execution": "not-run",
+  "swift_tools_version": "6.0",
+  "test_count": 22,
+  "test_methods": {
+    "ClientSettingsSearchTests": [
+      "testLocalizedLabelsExplanationsAndOriginalNamesAreSearchable",
+      "testSourceClassRedirectAndMovedRowsUseExactCanonicalKeys",
+      "testConflictingQualifiersAndUnknownClassesNeverPickFirstMatch",
+      "testUnchangedRefreshRetainsTicketButDefinitionChangeInvalidatesIt",
+      "testRemovedAndReaddedDefinitionDoesNotReviveOldIdentifier",
+      "testActionReplacementAndABAInvalidateSelectedResult",
+      "testContextRetirementAndDifferentScopeRejectRetainedTickets",
+      "testAllCompatibilityFieldsAndAIStateStayOutOfIndexAndResolution",
+      "testOwnedAPIAndCloudFieldsCanOnlyResolveToOwningActions",
+      "testLearnedSecretClassificationDisablesPublicEditorButKeepsNativeRepair",
+      "testIndexNeverReadsOrIndexesCredentialsOrUnknownStoredFields",
+      "testTypedLinksRoundTripWithoutAnAssignedValue",
+      "testValueImportsDuplicateParametersAndMalformedPathsAreRejected",
+      "testUnavailableOriginalRowsStayExplicitAndHaveNoLink",
+      "testQueryResultAndCatalogBoundsFailClosed",
+      "testDuplicateNativeIdentitiesRejectInsteadOfChoosingAnAction"
+    ],
+    "ClientSettingsSearchClosureTests": [
+      "testPublishedTitleAndVisibilityABAInvalidateWithoutIntermediateIndexRefresh",
+      "testValueOnlyPublicBatchesReloadAndIdenticalRegistrationKeepSchemaTickets",
+      "testAcceptedSchemaOnLoadFailureStillPublishesNewIdentity",
+      "testSnapshotConstructorRemainsCompatibleAndPrunesUnknownVersionKeys",
+      "testNagramRedirectIntersectsExplicitClassAndPreservesValidMovedRows",
+      "testCredentialValueCanaryIsRejectedAsLocalTypedError"
+    ]
+  },
+  "bounds_seconds": {"build": 120, "logic": 30, "termination_grace": 5},
+  "commands": [
+    "timeout --signal=TERM --kill-after=5s 120s swift build --build-tests --configuration debug --jobs 2",
+    "timeout --signal=TERM --kill-after=5s 30s swift test --skip-build --configuration debug --filter 'ClientSettingsSearch(Closure)?Tests'"
+  ],
+  "files": [
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientAPIFeatures.swift","member":"Sources/ExteralessCore/ClientAPIFeatures.swift","bytes":2155,"sha256":"de360fcc6bec13d6979f336b455fc42ef1f3c5c9e469877e2dff14c8a9789869"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSecrets.swift","member":"Sources/ExteralessCore/ClientSecrets.swift","bytes":3805,"sha256":"684a6429108d3a85925ea4a67e877a64acd47f45408ccc845dac587db1fd3266"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettingDefinition.swift","member":"Sources/ExteralessCore/ClientSettingDefinition.swift","bytes":11771,"sha256":"20fb90687568b90057475a9a41f7dd00e9e587d10d91d0c3af47d0ec9588038d"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettingValue.swift","member":"Sources/ExteralessCore/ClientSettingValue.swift","bytes":13078,"sha256":"ce214f72be402dde1ddfd830f2b0a8b67ba5882e7e28276e5599ef614907a5e4"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettings.swift","member":"Sources/ExteralessCore/ClientSettings.swift","bytes":62402,"sha256":"8677713c19c4ff623caf9437f4ff2613d8665a5f48b89e53a45b348873320701"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettingsObservation.swift","member":"Sources/ExteralessCore/ClientSettingsObservation.swift","bytes":1187,"sha256":"bbd9fda0a1675b2014ab4794b8ed502e7b021cfb3032b6817bc4b9f85f2900f3"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettingsSearchIndex.swift","member":"Sources/ExteralessCore/ClientSettingsSearchIndex.swift","bytes":20371,"sha256":"22aa851f9fc313d9f764dc607629defbf95a0083a6483944ff2178548ebf2047"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ClientSettingsSourceRoutes.swift","member":"Sources/ExteralessCore/ClientSettingsSourceRoutes.swift","bytes":40393,"sha256":"117282d9bd93fa1321fa6b0511b2fa65c5286d5bf2cb415df110648ceaa0a1f9"},
+    {"source":"swift/ExteralessCore/Sources/ExteralessCore/ExteraConfigCompatibility.swift","member":"Sources/ExteralessCore/ExteraConfigCompatibility.swift","bytes":9984,"sha256":"35eee798ab988f79f6a2d77e512b8fedda06c1d2f3f41f4cc65e345b8e4ffefe"},
+    {"source":"swift/ExteralessCore/Tests/ExteralessCoreTests/ClientSettingsSearchTests.swift","member":"Tests/ExteralessCoreTests/ClientSettingsSearchTests.swift","bytes":16536,"sha256":"6a2228317f0e4e4f0b8d5fcc3ff247f0277c6c70de4b32655a4c9021ef73eaf5"},
+    {"source":"swift/ExteralessCore/Tests/ExteralessCoreTests/ClientSettingsSearchClosureTests.swift","member":"Tests/ExteralessCoreTests/ClientSettingsSearchClosureTests.swift","bytes":9451,"sha256":"8d4e030909c3e1a3b558d9731389294c619d3e9c0ae493c255440bfb9e9eb583"},
+    {"source":"docs/wave-2/settings-search-r1-r5-cohort/Package.swift","member":"Package.swift","bytes":854,"sha256":"94233f88e547c1854fe093920b95bf3c2cbbb8753d395795b6f79e483b251b0a"},
+    {"source":"docs/wave-2/settings-search-r1-r5-cohort/README.md","member":"README.md","bytes":2001,"sha256":"defa2aa8ed5f301f4be149713e43f49888ed4ae537634f69c8528ff8fc0d9c65"}
+  ]
+}

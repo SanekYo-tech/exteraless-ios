@@ -157,12 +157,12 @@ final class BridgeServiceConformanceTests: XCTestCase {
         let directory = tempDirectory("effect-permissions")
         let store = try PluginStore(directory: directory)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        permissions.setGranted("alpha", [.intents], to: store)
+        try permissions.setGranted("alpha", [.intents], to: store)
         let (services, bridge) = try fixture(permissions: permissions)
         _ = try value(request(bridge, "call", Self.runtime, "openURL", args: ["https://example.invalid/test"]))
         let lease = try XCTUnwrap(services.effectLeases.values.first)
         XCTAssertTrue(lease.isCurrent)
-        permissions.setGranted("alpha", [], to: store)
+        try permissions.setGranted("alpha", [], to: store)
         XCTAssertFalse(lease.isCurrent)
     }
 

@@ -1,0 +1,9 @@
+__id__ = "sdkDeveloperProbe"
+__name__ = "Own developer/proxy fixture"
+__version__ = "1.0"
+
+from base_plugin import BasePlugin
+
+
+class DeveloperProbe(BasePlugin):
+    pass

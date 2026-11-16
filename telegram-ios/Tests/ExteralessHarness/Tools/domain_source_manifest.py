@@ -10,6 +10,7 @@ from pathlib import Path
 def source_key(path):
     text = str(path).replace("\\", "/")
     for anchor, prefix in (("submodules/", "telegram-ios/"), ("Tests/ExteralessHarness/", "telegram-ios/"),
+                           ("Tests/Exteraless/", "telegram-ios/"),
                            ("Tests/ComposerHarness/", "telegram-ios/"), ("swift/ExteralessCore/", "")):
         position = text.find(anchor)
         if position >= 0 and (position == 0 or text[position - 1] == "/"):

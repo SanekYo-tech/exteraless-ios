@@ -21,7 +21,16 @@ def source_manifest():
 
 
 def report(scenario):
-    return {"pythonRequested": False, "probes": [{"name": name} for name in domains.PROBES[scenario]],
+    probes = [{"name": name} for name in domains.PROBES[scenario]]
+    if scenario == "pill-render":
+        from client_ui_control_frames import PILL_PROBES
+        for probe in probes:
+            if probe['name'] in PILL_PROBES:
+                probe.update(dark=probe['name'] not in ('pill-cache-initial', 'pill-cache-enabled'), semantic={
+                    'configurationControl': {'id': 'exteraless.pill.current', 'inWindow': True, 'title': 'Fixture pill', 'label': 'Fixture pill',
+                        'buttonFrame': [8, 4, 300, 44], 'labelFrame': [46, 16, 200, 20],
+                        'insets': [0, 38, 0, 16], 'font': 'fixture-font', 'pointSize': 15}})
+    return {"pythonRequested": False, "probes": probes,
             "facts": {"domainSources": source_manifest(), "bootstrap": {
                 "apiIdentity": "synthetic-private-fixture-store", "systemKeychain": False,
                 "retention": "registered-main-application-snapshot-before-writer"},

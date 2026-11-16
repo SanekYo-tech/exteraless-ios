@@ -144,7 +144,7 @@ final class ClientHarnessRuntime {
                 try Self.requireOwned(id)
                 let read = try PluginUISettingsReadExecution.require(pluginId: id)
                 let json = try await host.settingsJSON(id: id, account: read.account, expectedOwner: read.owner,
-                    shouldExecute: { read.isCurrent })
+                    shouldExecute: { read.isCurrent }, page: PluginSettingsPageExecution.current)
                 guard read.isCurrent else { throw PluginHostError.superseded("Harness settings page/read expired") }
                 return json
             },

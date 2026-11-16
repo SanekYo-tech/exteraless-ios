@@ -35,6 +35,7 @@ public final class PluginNativeServicesBridgeExtension: PluginBridgeExtension, @
     private let release: Release
     private let acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>?
     private let hasPermission: HasPermission
+    private let permissionAdmission: PluginPermissionAdmission
     private let snapshot: Snapshot
     private let resolveAccount: AccountResolver
     private let logs: PluginServiceLogBuffer
@@ -60,13 +61,17 @@ public final class PluginNativeServicesBridgeExtension: PluginBridgeExtension, @
                 platformSnapshot: @escaping Snapshot, resolveAccount: @escaping AccountResolver,
                 interceptionSites: Set<NativeServiceInterceptionSite> = [],
                 publisherSites: Set<NativeServicePublisherSite> = [],
-                acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil) {
+                acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil,
+                permissionAdmission: PluginPermissionAdmission? = nil) {
         var exported = Self.members
         if !interceptionSites.contains(.chatDocument) { exported.subtract(["fileRegister", "fileRemove"]) }
         if interceptionSites.isDisjoint(with: [.externalURL, .applicationURL]) { exported.subtract(["intentRegister", "intentRemove"]) }
         self.exportedMethods = ["exteraless.ios.Runtime": exported]
         self.logs = logs
         self.hasPermission = hasPermission
+        self.permissionAdmission = permissionAdmission ?? { id, required in
+            { required.allSatisfy { hasPermission(id, $0) } }
+        }
         self.captureOwner = captureOwner
         self.callback = callback
         self.resultCallback = resultCallback
@@ -88,7 +93,8 @@ public final class PluginNativeServicesBridgeExtension: PluginBridgeExtension, @
             resultCallback: NativeServiceCallbackTransport.result(using: callbacks),
             release: { owner, handles in retirement(owner, handles, {}) }, platformSnapshot: { services.platformSnapshot },
             resolveAccount: { services.context(recordId: $0) }, interceptionSites: interceptionSites,
-            publisherSites: publisherSites, acknowledgedRelease: retirement)
+            publisherSites: publisherSites, acknowledgedRelease: retirement,
+            permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
     }
 
     @MainActor public func update(context: AccountContext) {
@@ -125,6 +131,15 @@ public final class PluginNativeServicesBridgeExtension: PluginBridgeExtension, @
         for ticket in operations.takeAll(pluginId: pluginId) { ticket.lease.close() }
         eventDelivery.remove(pluginId: pluginId)
         leases.closeAll(pluginId: pluginId)
+    }
+
+    public func permissionsChanged(pluginId: String) {
+        interceptions.retirePermissions(pluginId: pluginId)
+        for ticket in operations.retirePermissions(pluginId: pluginId) {
+            eventDelivery.remove(subscriptionId: ticket.id)
+            ticket.lease.close()
+        }
+        leases.retirePermissions(pluginId: pluginId)
     }
 
     public func dispatch(requestJSON: String, pluginId: String) throws -> String? {
@@ -249,13 +264,13 @@ public final class PluginNativeServicesBridgeExtension: PluginBridgeExtension, @
 
     private func makeLease(_ request: NativeServiceRequest, pluginId: String, handle: Int64, permissions: Set<PluginPermission>,
                            scope: NativeServiceSnapshots.Scope? = nil) throws -> Lease {
-        try require(pluginId, permissions: permissions)
+        let permissionCurrent = permissionAdmission(pluginId, permissions)
+        guard permissionCurrent() else { throw BridgeFailure.permission("Native service permission admission expired") }
         let captured = try owner(request, pluginId: pluginId)
         let captureOwner = self.captureOwner
-        let hasPermission = self.hasPermission
         let snapshots = controllerSnapshots.values
         return try leases.make(pluginId: pluginId, owner: captured, handle: handle, isCurrent: { owner in
-            captureOwner(owner.pluginId) == owner && permissions.allSatisfy { hasPermission(owner.pluginId, $0) }
+            captureOwner(owner.pluginId) == owner && permissionCurrent()
                 && (scope.map { snapshots.isCurrent($0) } ?? true)
         }, callback: callback, resultCallback: resultCallback, release: release, acknowledgedRelease: acknowledgedRelease,
             ownerWireToken: captured.wireToken)

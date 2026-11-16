@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from client_ui_harness import APP_ROOT, command, digest, verify_ipa, write_json
 from client_ui_harness_domains import manifest_from_ipa
 from client_ui_harness_visuals import BUILD_SELECTION, VISUAL_SCENARIOS
+from client_ui_harness_map import MAP_SCENARIOS
 from native_bundle_resources import verify_native_bundle_resources
 from native_test_plan import build_plan
 from client_ui_harness_inputs import acceptance_identity, harness_inputs
@@ -50,7 +51,23 @@ def source_preflight(telegram):
             "public func exteralessPluginSettingsController("],
         "submodules/AccountContext/BUILD": ['name = "ClientHarnessProtocolSource"'],
         "Tests/ComposerHarness/BUILD": ['name = "DisposableAccountSources"'],
-        "Tests/ExteralessHarness/BUILD": ['name = "DomainSourceManifest"', '":DomainSourceManifest"'],
+        "Tests/ExteralessHarness/BUILD": ['name = "DomainSourceManifest"', '":DomainSourceManifest"',
+            '"//submodules/LocationUI:LocationUI"', '"Fixtures/map-attribution-grid.png"', '"Fixtures/native_plugin_probe.py"'],
+        "Tests/ExteralessHarness/Fixtures/client_ui_fixture.plugin": ["def fd_family_probe("],
+        "Tests/ExteralessHarness/Sources/ClientHarnessNativeObservation.swift": [
+            "private let native = CPythonXCFrameworkEngine()", "_fd_module._probe_darwin_family_fds(",
+            'if _fd_sys.platform != "ios":', "self.fdPaths.append(observation)"],
+        "Tests/ExteralessHarness/Sources/ClientHarnessRuntime.swift": [
+            "NativeBridgeBinding(services: self.host.bridge)", "try self.binding.install()",
+            "page: PluginSettingsPageExecution.current"],
+        "Tests/ExteralessHarness/Sources/ClientHarnessComposer.swift": ["runInlineMathConfigurationSegment(host: host)"],
+        "Tests/ExteralessHarness/Sources/ClientHarnessPills.swift": ["pillConfigurationProbe("],
+        "Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift": ["runResetSupplement()", "runTrustSecondarySupplement()", "runMapAttributionSupplement()"],
+        "submodules/TelegramUI/BUILD": ["-DPLUGIN_TRUST_SECONDARY_UI_FIXTURE"],
+        "submodules/LocationUI/BUILD": ["-DEXTERALESS_MAP_ATTRIBUTION_FIXTURE", 'name = "ClientHarnessMapFingerprintSources"'],
+        "submodules/LocationUI/Sources/Tests/ExteralessMapAttributionFixture.swift": [
+            "#if EXTERALESS_MAP_ATTRIBUTION_FIXTURE", "public enum ExteralessMapAttributionFixture", "overlay.loadTile(at: path)"],
+        "Tests/ExteralessHarness/Sources/ClientHarnessMapAttribution.swift": ["ExteralessMapAttributionFixture.run(hostView:"],
         "submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessComposerVisualFactory.swift": [
             "#if DEBUG", "public func makeExteralessComposerPanel(",
             "inputPanelForChatPresentationIntefaceState(", "panel.loadTextInputNodeIfNeeded()"],
@@ -123,10 +140,11 @@ def preflight(telegram, *, check_xcode=True):
 
 
 def validate_domain_debug_actions(graph_path):
-    """The published Feed factories are compiled only in DEBUG app modules."""
+    """Require real compiler definitions for the published Feed and Map entries."""
     graph = json.loads(Path(graph_path).read_text(encoding="utf-8"))
     targets = {str(item["id"]): item["label"] for item in graph.get("targets", [])}
-    required = {"//submodules/TelegramCore:TelegramCore", "//submodules/TelegramUI:TelegramUI"}
+    required = {"//submodules/TelegramCore:TelegramCore": "DEBUG", "//submodules/TelegramUI:TelegramUI": "DEBUG",
+                "//submodules/LocationUI:LocationUI": "EXTERALESS_MAP_ATTRIBUTION_FIXTURE"}
     seen = set()
     for action in graph.get("actions", []):
         if not action.get("mnemonic", "").startswith("SwiftCompile"):
@@ -138,13 +156,14 @@ def validate_domain_debug_actions(graph_path):
         args = list(action.get("arguments", []))
         for parameters in action.get("paramFiles", []):
             args.extend(parameters.get("arguments", []))
-        debug = "-DDEBUG" in args or any(a == "-D" and b == "DEBUG" for a, b in zip(args, args[1:]))
+        definition = required[owner]
+        debug = "-D" + definition in args or any(a == "-D" and b == definition for a, b in zip(args, args[1:]))
         if not debug or "-DNDEBUG" in args:
-            raise ValueError("Domain render factories require DEBUG in " + owner)
+            raise ValueError("Domain render factories require " + definition + " in " + owner)
         seen.add(owner)
-    if seen != required:
-        raise ValueError("Domain DEBUG compile actions missing: " + repr(sorted(required - seen)))
-    return {"configuration": "debug_sim_arm64", "debug_modules": sorted(seen)}
+    if seen != set(required):
+        raise ValueError("Domain DEBUG compile actions missing: " + repr(sorted(set(required) - seen)))
+    return {"configuration": "debug_sim_arm64", "debug_modules": sorted(seen), "required_definitions": required}
 
 
 def build(telegram, output, cache, bazel_root, seconds):
@@ -199,12 +218,12 @@ def build(telegram, output, cache, bazel_root, seconds):
             }
             write_json(output / "native-bundle-resources.json", native_resources)
             with zipfile.ZipFile(ipa) as archive:
-                domain_sources = manifest_from_ipa(archive, APP_ROOT, VISUAL_SCENARIOS)
+                domain_sources = manifest_from_ipa(archive, APP_ROOT, VISUAL_SCENARIOS + MAP_SCENARIOS)
             if (domain_sources != snapshot["domain_sources"] or harness_inputs(telegram) != snapshot
                     or build_plan(telegram)[0] != native_plan or load_staging_manifest(telegram) != manifest):
                 raise ValueError("Compiled acceptance manifest/source/staging differs from its declared snapshot")
             # Later test builds can repoint bazel-bin. Freeze the verified archive
-            # once so all three serial recording batches consume these bytes.
+            # once so every serial recording batch consumes these bytes.
             retained_ipa = output / "ClientUIHarness.ipa"
             shutil.copyfile(ipa, retained_ipa)
             if digest(retained_ipa) != packaging["ipaSha256"]:

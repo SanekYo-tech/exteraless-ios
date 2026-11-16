@@ -1,8 +1,10 @@
 """SDK builders are Python models; every presentation/effect is native UIKit."""
 
 import copy
+import contextlib
 import json
 import math
+import uuid
 
 from ._callbacks import admitted_id
 from ._java_types import Object, File
@@ -297,6 +299,435 @@ class ClipData(Object):
     def newPlainText(cls, label, text): return cls(text)
 
 
+class SettingsTargetError(ValueError):
+    """Exact original key/link_alias lookup failed, before native presentation."""
+
+    def __init__(self, code):
+        self.code = code
+        super().__init__(f"SettingsTarget.{code}")
+
+
+def resolve_settings_target(rows, target):
+    """Return the containing page and row, using the ORIGINAL SDK JSON identities.
+
+    No trimming, case folding, Unicode normalization, prefix match or plugin ID
+    lookup. A row matching both its key and alias is one match, not two.
+    """
+    if target is None: return {"pagePath": [], "rowId": None}
+    if not isinstance(target, str): raise SettingsTargetError("invalid")
+    target = str.__str__(target)  # Real string contents, not a subclass's equality hook.
+    if not target or "\0" in target:
+        raise SettingsTargetError("invalid")
+    try: size = len(target.encode("utf-8"))
+    except UnicodeEncodeError: raise SettingsTargetError("invalid") from None
+    if size > 256: raise SettingsTargetError("tooLong")
+    matches, count = [], 0
+    def visit(items, path):
+        nonlocal count
+        if not isinstance(items, list) or len(path) > 16:
+            raise ValueError("Settings document exceeds 16 levels")
+        for row in items:
+            count += 1
+            if count > 1000 or not isinstance(row, dict): raise ValueError("Invalid or oversized settings document")
+            ident = row.get("row_id")
+            if not isinstance(ident, str) or not ident or len(ident.encode("utf-8")) > 256:
+                raise ValueError("Settings target requires SDK row_id")
+            if target == row.get("link_alias") or target == row.get("key"):
+                matches.append({"pagePath": list(path), "rowId": ident})
+            if row.get("sub_page") is not None: visit(row["sub_page"], path + [ident])
+    visit(rows, [])
+    if not matches: raise SettingsTargetError("unknown")
+    if len(matches) != 1: raise SettingsTargetError("ambiguous")
+    return matches[0]
+
+
+def _settings_json(value):
+    raw = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    if len(raw.encode("utf-8")) > 1024 * 1024: raise ValueError("Settings response exceeds 1 MiB")
+    return raw
+
+
+class _SettingsPage:
+    """Owner-worker snapshot. SDK string IDs never enter the C handle namespace.
+
+    The original serializer and callback dispatch run against an isolated copy of
+    its PluginRecord. A later create_settings cannot replace this page's targets.
+    A zero-handle SDK lease supplies unload cleanup; native owns the page UUID.
+    """
+
+    def __init__(self, platform, ident, account):
+        platform.check_worker()
+        self.platform, self.id, self.account = platform, ident, account
+        self.owner = platform.owner_token
+        self.record = copy.copy(platform.loader.plugins[platform.plugin_id])
+        self.record.click_callbacks, self.record.change_callbacks, self.record.custom_views = {}, {}, {}
+        self.views, self.widget_routes, self.click_views, self.keys = {}, {}, {}, set()
+        self.source_rows, self.rows = [], []
+        self.lease = platform.callbacks.new("settings-page")
+        self.lease.on_close = self._release
+
+    def _release(self):
+        pages = getattr(self.platform, "settings_pages", {})
+        if pages.get(self.id) is self: pages.pop(self.id)
+        self.views.clear(); self.widget_routes.clear(); self.click_views.clear(); self.keys.clear()
+        self.source_rows, self.rows = [], []
+        if self.record is not None:
+            self.record.click_callbacks.clear(); self.record.change_callbacks.clear(); self.record.custom_views.clear()
+        self.record = None
+
+    def close(self): self.lease.close()
+
+    def check(self):
+        self.platform.check_worker()
+        if (not self.lease.open or not self.platform.callbacks.active
+                or self.lease.generation != self.platform.callbacks.generation
+                or self.owner != self.platform.owner_token or self.record is None):
+            raise RuntimeStateError("Settings page belongs to a closed owner/read generation")
+
+    @contextlib.contextmanager
+    def scope(self):
+        from . import _scope
+        self.check()
+        loader, ident = self.platform.loader, self.platform.plugin_id
+        original = loader.plugins.get(ident)
+        if original is None or original.instance is not self.record.instance:
+            raise RuntimeStateError("Settings page belongs to a replaced plugin")
+        loader.plugins[ident] = self.record
+        try:
+            with _scope(self.platform, self.account): yield
+        finally:
+            if loader.plugins.get(ident) is self.record: loader.plugins[ident] = original
+
+    def build(self, *, manager):
+        from . import dispatch_json
+        try:
+            with self.scope():
+                raw = dispatch_json("create_settings", json.dumps({"account": self.account}))
+                if len(raw.encode("utf-8")) > 1024 * 1024: raise ValueError("Settings response exceeds 1 MiB")
+                rows = json.loads(raw)
+                if not isinstance(rows, list): raise TypeError("Settings response must be an array")
+                self.source_rows = copy.deepcopy(rows)
+                self.rows = self.prepare(rows, manager=manager)
+                # Widgets needed by callbacks are retained explicitly. Factories,
+                # failed rows and unused Android objects are not page resources.
+                self.record.custom_views.clear()
+                if len(self.record.click_callbacks) + len(self.record.change_callbacks) + len(self.widget_routes) > 128:
+                    raise ValueError("Settings callbacks exceed 128 entries")
+                _settings_json(self.rows)
+            return self
+        except BaseException:
+            self.close()
+            raise
+
+    def prepare(self, rows, *, manager):
+        count, widgets = [0], [0]
+        def visit(items, depth):
+            if depth > 16 or not isinstance(items, list): raise ValueError("Settings document exceeds 16 levels")
+            for row in items:
+                count[0] += 1
+                if count[0] > 1000 or not isinstance(row, dict): raise ValueError("Settings response exceeds 1,000 rows")
+                row.setdefault("row_id", "settings_error_" + str(count[0]))
+                if row.get("type") in ("switch", "selector", "input", "edittext", "edit_text", "slider"):
+                    self.keys.add(row["key"])
+                if row.get("type") == "custom":
+                    ident = row["row_id"]
+                    before = set(self.widget_routes)
+                    try:
+                        item = self.record.custom_views[row["view_id"]]
+                        view = self.platform.loader._build_custom_view(item, self.platform.ui_context)
+                        if not isinstance(view, Widget): raise UnsupportedSurfaceError("Custom requires a portable native Widget; Android View is unavailable")
+                        model = self.prepare_widget(view, ident, widgets)
+                        self.views[ident] = view
+                        for name in ("callback_id", "long_callback_id"):
+                            if row.get(name): self.click_views[row[name]] = view
+                        if manager:
+                            row["widget_json"] = _settings_json(model)
+                            row.pop("view_id", None)
+                        else:
+                            retained = {key: value for key, value in row.items() if key in ("row_id", "callback_id", "long_callback_id", "sub_page")}
+                            if retained.get("callback_id") and model.get("type") not in ("text", "header", "image"):
+                                raise UnsupportedSurfaceError("Portable container click needs an actionable child widget")
+                            row.clear(); row.update(model); row.update(retained)
+                            row["id"] = ident
+                    except Exception as error:
+                        for route in set(self.widget_routes) - before: self.widget_routes.pop(route)
+                        self.views.pop(ident, None)
+                        for name in ("callback_id", "long_callback_id"):
+                            callback = row.pop(name, None)
+                            self.record.click_callbacks.pop(callback, None); self.click_views.pop(callback, None)
+                        # A typed, visible error row, with no materialization code
+                        # deferred to UIImage creation or layout on main.
+                        message = f"{type(error).__name__}: {error}"[:4096]
+                        row.pop("view_id", None); row.pop("widget_json", None)
+                        if manager: row["custom_error"] = message
+                        else:
+                            row.clear(); row.update(type="text", row_id=ident, text=message, red=True)
+                if not manager:
+                    row.pop("integral", None)
+                    row.pop("backup_exportable", None)
+                    secret = row.pop("is_secret", False) or row.get("sensitive", False)
+                    row.pop("sensitive", None)
+                    if secret and row.get("type") in ("input", "edittext", "edit_text"): row["secure"] = True
+                    row.pop("link_alias", None)
+                    # Navigation is in the serializer's row identity space. Alias
+                    # is a lookup key, never an alternate native widget identity.
+                    row["id"] = row["row_id"]
+                    if row.get("icon") is not None and not isinstance(row["icon"], str):
+                        raise UnsupportedSurfaceError("Settings icons require native names")
+                if row.get("sub_page") is not None: visit(row["sub_page"], depth + 1)
+        visit(rows, 0)
+        return rows
+
+    def prepare_widget(self, view, row_id, count):
+        seen, nodes, callbacks = set(), [], {}
+        def bounded(widget, depth):
+            count[0] += 1
+            if depth > 8 or count[0] > 512 or id(widget) in seen:
+                raise ValueError("Custom widgets exceed 8 levels/512 nodes or contain a cycle")
+            seen.add(id(widget))
+            nodes.append(widget)
+            callbacks[id(widget)] = {field: widget.model[field] for field in ("callback", "callback_id", "long_callback_id") if field in widget.model}
+            for child in widget.children:
+                if not isinstance(child, Widget): raise UnsupportedSurfaceError("Custom child is not a portable Widget")
+                bounded(child, depth + 1)
+        bounded(view, 0)
+        # The existing builder deep-copies its DTO. Deep-copying a bound method
+        # would clone its plugin instance (or fail on a lock). Lift callbacks out
+        # first and restore the exact objects on this same owner worker.
+        try:
+            for widget in nodes:
+                for field in callbacks[id(widget)]: widget.model.pop(field)
+            model = view.to_model()
+        finally:
+            for widget in nodes: widget.model.update(callbacks[id(widget)])
+        identifiers, keys = set(), set()
+        def prepare(raw, widget, depth=0):
+            if not isinstance(raw, dict) or "__handle__" in raw or depth > 8:
+                raise UnsupportedSurfaceError("Custom model must be a bounded widget DTO")
+            ident = raw.get("id")
+            if not isinstance(ident, str) or not ident or len(ident.encode("utf-8")) > 256 or ident in identifiers:
+                raise ValueError("Custom widget requires unique bounded IDs")
+            identifiers.add(ident)
+            kind = raw.get("type")
+            editable = kind in ("input", "edittext", "edit_text", "toggle", "switch", "selector", "slider")
+            key = raw.get("key", ident)
+            if editable:
+                if not isinstance(key, str) or not key or key in keys: raise ValueError("Duplicate Custom value key")
+                keys.add(key)
+            for field, event in (("callback", "change" if editable else "action"), ("long_callback_id", "longAction")):
+                original = callbacks[id(widget)]
+                value = original.get("callback", original.get("callback_id")) if field == "callback" else original.get(field)
+                if field == "callback": raw.pop("callback_id", None)
+                if value is None and not (editable and event == "change"): continue
+                callback = value
+                if isinstance(value, str):
+                    callback = (self.record.change_callbacks if event == "change" else self.record.click_callbacks).get(value)
+                    if callback is None: raise LookupError("Custom references an unknown SDK callback ID")
+                if callback is not None and not callable(callback): raise TypeError("Custom callback must be callable or an owned SDK string ID")
+                token = "cw_" + self.id + "_" + str(len(self.widget_routes))
+                raw[field] = token
+                self.widget_routes[token] = (row_id, ident, event, widget, callback, raw)
+            children = raw.get("children", [])
+            if not isinstance(children, list) or len(children) != len(widget.children):
+                raise ValueError("Custom children must come from the portable Widget builder")
+            if raw.get("sub_page") is not None:
+                raise UnsupportedSurfaceError("Custom subpages use ui.settings.Custom.create_sub_fragment")
+            for child, child_view in zip(children, widget.children): prepare(child, child_view, depth + 1)
+        prepare(model, view)
+        return model
+
+    def event(self, event):
+        if not isinstance(event, dict): raise TypeError("Settings event must be an object")
+        with self.scope():
+            loader, ident = self.platform.loader, self.platform.plugin_id
+            kind = event.get("kind")
+            if kind == "change":
+                key = event["key"]
+                if key not in self.keys: raise LookupError("Setting is not in this page snapshot")
+                loader.notify_setting_changed(ident, key, _settings_json(event["value"]))
+            elif kind == "click":
+                callback = event["callbackId"]
+                if callback not in self.record.click_callbacks: raise LookupError("Callback is not in this page snapshot")
+                loader.dispatch_setting_click(ident, callback, self.click_views.get(callback))
+            elif kind == "widget":
+                route = self.widget_routes.get(event.get("callbackId"))
+                if route is None: raise LookupError("Custom callback belongs to another page/read")
+                row, widget_id, name, view, callback, model = route
+                if (event.get("rowId"), event.get("widgetId"), event.get("event")) != (row, widget_id, name):
+                    raise RuntimeStateError("Custom callback does not belong to this widget event")
+                value = view
+                if name == "change":
+                    value = event["value"]
+                    _validate_settings_widget_value(model, value)
+                    view.model["value"] = value
+                if callback is not None: loader._call_with_optional_arg(callback, value)
+            else: raise ValueError("Unknown settings page event")
+        return None
+
+
+def _validate_settings_widget_value(model, value):
+    kind = model.get("type")
+    if kind in ("input", "edittext", "edit_text"):
+        valid = isinstance(value, str) and len(value) <= model.get("max_length", 16384)
+    elif kind in ("switch", "toggle"): valid = type(value) is bool
+    elif kind == "selector": valid = type(value) is int and 0 <= value < len(model.get("items", []))
+    elif kind == "slider":
+        valid = type(value) in (int, float) and math.isfinite(value) and model.get("min", 0) <= value <= model.get("max", 100)
+    else: valid = False
+    if not valid: raise ValueError("Custom value violates its native widget model")
+
+
+def read_settings_page_json(page_id, payload_json):
+    """Host-only read body; invoked under the existing create_settings batch guard."""
+    from . import _runtime, _settings_account
+    platform = _runtime(loaded=True)
+    if not isinstance(page_id, str) or str(uuid.UUID(page_id)) != page_id.lower(): raise ValueError("Invalid settings page UUID")
+    payload = json.loads(payload_json)
+    account = _settings_account(payload["account"])
+    if account is None: raise ValueError("Manager settings require a captured SDK account")
+    pages = platform.settings_pages
+    if page_id in pages: raise RuntimeStateError("Settings page UUID cannot be reused")
+    page = _SettingsPage(platform, page_id, account).build(manager=True)
+    pages[page_id] = page
+    return _settings_json(page.rows)
+
+
+def settings_page_event_json(page_id, event_json):
+    from . import _runtime
+    platform = _runtime(loaded=True)
+    if len(event_json.encode("utf-8")) > 512 * 1024: raise ValueError("Settings event exceeds 512 KiB")
+    page = platform.settings_pages.get(page_id)
+    if page is None: raise RuntimeStateError("Settings page has been released")
+    page.event(json.loads(event_json))
+    return "null"
+
+
+def release_settings_page_json(page_id):
+    from . import _runtime
+    platform = _runtime()
+    page = getattr(platform, "settings_pages", {}).get(page_id)
+    if page is not None: page.close()
+    return "null"
+
+
+class _SettingsPresentation(Presentation):
+    """Portable settings swap callback snapshots only on a native commit ACK.
+
+    uiUpdate admission is asynchronous. One candidate and its unique completion
+    lease stay live until native settles it; native events carry their committed
+    snapshot ID. The ACK and handle release use the existing owner FIFO.
+    """
+
+    def __init__(self, platform, read_page):
+        page, model = read_page()
+        self.page, self._read_page = page, read_page
+        self._pending, self._revision, self._closed = None, 0, False
+        super().__init__(platform, "settings", model, {
+            "change": self._receive, "action": self._receive,
+            "longAction": self._receive, "refresh": self._refresh})
+
+    def show(self):
+        self.page.check()
+        try:
+            super().show()
+            self.lease.on_close = self._close_pages
+            return self
+        except BaseException:
+            self._close_pages()
+            raise
+
+    def _close_pages(self):
+        self._closed = True
+        self.page.close()
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            pending["page"].close()
+            pending["lease"].close()
+
+    def _event_page(self, event):
+        self.platform.check_worker()
+        if (self._closed or not isinstance(event, dict) or event.get("id") != self.id
+                or event.get("_uiSettingsSnapshot") != self.page.id
+                or type(event.get("_uiRevision")) is not int or event["_uiRevision"] != self._revision):
+            raise RuntimeStateError("Settings event belongs to an uncommitted or retired snapshot")
+        self.page.check()
+        return self.page
+
+    def _receive(self, event):
+        page = self._event_page(event)
+        callback = event.get("callbackId")
+        if callback in page.widget_routes:
+            row, widget_id, name, _, _, _ = page.widget_routes[callback]
+            return page.event(dict(event, kind="widget", rowId=row, widgetId=widget_id, event=name))
+        if "value" in event: return page.event(dict(event, kind="change"))
+        return page.event(dict(event, kind="click"))
+
+    def _refresh(self, event):
+        self._event_page(event)
+        self._require_idle()
+        page, model = self._read_page()
+        return self._stage(page, model)
+
+    def _require_idle(self):
+        self.platform.check_worker()
+        if self._closed or self.lease is None or not self.lease.open:
+            raise RuntimeStateError("Settings presentation is closed")
+        if self._pending is not None:
+            raise RuntimeStateError("Settings update is awaiting native commit")
+
+    def update(self, **changes):
+        self._require_idle()
+        # Cosmetic updates keep their callback snapshot but share the same native
+        # revision/ACK protocol. Callers cannot replace the snapshot identity.
+        if changes.get("settingsSnapshotId", self.page.id) != self.page.id:
+            raise RuntimeStateError("Settings snapshot identity is managed by refresh")
+        return self._stage(self.page, dict(self.model, **changes))
+
+    def _stage(self, page, model):
+        try:
+            self._require_idle()
+            lease = self.platform.callbacks.new("settings-update")
+        except BaseException:
+            if page is not self.page: page.close()
+            raise
+        pending = {"page": page, "model": model, "lease": lease, "previous": self.page.id}
+        self._pending = pending
+        def discarded():
+            if self._pending is pending: self._pending = None
+            if self.page is not page: page.close()
+        lease.on_close = discarded
+        try:
+            completion = lease.wrap(lambda event: self._settle(pending, event), terminal=True)
+            result = self.platform.call("uiUpdate", self.id, model, {
+                "previousSnapshotId": self.page.id, "snapshotId": page.id, "completion": completion})
+            lease.id = admitted_id(result)
+            lease.native_owned = True
+        except BaseException:
+            lease.close()
+            raise
+        return self  # Admission only: self.page/model/revision still describe S1.
+
+    def _settle(self, pending, event):
+        self.platform.check_worker()
+        if self._closed or self._pending is not pending: return None
+        committed = event.get("committed") if isinstance(event, dict) else None
+        if (type(committed) is not bool or event.get("event") != "settingsUpdate"
+                or event.get("id") != self.id or event.get("updateId") != pending["lease"].id
+                or event.get("previousSnapshotId") != pending["previous"]
+                or event.get("snapshotId") != pending["page"].id
+                or type(event.get("_uiRevision")) is not int
+                or event["_uiRevision"] != self._revision + (1 if committed else 0)):
+            raise RuntimeStateError("Invalid native settings update acknowledgement")
+        self._pending = None
+        if committed:
+            previous, self.page = self.page, pending["page"]
+            self.model, self._revision = pending["model"], event["_uiRevision"]
+            if previous is not self.page: previous.close()
+        elif pending["page"] is not self.page:
+            pending["page"].close()
+        return None
+
+
 def install(platform, android, client):
     from virtualjava import register_class
     from ui import alert, bulletin
@@ -495,43 +926,28 @@ def install(platform, android, client):
     register_class("android.widget.Toast", Toast)
     platform.present = lambda kind, model, callbacks=None: Presentation(platform, kind, model, callbacks or {}).show()
 
-    def show_settings(title=None):
-        def prepare(items):
-            for row in items:
-                row.pop("integral", None)  # Derived from the native slider min/max/step.
-                row.pop("backup_exportable", None)
-                secret = row.pop("is_secret", False) or row.get("sensitive", False)
-                row.pop("sensitive", None)
-                if secret and row.get("type") in ("input", "edittext", "edit_text"): row["secure"] = True
-                alias = row.pop("link_alias", None)
-                if alias is not None: row["id"] = alias
-                if row.get("icon") is not None:
-                    row["icon"] = icon_value(row["icon"])
-                if row.get("type") == "custom":
-                    item = platform.loader.plugins[platform.plugin_id].custom_views[row["view_id"]]
-                    view = platform.loader._build_custom_view(item, context)
-                    if not isinstance(view, Widget): raise UnsupportedSurfaceError("Custom requires a portable native widget")
-                    retained = {key: value for key, value in row.items() if key in ("row_id", "id", "callback_id", "long_callback_id", "sub_page")}
-                    row.clear()
-                    row.update(view.to_model(), **retained)
-                prepare(row.get("sub_page", []))
-        def read_rows():
-            rows = json.loads(platform.loader.get_settings_json(platform.plugin_id))
-            prepare(rows)
-            return rows
-        def changed(event):
-            platform.loader.notify_setting_changed(platform.plugin_id, event["key"], json.dumps(event["value"]))
-        def action(event): platform.loader.dispatch_setting_click(platform.plugin_id, event["callbackId"])
-        def refresh(event):
-            record = platform.loader.plugins[platform.plugin_id]
-            previous = (record.click_callbacks, record.change_callbacks, record.custom_views)
-            try: presentation.update(rows=read_rows())
+    platform.settings_pages = {}
+
+    def show_settings(title=None, target=None):
+        platform.check_worker()
+        from . import _settings_account
+        fragment = platform.call("uiActiveFragment")
+        if not isinstance(fragment, dict) or not isinstance(fragment.get("id"), str):
+            raise RuntimeStateError("Settings require a current native presenter")
+        account = _settings_account(fragment["account"])
+        if account is None: raise RuntimeStateError("Settings require a captured native account")
+        def read_page():
+            page = _SettingsPage(platform, str(uuid.uuid4()), account).build(manager=False)
+            try:
+                location = resolve_settings_target(page.source_rows, target)
+                model = {"title": title or platform.plugin_id, "rows": page.rows,
+                         "pagePath": location["pagePath"], "sourceId": fragment["id"], "settingsSnapshotId": page.id}
+                if location["rowId"] is not None: model["targetRowId"] = location["rowId"]
+                return page, model
             except BaseException:
-                record.click_callbacks, record.change_callbacks, record.custom_views = previous
+                page.close()
                 raise
-        presentation = Presentation(platform, "settings", {"title": title or platform.plugin_id, "rows": read_rows()},
-                                    {"change": changed, "action": action, "longAction": action, "refresh": refresh})
-        return presentation.show()
+        return _SettingsPresentation(platform, read_page).show()
 
     platform.show_settings = show_settings
     platform.share = lambda text=None, files=None, title=None: platform.present(

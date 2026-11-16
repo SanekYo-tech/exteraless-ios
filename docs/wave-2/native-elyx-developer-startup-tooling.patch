@@ -1,0 +1,70 @@
+*** Begin Patch
+*** Update File: python/runtime/smoke/swift_plugin_probe.swift
+@@
+     static func main() async {
+         let arguments = CommandLine.arguments
++        if arguments.count == 10 && arguments.last == "--elyx-developer" {
++            exit(await SDKElyxDeveloperNativeProbe.run(arguments))
++        }
+         if arguments.count == 10 && arguments.last == "--tl-phase2" {
+*** Update File: tools/runtime/check_swift_plugin_embedding.py
+@@
+-Each of the four fresh native child processes has a hard 30-second timeout; no corpus or
++Each of the five fresh native child processes has a hard 30-second timeout; no corpus or
+@@
+ from vendor_dependencies import digest, verify_bundle
++from fixtures import elyx_developer_probe_driver as elyx_developer
+@@
+     required_python.extend(archive_source_inputs(python_root))
++    elyx_sources = elyx_developer.source_inputs(python_root)
+@@
+-    for path in [plugin, *required_python]:
++    for path in [plugin, *required_python, *elyx_sources]:
+@@
+     archive_work = Path(tempfile.mkdtemp(prefix="run-archive-", dir=output)).resolve()
++    elyx_work = Path(tempfile.mkdtemp(prefix="run-elyx-developer-", dir=output)).resolve()
+@@
+     shutil.copyfile(ROOT / ARCHIVE_HELPER, archive_helper)
++    elyx_helper, elyx_fixtures = elyx_developer.stage(elyx_work, args.python)
+@@
+     shutil.copyfile(work / "manifest.json", archive_work / "manifest.json")
++    shutil.copyfile(work / "manifest.json", elyx_work / "manifest.json")
+@@
+     sdk_swift_sources = [probe, dto_fixture, tl_probe, tl_fixture, hns_probe, hns_native_fixture, config_fixture, config_provider, root_fixture,
+-                         ROOT / ARCHIVE_SWIFT_PROBE, *codec_sources]
++                         ROOT / ARCHIVE_SWIFT_PROBE, elyx_developer.SWIFT_PROBE, *codec_sources]
+@@
+     sources.update([ROOT / ARCHIVE_HELPER, ROOT / ARCHIVE_FIXTURE_EMITTER, *sorted((archive_work / 'input').iterdir())])
++    sources.update([*elyx_sources, elyx_helper, *sorted((elyx_work / 'input').iterdir())])
+@@
+-            "native_children": 4, "tl_work_directory": str(tl_work), "hns_work_directory": str(hns_work),
++            "native_children": 5, "tl_work_directory": str(tl_work), "hns_work_directory": str(hns_work),
++            "elyx_work_directory": str(elyx_work), "elyx_fixture_sha256": elyx_fixtures,
++            "elyx_production_inputs": list(elyx_developer.PYTHON_INPUTS),
++            "elyx_required_checks": list(elyx_developer.REQUIRED_CHECKS),
+@@
+         if 'EXTERALESS_SWIFT_SDK_ARCHIVE_PROBE_OK' not in (output / 'swift-sdk-archive-console.log').read_text(encoding='utf-8'):
+             raise RuntimeError('Native archive child did not emit its completion marker')
+-        if any(digest(Path(name)) != sha for name, sha in source_hashes.items()):
+-            raise RuntimeError('Native SDK source inputs changed during the four-child cohort')
+         archive_report.update(native_process_seconds=archive_seconds, runtime_timeout_seconds=TIMEOUT)
+         write_json(archive_report_path, archive_report)
+-        report.update(ok=True, phase="complete", archive_lifecycle=True, archive_report=archive_report_path.name, native_children=4)
++        report.update(ok=False, phase="elyx-developer", archive_lifecycle=True, archive_report=archive_report_path.name)
++        write_json(report_path, report)
++        elyx_report_path = output / 'swift-sdk-elyx-developer-smoke.json'
++        elyx_seconds = run_phase([str(item) for item in (
++            executable, elyx_report_path, config['home'], config['stdlib'], config['dynload'],
++            python_root, elyx_work / 'input', elyx_work, elyx_helper, '--elyx-developer')],
++            output, 'swift-sdk-elyx-developer-console', TIMEOUT, cwd=elyx_work, env=env)
++        elyx_report = json.loads(elyx_report_path.read_text(encoding='utf-8'))
++        elyx_developer.validate_report(elyx_report, python_root, elyx_work)
++        if 'EXTERALESS_SWIFT_SDK_ELYX_DEVELOPER_PROBE_OK' not in (output / 'swift-sdk-elyx-developer-console.log').read_text(encoding='utf-8'):
++            raise RuntimeError('Native Elyx developer child did not emit its completion marker')
++        if any(digest(Path(name)) != sha for name, sha in source_hashes.items()):
++            raise RuntimeError('Native SDK source inputs changed during the five-child cohort')
++        elyx_report.update(native_process_seconds=elyx_seconds, runtime_timeout_seconds=TIMEOUT)
++        write_json(elyx_report_path, elyx_report)
++        report.update(ok=True, phase="complete", elyx_developer=True, elyx_report=elyx_report_path.name, native_children=5)
+         report["native_process_seconds"] = round(elapsed, 3)
+*** End Patch

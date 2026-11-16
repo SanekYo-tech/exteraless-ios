@@ -51,17 +51,24 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         guard let self else { throw PluginHostError.notRunning }
         return try await self.handleDeveloperRequest(request, session: session)
     }
+    // The same public Host activation API is used by production and native probes.
+    private var elyxDeveloperFiles: (any PluginElyxDeveloperFileAuthority)?
+    private var elyxDeveloperService: PluginElyxDeveloperService?
+    private var elyxDeveloperActivation: PluginElyxDeveloperActivationScope?
     private var callbackTasks: [UUID: (owner: PluginHost.CallbackOwner, task: Task<Void, Never>)] = [:]
 
     private init() {}
 
     public func update(context: AccountContext) {
         guard !terminating, !Bundle.main.bundlePath.hasSuffix(".appex") else { return }
+        if currentContext !== context {
+            PluginUIManagerSettingsLifetimes.closeAll()
+            startupScope = UUID()
+            stopDeveloperServices()
+        }
         settingsActionAuthority?.prepareContextChange(to: context)
         services.update(context: context)
         if currentContext !== context {
-            startupScope = UUID()
-            developerServer.stop()
             watchdogAlert?.dismiss(animated: false)
             watchdogAlert = nil
             settingsSchemaCache.clear()
@@ -84,7 +91,9 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
     }
 
     public func clearContext() {
+        PluginUIManagerSettingsLifetimes.closeAll()
         startupScope = UUID()
+        stopDeveloperServices()
         settingsActionAuthority?.clearContext()
         clearEarlyStartupMarker()
         tlTransforms?.updateSubscriptions(active: false)
@@ -92,7 +101,6 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         currentContext = nil
         settingsSchemaCache.clear()
         cachedSettingsOwners.removeAll()
-        developerServer.stop()
         watchdogAlert?.dismiss(animated: false)
         watchdogAlert = nil
         tlServices?.clearContext()
@@ -155,6 +163,7 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
                 let binding = NativeBridgeBinding(services: host.bridge)
                 try binding.install()
                 self.binding = binding
+                self.retireElyxDeveloperService()
                 self.host = host
                 let callbacks = PluginCallbackDispatcher(host: host, log: { logs.append(pluginId: "host", message: $0) })
                 self.nativeCallbacks = callbacks
@@ -172,7 +181,8 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
                     release: { callbacks.release($0, $1) },
                     accountLookup: { index in try services.platformSnapshot.account(at: index).recordId },
                     resolveAccount: { recordId in services.context(recordId: recordId) },
-                    diagnostic: { logs.append(pluginId: "host", level: .warning, message: $0) })
+                    diagnostic: { logs.append(pluginId: "host", level: .warning, message: $0) },
+                    permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
                 if let context = self.currentContext { tl.update(context: context) }
                 self.tlServices = tl
                 let native = PluginNativeServicesBridgeExtension(services: services, callbacks: callbacks,
@@ -209,6 +219,15 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
                             allowedRoots: [services.serviceStorage.filesDirectory(pluginId: id),
                                            services.serviceStorage.cacheDirectory(pluginId: id)],
                             allowExternal: callbacks.hasPermission(id, .files))
+                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) },
+                    controlledCallback: { owner, handle, method, json, permissionCurrent in
+                        callbacks.callback(owner, handle, method, json,
+                            shouldExecute: { permissionCurrent() && uiGate.permits(owner: owner, argumentsJSON: json) },
+                            guaranteed: PluginUICallbackGate.isTerminal(argumentsJSON: json))
+                    }, classifyShareFile: { id, path in
+                        try PluginResourcePath(path: path,
+                            allowedRoots: [services.serviceStorage.filesDirectory(pluginId: id),
+                                           services.serviceStorage.cacheDirectory(pluginId: id)])
                     })
                 uiGate.bind(ui)
                 self.pluginUI = ui
@@ -231,9 +250,34 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
                     },
                     failed: { id, field, error in
                         logs.append(pluginId: id, level: .error, message: "Global plugin config \(field) failed: \(error)")
-                    })
+                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
+                let developer = PluginDeveloperBridgeExtension(
+                    snapshot: { [server = self.developerServer] in server.snapshot },
+                    enabled: {
+                        let state = managerStore.snapshot
+                        return state.developerMode && state.permitsPluginExecution
+                    },
+                    captureOwner: { callbacks.captureOwner($0) },
+                    permits: { callbacks.hasPermission($0, $1) },
+                    apply: { [weak self] start, authority in
+                        guard let self, !self.terminating else { throw PluginHostError.notRunning }
+                        guard authority.isCurrent() else { throw PluginHostError.superseded("Developer control owner retired") }
+                        if start {
+                            try self.requirePluginExecution()
+                            guard self.managerPreferences?.snapshot.developerMode == true,
+                                  self.host?.isRunning == true else {
+                                throw PluginHostError.runtimeFailure("Developer service is not active")
+                            }
+                            self.updateDeveloperServer()
+                        } else {
+                            try await self.updateManagerPreference(.developer(false), authority: authority)
+                        }
+                    },
+                    failed: { id, error in
+                        logs.append(pluginId: id, level: .error, message: "Native developer control failed: \(error)")
+                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
                 host.bridge.extensionProvider = CompositePluginBridgeExtension([
-                    ui, ClientSettingsBridgeExtension(permits: { callbacks.hasPermission($0, $1) }), pluginConfig, tl, native, pills,
+                    ui, ClientSettingsBridgeExtension(permits: { callbacks.hasPermission($0, $1) }), pluginConfig, developer, tl, native, pills,
                 ])
                 host.bridge.onOwnedCallback = { [weak self, weak host] pluginId, ownerToken, handle, method, json, delayMs in
                     // Capture the generation on the C worker, before the main
@@ -416,7 +460,7 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         let json: String
         do {
             json = try await host.settingsJSON(id: id, account: account, expectedOwner: owner,
-                shouldExecute: { read.isCurrent })
+                shouldExecute: { read.isCurrent }, page: PluginSettingsPageExecution.current)
         }
         catch {
             if cachedSettingsOwners[fileName]?.owner == owner { invalidateSettingsSchema(id: id) }
@@ -479,6 +523,84 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         changed()
     }
 
+    public func managerTrustActions(context: AccountContext) -> PluginManagerTrustActions {
+        PluginManagerTrustActions(snapshot: { [weak self] id in
+            self?.host?.permissionSnapshot(id: id) ?? PluginPermissionSnapshot(record: nil, unsafeMode: false)
+        }, captureEdit: { [weak self, weak context] id, expected, page in
+            guard let self, let context else { throw PluginHostError.notRunning }
+            let (host, authority) = try self.captureConsentAuthority(context: context, pluginId: id, page: page)
+            guard host.pluginList().contains(where: { $0.id == id }), host.permissionSnapshot(id: id) == expected else {
+                throw PluginPermissionStoreError.authorityExpired
+            }
+            return PluginManagerTrustActions.Edit(setLevel: { [weak self] level in
+                guard let self else { throw PluginHostError.notRunning }
+                try await self.applyConsent(id: id, expected: expected, level: level, grants: nil,
+                    capturedHost: host, authority: authority)
+            }, setGrants: { [weak self] grants in
+                guard let self else { throw PluginHostError.notRunning }
+                try await self.applyConsent(id: id, expected: expected, level: expected.level, grants: grants,
+                    capturedHost: host, authority: authority)
+            })
+        }, readMetadata: { [weak self, weak context] url in
+            guard let self, let context, self.currentContext === context else { throw PluginHostError.notRunning }
+            let host = try await self.operationHost()
+            defer { self.activeOperations -= 1 }
+            let result = try await host.readPluginMetadata(sourceURL: url)
+            guard self.host === host, self.currentContext === context else { throw PluginPermissionStoreError.authorityExpired }
+            return result
+        }, captureInstall: { [weak self, weak context] url, metadata, selection, page in
+            guard let self, let context else { throw PluginHostError.notRunning }
+            let (host, authority) = try self.captureConsentAuthority(context: context, pluginId: nil, page: page)
+            let owner = host.callbackOwner(id: metadata.id)
+            let oldPlugin = host.pluginList().first { $0.id == metadata.id }
+            let oldConsent = host.permissionSnapshot(id: metadata.id)
+            let admission: @Sendable () -> Bool = {
+                authority.isCurrent() && host.callbackOwner(id: metadata.id) == owner
+                    && host.pluginList().first(where: { $0.id == metadata.id }) == oldPlugin
+                    && host.permissionSnapshot(id: metadata.id) == oldConsent
+            }
+            return { [weak self] in
+                guard let self, authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
+                let activeHost = try await self.operationHost()
+                defer { self.activeOperations -= 1; self.refreshSubscriptions(); self.changed() }
+                guard activeHost === host else { throw PluginPermissionStoreError.authorityExpired }
+                let installed = try await host.installPlugin(sourceURL: url, metadata: metadata, selection: selection,
+                    admission: admission, shouldExecute: authority.isCurrent)
+                if let error = installed.loadError { throw PluginHostError.runtimeFailure(error) }
+            }
+        })
+    }
+
+    private func captureConsentAuthority(context: AccountContext, pluginId: String?, page: @escaping @Sendable () -> Bool) throws -> (PluginHost, PluginConfigAuthority) {
+        try requirePluginExecution()
+        guard let host, currentContext === context,
+              let accountOwner = settingsActionAuthority?.captureManagerAuthority(context: context, pluginId: pluginId) else {
+            throw PluginPermissionStoreError.authorityExpired
+        }
+        let permission: @Sendable () -> Bool = pluginId.map { host.permissions.futurePredicate($0, requiring: [.ui]) } ?? { true }
+        let authority = PluginConfigAuthority(isCurrent: { page() && accountOwner.isCurrent() && permission() })
+        guard authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
+        return (host, authority)
+    }
+
+    private func applyConsent(id: String, expected: PluginPermissionSnapshot, level: PluginTrustLevel,
+                              grants: [PluginPermission]?, capturedHost: PluginHost, authority: PluginConfigAuthority) async throws {
+        guard authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
+        let host = try await operationHost()
+        defer { activeOperations -= 1; refreshSubscriptions(); changed() }
+        guard host === capturedHost, authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
+        try await Task.detached(priority: .userInitiated) {
+            if let grants {
+                try host.setGrantedPermissions(id: id, permissions: grants, atLevel: level, expected: expected,
+                    shouldExecute: authority.isCurrent)
+            } else {
+                try host.setPluginTrustLevel(id: id, level: level, expected: expected, shouldExecute: authority.isCurrent)
+            }
+        }.value
+        // The writer's returned result is the commit result. Do not turn a
+        // committed change into a failure because the page disappeared afterward.
+    }
+
     public func emitAppEvent(_ name: String) {
         if name == "app_pause" { clearEarlyStartupMarker() }
         guard let host, host.isRunning else { return }
@@ -492,7 +614,9 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         guard !terminating else { return }
         terminating = true
         startupScope = UUID()
+        stopDeveloperServices()
         startupContinuation?.retire()
+        PluginUIManagerSettingsLifetimes.closeAll()
         settingsActionAuthority?.clearContext()
         PluginUISettingsActionRegistry.install(nil)
         recoveryHealthyTask?.cancel()
@@ -500,7 +624,6 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         if let recovery = runtimeRecovery { try? await Task.detached(priority: .utility) { try recovery.markHealthy() }.value }
         tlTransforms?.detach()
         tlTransforms = nil
-        developerServer.stop()
         watchdogAlert?.dismiss(animated: false)
         watchdogAlert = nil
         pluginUI?.clearContext()
@@ -683,7 +806,7 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         let id = UUID()
         let scope = startupScope
         settingsMaintenanceID = id
-        developerServer.stop()
+        stopDeveloperServices()
         let lease: PluginSettingsMaintenanceLease?
         var coldMaintenance: (PluginRuntimeStartupContinuation, PluginRuntimeStartupContinuation.Maintenance)?
         do {
@@ -824,7 +947,7 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
         }
         changingRuntimeMode = true
         defer { changingRuntimeMode = false; updateDeveloperServer(); refreshSubscriptions(); changed() }
-        developerServer.stop()
+        stopDeveloperServices()
         if let startup { await startup.value }
         guard !terminating else { throw PluginHostError.notRunning }
         if let startupError, startupContinuation?.canContinue != true {
@@ -890,14 +1013,69 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
 
     private func updateDeveloperServer() {
         guard !terminating, !changingRuntimeMode, settingsMaintenanceID == nil, !toolsRecoveryRequired,
-              pluginExecutionRequested, managerPreferences?.snapshot.developerMode == true,
-              host?.isRunning == true, currentContext != nil else { developerServer.stop(); return }
+              pluginExecutionRequested, let store = managerPreferences, store.snapshot.developerMode,
+              let capturedHost = host, capturedHost.isRunning, let context = currentContext else { stopDeveloperServices(); return }
+        let scope = startupScope
+        let activation = elyxActivationScope()
+        // Probe and filesystem setup use the Host's detached native activation;
+        // the main actor only publishes a fully prepared, still-current service.
+        Task { @MainActor [weak self, weak context, weak capturedHost] in
+            guard let self, let context, let capturedHost, self.host === capturedHost,
+                  self.currentContext === context, self.startupScope == scope, activation.isCurrent else { return }
+            do {
+                let service = try await capturedHost.activateElyxDeveloper(scope: activation.id, isCurrent: {
+                    let state = store.snapshot
+                    return activation.isCurrent && state.developerMode && state.permitsPluginExecution
+                })
+                guard self.host === capturedHost, self.currentContext === context, self.startupScope == scope,
+                      !self.terminating, service.isActive else { service.invalidate(); return }
+                self.elyxDeveloperService = service
+                self.elyxDeveloperFiles = try service.fileAuthority()
+            } catch {
+                if self.host === capturedHost, self.currentContext === context, self.startupScope == scope {
+                    self.services.serviceLogs.append(pluginId: "host", level: .error, message: "Elyx developer activation unavailable (retry allowed): \(error)")
+                }
+            }
+        }
         do { developerServer.start(tokenDirectory: try services.serviceStorage.pluginsDirectory()) }
         catch { services.serviceLogs.append(pluginId: "host", level: .error, message: "Developer server storage unavailable: \(error)") }
     }
 
+    private func retireElyxDeveloperService() {
+        elyxDeveloperActivation?.invalidate()
+        elyxDeveloperActivation = nil
+        elyxDeveloperFiles = nil
+        elyxDeveloperService?.invalidate()
+        elyxDeveloperService = nil
+        host?.deactivateElyxDeveloper()
+    }
+
+    private func elyxActivationScope() -> PluginElyxDeveloperActivationScope {
+        if let elyxDeveloperActivation, elyxDeveloperActivation.isCurrent { return elyxDeveloperActivation }
+        let activation = PluginElyxDeveloperActivationScope()
+        elyxDeveloperActivation = activation
+        return activation
+    }
+
+    private func stopDeveloperServices() {
+        developerServer.stop()
+        retireElyxDeveloperService()
+    }
+
     private func updateManagerPreference(_ change: PluginManagerPreferenceChange, authority: PluginConfigAuthority? = nil) async throws {
         guard let store = managerPreferences else { throw PluginHostError.runtimeFailure(managerPreferencesError ?? "Manager preferences unavailable") }
+        if case .developer = change {
+            try Task.checkCancellation()
+            guard !terminating, hasAccount, currentContext != nil else { throw PluginHostError.notRunning }
+            guard authority?.isCurrent() ?? true else { throw PluginHostError.superseded("Developer preference caller or settings grant expired") }
+            if case .developer(false) = change {
+                // Retirement is the irreversible part of accepting an off command,
+                // before its writer/actor hop. A later on write cannot hide it.
+                // Persistence may still fail: propagate that error and retain the
+                // store's truthful snapshot; a subsequent start gets fresh authority.
+                stopDeveloperServices()
+            }
+        }
         try await Task.detached(priority: .utility) {
             try store.apply(change, isCurrent: { authority?.isCurrent() ?? true })
         }.value
@@ -910,6 +1088,67 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
     }
 
     private func handleDeveloperRequest(_ request: [String: PluginUIJSON], session: PluginDeveloperSession) async throws -> [String: PluginUIJSON] {
+        if let command = request["@"]?.string, PluginElyxDeveloperRequest.recognizes(command) {
+            var capturedRequest: PluginElyxDeveloperRequest?
+            var publication = command == "elyx_changes" ? PluginElyxDeveloperPublicationState(pluginId: request["plugin_id"]?.string) : nil
+            do {
+                try Task.checkCancellation()
+                guard session.isActive, managerPreferences?.snapshot.developerMode == true, let context = currentContext else {
+                    throw PluginElyxDeveloperError.stale("Developer service is not active")
+                }
+                try requirePluginExecution()
+                guard let capturedHost = self.host, capturedHost.isRunning, let store = managerPreferences,
+                      let account = services.accountIndex(recordId: context.account.id.int64) else {
+                    throw PluginHostError.notRunning
+                }
+                // ID, owner and consent are captured before ANY await, including
+                // operationHost/startup. Only the selected owners can be read.
+                let plan = try PluginElyxDeveloperIngress.capture(request, host: capturedHost, account: account,
+                    targets: { try capturedHost.elyxDeveloperTargets($0) })
+                capturedRequest = plan.request
+                publication = plan.publication
+                let services = self.services
+                let accountRecord = context.account.id.int64
+                let scope = startupScope
+                let activation = elyxActivationScope()
+                activeOperations += 1
+                defer { activeOperations -= 1 }
+                let service = try await capturedHost.activateElyxDeveloper(scope: activation.id, isCurrent: {
+                    let state = store.snapshot
+                    return activation.isCurrent && state.developerMode && state.permitsPluginExecution
+                })
+                guard self.host === capturedHost, currentContext === context, startupScope == scope,
+                      services.accountIndex(recordId: accountRecord) == account,
+                      session.isActive, service.isActive else { throw PluginElyxDeveloperError.stale("Elyx captured account/Host/session retired during readiness") }
+                elyxDeveloperService = service
+                let files = try service.fileAuthority()
+                elyxDeveloperFiles = files
+                let result = await PluginElyxDeveloperIngress.run(plan, session: session, files: files,
+                    nativeCurrent: {
+                        let state = store.snapshot
+                        return activation.isCurrent && service.isActive && state.developerMode && state.permitsPluginExecution
+                            && services.accountIndex(recordId: accountRecord) == account
+                    }, execute: { call in
+                        try await capturedHost.elyxDeveloper(call.request, targets: call.targets, account: call.account,
+                            files: call.files, deadline: call.deadline, shouldExecute: call.isCurrent, publication: call.publication)
+                    }, actorCurrent: { [weak self, weak context, weak capturedHost] in
+                        guard let self, let context, let capturedHost else { return false }
+                        return self.currentContext === context && self.host === capturedHost
+                            && self.startupScope == scope && activation.isCurrent && service.isActive
+                            && services.accountIndex(recordId: accountRecord) == account
+                            && !self.terminating && !self.changingRuntimeMode && self.settingsMaintenanceID == nil
+                            && !self.toolsRecoveryRequired
+                    })
+                if plan.request.kind == .changes {
+                    if let target = plan.targets.first, capturedHost.callbackOwner(id: target.plugin.id) != target.owner {
+                        invalidateSettingsSchema(id: target.plugin.id)
+                    }
+                    refreshSubscriptions()
+                    changed()
+                }
+                return result
+            } catch { return PluginElyxDeveloperIngress.failure(error, request: capturedRequest, publication: publication) }
+        }
         try Task.checkCancellation()
         guard session.isActive, managerPreferences?.snapshot.developerMode == true, let context = currentContext else {
             throw PluginHostError.runtimeFailure("Developer service is not active")

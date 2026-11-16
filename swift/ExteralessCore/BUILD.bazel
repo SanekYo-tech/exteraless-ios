@@ -9,6 +9,9 @@ filegroup(
         "Sources/ExteralessCore/ClientAPI*.swift",
         "Sources/ExteralessCore/ClientSetting*.swift",
         "Sources/ExteralessCore/ClientSecrets.swift",
+        "Sources/ExteralessCore/CoreSettingsReset*.swift",
+        "Sources/ExteralessCore/ToolsFeatures.swift",
+        "Sources/ExteralessCore/PrivacyFeatures.swift",
         "Sources/ExteralessCore/Retention*.swift",
         "Sources/ExteralessCore/ChatFeatures.swift",
         "Sources/ExteralessCore/ChatFeedPolicy.swift",
@@ -19,6 +22,19 @@ filegroup(
         "Sources/ExteralessCore/Player*.swift",
         "Sources/ExteralessCore/Pill*.swift",
     ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "ClientHarnessMapFingerprintSources",
+    srcs = [
+        "BUILD.bazel",
+        "Sources/ExteralessCore/MapPolicy.swift",
+        "Sources/ExteralessCore/MapPolicyRuntime.swift",
+        "Sources/ExteralessCore/MapProviderHTTP.swift",
+        "Sources/ExteralessCore/MapResourceCache.swift",
+        "Sources/ExteralessCore/NetworkResolverHTTP.swift",
+    ],
     visibility = ["//visibility:public"],
 )
 

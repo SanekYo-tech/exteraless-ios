@@ -397,11 +397,17 @@ private struct IntegrationReport: Encodable, Sendable {
 struct SwiftPluginProbe {
     static func main() async {
         let arguments = CommandLine.arguments
+        if arguments.count == 10 && arguments.last == "--elyx-developer" {
+            exit(await SDKElyxDeveloperNativeProbe.run(arguments))
+        }
         if arguments.count == 10 && arguments.last == "--tl-phase2" {
             exit(await SDKTLNativeProbe.run(Array(arguments.dropLast())))
         }
         if arguments.count == 10 && arguments.last == "--hns-remediation" {
             exit(await SDKHNSNativeProbe.run(Array(arguments.dropLast())))
+        }
+        if arguments.count == 10 && arguments.last == "--archive-lifecycle" {
+            exit(await SDKArchiveNativeProbe.run(Array(arguments.dropLast())))
         }
         guard arguments.count == 9 else {
             log("usage: swift-plugin-probe report.json python-home stdlib dynload python-root plugin workdir probe-helper.py")

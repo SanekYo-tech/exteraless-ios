@@ -59,8 +59,9 @@ final class ExteralessPlayerActions {
         add("Playback order", enabled: session.type != .voice) { [weak self] in self?.session.cycleOrder() }
         add("Repeat", enabled: session.type != .voice) { [weak self] in self?.session.cycleRepeat() }
         add("Player settings") { [weak self] in
-            guard let self, let controller = self.controller() else { return }
-            controller.push(exteralessSettingsController(context: self.session.context))
+            guard let self, let controller = self.controller(),
+                  let settings = exteralessSettingsController(context: self.session.context) else { return }
+            controller.push(settings)
         }
         menu.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         menu.popoverPresentationController?.sourceView = source

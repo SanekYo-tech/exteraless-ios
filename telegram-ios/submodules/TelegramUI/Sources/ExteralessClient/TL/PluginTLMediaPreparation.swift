@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import ImageIO
+import PluginHost
 import TelegramCore
 import UniformTypeIdentifiers
 
@@ -10,20 +11,22 @@ final class PluginTLMediaPreparation: @unchecked Sendable {
     private let queue = DispatchQueue(label: "Exteraless.TLMediaPreparation", qos: .userInitiated)
     private static let maximumFileBytes = 32 * 1024 * 1024
 
-    func prepare(model: PluginTLMediaModel, source: URL, cacheDirectory: URL,
+    func prepare(model: PluginTLMediaModel, source: PluginResourcePath, cacheDirectory: URL,
                  isActive: @escaping @Sendable () -> Bool,
                  bindCancellation: @escaping (@escaping () -> Void) -> Void) async throws -> ExteralessTLPreparedMedia {
         let data: Data = try await withCheckedThrowingContinuation { continuation in
             self.queue.async {
                 do {
                     guard isActive() else { throw CancellationError() }
-                    let attributes = try FileManager.default.attributesOfItem(atPath: source.path)
+                    let admittedURL = try source.validatedURL()
+                    let attributes = try FileManager.default.attributesOfItem(atPath: admittedURL.path)
                     guard attributes[.type] as? FileAttributeType == .typeRegular,
                           let size = attributes[.size] as? NSNumber, size.int64Value > 0,
                           size.int64Value <= Int64(Self.maximumFileBytes) else {
                         throw ExteralessTLError(.malformed, "sendMedia: source must be a regular local file of 1...32 MiB")
                     }
-                    let file = try FileHandle(forReadingFrom: source)
+                    guard isActive() else { throw CancellationError() }
+                    let file = try FileHandle(forReadingFrom: admittedURL)
                     defer { try? file.close() }
                     var result = Data()
                     while true {
@@ -43,6 +46,7 @@ final class PluginTLMediaPreparation: @unchecked Sendable {
             }
         }
         guard isActive(), !Task.isCancelled else { throw CancellationError() }
+        let sourceURL = source.url
         if model.kind == .photo {
             return try await withCheckedThrowingContinuation { continuation in
                 self.queue.async {
@@ -80,13 +84,13 @@ final class PluginTLMediaPreparation: @unchecked Sendable {
                 }
             }
         }
-        let fileName = model.fileName ?? source.lastPathComponent
-        let inferredMime = UTType(filenameExtension: source.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        let fileName = model.fileName ?? sourceURL.lastPathComponent
+        let inferredMime = UTType(filenameExtension: sourceURL.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         let mimeType = model.mimeType ?? inferredMime
         if model.kind == .document {
             return try ExteralessTLPreparedMedia(kind: .document, data: data, fileName: fileName, mimeType: mimeType)
         }
-        if model.kind == .video, !["mp4", "mov", "m4v"].contains(source.pathExtension.lowercased()) {
+        if model.kind == .video, !["mp4", "mov", "m4v"].contains(sourceURL.pathExtension.lowercased()) {
             throw ExteralessTLError(.unsupported, "sendMedia.video: native video upload supports mp4/mov/m4v; use document for other containers")
         }
         guard (model.kind == .audio && mimeType.hasPrefix("audio/")) || (model.kind == .video && mimeType.hasPrefix("video/")) else {
@@ -94,7 +98,7 @@ final class PluginTLMediaPreparation: @unchecked Sendable {
         }
         // Inspect an owned copy of the exact bytes that will be uploaded. A plugin
         // may delete/change its source immediately after the bridge call returns.
-        let staged = cacheDirectory.appendingPathComponent("tl-inspect-\(UUID().uuidString)").appendingPathExtension(source.pathExtension)
+        let staged = cacheDirectory.appendingPathComponent("tl-inspect-\(UUID().uuidString)").appendingPathExtension(sourceURL.pathExtension)
         defer { try? FileManager.default.removeItem(at: staged) }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             self.queue.async {

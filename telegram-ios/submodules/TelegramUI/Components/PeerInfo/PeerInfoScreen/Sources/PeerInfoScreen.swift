@@ -5115,7 +5115,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                                 return
                             }
 
-                            let link = "tg://settings/\(item.id)"
+                            guard item.linkForCopy != nil else { return }
                             let items: [ContextMenuItem] = [
                                 .action( ContextMenuActionItem(
                                     text: "Copy Link",
@@ -5125,6 +5125,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                                     action: { [weak self] _, f in
                                         f(.default)
                                         
+                                        guard let link = item.linkForCopy else { return }
                                         UIPasteboard.general.string = link
                                         guard let self else {
                                             return

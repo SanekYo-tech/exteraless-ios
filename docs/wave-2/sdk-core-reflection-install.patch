@@ -1,0 +1,9 @@
+diff --git a/python/exteraless_runtime/_platform.py b/python/exteraless_runtime/_platform.py
+--- a/python/exteraless_runtime/_platform.py
++++ b/python/exteraless_runtime/_platform.py
+@@ -331,3 +331,5 @@
+         from virtualjava.registry import register_native_metadata
+         register_native_metadata("exteraless.ios.Runtime", lambda member: self.call(
+             member, fqcn="exteraless.ios.Runtime", op="member_kind"))
++        from . import _reflection
++        _reflection.install(self)

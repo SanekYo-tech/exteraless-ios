@@ -78,9 +78,11 @@ staging проверяет fingerprints. Полный контракт —
 
 Первая проверенная unsigned IPA: [build 21](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43584868441).
 **Telegram с встроенным Python/PluginHost:**
-[build 23](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046),
-commit `68bb1adf`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43635233046/artifacts/14131805640).
-Проверены 67 ARM64 Mach-O, 55 runtime frameworks, 1071 Python-ресурс и шесть extensions.
+[build 40](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43779402542),
+commit `6de4ac36`, [unsigned IPA artifact](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43779402542/artifacts/14187634135).
+Независимо проверены 67 unsigned ARM64 Mach-O, 60 frameworks (55 runtime),
+1418 обязательных resource placements и шесть extensions.
+[Заключение и SHA-256](docs/wave-2/ipa-build40-acceptance.md).
 Актуальный CPython/Swift/SDK gate:
 [runtime build 20](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43743252038),
 commit `e16f3808` — **GREEN**, включая три bounded native SDK-процесса и iOS probes.
@@ -100,7 +102,7 @@ commit `e16f3808` — **GREEN**, включая три bounded native SDK-про
 - [x] Нативный CPythonEngine и Swift-адаптер (component validation)
 - [x] 2. Native C↔Swift dispatcher — реальные host/iOS component probes
 - [x] 3. SDK loader и базовый virtual-java путь — собственный native fixture прошёл
-- [x] 4. Встройка PluginHost в Telegram — полная unsigned IPA build 23 проверена
+- [x] 4. Встройка PluginHost в Telegram — полная unsigned IPA build 40 проверена
 - [x] 5. Первые extension points — send и RPC/update observations врезаны и скомпилированы
 - [ ] 6. UI менеджера плагинов — скомпилирован в IPA, проверка по кадрам на устройстве pending
 - [ ] Полный client/SDK parity — идёт большая реализационная волна и последующее независимое ревью

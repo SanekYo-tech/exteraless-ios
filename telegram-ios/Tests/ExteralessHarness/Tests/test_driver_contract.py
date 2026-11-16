@@ -5,6 +5,7 @@ separate native app + recorded simulator frames can establish UI acceptance.
 """
 
 import copy
+import hashlib
 import importlib.util
 from pathlib import Path
 import signal
@@ -18,6 +19,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "tools/runtime"))
 import client_ui_harness as driver
+from client_ui_harness_domains import REQUIRED_SOURCE_SUFFIXES
+from native_fd_evidence import IOS_FD_HELPER
 
 spec = importlib.util.spec_from_file_location("client_context_stubs", ROOT / "telegram-ios/Tests/ExteralessHarness/Tools/generate_context_stubs.py")
 stubs = importlib.util.module_from_spec(spec)
@@ -33,9 +36,18 @@ def synthetic_report(scenario, run_id):
                           "controllers": ["CONTRACT_TEST_ONLY"], "scale": 3} for name in names],
               "facts": {"realPython": False}}
     if scenario == "sdk-ui":
+        files = {"telegram-ios/fixture" + suffix: "a" * 64 for suffix in REQUIRED_SOURCE_SUFFIXES}
+        files[IOS_FD_HELPER] = "b" * 64
+        manifest = {"format": "exteraless-ui-domain-sources/1", "files": files,
+                    "sha256": hashlib.sha256("".join(value + "  " + name + "\n" for name, value in sorted(files.items())).encode()).hexdigest()}
         report["facts"] = {"runtime": {"realPython": True, "stopped": True,
             "engine": {"initializations": 1, "finalizations": 1, "created": [1, 2, 3], "destroyed": [1, 2, 3], "scriptCalls": 8},
             "hostEpochs": ["old", "new"], "ui": {"cEpochs": ["new", "old"], "nativeUICalls": 8}}}
+        report["facts"]["domainSources"] = manifest
+        report["facts"]["runtime"]["engine"].update(fdProbeScriptCalls=4, fdPaths=[
+            {"nativeReference": index + 2, "ownerToken": epoch, "platform": "ios", "bridgeBuiltin": True,
+             "helperSHA256": files[IOS_FD_HELPER], "checks": {"actual_ios_fd_paths": True, "darwin_family_fd_paths": True}}
+            for index, epoch in enumerate(("old", "new"))])
     return report
 
 
@@ -103,11 +115,19 @@ class EvidenceTests(unittest.TestCase):
         for target, key, value in (("engine", "destroyed", [1, 2]), ("engine", "created", []),
                                    ("engine", "finalizations", 0), ("ui", "nativeUICalls", 0),
                                    ("ui", "cEpochs", ["old"]), (None, "hostEpochs", ["old", "old"]),
-                                   (None, "realPython", False)):
+                                    (None, "realPython", False)):
             bad = copy.deepcopy(good)
             runtime = bad["facts"]["runtime"]
             (runtime[target] if target else runtime)[key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
+                driver.validate_state(bad, "sdk-ui", run_id)
+        for change in ("mac-only", "missing-owner", "classification-error"):
+            bad = copy.deepcopy(good)
+            rows = bad["facts"]["runtime"]["engine"]["fdPaths"]
+            if change == "mac-only": rows[0]["checks"].pop("actual_ios_fd_paths")
+            elif change == "missing-owner": rows.pop()
+            else: rows[0]["error"] = "Host.fd_probe_classification: unknown service"
+            with self.subTest(fd_change=change), self.assertRaises(ValueError):
                 driver.validate_state(bad, "sdk-ui", run_id)
 
     def test_protocol_generation_uses_current_signatures_and_named_traps(self):

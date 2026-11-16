@@ -10,9 +10,10 @@ import UIKit
 public func exteralessPluginSettingsController(context: AccountContext, actions: PluginManagerActions,
     pluginId: String, title: String, pagePath: [String] = [],
     actionScope: PluginUISettingsActionScope? = nil,
+    target: String? = nil,
     scopeIsCurrent: @escaping @MainActor () -> Bool) -> ViewController {
     return PluginSettingsController(context: context, actions: actions, pluginId: pluginId,
-        title: title, pagePath: pagePath, scopeIsCurrent: scopeIsCurrent, actionScope: actionScope)
+        title: title, pagePath: pagePath, scopeIsCurrent: scopeIsCurrent, actionScope: actionScope, target: target)
 }
 
 @MainActor private func capturePluginSettingsAction(_ scope: PluginUISettingsActionScope?) throws -> PluginUISettingsActionInvocation {
@@ -43,15 +44,22 @@ func requirePluginSettingsScope(_ scope: @MainActor () -> Bool) async throws {
 }
 
 @MainActor private func loadPluginSettings(actions: PluginManagerActions, id: String, scope: @escaping @MainActor () -> Bool,
-                                          read: PluginUISettingsReadInvocation) async throws -> PluginUISettingsPageDocument {
+                                          read: PluginUISettingsReadInvocation) async throws -> PluginUIManagerSettingsDocument {
     try await requirePluginSettingsScope(scope)
-    let json = try await PluginUISettingsReadExecution.withInvocation(read) { try await actions.settings(id) }
+    let lease = PluginSettingsPageLease(owner: read.owner, account: read.account)
+    PluginUIManagerSettingsLifetimes.track(lease)
+    var transferred = false
+    defer { if !transferred { lease.close() } }
+    let json = try await PluginUISettingsReadExecution.withInvocation(read) {
+        try await PluginSettingsPageExecution.$current.withValue(lease) { try await actions.settings(id) }
+    }
+    guard lease.wasRead else { throw PluginUIFailure.unavailable("Manager settings materialization is not bound to Host.settingsJSON(page:)") }
     guard read.isCurrent else { throw PluginHostError.superseded("Settings read/page expired before decoding") }
     try await requirePluginSettingsScope(scope)
-    let document: PluginUISettingsPageDocument
+    let document: PluginUIManagerSettingsDocument
     do {
         document = try await Task.detached(priority: .userInitiated) {
-            return try PluginUISettingsPageDocument.decode(json)
+            return try PluginUIManagerSettingsDocument.decode(json, lease: lease)
         }.value
     } catch {
         throw PluginUIError(message: pluginText("Settings.InvalidJSON", "Invalid settings response") + "\n" + pluginErrorText(error))
@@ -59,11 +67,12 @@ func requirePluginSettingsScope(_ scope: @MainActor () -> Bool) async throws {
     try Task.checkCancellation()
     guard read.isCurrent else { throw PluginHostError.superseded("Settings read/page expired after decoding") }
     try await requirePluginSettingsScope(scope)
+    transferred = true
     return document
 }
 
 private struct PluginSettingsMutationResult: Sendable {
-    let document: PluginUISettingsPageDocument
+    let document: PluginUIManagerSettingsDocument
     let read: PluginUISettingsReadInvocation
     let error: String?
 }
@@ -71,12 +80,15 @@ private struct PluginSettingsMutationResult: Sendable {
 /// A callback can throw after persisting a value. Re-read the host in both cases,
 /// so the UI never claims that a failed callback rolled a stored value back.
 @MainActor private func mutatePluginSettings(actions: PluginManagerActions, id: String, scope: @escaping @MainActor () -> Bool,
-                                  actionScope: PluginUISettingsActionScope?, invocation: PluginUISettingsActionInvocation,
-                                  mutation: @MainActor () async throws -> Void) async throws -> PluginSettingsMutationResult {
+                                   actionScope: PluginUISettingsActionScope?, invocation: PluginUISettingsActionInvocation,
+                                   page: PluginSettingsPageLease,
+                                   mutation: @MainActor () async throws -> Void) async throws -> PluginSettingsMutationResult {
     try await requirePluginSettingsScope(scope)
     var mutationError: String?
     do {
-        try await PluginUISettingsActionExecution.withInvocation(invocation, operation: mutation)
+        try await PluginUISettingsActionExecution.withInvocation(invocation) {
+            try await PluginSettingsPageExecution.$current.withValue(page, operation: mutation)
+        }
     } catch is CancellationError {
         throw CancellationError()
     } catch let error as PluginHostError {
@@ -108,8 +120,14 @@ final class PluginSettingsController: PluginListController {
     private let actions: PluginManagerActions
     private let pluginId: String
     private let pageTitle: String
-    private let pagePath: [String]
-    private var document: PluginUISettingsPageDocument?
+    private var pagePath: [String]
+    private let settingTarget: String?
+    private var targetRowId: String?
+    private var targetNeedsReveal = false
+    private var document: PluginUIManagerSettingsDocument?
+    private var widgetEvents: PluginUIManagerWidgetEvents?
+    private var widgetValues: [String: [String: PluginUIJSON]] = [:]
+    private var widgetSelector: UIAlertController?
     private var iconImages: [PluginUISettingsRowIdentity: UIImage] = [:]
     private var schemaIsCurrent = false
     private let scopeIsCurrent: @MainActor () -> Bool
@@ -119,11 +137,12 @@ final class PluginSettingsController: PluginListController {
     private var pendingExternalReload = false
     private var externalReloadScheduled = false
 
-    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, title: String, pagePath: [String] = [], scopeIsCurrent: (@MainActor () -> Bool)? = nil, actionScope: PluginUISettingsActionScope? = nil) {
+    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, title: String, pagePath: [String] = [], scopeIsCurrent: (@MainActor () -> Bool)? = nil, actionScope: PluginUISettingsActionScope? = nil, target: String? = nil) {
         self.actions = actions
         self.pluginId = pluginId
         self.pageTitle = title
         self.pagePath = pagePath
+        self.settingTarget = target
         self.scopeIsCurrent = scopeIsCurrent ?? MainActor.assumeIsolated { ExteralessPluginRuntime.shared.settingsScope(context: context, pluginId: pluginId) }
         self.actionScope = actionScope ?? MainActor.assumeIsolated { PluginUISettingsActionRegistry.capture(context: context, pluginId: pluginId) }
         super.init(context: context)
@@ -131,6 +150,8 @@ final class PluginSettingsController: PluginListController {
             PluginUISettingsRefresh.observe(pluginId: pluginId) { [weak self] in
                 guard let self else { return }
                 self.actionScope?.invalidate()
+                self.document?.lease.close()
+                self.widgetEvents?.cancel()
                 self.schemaIsCurrent = false
                 self.pendingExternalReload = true
                 self.render()
@@ -140,6 +161,8 @@ final class PluginSettingsController: PluginListController {
             MainActor.assumeIsolated {
                 guard let self, !self.scopeIsCurrent() else { return }
                 self.actionScope?.close()
+                self.document?.lease.close()
+                self.widgetEvents?.cancel()
                 self.schemaIsCurrent = false
                 self.errorText = pluginText("Settings.ScopeExpired", "This plugin or account changed. Go back and reopen settings.")
                 self.render()
@@ -149,6 +172,7 @@ final class PluginSettingsController: PluginListController {
 
     deinit {
         self.actionScope?.close()
+        self.document?.lease.close()
         if let observer = self.runtimeObservation { NotificationCenter.default.removeObserver(observer) }
     }
 
@@ -164,16 +188,30 @@ final class PluginSettingsController: PluginListController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         self.actionScope?.setVisible(true)
+        self.revealTarget()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         self.actionScope?.setVisible(false)
+        self.widgetEvents?.cancel()
+        self.widgetSelector?.dismiss(animated: false)
+        self.widgetSelector = nil
         super.viewWillDisappear(animated)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        let retained = (self.navigationController as? NavigationController)?.viewControllers.contains(where: { $0 === self }) == true
+        if !retained && self.presentedViewController == nil { self.document?.lease.close() }
     }
 
     override func refresh() {
         guard !self.isBusy else { return }
         self.actionScope?.invalidate()
+        self.document?.lease.close()
+        self.widgetEvents?.cancel()
+        self.widgetSelector?.dismiss(animated: false)
+        self.widgetSelector = nil
         self.pendingExternalReload = false
         self.schemaIsCurrent = false
         guard self.scopeIsCurrent() else {
@@ -197,23 +235,42 @@ final class PluginSettingsController: PluginListController {
         self.perform(title: pluginText("Settings.Loading", "Loading settings…"), operation: {
             return try await loadPluginSettings(actions: actions, id: id, scope: scope, read: read)
         }, completion: { [weak self] document in
-            guard read.isCurrent else { return }
+            guard read.isCurrent else { document.lease.close(); return }
             self?.apply(document)
         })
     }
 
-    private func apply(_ document: PluginUISettingsPageDocument) {
+    private func apply(_ document: PluginUIManagerSettingsDocument) {
         self.actionScope?.invalidateActions()
-        guard self.scopeIsCurrent() else { self.schemaIsCurrent = false; return }
-        do { self.iconImages = try document.icons.mapValues { try PluginUIResources.image($0) } }
+        guard self.scopeIsCurrent(), document.lease.isOpen else { document.lease.close(); self.schemaIsCurrent = false; return }
+        if self.document?.lease !== document.lease { self.document?.lease.close() }
+        self.widgetEvents?.cancel()
+        do {
+            self.iconImages = try document.icons.mapValues { try PluginUIResources.image($0) }
+            try document.validateResources(data: self.presentationData)
+            if let target = self.settingTarget {
+                let location = try PluginSettingsDocument.resolve(target: target, in: document.rows)
+                self.pagePath = location.pagePath
+                self.targetRowId = location.rowId
+                self.targetNeedsReveal = true
+            }
+        }
         catch {
+            document.lease.close()
             self.schemaIsCurrent = false
             self.errorText = String(describing: error)
             return
         }
         self.document = document
+        self.widgetValues.removeAll()
+        self.widgetEvents = PluginUIManagerWidgetEvents(lease: document.lease, actions: self.actions) { [weak self] error in
+            guard let self, self.document?.lease === document.lease, document.lease.isOpen else { return }
+            self.errorText = error
+            self.render()
+        }
         if let error = pluginSettingsAvailabilityError(actions: self.actions, id: self.pluginId) {
             self.schemaIsCurrent = false
+            document.lease.close()
             self.errorText = self.errorText ?? error
             return
         }
@@ -221,6 +278,7 @@ final class PluginSettingsController: PluginListController {
         self.schemaIsCurrent = !self.pendingExternalReload && pageExists
         if self.schemaIsCurrent { self.actionScope?.publish() }
         if !pageExists {
+            document.lease.close()
             self.errorText = pluginText("Settings.PageMissing", "This settings page is no longer available. Go back to the previous page.")
         }
     }
@@ -267,6 +325,7 @@ final class PluginSettingsController: PluginListController {
             sections.append(PluginListSection(rows: [row]))
         }
         self.setSections(sections)
+        self.revealTarget()
         if self.pendingExternalReload && !self.externalReloadScheduled && !self.isBusy && self.isScreenVisible && self.scopeIsCurrent() {
             self.externalReloadScheduled = true
             DispatchQueue.main.async { [weak self] in
@@ -278,23 +337,55 @@ final class PluginSettingsController: PluginListController {
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = super.tableView(tableView, cellForRowAt: indexPath)
         let id = self.sections[indexPath.section].rows[indexPath.row].id
+        if let document = self.document,
+           let widget = document.widgets[PluginUISettingsRowIdentity(path: self.pagePath, rowId: id)] {
+            let cell = PluginUIManagerCustomCell(style: .default, reuseIdentifier: nil)
+            let route = PluginUIManagerWidgetRoute(rowId: id, root: widget)
+            do {
+                try cell.configure(model: widget, data: self.presentationData, enabled: self.schemaIsCurrent && !self.isBusy && document.lease.isOpen,
+                    values: self.widgetValues[id] ?? [:],
+                    change: { [weak self] widget, value in
+                        guard let self, self.sendWidget(route: route, widget: widget, name: "change", value: value, page: document.lease) else { return false }
+                        self.widgetValues[id, default: [:]][widget.key] = value
+                        return true
+                    }, select: { [weak self] widget, source in
+                        self?.selectWidget(route: route, widget: widget, source: source, page: document.lease)
+                    }, activated: { [weak self] widget, long in
+                        _ = self?.sendWidget(route: route, widget: widget, name: long ? "longAction" : "action", page: document.lease)
+                    }, layoutChanged: { [weak self] in
+                        guard let self, self.document?.lease === document.lease else { return }
+                        UIView.performWithoutAnimation { self.tableView.beginUpdates(); self.tableView.endUpdates() }
+                    })
+                cell.rootLongAction = self.sections[indexPath.section].rows[indexPath.row].longAction
+                return cell
+            } catch {
+                document.lease.close()
+                self.schemaIsCurrent = false
+                let errorCell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+                errorCell.textLabel?.text = pluginText("Settings.Unsupported", "Unsupported native setting type")
+                errorCell.detailTextLabel?.text = pluginErrorText(error)
+                errorCell.detailTextLabel?.numberOfLines = 0
+                return errorCell
+            }
+        }
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
         PluginUISettingsRowIcon.apply(image: self.iconImages[PluginUISettingsRowIdentity(path: self.pagePath, rowId: id)],
             color: self.presentationData.theme.list.itemAccentColor, to: cell)
         return cell
     }
 
     private func makeRow(_ item: PluginSetting) -> PluginListRow {
+        let page = self.document?.lease
         var row = PluginListRow(id: item.identifier, title: item.title, detail: item.subtext)
         row.enabled = self.schemaIsCurrent && !self.isBusy
         if let callbackId = item.longCallbackId {
-            row.longAction = { [weak self] in self?.click(callbackId: callbackId, openPage: nil) }
+            row.longAction = { [weak self] in self?.click(callbackId: callbackId, openPage: nil, page: page) }
         }
         switch item.kind {
         case .switch:
             if case let .bool(value) = item.currentValue, let key = item.key {
-                row.toggle = (value, { [weak self] updated in self?.update(key: key, value: .bool(updated)) })
+                row.toggle = (value, { [weak self] updated in self?.update(key: key, value: .bool(updated), page: page) })
             }
         case .selector:
             let choices = item.items ?? []
@@ -307,8 +398,8 @@ final class PluginSettingsController: PluginListController {
             row.accessory = .disclosure
             row.enabled = row.enabled && !choices.isEmpty
             row.action = { [weak self] in
-                guard let self, self.checkAvailability() else { return }
-                self.push(PluginSettingSelectorController(context: self.context, actions: self.actions, pluginId: self.pluginId, pagePath: self.pagePath, setting: item, scope: self.scopeIsCurrent, actionScope: self.actionScope?.fork(), updated: { [weak self] document in
+                guard let self, let page, self.matches(page), self.checkAvailability() else { return }
+                self.push(PluginSettingSelectorController(context: self.context, actions: self.actions, pluginId: self.pluginId, pagePath: self.pagePath, setting: item, scope: self.scopeIsCurrent, actionScope: self.actionScope?.fork(), pageLease: page, updated: { [weak self] document in
                     self?.apply(document)
                 }))
             }
@@ -317,15 +408,15 @@ final class PluginSettingsController: PluginListController {
             row.detail = [item.subtext, value.isEmpty ? pluginText("Settings.EmptyValue", "Empty") : value].compactMap { $0 }.joined(separator: "\n")
             row.accessory = .disclosure
             row.action = { [weak self] in
-                guard let self, self.checkAvailability() else { return }
-                self.push(PluginSettingInputController(context: self.context, actions: self.actions, pluginId: self.pluginId, setting: item, scope: self.scopeIsCurrent, actionScope: self.actionScope?.fork(), updated: { [weak self] document in
+                guard let self, let page, self.matches(page), self.checkAvailability() else { return }
+                self.push(PluginSettingInputController(context: self.context, actions: self.actions, pluginId: self.pluginId, setting: item, scope: self.scopeIsCurrent, actionScope: self.actionScope?.fork(), pageLease: page, updated: { [weak self] document in
                     self?.apply(document)
                 }))
             }
         case .slider:
             if let range = item.sliderRange, case let .number(value) = item.currentValue, let key = item.key {
                 row.slider = PluginListSlider(range: range, value: range.normalize(value), commit: { [weak self] value in
-                    self?.update(key: key, value: .number(value))
+                    self?.update(key: key, value: .number(value), page: page)
                 })
             }
         case .text:
@@ -333,13 +424,28 @@ final class PluginSettingsController: PluginListController {
             if item.subPage != nil { row.accessory = .disclosure }
             if item.callbackId != nil || item.subPage != nil {
                 row.action = { [weak self] in
-                    guard let self, self.checkAvailability() else { return }
+                    guard let self, let page, self.matches(page), self.checkAvailability() else { return }
                     if let callbackId = item.callbackId {
-                        self.click(callbackId: callbackId, openPage: item.subPage == nil ? nil : item.identifier)
+                        self.click(callbackId: callbackId, openPage: item.subPage == nil ? nil : item.identifier, page: page)
                     } else {
                         self.openSubpage(item)
                     }
                 }
+            }
+        case .custom:
+            if self.document?.widgets[PluginUISettingsRowIdentity(path: self.pagePath, rowId: item.identifier)] != nil {
+                if item.callbackId != nil || item.subPage != nil {
+                    row.action = { [weak self] in self?.click(callbackId: item.callbackId,
+                        openPage: item.subPage == nil ? nil : item.identifier, page: page, orderedCustom: true) }
+                }
+                if let callback = item.longCallbackId {
+                    row.longAction = { [weak self] in self?.click(callbackId: callback, openPage: nil, page: page, orderedCustom: true) }
+                }
+            } else {
+                row.style = .error
+                row.detail = item.customError ?? "Custom requires an owner-worker portable Widget model"
+                row.longAction = nil
+                row.enabled = false
             }
         case .header, .divider:
             break
@@ -364,11 +470,13 @@ final class PluginSettingsController: PluginListController {
             self.render()
             return false
         }
-        return !self.isBusy && self.schemaIsCurrent
+        return !self.isBusy && self.schemaIsCurrent && self.document?.lease.isOpen == true
     }
 
-    private func update(key: String, value: PluginSettingValue) {
-        guard self.checkAvailability() else { return }
+    private func matches(_ page: PluginSettingsPageLease) -> Bool { self.document?.lease === page && page.isOpen }
+
+    private func update(key: String, value: PluginSettingValue, page: PluginSettingsPageLease?) {
+        guard let page, self.matches(page), self.checkAvailability() else { return }
         let invocation: PluginUISettingsActionInvocation
         do { invocation = try capturePluginSettingsAction(self.actionScope) }
         catch { self.errorText = pluginErrorText(error); self.render(); return }
@@ -378,7 +486,7 @@ final class PluginSettingsController: PluginListController {
         let actionScope = self.actionScope
         self.schemaIsCurrent = false
         self.perform(title: pluginText("Settings.Saving", "Saving setting…"), operation: {
-            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, mutation: {
+            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, page: page, mutation: {
                 try await actions.updateSetting(id, key, value.json())
             })
         }, completion: { [weak self] result in
@@ -388,19 +496,27 @@ final class PluginSettingsController: PluginListController {
         })
     }
 
-    private func click(callbackId: String, openPage: String?) {
-        guard self.checkAvailability() else { return }
+    private func click(callbackId: String?, openPage: String?, page: PluginSettingsPageLease?, orderedCustom: Bool = false) {
+        guard let page, self.matches(page), self.checkAvailability() else { return }
         let invocation: PluginUISettingsActionInvocation
         do { invocation = try capturePluginSettingsAction(self.actionScope) }
         catch { self.errorText = pluginErrorText(error); self.render(); return }
+        let ordered: PluginUIManagerEventReceipt?
+        do {
+            if orderedCustom {
+                guard let events = self.widgetEvents, events.lease === page else { throw PluginUIFailure.invalidHandle("Custom page FIFO is unavailable") }
+                ordered = try events.root(callbackId: callbackId, invocation: invocation)
+            } else { ordered = nil }
+        } catch { self.errorText = pluginErrorText(error); self.render(); return }
         let actions = self.actions
         let id = self.pluginId
         let scope = self.scopeIsCurrent
         let actionScope = self.actionScope
         self.schemaIsCurrent = false
         self.perform(title: pluginText("Settings.Applying", "Applying plugin action…"), operation: {
-            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, mutation: {
-                try await actions.click(id, callbackId)
+            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, page: page, mutation: {
+                if let ordered { try await ordered.value() }
+                else if let callbackId { try await actions.click(id, callbackId) }
             })
         }, completion: { [weak self] result in
             guard let self, result.read.isCurrent else { return }
@@ -414,6 +530,62 @@ final class PluginSettingsController: PluginListController {
                 }
             }
         })
+    }
+
+    private func sendWidget(route: PluginUIManagerWidgetRoute, widget: PluginUIWidget, name: String,
+                            value: PluginUIJSON? = nil, page: PluginSettingsPageLease) -> Bool {
+        guard self.matches(page), self.checkAvailability(), let events = self.widgetEvents, events.lease === page else { return false }
+        do {
+            let invocation = try capturePluginSettingsAction(self.actionScope)
+            let (callback, json) = try route.event(widget: widget, name: name, value: value)
+            return events.send(callbackId: callback, eventJSON: json, invocation: invocation)
+        } catch {
+            self.errorText = pluginErrorText(error)
+            return false
+        }
+    }
+
+    private func selectWidget(route: PluginUIManagerWidgetRoute, widget: PluginUIWidget, source: UIView, page: PluginSettingsPageLease) {
+        guard self.matches(page), self.checkAvailability(), self.widgetSelector == nil else { return }
+        // Capture the rendered page revision before presenting the native menu.
+        // Its delayed choice must not acquire a fresh permit after a refresh.
+        let invocation: PluginUISettingsActionInvocation
+        do { invocation = try capturePluginSettingsAction(self.actionScope) }
+        catch { self.errorText = pluginErrorText(error); return }
+        let selector = UIAlertController(title: widget.text, message: nil, preferredStyle: .actionSheet)
+        for (index, choice) in widget.choices.enumerated() {
+            selector.addAction(UIAlertAction(title: choice, style: .default) { [weak self] _ in
+                guard let self else { return }
+                self.widgetSelector = nil
+                guard self.matches(page), invocation.isCurrent, let events = self.widgetEvents, events.lease === page else { return }
+                do {
+                    let value = PluginUIJSON.integer(Int64(index))
+                    let (callback, json) = try route.event(widget: widget, name: "change", value: value)
+                    if events.send(callbackId: callback, eventJSON: json, invocation: invocation) {
+                        self.widgetValues[route.rowId, default: [:]][widget.key] = value
+                        self.render()
+                    }
+                } catch { self.errorText = pluginErrorText(error); self.render() }
+            })
+        }
+        selector.addAction(UIAlertAction(title: self.presentationData.strings.Common_Cancel, style: .cancel) { [weak self] _ in self?.widgetSelector = nil })
+        selector.popoverPresentationController?.sourceView = source
+        selector.popoverPresentationController?.sourceRect = source.bounds
+        self.widgetSelector = selector
+        self.present(selector, animated: true)
+    }
+
+    private func revealTarget() {
+        guard self.targetNeedsReveal, self.schemaIsCurrent, self.isScreenVisible, self.scopeIsCurrent(),
+              self.document?.lease.isOpen == true, let target = self.targetRowId else { return }
+        for (section, rows) in self.sections.enumerated() {
+            if let row = rows.rows.firstIndex(where: { $0.id == target }) {
+                self.tableView.layoutIfNeeded()
+                self.tableView.scrollToRow(at: IndexPath(row: row, section: section), at: .middle, animated: false)
+                self.targetNeedsReveal = false
+                return
+            }
+        }
     }
 
     private func openSubpage(_ item: PluginSetting) {
@@ -430,7 +602,8 @@ private final class PluginSettingSelectorController: PluginListController {
     private let actions: PluginManagerActions
     private let pluginId: String
     private let pagePath: [String]
-    private let updated: (PluginUISettingsPageDocument) -> Void
+    private let updated: (PluginUIManagerSettingsDocument) -> Void
+    private var pageLease: PluginSettingsPageLease
     private let scopeIsCurrent: @MainActor () -> Bool
     private let actionScope: PluginUISettingsActionScope?
     private var reloadObservation: PluginUISettingsObservation?
@@ -439,11 +612,12 @@ private final class PluginSettingSelectorController: PluginListController {
     private var selectionIsCurrent = true
     private var hasAppeared = false
 
-    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, pagePath: [String], setting: PluginSetting, scope: @escaping @MainActor () -> Bool, actionScope: PluginUISettingsActionScope?, updated: @escaping (PluginUISettingsPageDocument) -> Void) {
+    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, pagePath: [String], setting: PluginSetting, scope: @escaping @MainActor () -> Bool, actionScope: PluginUISettingsActionScope?, pageLease: PluginSettingsPageLease, updated: @escaping (PluginUIManagerSettingsDocument) -> Void) {
         self.actions = actions
         self.pluginId = pluginId
         self.pagePath = pagePath
         self.setting = setting
+        self.pageLease = pageLease
         self.updated = updated
         self.scopeIsCurrent = scope
         self.actionScope = actionScope
@@ -453,6 +627,7 @@ private final class PluginSettingSelectorController: PluginListController {
             PluginUISettingsRefresh.observe(pluginId: pluginId) { [weak self] in
                 guard let self else { return }
                 self.actionScope?.invalidate()
+                self.pageLease.close()
                 self.selectionIsCurrent = false
                 self.pendingExternalReload = true
                 if self.isScreenVisible && !self.isBusy { self.refresh() }
@@ -464,7 +639,7 @@ private final class PluginSettingSelectorController: PluginListController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit { self.actionScope?.close() }
+    deinit { self.actionScope?.close(); self.pageLease.close() }
 
     override func viewWillAppear(_ animated: Bool) {
         self.actionScope?.beginAppearance()
@@ -498,6 +673,7 @@ private final class PluginSettingSelectorController: PluginListController {
             return
         }
         self.actionScope?.invalidate()
+        self.pageLease.close()
         let read: PluginUISettingsReadInvocation
         do { read = try capturePluginSettingsRead(self.actionScope) }
         catch { self.errorText = pluginErrorText(error); self.tableView.refreshControl?.endRefreshing(); self.render(); return }
@@ -509,14 +685,16 @@ private final class PluginSettingSelectorController: PluginListController {
         self.perform(title: pluginText("Settings.Loading", "Loading settings…"), operation: {
             return try await loadPluginSettings(actions: actions, id: id, scope: scope, read: read)
         }, completion: { [weak self] document in
-            guard read.isCurrent else { return }
+            guard read.isCurrent else { document.lease.close(); return }
             self?.apply(document)
         })
     }
 
-    private func apply(_ document: PluginUISettingsPageDocument) {
+    private func apply(_ document: PluginUIManagerSettingsDocument) {
         self.actionScope?.invalidateActions()
-        guard self.scopeIsCurrent() else { self.selectionIsCurrent = false; return }
+        guard self.scopeIsCurrent(), document.lease.isOpen else { document.lease.close(); self.selectionIsCurrent = false; return }
+        if self.pageLease !== document.lease { self.pageLease.close() }
+        self.pageLease = document.lease
         self.updated(document)
         if let error = pluginSettingsAvailabilityError(actions: self.actions, id: self.pluginId) {
             self.selectionIsCurrent = false
@@ -538,10 +716,11 @@ private final class PluginSettingSelectorController: PluginListController {
         var sections = self.operationSections()
         var rows: [PluginListRow] = []
         for (index, choice) in (self.setting.items ?? []).enumerated() {
+            let page = self.pageLease
             var row = PluginListRow(id: "choice:\(index)", title: choice)
-            row.enabled = !self.isBusy && self.selectionIsCurrent && self.scopeIsCurrent()
+            row.enabled = !self.isBusy && self.selectionIsCurrent && self.scopeIsCurrent() && page.isOpen
             if case let .number(value) = self.setting.currentValue, value == Double(index) { row.accessory = .checkmark }
-            row.action = { [weak self] in self?.select(index: index) }
+            row.action = { [weak self] in self?.select(index: index, page: page) }
             rows.append(row)
         }
         sections.append(PluginListSection(footer: self.setting.subtext, rows: rows))
@@ -558,8 +737,8 @@ private final class PluginSettingSelectorController: PluginListController {
         }
     }
 
-    private func select(index: Int) {
-        guard self.selectionIsCurrent, self.scopeIsCurrent(), !self.isBusy, let key = self.setting.key else { return }
+    private func select(index: Int, page: PluginSettingsPageLease) {
+        guard self.pageLease === page, page.isOpen, self.selectionIsCurrent, self.scopeIsCurrent(), !self.isBusy, let key = self.setting.key else { return }
         if let error = pluginSettingsAvailabilityError(actions: self.actions, id: self.pluginId) {
             self.selectionIsCurrent = false
             self.errorText = error
@@ -575,7 +754,7 @@ private final class PluginSettingSelectorController: PluginListController {
         let actionScope = self.actionScope
         self.selectionIsCurrent = false
         self.perform(title: pluginText("Settings.Saving", "Saving setting…"), operation: {
-            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, mutation: {
+            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, page: page, mutation: {
                 try await actions.updateSetting(id, key, PluginSettingValue.number(Double(index)).json())
             })
         }, completion: { [weak self] result in
@@ -591,17 +770,19 @@ private final class PluginSettingInputController: PluginListController {
     private let actions: PluginManagerActions
     private let pluginId: String
     private let setting: PluginSetting
-    private let updated: (PluginUISettingsPageDocument) -> Void
+    private let updated: (PluginUIManagerSettingsDocument) -> Void
+    private let pageLease: PluginSettingsPageLease
     private let scopeIsCurrent: @MainActor () -> Bool
     private let actionScope: PluginUISettingsActionScope?
     private var reloadObservation: PluginUISettingsObservation?
     private var settingIsCurrent = true
     private var draft: String
 
-    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, setting: PluginSetting, scope: @escaping @MainActor () -> Bool, actionScope: PluginUISettingsActionScope?, updated: @escaping (PluginUISettingsPageDocument) -> Void) {
+    init(context: AccountContext, actions: PluginManagerActions, pluginId: String, setting: PluginSetting, scope: @escaping @MainActor () -> Bool, actionScope: PluginUISettingsActionScope?, pageLease: PluginSettingsPageLease, updated: @escaping (PluginUIManagerSettingsDocument) -> Void) {
         self.actions = actions
         self.pluginId = pluginId
         self.setting = setting
+        self.pageLease = pageLease
         self.updated = updated
         self.scopeIsCurrent = scope
         self.actionScope = actionScope
@@ -613,6 +794,7 @@ private final class PluginSettingInputController: PluginListController {
             PluginUISettingsRefresh.observe(pluginId: pluginId) { [weak self] in
                 guard let self else { return }
                 self.actionScope?.invalidate()
+                self.pageLease.close()
                 self.settingIsCurrent = false
                 self.errorText = pluginText("Settings.InputChanged", "This setting changed. Your draft is preserved; go back and reopen the setting.")
                 self.render()
@@ -624,7 +806,7 @@ private final class PluginSettingInputController: PluginListController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit { self.actionScope?.close() }
+    deinit { self.actionScope?.close(); self.pageLease.close() }
 
     override func viewWillAppear(_ animated: Bool) {
         self.actionScope?.beginAppearance()
@@ -666,7 +848,7 @@ private final class PluginSettingInputController: PluginListController {
     }
 
     @objc private func savePressed() {
-        guard !self.isBusy, self.scopeIsCurrent(), self.settingIsCurrent, let key = self.setting.key else { return }
+        guard !self.isBusy, self.scopeIsCurrent(), self.settingIsCurrent, self.pageLease.isOpen, let key = self.setting.key else { return }
         if let maximum = self.setting.maxLength, self.draft.unicodeScalars.count > maximum { return }
         if let error = pluginSettingsAvailabilityError(actions: self.actions, id: self.pluginId) {
             self.errorText = error
@@ -682,8 +864,9 @@ private final class PluginSettingInputController: PluginListController {
         let draft = self.draft
         let scope = self.scopeIsCurrent
         let actionScope = self.actionScope
+        let page = self.pageLease
         self.perform(title: pluginText("Settings.Saving", "Saving setting…"), operation: {
-            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, mutation: {
+            return try await mutatePluginSettings(actions: actions, id: id, scope: scope, actionScope: actionScope, invocation: invocation, page: page, mutation: {
                 try await actions.updateSetting(id, key, PluginSettingValue.string(draft).json())
             })
         }, completion: { [weak self] result in

@@ -1,5 +1,117 @@
 # Bounded client UIKit acceptance harness
 
+## SDK followup / configured-control frame contract (2026-11-16)
+
+### Applied Reset, secondary-permission and Map supplements
+
+The base eight keep **3+3+2** and their original batch receipt. Ten RSR witnesses
+now run separately as **3+3+3+1**, then secondary permissions and Map attribution
+each run in their own process: **20 total scenes**, of which base + Reset are18. All consume
+one compiled/retained IPA. See `native-gate-sdk-followup.md` for exact case/palette
+order. Every process is still limited to30s; the added command envelopes total
+990s and the overall job cap is215m.
+
+Before Reset recording, expect these actual Display transitions and native replies:
+
+- `reset-before-swipe` shows the real reset page/preview or held completed reply;
+  the payload carries the exact22 source hashes, original authority/plan/session,
+  one preparation and the real persisted state.
+- `reset-dragging` follows the actual finger translation to22% width. The captured
+  lifecycle is `willDisappear`, and its child authority is invalid. No copied
+  navigation animation or synthetic UIViewController ordering is supplied.
+- `reset-old-reply-before-return` exists only in the two before-return cases;
+  the page stays not visible and no replacement preparation starts yet.
+- A cancelled pop returns with **`willDisappear, didAppear`**, without WillAppear.
+  Expect Display's critically damped cancel spring, about0.5s and no body
+  overshoot. Table/chrome move together; no clipped edges, duplicate title or flash.
+- `reset-returned-ready` must show one fresh usable Reset cell, a new authority and
+  preview, no old session, exactly two total preparations and unchanged file state
+  across navigation. A reset reply already reflects its actual absent/default
+  result before the swipe; navigation must not write again.
+- `reset-retired-idle` covers actual pop/context retirement: removed stays removed,
+  or the retired page retains its context message with reset unavailable. Late
+  replies must not recreate a preview. `reset-cleanup` shows the clean host again.
+
+The selected Reset cases cover five light and five dark runs. Inspect callback
+brackets against **ffprobe PTS**, including jitter/settling around before/after
+return; counts and CGRects alone are not acceptance. RSR02 error/Retry availability
+also remains a required targeted frame expectation when the coordinator exercises
+the provided fault path; Core's19 real-file tests are not substituted for UI frames.
+
+`trust-secondary-permissions` invokes the provided native UI fixture under its
+debug define. The sampler requires the visible **Native link fixture** alert,
+the external share sheet, the distinct own-root share sheet and clean completion.
+The actual source assertions check irreversible intents/files epochs and cleanup
+backpressure. No external URL is opened. Its exact false/true interception and
+revocation behavior is source-bound; the MP4 must show the real surfaces retiring
+and not reappearing after regrant. This fixture's canned Host worker is explicitly
+distinguished from linked CPython execution.
+
+The finite followup is recorded in `native-gate-sdk-followup.md`. Its standard
+selection remains the same eight scenarios in **3+3+2** invocations. Both the
+native alarm and external per-process limit remain **30 seconds**.
+
+Search/Secret are already in the current core source: **13 probes** per palette,
+including `settings-search-results`, `settings-search-row` and
+`secret-availability`. Search must show the shipping search field/result cell,
+then the actual highlighted settings row without mutating its value; back must
+retire the exact session and return to home. The expected settled search label
+uses the setting's localization, not a renamed Search navigation action.
+
+### Actual UIButton.Configuration controls — before recording
+
+The coordinator has applied `configured-controls-harness-coordinator.patch` to
+Composer/Pill: the math segment and all six Pill calls are present. The isolated helper
+`Sources/ClientHarnessConfigurationControls.swift` observes real controls and
+captures their native view images. Preflight rejects missing hook calls, and the
+driver rejects missing control geometry. No rendering implementation is copied.
+
+| Probe | Expected recorded control |
+| --- | --- |
+| `composer-inline-math-light` / `composer-inline-math-dark` | Before the rich-draft segment, the real native composer contains `1 + 2` and a caret at its end. The actual suggestion button reads **`= 3  ·  Insert`**. Observe its 14pt leading/trailing content insets, Dynamic Type subheadline, leading alignment and wrapping. The button is at least 44pt tall; title edges and all wrapped lines remain inside it, above the real keyboard. Light/dark repaint keeps the same panel/editor. The helper then restores the empty draft/light palette before existing rich-content probes. |
+| `pill-cache-initial`, `pill-cache-enabled`, `pill-dark-header` | The real `exteraless.pill.current` button is mounted in the production header. Its 38pt leading / 16pt trailing insets reserve the 20pt icon/spinner lane. Subheadline remains readable; tail truncation is intentional, but overlapping the icon, clipped vertical glyphs or hidden label geometry is not. Inspect both palettes. |
+| `pill-provider-loading`, `pill-provider-ready`, `pill-reloaded` | The same configured native button displays the actual loading/ready text. Read the 0.16s production cross-dissolve frame by frame; icon/spinner/title share one stable button frame and the retired value never flashes. |
+
+Pill uses existing probes. Composer adds only two short frames (0.25s palette
+settles and bounded 1s readiness waits; 0.35s recovery before the old segment).
+There is no 45-second allowance. If the complete process exceeds 30s it fails.
+Capture metadata includes real UIButton/UILabel rectangles, font, line count,
+insets and window membership; only the MP4/ffprobe PTS sheets establish visual
+acceptance. Cite frame indices and PTS for every clipped edge/flash/stall.
+
+### Map attribution — implemented twentieth scene
+
+`map-attribution` explicitly calls `LocationUI.ExteralessMapAttributionFixture.run`
+in the current Display host. It uses an ordinary MKMapView and the real provider's
+one UIButton through **light/dark OSM standard, satellite and OSM-error fallback**.
+See [`map-attribution-native-handoff.md`](map-attribution-native-handoff.md) for
+the complete before-recording frame contract, and `map-attribution-owned-route.json`
+for its ready native entry and 20 required source/input pins.
+
+The only production provider changes are policy/loader injection with the existing
+defaults. The owned OSM loader returns the stored 256px grid PNG or an error through
+the actual overlay/cache/failure/update path. The region is fixed at0°,0°; no live
+location or permission/account RPC is used. **Standard public Apple/GeoServices
+map requests are permitted**, independently of the injected OSM transport.
+
+Inspect the actual two-line maximum, 10pt medium font, 4/6/4/6 insets and
+map-relative x12/y(topInset+14) placement. The same label/button must stay readable,
+unclipped and frontmost across both palettes and native map repaint. Error callback
+brackets must precede the fallback title without a stale copyright label returning.
+Six hierarchy PNGs, six actual-button PNGs and one cleanup PNG supplement the
+simctl video and ffprobe PTS sheets. Each palette segment is bounded to3.8s,
+the fixture to9s and the fresh app process to30s. Frame acceptance remains pending.
+
+Trust/custom ownership is exercised by the actual native XCTest fixtures. Their
+future recorded extension must use the supplied `PluginTrustUIFixture` and real
+manager custom cells through a coordinator source handoff: initially isolated
+with no raw grants; level/grant controls reflect durable commits; custom child
+input/root actions retain FIFO and page identity; alias navigation highlights
+the existing row. These interactions are not claimed as recorded by the current
+SDK scene. Their supplied helper source is included in the followup fingerprints.
+
+## Earlier harness implementation checkpoints
+
 Status: **implemented source; native build/recording blocked pending cohort integration**.
 This implementer has not run Swift, dispatched CI, or reviewed recorded frames.
 The Core/Host results from `4b3f7064` are separate evidence; they do not establish

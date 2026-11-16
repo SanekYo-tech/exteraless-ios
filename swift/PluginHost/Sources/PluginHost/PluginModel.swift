@@ -1,5 +1,22 @@
 import Foundation
 
+/// The on-disk container selects both the SDK reader and its ID grammar.
+public enum PluginFileFormat: String, Codable, Hashable, Sendable {
+    case source, elyx, eaf
+
+    public init?(pathExtension: String) {
+        switch pathExtension.lowercased() {
+        case "py", "plugin": self = .source
+        case "elyx": self = .elyx
+        case "eaf": self = .eaf
+        default: return nil
+        }
+    }
+
+    public var isArchive: Bool { self != .source }
+    var installedExtension: String { self == .source ? "plugin" : rawValue }
+}
+
 /// Модель плагина — поля 1:1 из Plugin.java (модель эталона Android).
 /// Метаданные читает Python-сторона (AST/SDK), сюда приезжают готовыми.
 public struct Plugin: Codable, Hashable, Sendable, Identifiable {
@@ -26,6 +43,7 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
     public var permissionsDeclared: Bool
     /// Абсолютный путь файла в каталоге плагинов.
     public var path: String?
+    public var fileFormat: PluginFileFormat
     /// Включён ли пользователем (персистентно).
     public var enabled: Bool
 
@@ -63,6 +81,7 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
                 permissions: [String] = [],
                 permissionsDeclared: Bool = false,
                 path: String? = nil,
+                fileFormat: PluginFileFormat = .source,
                 enabled: Bool = true,
                 loaded: Bool = false,
                 hasSettings: Bool = false,
@@ -90,6 +109,7 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
         self.permissions = permissions
         self.permissionsDeclared = permissionsDeclared
         self.path = path
+        self.fileFormat = fileFormat
         self.enabled = enabled
         self.loaded = loaded
         self.hasSettings = hasSettings
@@ -109,11 +129,12 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, description, author, version, icon, engine, appVersion
         case sdkVersion, beta, requirements, requires, permissions
-        case permissionsDeclared, path, enabled
+        case permissionsDeclared, path, fileFormat, enabled
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let path = try container.decodeIfPresent(String.self, forKey: .path)
         self.init(
             id: try container.decode(String.self, forKey: .id),
             name: try container.decodeIfPresent(String.self, forKey: .name),
@@ -126,11 +147,32 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
             sdkVersion: try container.decodeIfPresent(String.self, forKey: .sdkVersion),
             beta: try container.decodeIfPresent(Bool.self, forKey: .beta) ?? false,
             requirements: try container.decodeIfPresent([String].self, forKey: .requirements) ?? [],
-            requires: try container.decodeIfPresent([String: [String?]].self, forKey: .requires) ?? [:],
+            requires: try container.decodeIfPresent([String: Dependency].self, forKey: .requires)?.mapValues(\.values) ?? [:],
             permissions: try container.decodeIfPresent([String].self, forKey: .permissions) ?? [],
             permissionsDeclared: try container.decodeIfPresent(Bool.self, forKey: .permissionsDeclared) ?? false,
-            path: try container.decodeIfPresent(String.self, forKey: .path),
+            path: path,
+            fileFormat: try container.decodeIfPresent(PluginFileFormat.self, forKey: .fileFormat)
+                ?? path.flatMap { PluginFileFormat(pathExtension: URL(fileURLWithPath: $0).pathExtension) } ?? .source,
             enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true)
+    }
+
+    /// SDK Elyx emits objects; persisted native models use two nullable slots.
+    private struct Dependency: Decodable {
+        let values: [String?]
+        private enum Keys: String, CodingKey { case minVersion, min_version, url }
+        init(from decoder: Decoder) throws {
+            if let array = try? decoder.singleValueContainer().decode([String?].self) {
+                guard array.count <= 2 else {
+                    throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "requires needs [minVersion?, url?]"))
+                }
+                values = array
+            } else {
+                let object = try decoder.container(keyedBy: Keys.self)
+                values = [try object.decodeIfPresent(String.self, forKey: .minVersion)
+                    ?? object.decodeIfPresent(String.self, forKey: .min_version),
+                    try object.decodeIfPresent(String.self, forKey: .url)]
+            }
+        }
     }
 
     // MARK: - Вычисляемые (семантика Plugin.java)
@@ -165,6 +207,16 @@ public struct Plugin: Codable, Hashable, Sendable, Identifiable {
         guard id.count >= 2, id.count <= 32,
               let first = id.first, first.isASCII, first.isLetter else { return false }
         return id.dropFirst().allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
+    }
+
+    public static func isValidID(_ id: String, format: PluginFileFormat) -> Bool {
+        if !format.isArchive { return isValidID(id) }
+        return (2...32).contains(id.utf8.count)
+            && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }
+    }
+
+    static func isReservedID(_ id: String) -> Bool {
+        id.lowercased() == "exteralessmetadatainspector"
     }
 }
 
@@ -221,14 +273,30 @@ public enum PluginPermission: String, Codable, CaseIterable, Sendable, Hashable 
 /// вред — не границу против атакующего.
 public final class PermissionsModel: @unchecked Sendable {
     private let lock = NSLock()
-    private var granted: [String: Set<PluginPermission>] = [:]
+    private let mutationLock = NSLock()
+    private var records: [String: PluginPermissionRecord] = [:]
+    private var revoked: [String: [PluginPermission: UUID]] = [:]
+    private var revisions: [String: UUID] = [:]
     private let log: (@Sendable (String) -> Void)?
 
     /// unsafe-режим (PluginsConstants.KEY_UNSAFE_MODE): всё разрешено.
     private var storedUnsafeMode: Bool
     public var unsafeMode: Bool {
         get { lock.lock(); defer { lock.unlock() }; return storedUnsafeMode }
-        set { lock.lock(); storedUnsafeMode = newValue; lock.unlock() }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            if storedUnsafeMode != newValue {
+                for id in Array(revisions.keys) { revisions[id] = UUID() }
+            }
+            if storedUnsafeMode && !newValue {
+                for id in Set(records.keys).union(revoked.keys) {
+                    let allowed = (records[id] ?? PluginPermissionRecord()).effective()
+                    revokeLocked(id, permissions: Set(PluginPermission.allCases).subtracting(allowed))
+                }
+            }
+            storedUnsafeMode = newValue
+        }
     }
 
     public init(unsafeMode: Bool = false, log: (@Sendable (String) -> Void)? = nil) {
@@ -238,49 +306,137 @@ public final class PermissionsModel: @unchecked Sendable {
 
     // MARK: Выданное
 
-    /// Загрузить хранилище согласий (старт приложения).
-    public func load(from store: PluginStore) {
-        let raw = store.loadGrants()
-        lock.lock()
-        granted = raw.mapValues { Set($0) }
-        lock.unlock()
+    /// Startup migration is durable before publication; corruption never becomes
+    /// an apparently empty consent store. A failed reload retains the old state.
+    public func load(from store: PluginStore) throws {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        publish(try store.loadPermissionRecords())
     }
 
-    /// Записать согласие (ui подразумевается и не хранится).
-    public func setGranted(_ pluginId: String, _ permissions: [PluginPermission], to store: PluginStore) {
-        let clean = PluginPermission.sanitize(permissions).filter { $0 != .ui }
-        lock.lock()
-        granted[pluginId] = Set(clean)
-        lock.unlock()
-        store.saveGrants(rawGrants())
+    /// Installed legacy plugins with no grant entry had only UI. Pin their zero
+    /// tier in one startup transaction without touching any existing raw consent.
+    public func migrateInstalled(_ pluginIds: [String], to store: PluginStore) throws {
+        try mutate(store, isCurrent: { true }) { records in
+            for id in pluginIds where records[id] == nil { records[id] = PluginPermissionRecord() }
+        }
     }
 
-    /// Стереть запись (удаление плагина).
-    public func clear(_ pluginId: String, in store: PluginStore) {
-        lock.lock()
-        granted[pluginId] = nil
-        lock.unlock()
-        store.saveGrants(rawGrants())
+    /// LEGACY NATIVE consent contract: the explicitly supplied grants also consent
+    /// to their minimum tier. Retain a higher existing tier. This is not used for
+    /// metadata, new-install defaults, or the level-aware native UI, and is never
+    /// exported as a Python setter. Existing native callers keep their semantics.
+    public func setGranted(_ pluginId: String, _ permissions: [PluginPermission], to store: PluginStore,
+                           isCurrent: @Sendable () -> Bool = { true }) throws {
+        try mutate(store, isCurrent: isCurrent) { records in
+            let old = records[pluginId]?.level ?? .default
+            let required = PluginTrustLevel.migrating(rawGrants: permissions)
+            let level = old.rawValue >= required.rawValue ? old : required
+            records[pluginId] = PluginPermissionRecord(level: level, grants: permissions)
+        }
     }
 
-    private func rawGrants() -> [String: [PluginPermission]] {
+    /// Level-aware native UI/install consent. A ceiling never implies any grant.
+    /// Disallowed input is an error, so the displayed selection cannot lie.
+    public func setConsent(_ pluginId: String, level: PluginTrustLevel, permissions: [PluginPermission],
+                           to store: PluginStore, isCurrent: @Sendable () -> Bool = { true }) throws {
+        if let denied = permissions.first(where: { !level.allows($0) }) {
+            throw PluginPermissionStoreError.disallowedGrant(level, denied)
+        }
+        try mutate(store, isCurrent: isCurrent) { records in
+            records[pluginId] = PluginPermissionRecord(level: level, grants: permissions)
+        }
+    }
+
+    /// A new installation always replaces orphan consent with DEFAULT (0), unless
+    /// an explicit native install selection is supplied. Replacements preserve
+    /// existing consent when `selection` is nil. Run before any plugin bootstrap.
+    public func prepareInstall(_ pluginId: String, replacing: Bool, selection: PluginPermissionRecord? = nil,
+                               to store: PluginStore, isCurrent: @Sendable () -> Bool = { true }) throws {
+        if let selection, let denied = selection.grants.first(where: { !selection.level.allows($0) }) {
+            throw PluginPermissionStoreError.disallowedGrant(selection.level, denied)
+        }
+        try mutate(store, isCurrent: isCurrent) { records in
+            if let selection { records[pluginId] = selection }
+            else if !replacing || records[pluginId] == nil { records[pluginId] = PluginPermissionRecord() }
+        }
+    }
+
+    /// Commit level and pruning in one replacement, even while unsafe mode is on.
+    public func setLevel(_ pluginId: String, _ level: PluginTrustLevel, to store: PluginStore,
+                         isCurrent: @Sendable () -> Bool = { true }) throws {
+        try mutate(store, isCurrent: isCurrent) { records in
+            records[pluginId] = (records[pluginId] ?? PluginPermissionRecord()).changingLevel(to: level)
+        }
+    }
+
+    /// Removal forgets both grants and level in the same durable operation.
+    public func clear(_ pluginId: String, in store: PluginStore,
+                      isCurrent: @Sendable () -> Bool = { true }) throws {
+        try mutate(store, isCurrent: isCurrent) { $0[pluginId] = nil }
+    }
+
+    private func mutate(_ store: PluginStore, isCurrent: @Sendable () -> Bool,
+                        _ change: (inout [String: PluginPermissionRecord]) throws -> Void) throws {
+        mutationLock.lock()
+        defer { mutationLock.unlock() }
+        // No snapshot lock across disk or the authority predicate: predicates
+        // may themselves consult this model. Publication has no failing step.
+        publish(try store.updatePermissionRecords(isCurrent: isCurrent, change))
+    }
+
+    private func publish(_ next: [String: PluginPermissionRecord]) {
         lock.lock()
         defer { lock.unlock() }
-        return granted.mapValues { Array($0) }
+        for id in Set(records.keys).union(next.keys) {
+            if records[id] != next[id] { revisions[id] = UUID() }
+            let before = (records[id] ?? PluginPermissionRecord()).effective(unsafeMode: storedUnsafeMode)
+            let after = (next[id] ?? PluginPermissionRecord()).effective(unsafeMode: storedUnsafeMode)
+            revokeLocked(id, permissions: before.subtracting(after))
+        }
+        records = next
+    }
+
+    private func revokeLocked(_ id: String, permissions: Set<PluginPermission>) {
+        for permission in permissions { revoked[id, default: [:]][permission] = UUID() }
     }
 
     // MARK: Эффективные
 
-    /// Что плагин имеет на самом деле. Режим совместимости: НЕТ записи о
-    /// согласии (плагин попал в каталог мимо листа установки) — только ui,
-    /// пока пользователь не выдаст сам.
-    public func effective(_ pluginId: String) -> Set<PluginPermission> {
-        if unsafeMode { return Set(PluginPermission.allCases) }
+    public func snapshot(_ pluginId: String) -> PluginPermissionSnapshot {
         lock.lock()
-        let stored = granted[pluginId]
+        defer { lock.unlock() }
+        if revisions[pluginId] == nil { revisions[pluginId] = UUID() }
+        return PluginPermissionSnapshot(record: records[pluginId], unsafeMode: storedUnsafeMode, revision: revisions[pluginId])
+    }
+
+    public func level(_ pluginId: String) -> PluginTrustLevel { snapshot(pluginId).level }
+
+    /// One snapshot of unsafe mode, level and raw grants. A missing record has
+    /// only UI unless the explicit global unsafe override is active.
+    public func effective(_ pluginId: String) -> Set<PluginPermission> {
+        snapshot(pluginId).effective
+    }
+
+    /// Retained native work captures this BEFORE its queue hop. A revocation is
+    /// permanent for that work, even if the permission is granted again before
+    /// the callback reaches its captured owner. Owner/account admission is still
+    /// required independently; this predicate does not grant an interpreter.
+    public func futurePredicate(_ pluginId: String, requiring permissions: Set<PluginPermission>) -> @Sendable () -> Bool {
+        lock.lock()
+        let current = (records[pluginId] ?? PluginPermissionRecord()).effective(unsafeMode: storedUnsafeMode)
+        if revoked[pluginId] == nil { revoked[pluginId] = [:] }
+        let epochs = revoked[pluginId] ?? [:]
         lock.unlock()
-        guard let stored else { return [.ui] }
-        return stored.union([.ui])
+        guard permissions.isSubset(of: current) else { return { false } }
+        return { [weak self] in
+            guard let self else { return false }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            let current = (self.records[pluginId] ?? PluginPermissionRecord()).effective(unsafeMode: self.storedUnsafeMode)
+            return permissions.isSubset(of: current)
+                && permissions.allSatisfy { self.revoked[pluginId]?[$0] == epochs[$0] }
+        }
     }
 
     /// Разрешения, о которых плагин просит при установке (объявленные минус ui).
@@ -292,7 +448,6 @@ public final class PermissionsModel: @unchecked Sendable {
 
     /// Тихая проверка (для UI). unsafe-режим пропускает всё.
     public func has(_ pluginId: String, _ permission: PluginPermission) -> Bool {
-        if permission == .ui || unsafeMode { return true }
         return effective(pluginId).contains(permission)
     }
 
@@ -326,9 +481,13 @@ public final class PluginStore: @unchecked Sendable {
     private let lock = NSLock()
     public let directory: URL
     private let pluginsFile: URL
-    private let grantsFile: URL
+    private let permissionStorage: PluginPermissionStorage
 
-    public init(directory: URL? = nil) throws {
+    public convenience init(directory: URL? = nil) throws {
+        try self.init(directory: directory, beforePermissionCommit: nil)
+    }
+
+    init(directory: URL?, beforePermissionCommit: (@Sendable () throws -> Void)?) throws {
         let fallback = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("exteraless/plugins", isDirectory: true)
         let base = directory
@@ -336,7 +495,8 @@ public final class PluginStore: @unchecked Sendable {
                 .appendingPathComponent("exteraless/plugins")
         self.directory = base ?? fallback
         pluginsFile = self.directory.appendingPathComponent("plugins.json")
-        grantsFile = self.directory.appendingPathComponent("grants.json")
+        permissionStorage = PluginPermissionStorage(url: self.directory.appendingPathComponent("grants.json"),
+                                                    beforeCommit: beforePermissionCommit)
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }
 
@@ -353,6 +513,8 @@ public final class PluginStore: @unchecked Sendable {
     }
 
     public func savePlugins(_ plugins: [Plugin]) throws {
+        lock.lock()
+        defer { lock.unlock() }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(plugins)
@@ -361,29 +523,37 @@ public final class PluginStore: @unchecked Sendable {
 
     // MARK: Разрешения
 
-    public func loadGrants() -> [String: [PluginPermission]] {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let data = try? Data(contentsOf: grantsFile),
-              let raw = (try? JSONDecoder().decode([String: [String]].self, from: data)) else { return [:] }
-        return raw.mapValues { $0.compactMap(PluginPermission.init(rawValue:)) }
+    public func loadPermissionRecords() throws -> [String: PluginPermissionRecord] {
+        try permissionStorage.load()
     }
 
-    public func saveGrants(_ grants: [String: [PluginPermission]]) {
-        let raw = grants.mapValues { $0.map(\.rawValue) }
-        guard let data = try? JSONEncoder().encode(raw) else { return }
-        try? atomicWrite(data, to: grantsFile)
+    func updatePermissionRecords(isCurrent: @Sendable () -> Bool = { true },
+                                 _ change: (inout [String: PluginPermissionRecord]) throws -> Void) throws -> [String: PluginPermissionRecord] {
+        try permissionStorage.update(isCurrent: isCurrent, change)
+    }
+
+    /// Legacy raw-grant projection. Loading also durably migrates missing levels.
+    public func loadGrants() throws -> [String: [PluginPermission]] {
+        try loadPermissionRecords().mapValues(\.orderedGrants)
+    }
+
+    /// Legacy bulk save must not erase or re-infer an existing explicit level.
+    /// Existing ceilings cap incoming grants; only new records infer their tier
+    /// from this explicit native consent. Omitted records are removed as before.
+    public func saveGrants(_ grants: [String: [PluginPermission]]) throws {
+        _ = try permissionStorage.update { records in
+            var next: [String: PluginPermissionRecord] = [:]
+            for (id, values) in grants {
+                let level = records[id]?.level ?? .migrating(rawGrants: values)
+                next[id] = PluginPermissionRecord(level: level, grants: values.filter { level.allows($0) })
+            }
+            records = next
+        }
     }
 
     // MARK: Вспомогательное
 
     private func atomicWrite(_ data: Data, to url: URL) throws {
-        let temporary = url.appendingPathExtension("tmp")
-        try data.write(to: temporary, options: .atomic)
-        if FileManager.default.fileExists(atPath: url.path) {
-            _ = try FileManager.default.replaceItemAt(url, withItemAt: temporary)
-        } else {
-            try FileManager.default.moveItem(at: temporary, to: url)
-        }
+        try data.write(to: url, options: .atomic)
     }
 }

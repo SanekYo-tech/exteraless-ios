@@ -1,0 +1,135 @@
+diff --git a/python/exteraless_runtime/_platform.py b/python/exteraless_runtime/_platform.py
+--- a/python/exteraless_runtime/_platform.py
++++ b/python/exteraless_runtime/_platform.py
+@@ -320,6 +320,8 @@ class Platform:
+         _config.install(self)
+         _pill_types.install()
+         _pills.install(self, client)
++        from . import _developer
++        _developer.install(self)
+         from virtualjava.registry import register_native_metadata
+         register_native_metadata("exteraless.ios.Runtime", lambda member: self.call(
+             member, fqcn="exteraless.ios.Runtime", op="member_kind"))
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift
+new file mode 100644
+--- /dev/null
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift
+@@ -0,0 +1,80 @@
++import ExteralessCore
++import Foundation
++import PluginHost
++
++/// Owner-scoped listener controls only. Host-wide authenticated commands remain
++/// in PluginDeveloperServer/ExteralessPluginRuntime, never in Python dispatch.
++final class PluginDeveloperBridgeExtension: PluginBridgeExtension, @unchecked Sendable {
++    private static let methods: Set<String> = [
++        "getDeveloperServerState", "requestDeveloperServerStart", "requestDeveloperServerStop",
++    ]
++    let exportedMethods: [String: Set<String>] = ["exteraless.ios.Runtime": PluginDeveloperBridgeExtension.methods]
++    private let snapshot: @Sendable () -> PluginDeveloperConnectionState
++    private let enabled: @Sendable () -> Bool
++    private let captureOwner: @Sendable (String) -> PluginHost.CallbackOwner?
++    private let permits: @Sendable (String, PluginPermission) -> Bool
++    private let queue: ExteraConfigCommandQueue<PluginHost.CallbackOwner>
++
++    init(snapshot: @escaping @Sendable () -> PluginDeveloperConnectionState,
++         enabled: @escaping @Sendable () -> Bool,
++         captureOwner: @escaping @Sendable (String) -> PluginHost.CallbackOwner?,
++         permits: @escaping @Sendable (String, PluginPermission) -> Bool,
++         apply: @escaping @MainActor @Sendable (Bool, PluginConfigAuthority) async throws -> Void,
++         failed: @escaping @Sendable (String, Error) -> Void) {
++        self.snapshot = snapshot
++        self.enabled = enabled
++        self.captureOwner = captureOwner
++        self.permits = permits
++        // Reuse bounded, generation-scoped native admission. Here developer(true)
++        // means retry an already opted-in listener, never write the setting true.
++        self.queue = ExteraConfigCommandQueue(apply: { owner, mutation in
++            guard case let .developer(start) = mutation else {
++                throw BridgeFailure.malformed("Expected a native developer listener request")
++            }
++            let current: @Sendable () -> Bool = {
++                captureOwner(owner.pluginId) == owner && permits(owner.pluginId, .settings)
++            }
++            guard current() else {
++                throw BridgeFailure.invalidHandle("Developer control owner or settings grant expired")
++            }
++            try await apply(start, PluginConfigAuthority(isCurrent: current))
++        }, failed: { owner, _, error in failed(owner.pluginId, error) })
++    }
++
++    func dispatch(requestJSON: String, pluginId: String) throws -> String? {
++        guard let request = try NativeServiceRequest(json: requestJSON, members: Self.methods) else { return nil }
++        if request.memberKind { return try PluginBridgeJSON.success(.string("method")) }
++        try request.requireArguments(0)
++        guard let token = request.ownerToken, let owner = captureOwner(pluginId), owner.wireToken == token else {
++            throw BridgeFailure.invalidHandle("Developer controls require the current immutable C owner epoch")
++        }
++        guard permits(pluginId, .settings) else {
++            throw BridgeFailure.permission("Native developer controls require settings permission")
++        }
++        let enabled = self.enabled()
++        if request.member == "getDeveloperServerState" {
++            let connection = snapshot()
++            // Native token presence is published only by NWListener.State.ready.
++            // Project that readiness bit; never serialize/log the credential.
++            return try PluginBridgeJSON.success(.object([
++                "ready": .bool(enabled && connection.token != nil),
++                "enabled": .bool(enabled), "status": .string(connection.status),
++            ]))
++        }
++        let start = request.member == "requestDeveloperServerStart"
++        guard !start || enabled else {
++            throw BridgeFailure.permission("Developer mode must already be enabled in the native manager")
++        }
++        let id: String
++        do { id = try queue.enqueue(owner: owner, mutation: .developer(start)) }
++        catch ExteraConfigCommandError.queueFull {
++            throw BridgeFailure.unavailable("Native developer control queue is full")
++        }
++        return try PluginBridgeJSON.success(.object(["accepted": .bool(true), "operationId": .string(id)]))
++    }
++
++    func releaseInstances(pluginId: String) {
++        let current = captureOwner(pluginId)
++        queue.retire { $0.pluginId == pluginId && $0 != current }
++    }
++}
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@ -232,8 +232,33 @@ public final class ExteralessPluginRuntime: PluginHostDelegate {
+                     failed: { id, field, error in
+                         logs.append(pluginId: id, level: .error, message: "Global plugin config \(field) failed: \(error)")
+                     })
++                let developer = PluginDeveloperBridgeExtension(
++                    snapshot: { [server = self.developerServer] in server.snapshot },
++                    enabled: {
++                        let state = managerStore.snapshot
++                        return state.developerMode && state.permitsPluginExecution
++                    },
++                    captureOwner: { callbacks.captureOwner($0) },
++                    permits: { callbacks.hasPermission($0, $1) },
++                    apply: { [weak self] start, authority in
++                        guard let self, !self.terminating else { throw PluginHostError.notRunning }
++                        guard authority.isCurrent() else { throw PluginHostError.superseded("Developer control owner retired") }
++                        if start {
++                            try self.requirePluginExecution()
++                            guard self.managerPreferences?.snapshot.developerMode == true,
++                                  self.host?.isRunning == true else {
++                                throw PluginHostError.runtimeFailure("Developer service is not active")
++                            }
++                            self.updateDeveloperServer()
++                        } else {
++                            try await self.updateManagerPreference(.developer(false), authority: authority)
++                        }
++                    },
++                    failed: { id, error in
++                        logs.append(pluginId: id, level: .error, message: "Native developer control failed: \(error)")
++                    })
+                 host.bridge.extensionProvider = CompositePluginBridgeExtension([
+-                    ui, ClientSettingsBridgeExtension(permits: { callbacks.hasPermission($0, $1) }), pluginConfig, tl, native, pills,
++                    ui, ClientSettingsBridgeExtension(permits: { callbacks.hasPermission($0, $1) }), pluginConfig, developer, tl, native, pills,
+                 ])
+                 host.bridge.onOwnedCallback = { [weak self, weak host] pluginId, ownerToken, handle, method, json, delayMs in
+                     // Capture the generation on the C worker, before the main

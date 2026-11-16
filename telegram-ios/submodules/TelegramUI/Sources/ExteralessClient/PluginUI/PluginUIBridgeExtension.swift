@@ -14,23 +14,31 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
     public static let menuItemsDidChange = Notification.Name("ExteralessNativePluginMenuItemsDidChange")
     public typealias CaptureOwner = @Sendable (String) -> PluginHost.CallbackOwner?
     public typealias Callback = @Sendable (PluginHost.CallbackOwner, Int64, String, String) -> Bool
+    public typealias ControlledCallback = @Sendable (PluginHost.CallbackOwner, Int64, String, String, @escaping @Sendable () -> Bool) -> Bool
     public typealias Release = @Sendable (PluginHost.CallbackOwner, [Int64]) -> Bool
     public typealias Permission = @Sendable (String, PluginPermission) -> Bool
     public typealias AccountIndex = @Sendable (Int64) -> Int32?
     public typealias SettingsController = @MainActor (AccountContext, String, String, [String]) -> ViewController?
     public typealias Presenter = @MainActor (AccountContext) -> ViewController?
     public typealias ResolveShareFile = @Sendable (String, String) throws -> URL
+    public typealias ClassifyShareFile = @Sendable (String, String) throws -> PluginResourcePath
+    public typealias SchedulePresentation = @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void
+    typealias LinkInterceptor = @MainActor (URL, @escaping @MainActor () -> Void) -> Bool
+    typealias LinkOpener = @MainActor (URL, @escaping @Sendable () -> Void) -> Void
 
     typealias Store = PluginUILeaseStore<PluginHost.CallbackOwner>
     let leases: Store
     let captureOwner: CaptureOwner
     let hasPermission: Permission
     let accountIndex: AccountIndex
-    private let callback: Callback
+    private let deliveryCallback: @Sendable (Store.Delivery) -> Bool
+    private let permissionAdmission: PluginPermissionAdmission
     private let releaseQueue: PluginUIReleaseQueue<PluginHost.CallbackOwner>
     private let settingsController: SettingsController
     private let presenter: Presenter?
     private let resolveShareFile: ResolveShareFile?
+    private let classifyShareFile: ClassifyShareFile?
+    private let schedulePresentation: SchedulePresentation
     private let effectBudget: PluginNativeEffectBudget
     private let menuUpdateLock = NSLock()
     private var menuUpdateScheduled = false
@@ -46,15 +54,29 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
                 release: @escaping Release, hasPermission: @escaping Permission,
                 accountIndex: @escaping AccountIndex, settingsController: @escaping SettingsController,
                 presenter: Presenter? = nil, resolveShareFile: ResolveShareFile? = nil,
-                effectBudget: PluginNativeEffectBudget = PluginNativeEffectBudget()) {
+                effectBudget: PluginNativeEffectBudget = PluginNativeEffectBudget(),
+                permissionAdmission: PluginPermissionAdmission? = nil,
+                controlledCallback: ControlledCallback? = nil,
+                classifyShareFile: ClassifyShareFile? = nil,
+                schedulePresentation: @escaping SchedulePresentation = { work in DispatchQueue.main.async { work() } }) {
         self.captureOwner = captureOwner
-        self.callback = callback
+        self.permissionAdmission = permissionAdmission ?? { id, required in
+            { required.allSatisfy { hasPermission(id, $0) } }
+        }
+        let deliveryCallback: @Sendable (Store.Delivery) -> Bool = { delivery in
+            guard let json = try? delivery.arguments.encoded() else { return false }
+            if let controlledCallback {
+                return controlledCallback(delivery.owner, delivery.handle, "__call__", json, delivery.permissionIsCurrent)
+            }
+            // Legacy synchronous native fixture transport: a revoked body is
+            // consumed, not retried forever ahead of its owner-FIFO release.
+            guard delivery.permissionIsCurrent() else { return true }
+            return callback(delivery.owner, delivery.handle, "__call__", json)
+        }
+        self.deliveryCallback = deliveryCallback
         let leases = Store()
         self.leases = leases
-        self.releaseQueue = PluginUIReleaseQueue(isCurrent: { captureOwner($0.pluginId) == $0 }, callback: { delivery in
-            guard let json = try? delivery.arguments.encoded() else { return false }
-            return callback(delivery.owner, delivery.handle, "__call__", json)
-        }, release: release, completed: { retirement in
+        self.releaseQueue = PluginUIReleaseQueue(isCurrent: { captureOwner($0.pluginId) == $0 }, callback: deliveryCallback, release: release, completed: { retirement in
             leases.completeRetirement(id: retirement.id, owner: retirement.owner)
         })
         self.hasPermission = hasPermission
@@ -62,6 +84,8 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         self.settingsController = settingsController
         self.presenter = presenter
         self.resolveShareFile = resolveShareFile
+        self.classifyShareFile = classifyShareFile
+        self.schedulePresentation = schedulePresentation
         self.effectBudget = effectBudget
     }
 
@@ -162,15 +186,18 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             let callbacks = try PluginUICallback.map(args[2])
             let scope = try self.scope()
             try self.requireModelPermissions(model, pluginId: pluginId)
+            let resources = try self.admitModelResources(model, pluginId: pluginId)
             let effect = try self.retainedEffect(owner: acceptedOwner, scope: scope, execution: execution,
-                bytes: args[1].encoded().utf8.count, intents: kind == .share)
+                bytes: args[1].encoded().utf8.count + resources.files.reduce(0) { $0 + $1.url.path.utf8.count },
+                permissionIsCurrent: resources.permissionIsCurrent)
             try self.validateAssets(model, effect: effect, scope: scope)
             let entry = try self.leases.accept(pluginId: pluginId, owner: acceptedOwner, content: .presentation(model), callbacks: callbacks,
-                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) })
-            self.enqueuePresentation(entry.state.id, effect: effect)
+                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) },
+                permissionIsCurrent: resources.permissionIsCurrent)
+            self.enqueuePresentation(entry.state.id, effect: effect, shareFiles: resources.files)
             return .object(["id": .string(entry.state.id.uuidString)])
         case "uiUpdate":
-            try arity(2)
+            guard args.count == 2 || args.count == 3 else { throw PluginUIFailure.malformed("uiUpdate expects model and optional settings transaction") }
             let uuid = try id(args[0])
             let previous = try self.leases.entry(id: uuid, pluginId: pluginId)
             guard previous.owner == acceptedOwner else { throw PluginUIFailure.invalidHandle("UI update belongs to another interpreter lifetime") }
@@ -183,17 +210,29 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             let candidate = try previousModel.applying(patch)
             try candidate.validateCallbacks(Set(previous.callbacks.keys))
             let effect = try self.retainedEffect(owner: acceptedOwner, scope: scope, execution: execution,
-                bytes: patch.encoded().utf8.count + PluginUIJSON.object(candidate.raw).encoded().utf8.count)
+                bytes: patch.encoded().utf8.count + PluginUIJSON.object(candidate.raw).encoded().utf8.count,
+                additionalPermissions: self.modelPermissions(candidate, pluginId: pluginId))
             try self.validateAssets(candidate, effect: effect, scope: scope)
             try self.validateOrigin(origin, owner: acceptedOwner, execution: execution)
+            let settingsUpdate: PluginUISettingsUpdate?
+            if args.count == 3 {
+                settingsUpdate = try self.leases.reserveSettingsUpdate(id: uuid, pluginId: pluginId, owner: acceptedOwner,
+                    patch: patch, request: args[2], expectedScope: scope,
+                    admission: { try self.validateOrigin(origin, owner: acceptedOwner, execution: execution) })
+            } else {
+                guard previousModel.raw["settingsSnapshotId"] == nil else {
+                    throw PluginUIFailure.invalidHandle("Settings snapshot update requires a native completion lease")
+                }
+                settingsUpdate = nil
+            }
             // No committed model/revision is changed on the C worker. A revoked
             // queued patch cannot leak into a later independent partial update.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { effect.finish(); return }
                 self.applyUpdate(id: uuid, pluginId: pluginId, owner: acceptedOwner, scope: scope,
-                    patch: patch, origin: origin, execution: execution, effect: effect)
+                    patch: patch, origin: origin, execution: execution, effect: effect, settingsUpdateId: settingsUpdate?.id)
             }
-            return .null
+            return settingsUpdate.map { .object(["id": .string($0.id.uuidString)]) } ?? .null
         case "uiState":
             try arity(1)
             let uuid = try id(args[0])
@@ -249,6 +288,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         case "uiNavigate":
             guard args.count == 1 || args.count == 2 else { throw PluginUIFailure.malformed("uiNavigate expects a route model and optional callbacks") }
             try self.require(.intents, pluginId: pluginId)
+            let permissionCurrent = self.permissionAdmission(pluginId, [.ui, .intents])
             let scope = try self.scope()
             let effect = try self.retainedEffect(owner: acceptedOwner, scope: scope, execution: execution, bytes: args[0].encoded().utf8.count, intents: true)
             let callbacks: [String: PluginUICallback]
@@ -267,7 +307,8 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             } else { content = .navigation(try PluginUINavigationModel(args[0])) }
             if case let .presentation(model) = content { try self.validateAssets(model, effect: effect, scope: scope) }
             let entry = try self.leases.accept(pluginId: pluginId, owner: acceptedOwner, content: content, callbacks: callbacks,
-                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) })
+                expectedScope: scope, admission: { try self.validateNewLease(origin, owner: acceptedOwner, execution: execution) },
+                permissionIsCurrent: permissionCurrent)
             self.enqueuePresentation(entry.state.id, effect: effect)
             return .object(["id": .string(entry.state.id.uuidString)])
         case "uiRefreshSettings":
@@ -367,6 +408,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
     }
 
     private func requireOwner(_ entry: Store.Entry) throws {
+        guard entry.permissionIsCurrent() else { throw PluginUIFailure.permission("UI permission lease expired") }
         guard self.isCurrent(owner: entry.owner, scope: entry.state.scope) else { throw PluginUIFailure.invalidHandle("UI lease belongs to a retired plugin/account lifetime") }
     }
 
@@ -389,23 +431,74 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         try self.require(.ui, pluginId: pluginId)
         if model.kind == .share {
             try self.require(.intents, pluginId: pluginId)
-            if !model.files.isEmpty && self.resolveShareFile == nil { throw PluginUIFailure.unavailable("Native authorised share-file resolver is not installed") }
+            if !model.files.isEmpty && self.classifyShareFile == nil { throw PluginUIFailure.unavailable("Native share-file ownership classifier is not installed") }
         }
     }
 
     private func retainedEffect(owner: PluginHost.CallbackOwner, scope: PluginUIScope, execution: PluginNativeCallLease,
-                                bytes: Int, intents: Bool = false) throws -> PluginUIRetainedEffect {
+                                bytes: Int, intents: Bool = false, additionalPermissions: Set<PluginPermission> = [],
+                                permissionIsCurrent: (@Sendable () -> Bool)? = nil) throws -> PluginUIRetainedEffect {
+        let required: Set<PluginPermission> = intents ? [.ui, .intents] : [.ui]
+        let permissionCurrent = permissionIsCurrent ?? self.permissionAdmission(owner.pluginId, required.union(additionalPermissions))
         return try PluginUIRetainedEffect(budget: self.effectBudget, pluginId: owner.pluginId, bytes: bytes, isCurrent: { [weak self] in
             guard let self else { return false }
             return execution.isCurrent && self.isCurrent(owner: owner, scope: scope)
-                && (!intents || self.hasPermission(owner.pluginId, .intents))
+                && permissionCurrent()
         })
     }
 
-    private func enqueuePresentation(_ id: UUID, effect: PluginUIRetainedEffect) {
+    private func modelPermissions(_ model: PluginUIModel, pluginId: String) -> Set<PluginPermission> {
+        var required: Set<PluginPermission> = [.ui]
+        if model.kind == .share {
+            required.insert(.intents)
+        }
+        return required
+    }
+
+    struct ModelResources: Sendable {
+        let files: [PluginResourcePath]
+        let permissionIsCurrent: @Sendable () -> Bool
+    }
+
+    /// Runs on the originating C worker, before resource validation/main hops.
+    /// Ownership determines dependencies; current grants never classify a path.
+    func admitModelResources(_ model: PluginUIModel, pluginId: String) throws -> ModelResources {
+        var required = self.modelPermissions(model, pluginId: pluginId)
+        var files: [PluginResourcePath] = []
+        if model.kind == .share && !model.files.isEmpty {
+            guard let classify = self.classifyShareFile else { throw PluginUIFailure.unavailable("Native share-file ownership classifier is not installed") }
+            files = try model.files.map { try classify(pluginId, $0) }
+            if files.contains(where: \.requiresFiles) { required.insert(.files) }
+        }
+        let permissionCurrent = self.permissionAdmission(pluginId, required)
+        guard permissionCurrent() else { throw PluginUIFailure.permission("Share permission admission expired or missing") }
+        for file in files {
+            let url = try file.validatedURL()
+            if let resolve = self.resolveShareFile {
+                guard try resolve(pluginId, url.path) == url else { throw PluginUIFailure.invalidHandle("Share resolver changed the admitted resource") }
+            }
+            guard permissionCurrent() else { throw PluginUIFailure.permission("Share permission expired during file validation") }
+            guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                throw PluginUIFailure.unavailable("Shared file is missing or is not a regular file")
+            }
+        }
+        guard permissionCurrent() else { throw PluginUIFailure.permission("Share permission expired before presentation admission") }
+        return ModelResources(files: files, permissionIsCurrent: permissionCurrent)
+    }
+
+    public func permissionsChanged(pluginId: String) {
+        let retired = self.leases.retirePermissions(pluginId: pluginId)
+        for retirement in retired { self.retire(retirement) }
         DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for retirement in retired { self.removeNative(id: retirement.id, animated: false) }
+        }
+    }
+
+    private func enqueuePresentation(_ id: UUID, effect: PluginUIRetainedEffect, shareFiles: [PluginResourcePath] = []) {
+        self.schedulePresentation { [weak self] in
             guard let self else { effect.finish(); return }
-            self.presentPending(id: id, effect: effect)
+            self.presentPending(id: id, effect: effect, shareFiles: shareFiles)
         }
     }
 
@@ -432,7 +525,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         }
     }
 
-    @MainActor private func presentPending(id: UUID, effect: PluginUIRetainedEffect) {
+    @MainActor private func presentPending(id: UUID, effect: PluginUIRetainedEffect, shareFiles: [PluginResourcePath]) {
         defer { effect.finish() }
         guard effect.permitsExecution else {
             self.finishPresentation(id: id, reason: "executionRevoked", notify: false)
@@ -490,7 +583,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
                     }
                 }
                 if model.kind == .share {
-                    try self.presentShare(model, entry: entry, presenter: presenter, effect: effect)
+                    try self.presentShare(model, entry: entry, presenter: presenter, effect: effect, files: shareFiles)
                 } else if model.kind == .settings && model.raw["rows"] == nil {
                     try self.requireNativeEffect(effect)
                     guard let navigation = self.navigationController(context, presenter: presenter),
@@ -562,7 +655,8 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         guard effect.permitsExecution else { throw PluginUIFailure.invalidHandle("Originating native UI execution expired") }
     }
 
-    @MainActor private func presentShare(_ model: PluginUIModel, entry: Store.Entry, presenter: ViewController, effect: PluginUIRetainedEffect) throws {
+    @MainActor private func presentShare(_ model: PluginUIModel, entry: Store.Entry, presenter: ViewController, effect: PluginUIRetainedEffect, files: [PluginResourcePath]) throws {
+        guard files.count == model.files.count else { throw PluginUIFailure.invalidHandle("Share resources were not admitted with this presentation") }
         var items: [Any] = []
         let mime = try model.raw.uiString("mimeType", limit: 256)
         let type: UTType?
@@ -579,11 +673,13 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             items.append(PluginUIShareItemSource(text: model.text, title: model.title, type: textType))
         }
         if let text = model.url { items.append(PluginUIShareItemSource(url: try PluginUIModel.validateURL(text), type: nil, title: model.title)) }
-        for path in model.files {
-            guard let resolve = self.resolveShareFile else { throw PluginUIFailure.unavailable("Authorised share-file resolver is unavailable") }
-            let url = try resolve(entry.state.pluginId, path)
-            var directory: ObjCBool = false
-            guard url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &directory), !directory.boolValue else {
+        for file in files {
+            try self.requireOwner(entry)
+            try self.requireNativeEffect(effect)
+            // Replaces the former main-thread resolver/stat work. No new roots,
+            // grant decisions or resource targets are chosen at presentation.
+            let url = try file.validatedURL()
+            guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
                 throw PluginUIFailure.unavailable("An authorised share file is no longer available")
             }
             items.append(PluginUIShareItemSource(url: url, type: type, title: model.title))
@@ -647,8 +743,14 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
 
     @MainActor private func applyUpdate(id: UUID, pluginId: String, owner: PluginHost.CallbackOwner, scope: PluginUIScope,
                                        patch: PluginUIJSON, origin: PluginUIRequestOrigin, execution: PluginNativeCallLease,
-                                       effect: PluginUIRetainedEffect) {
-        defer { effect.finish() }
+                                       effect: PluginUIRetainedEffect, settingsUpdateId: UUID? = nil) {
+        var rejection: PluginUIFailure? = .invalidHandle("Settings update was revoked before native commit")
+        defer {
+            if let settingsUpdateId, let retirement = self.leases.finishSettingsUpdate(id: id, updateId: settingsUpdateId, failure: rejection) {
+                self.retire(retirement)
+            }
+            effect.finish()
+        }
         guard effect.permitsExecution, let previous = self.leases.entry(id: id), previous.owner == owner,
               previous.state.scope == scope, previous.state.phase != .dismissing,
               case let .presentation(model) = previous.content, let context = self.accountContext else { return }
@@ -657,17 +759,23 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             // Native model commit and render share this synchronous main turn.
             // Only this commit, not C queue acceptance, admits the visible update.
             _ = try self.leases.update(id: id, pluginId: pluginId, patch: patch, expectedScope: scope,
+                settingsUpdateId: settingsUpdateId,
                 admission: { try self.validateOrigin(origin, owner: owner, execution: execution) })
             self.applyLatest(id: id)
+            rejection = nil
         } catch let failure as PluginUIFailure {
-            if effect.permitsExecution { self.failPresentation(id: id, failure: failure) }
+            rejection = failure
+            if settingsUpdateId == nil, effect.permitsExecution { self.failPresentation(id: id, failure: failure) }
         } catch {
-            if effect.permitsExecution { self.failPresentation(id: id, failure: .unavailable("Native UI update could not be applied")) }
+            let failure = PluginUIFailure.unavailable("Native UI update could not be applied")
+            rejection = failure
+            if settingsUpdateId == nil, effect.permitsExecution { self.failPresentation(id: id, failure: failure) }
         }
     }
 
     @MainActor func canAct(id: UUID, revision: Int64) -> Bool {
         guard let entry = self.leases.entry(id: id), entry.state.revision == revision,
+              entry.settingsUpdate?.committed != true,
               entry.state.phase == .presented, entry.state.isPresented,
               self.presentations[id]?.controller.viewIfLoaded?.window != nil else { return false }
         return self.isCurrent(owner: entry.owner, scope: entry.state.scope)
@@ -689,7 +797,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
             event["id"] = .string(id.uuidString)
             event["event"] = .string("back")
             if reason != nil { event["_uiFinal"] = .bool(true) }
-            if !self.deliver(Store.Delivery(owner: entry.owner, handle: back.handle, arguments: .array([.object(event)]))) {
+            if !self.deliver(Store.Delivery(owner: entry.owner, handle: back.handle, arguments: .array([.object(event)]), permissionIsCurrent: entry.permissionIsCurrent)) {
                 self.failPresentation(id: id, failure: .unavailable("Owner queue could not accept back callback"))
                 return false
             }
@@ -707,7 +815,8 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         let _ = self.handleEvent(id: id, revision: entry.state.revision, name: model.style == "undo" ? "action" : "timeout", payload: ["reason": .string("timeout")], reason: "timeout")
     }
 
-    @MainActor private func openLink(id: UUID, revision: Int64, url: URL) throws {
+    @MainActor func openLink(id: UUID, revision: Int64, url: URL,
+                            intercept: LinkInterceptor? = nil, open: LinkOpener? = nil) throws {
         guard self.canAct(id: id, revision: revision), let entry = self.leases.entry(id: id) else {
             throw PluginUIFailure.invalidHandle("Link belongs to an outdated UI scope")
         }
@@ -718,21 +827,29 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
         let owner = entry.owner
         let scope = entry.state.scope
         let pluginId = entry.state.pluginId
+        // This tap is a new effect; the UI-only parent keeps its narrower lease.
+        let permissionCurrent = self.permissionAdmission(pluginId, [.ui, .intents])
+        guard permissionCurrent() else { throw PluginUIFailure.permission("Link permission admission expired") }
         let effect = try PluginUIRetainedEffect(budget: self.effectBudget, pluginId: pluginId,
             bytes: destination.absoluteString.utf8.count, isCurrent: { [weak self] in
-                self?.isCurrent(owner: owner, scope: scope) == true
+                self?.isCurrent(owner: owner, scope: scope) == true && permissionCurrent()
             })
-        let original: @MainActor () -> Void = { [weak self] in
-            guard let self, effect.permitsExecution, self.accountContext === context, self.canAct(id: id, revision: revision),
-                  self.hasPermission(pluginId, .intents) else { effect.finish(); return }
-            UIApplication.shared.open(destination, options: [:], completionHandler: { _ in effect.finish() })
+        let performOpen: LinkOpener = open ?? { destination, completed in
+            UIApplication.shared.open(destination, options: [:], completionHandler: { _ in completed() })
         }
-        if !NativeServiceOpenHooks.shared.interceptURL(context: context, url: destination, original: original) { original() }
+        let original: @MainActor () -> Void = { [weak self] in
+            guard let self, effect.permitsExecution, self.accountContext === context, self.canAct(id: id, revision: revision) else { effect.finish(); return }
+            performOpen(destination, { effect.finish() })
+        }
+        let interceptOpen: LinkInterceptor = intercept ?? { destination, original in
+            NativeServiceOpenHooks.shared.interceptURL(context: context, url: destination, original: original)
+        }
+        if !interceptOpen(destination, original) { original() }
     }
 
-    @MainActor private func completeShare(id: UUID, completed: Bool, activity: String?, failed: Bool) {
+    @MainActor func completeShare(id: UUID, completed: Bool, activity: String?, failed: Bool) {
         guard let entry = self.leases.entry(id: id) else { return }
-        guard self.isCurrent(owner: entry.owner, scope: entry.state.scope), self.hasPermission(entry.state.pluginId, .intents) else { self.finishPresentation(id: id, notify: false); return }
+        guard entry.permissionIsCurrent(), self.isCurrent(owner: entry.owner, scope: entry.state.scope) else { self.finishPresentation(id: id, notify: false); return }
         let payload: [String: PluginUIJSON] = ["completed": .bool(completed), "activityType": activity.map(PluginUIJSON.string) ?? .null]
         if let result = try? self.leases.beginDismiss(id: id, pluginId: entry.state.pluginId, reason: failed ? "failed" : (completed ? "completed" : "cancel"), callbackName: completed ? "action" : "cancel", payload: payload), let delivery = result.delivery, !self.deliver(delivery) {
             self.failPresentation(id: id, failure: .unavailable("Owner queue could not accept share completion"))
@@ -770,8 +887,7 @@ public final class PluginUIBridgeExtension: PluginBridgeExtension, @unchecked Se
     }
 
     @discardableResult func deliver(_ delivery: Store.Delivery) -> Bool {
-        guard let json = try? delivery.arguments.encoded() else { return false }
-        return self.callback(delivery.owner, delivery.handle, "__call__", json)
+        return self.deliveryCallback(delivery)
     }
 
     private func retire(_ retirement: Store.Retirement) {

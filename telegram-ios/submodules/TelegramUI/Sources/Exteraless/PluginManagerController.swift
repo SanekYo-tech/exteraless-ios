@@ -26,8 +26,9 @@ public struct PluginManagerActions {
     /// Capture the current interpreter/account scope when a settings page opens.
     /// nil preserves the application runtime-owned scope provider.
     public let settingsScope: ((String) -> (@MainActor () -> Bool))?
+    public let trust: PluginManagerTrustActions?
 
-    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil, controls: PluginManagerControls? = nil, settingsScope: ((String) -> (@MainActor () -> Bool))? = nil) {
+    public init(status: @escaping () -> String, snapshot: @escaping () -> [Plugin], importPlugin: @escaping (URL) async throws -> Void, setEnabled: @escaping (String, Bool) async throws -> Void, remove: @escaping (String) async throws -> Void, settings: @escaping (String) async throws -> String, updateSetting: @escaping (String, String, String) async throws -> Void, click: @escaping (String, String) async throws -> Void, logs: @escaping () -> [String], permissions: ((String) -> [PluginPermission])? = nil, setPermissions: ((String, [PluginPermission]) async throws -> Void)? = nil, controls: PluginManagerControls? = nil, settingsScope: ((String) -> (@MainActor () -> Bool))? = nil, trust: PluginManagerTrustActions? = nil) {
         self.status = status
         self.snapshot = snapshot
         self.importPlugin = importPlugin
@@ -41,6 +42,7 @@ public struct PluginManagerActions {
         self.setPermissions = setPermissions
         self.controls = controls
         self.settingsScope = settingsScope
+        self.trust = trust
     }
 }
 
@@ -62,7 +64,8 @@ public struct PluginManagerActions {
         permissions: { runtime.grantedPermissions(id: $0) },
         setPermissions: { id, permissions in try await runtime.setPermissions(id: id, permissions: permissions) },
         controls: runtime.managerControls(),
-        settingsScope: { id in runtime.settingsScope(context: context, pluginId: id) }
+        settingsScope: { id in runtime.settingsScope(context: context, pluginId: id) },
+        trust: runtime.managerTrustActions(context: context)
     ))
 }
 
@@ -89,6 +92,9 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     private var presentationState: PluginManagerPresentationState?
     private var developerConnection: PluginDeveloperConnectionState?
     private var recovery: PluginRuntimeRecoverySnapshot?
+    private var trustSnapshot: PluginPermissionSnapshot?
+    private let trustPage = PluginUISettingsPageGate()
+    private var pendingTrustImport: (PluginImportCopy, Plugin)?
 
     private var permitsPluginExecution: Bool { self.presentationState?.permitsPluginExecution ?? true }
 
@@ -105,10 +111,13 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
 
     deinit {
         self.pollingTimer?.invalidate()
+        self.trustPage.close()
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        self.trustPage.setVisible(true)
+        self.trustPage.publish()
         // No Python is called by this timer. It observes cached startup/watchdog
         // changes even when they originate outside this screen.
         self.pollingTimer?.invalidate()
@@ -118,9 +127,11 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         }, queue: .mainQueue())
         self.pollingTimer = timer
         timer.start()
+        self.presentPendingTrustImport()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
+        self.trustPage.setVisible(false)
         self.pollingTimer?.invalidate()
         self.pollingTimer = nil
         super.viewWillDisappear(animated)
@@ -135,6 +146,9 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         let presentation = self.actions.controls?.snapshot()
         let connection = self.actions.controls?.developerConnection()
         let recovery = self.actions.controls?.recovery()
+        let trustSnapshot: PluginPermissionSnapshot?
+        if case let .plugin(id) = self.mode { trustSnapshot = self.actions.trust?.snapshot(id) }
+        else { trustSnapshot = nil }
         let plugins = self.actions.snapshot().sorted { lhs, rhs in
             if let presentation { return presentation.precedes(id: lhs.id, title: lhs.displayName, id: rhs.id, title: rhs.displayName) }
             let comparison = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
@@ -148,13 +162,15 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
                 return String(prefix) + (prefix.endIndex == line.endIndex ? "" : "\n…")
             }
         }
-        if force || plugins != self.plugins || status != self.runtimeStatus || logs != self.logLines || presentation != self.presentationState || connection != self.developerConnection || recovery != self.recovery {
+        if force || plugins != self.plugins || status != self.runtimeStatus || logs != self.logLines || presentation != self.presentationState || connection != self.developerConnection || recovery != self.recovery || trustSnapshot != self.trustSnapshot {
             self.plugins = plugins
             self.runtimeStatus = status
             self.logLines = logs
             self.presentationState = presentation
             self.developerConnection = connection
             self.recovery = recovery
+            self.trustSnapshot = trustSnapshot
+            self.trustPage.publish()
             self.render()
         }
     }
@@ -207,7 +223,7 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
                 return
             }
         }
-        var importRow = PluginListRow(id: "import", title: pluginText("Import.File", "Import plugin"), detail: pluginText("Import.Formats", "Choose a .plugin or .py file in Files."))
+        var importRow = PluginListRow(id: "import", title: pluginText("Import.File", "Import plugin"), detail: pluginText("Import.Formats", "Choose a .plugin, .py, .elyx or .eaf file in Files."))
         importRow.style = .accent
         importRow.enabled = !self.isBusy && !self.isPickingDocument && self.presentationState?.safeMode != true
         importRow.action = { [weak self] in self?.importPressed() }
@@ -327,7 +343,19 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         information.append(PluginListRow(id: "permissions", title: pluginText("Plugin.Permissions", "Declared permissions"), detail: permissions))
         sections.append(PluginListSection(rows: information))
 
-        if let readPermissions = self.actions.permissions, let updatePermissions = self.actions.setPermissions {
+        if let trust = self.actions.trust {
+            let snapshot = trust.snapshot(id)
+            sections += pluginTrustSections(record: snapshot.record ?? PluginPermissionRecord(), unsafeMode: snapshot.unsafeMode,
+                busy: self.isBusy || !self.permitsPluginExecution,
+                selectLevel: { [weak self] level in
+                    self?.changeTrust(id: id, expected: snapshot) { edit in try await edit.setLevel(level) }
+                }, selectGrant: { [weak self] permission, granted in
+                    var next = snapshot.grants
+                    if granted { next.insert(permission) } else { next.remove(permission) }
+                    let values = PluginPermission.requestable.filter { next.contains($0) }
+                    self?.changeTrust(id: id, expected: snapshot) { edit in try await edit.setGrants(values) }
+                })
+        } else if let readPermissions = self.actions.permissions, let updatePermissions = self.actions.setPermissions {
             let granted = Set(readPermissions(id))
             var permissionRows: [PluginListRow] = []
             for permission in PluginPermission.requestable {
@@ -434,6 +462,29 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         self.setSections(sections)
     }
 
+    private func changeTrust(id: String, expected: PluginPermissionSnapshot,
+                             operation: @escaping (PluginManagerTrustActions.Edit) async throws -> Void) {
+        guard !self.isBusy, self.permitsPluginExecution, let trust = self.actions.trust else { return }
+        do {
+            let permit = try self.trustPage.capture()
+            let edit = try trust.captureEdit(id, expected, { permit.isCurrent })
+            self.perform(title: "Updating plugin access…", operation: { try await operation(edit) },
+                completion: { [weak self] _ in self?.readSnapshot(force: true) },
+                failed: { [weak self] in self?.readSnapshot(force: true) })
+        } catch { self.errorText = pluginErrorText(error); self.readSnapshot(force: true) }
+    }
+
+    private func presentPendingTrustImport() {
+        guard self.isScreenVisible, !self.isBusy, let pending = self.pendingTrustImport,
+              let trust = self.actions.trust else { return }
+        self.pendingTrustImport = nil
+        let (copy, metadata) = pending
+        let replacing = self.actions.snapshot().contains { $0.id == metadata.id }
+        let initial = replacing ? (trust.snapshot(metadata.id).record ?? PluginPermissionRecord()) : PluginPermissionRecord()
+        self.push(PluginTrustInstallController(context: self.context, copy: copy, metadata: metadata,
+            initial: initial, actions: trust, completed: { [weak self] in self?.readSnapshot(force: true) }))
+    }
+
     private func changeManagerPreference(_ operation: @escaping () async throws -> Void) {
         guard !self.isBusy else { return }
         self.perform(title: pluginText("Runtime.Applying", "Applying manager setting…"), operation: operation,
@@ -503,7 +554,8 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
             // document providers. Validate the extension after selection as well.
             let pluginType = UTType(filenameExtension: "plugin", conformingTo: .data) ?? .data
             let pythonType = UTType(filenameExtension: "py", conformingTo: .text) ?? .text
-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [pluginType, pythonType, .data], asCopy: true)
+            let archiveTypes = ["elyx", "eaf"].compactMap { UTType(filenameExtension: $0, conformingTo: .data) }
+            picker = UIDocumentPickerViewController(forOpeningContentTypes: [pluginType, pythonType, .data] + archiveTypes, asCopy: true)
         } else {
             picker = UIDocumentPickerViewController(documentTypes: ["public.data", "public.python-script"], in: .import)
         }
@@ -530,12 +582,26 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
         self.isPickingDocument = false
         guard let url = urls.first else { self.render(); return }
         let actions = self.actions
+        if let trust = actions.trust {
+            self.perform(title: "Reading plugin metadata…", operation: {
+                let copy = try await PluginImportCopy.create(from: url)
+                let metadata = try await trust.readMetadata(copy.url)
+                return (copy, metadata)
+            }, completion: { [weak self] result in
+                guard let self else { return }
+                // Picker dismissal may complete after metadata. Present only on
+                // this controller's actual appearance, retaining its staged file.
+                self.pendingTrustImport = result
+                self.presentPendingTrustImport()
+            })
+            return
+        }
         self.perform(title: pluginText("Import.Working", "Importing plugin…"), operation: {
             let copy = try await PluginImportCopy.create(from: url)
             defer { try? FileManager.default.removeItem(at: copy.directory) }
             try Task.checkCancellation()
-            // The coordinator parses metadata using native Python AST and copies
-            // the validated source into its durable Application Support store.
+            // The host statically inspects source/ZIP metadata and installs the
+            // original container format in its durable Application Support store.
             try await actions.importPlugin(copy.url)
         }, completion: { [weak self] _ in
             self?.readSnapshot(force: true)
@@ -545,13 +611,16 @@ private final class PluginManagerController: PluginListController, UIDocumentPic
     }
 }
 
-private struct PluginImportCopy: Sendable {
+final class PluginImportCopy: @unchecked Sendable {
     let url: URL
     let directory: URL
 
+    init(url: URL, directory: URL) { self.url = url; self.directory = directory }
+    deinit { try? FileManager.default.removeItem(at: self.directory) }
+
     static func create(from url: URL) async throws -> PluginImportCopy {
-        guard url.isFileURL, ["plugin", "py"].contains(url.pathExtension.lowercased()) else {
-            throw PluginUIError(message: pluginText("Import.InvalidFile", "Choose a .plugin or .py source file."))
+        guard url.isFileURL, ["plugin", "py", "elyx", "eaf"].contains(url.pathExtension.lowercased()) else {
+            throw PluginUIError(message: pluginText("Import.InvalidFile", "Choose a .plugin, .py, .elyx or .eaf file."))
         }
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -573,7 +642,26 @@ private struct PluginImportCopy: Sendable {
                             guard try readableURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
                                 throw PluginUIError(message: pluginText("Import.NotSource", "The selected item is not a regular source file."))
                             }
-                            try manager.copyItem(at: readableURL, to: target)
+                            if ["elyx", "eaf"].contains(target.pathExtension.lowercased()) {
+                                guard try readableURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+                                    throw PluginUIError(message: "An archive must be a regular file, not a symbolic link.")
+                                }
+                                let input = try FileHandle(forReadingFrom: readableURL)
+                                defer { try? input.close() }
+                                try Data().write(to: target, options: .withoutOverwriting)
+                                let output = try FileHandle(forWritingTo: target)
+                                defer { try? output.close() }
+                                var total = 0
+                                while let chunk = try input.read(upToCount: 65_536), !chunk.isEmpty {
+                                    total += chunk.count
+                                    guard total <= 32 * 1024 * 1024 else {
+                                        throw PluginUIError(message: "Elyx archive exceeds the 32 MiB compressed limit.")
+                                    }
+                                    try output.write(contentsOf: chunk)
+                                }
+                            } else {
+                                try manager.copyItem(at: readableURL, to: target)
+                            }
                             didCopy = true
                         } catch {
                             copyError = error

@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-15",
+  "status": "APPLIED_SOURCE_ONLY",
+  "hash_algorithm": "SHA-256",
+  "raw_byte_hash_field": "sha256",
+  "lf_normalized_hash_field": "lf_sha256",
+  "scope_counts": {
+    "shared_patch_paths": 21,
+    "developer_extra_paths": 1,
+    "owned_policy_or_test_paths": 6,
+    "total": 28
+  },
+  "source_checks": {
+    "passed": 167,
+    "protected_files_preserved": 39,
+    "existing_method_bodies_preserved": 32,
+    "throwing_calls_checked": 34,
+    "prepared_tests": {
+      "swift/PluginHost/Tests/PluginHostTests/PluginTrustLevelTests.swift": 9,
+      "swift/PluginHost/Tests/PluginHostTests/PluginTrustHostTests.swift": 4,
+      "telegram-ios/Tests/Exteraless/PluginTrustUIContractsTests.swift": 2
+    }
+  },
+  "native_swift_executed": false,
+  "ui_frames_recorded": false,
+  "ci_queried_or_started": false,
+  "files": [
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/BridgeServices.swift",
+      "role": "shared-integration",
+      "bytes": 52834,
+      "sha256": "f856f35235a9e5bb022fc57a21ddc9986bf4e60876d3b1feb7fea48cf2284a4e",
+      "lf_sha256": "f856f35235a9e5bb022fc57a21ddc9986bf4e60876d3b1feb7fea48cf2284a4e",
+      "before_sha256": "c817d28bd8de0b7f942b790e7a7f060c27089d6a5352769dbcf9d0c1add0cb0a"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceCallback.swift",
+      "role": "shared-integration",
+      "bytes": 15097,
+      "sha256": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69",
+      "lf_sha256": "dbe387306469785d9ed62e37dff967cd9e6fc99cab8c32a3b2253c83b2b4cd69",
+      "before_sha256": "ef7e30b5c6f4fa7348760613918675d4f0976493802c7913aa4689ce7de93e5e"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOpenBarrier.swift",
+      "role": "shared-integration",
+      "bytes": 16030,
+      "sha256": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9",
+      "lf_sha256": "f97529c4feb219f34a9167eb8f867bd040b5f96479bbce42ad623ef82e9e54e9",
+      "before_sha256": "ead0f7c6d6f3ef50a25aef4a91c7389b7d602e54ddfb716894264e4d95648d04"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/NativeServiceOperations.swift",
+      "role": "shared-integration",
+      "bytes": 8662,
+      "sha256": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169",
+      "lf_sha256": "689d7b7c0eb58eac53ed98fcca8dada2baf1060b217354765a2d98213d028169",
+      "before_sha256": "695ff2cef7af8dcad96b28ff329574f0d09764676b5a94189b30d996a8ec3369"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginBridgeExtension.swift",
+      "role": "shared-integration",
+      "bytes": 3204,
+      "sha256": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f",
+      "lf_sha256": "09c7f5dd4234e96c4f8aeaad07de316743d2ff1672a74a53961bd514539cf47f",
+      "before_sha256": "f866c8f895a7268769b1f959f7f1bc34bebcd6e498e3720a5269155b95298c99"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift",
+      "role": "shared-integration",
+      "bytes": 9952,
+      "sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
+      "lf_sha256": "907f1c8f5efe3b167040c73d10c619b8bbe48cd7dd8fc5477b2cc1b4f441f76a",
+      "before_sha256": "7cccd1c47193d3b07fe62cbb0c5006fd2bf207046808df6700c51fc60d33b651"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginHost.swift",
+      "role": "shared-integration",
+      "bytes": 109635,
+      "sha256": "d3bdb01d31f278589fbf9a083f43d44e94ea281e55c4e443dfdc696c7425865d",
+      "lf_sha256": "d3bdb01d31f278589fbf9a083f43d44e94ea281e55c4e443dfdc696c7425865d",
+      "before_sha256": "7da9cc444d453201a88f271683d9eaa706170c6059d515c4debf4db3f99be30f"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginModel.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 27541,
+      "sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0",
+      "lf_sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0",
+      "before_sha256": "10a00a89ddd35dc08eeb21014aab74f77284d6064ff90e297d9eba56985383e0"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginPermissionStorage.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 6573,
+      "sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de",
+      "lf_sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de",
+      "before_sha256": "0748986b22f43478cd5547a193f67af7f366d4f65aa49395af2e3408bb2701de"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustLevel.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 4822,
+      "sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8",
+      "lf_sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8",
+      "before_sha256": "5880f3e6d9a3c00fb6793de3fa286b571350fbb81f4db7287ef8a6f498ea9ca8"
+    },
+    {
+      "path": "swift/PluginHost/Sources/PluginHost/PluginTrustSelection.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 1281,
+      "sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4",
+      "lf_sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4",
+      "before_sha256": "17fad5a79bf6648481b29ee1cfdf85030e0e073f140f9b176c4424cb859335a4"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/BridgeServiceConformanceTests.swift",
+      "role": "shared-integration",
+      "bytes": 38916,
+      "sha256": "d9077faeb3ed8e1d03ce61d4ffefa7ce28e5b9ef1e5ed3baaf363ef98034b346",
+      "lf_sha256": "d9077faeb3ed8e1d03ce61d4ffefa7ce28e5b9ef1e5ed3baaf363ef98034b346",
+      "before_sha256": "b6feec0c93adc4e48c6fd4aaa85c2a248caf8786ab23ac1aabcdd0d15ad6d230"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginHostTests.swift",
+      "role": "shared-integration",
+      "bytes": 21999,
+      "sha256": "d4af3169ed7a96710f891e001c10062b1426df40c453649708a99bf184e79ad7",
+      "lf_sha256": "d4af3169ed7a96710f891e001c10062b1426df40c453649708a99bf184e79ad7",
+      "before_sha256": "dc8214abfd525902b55469029b7def37dee9ab5c2eeaf8c3e1896bcb4c8722e9"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTrustHostTests.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 13713,
+      "sha256": "8fe3e3765cadad192238eaff09936f3872686c835f554c97febd20f90d70d04d",
+      "lf_sha256": "8fe3e3765cadad192238eaff09936f3872686c835f554c97febd20f90d70d04d",
+      "before_sha256": "994ca376dab8362da62896257a1fe388651c270715ed98b65e8f01050a0eadd4"
+    },
+    {
+      "path": "swift/PluginHost/Tests/PluginHostTests/PluginTrustLevelTests.swift",
+      "role": "owned-policy-or-test",
+      "bytes": 16048,
+      "sha256": "b33ef9ac1416ed54137e1a5093885e5fc1889057ba8c9797fb9ca11734d69e1c",
+      "lf_sha256": "b33ef9ac1416ed54137e1a5093885e5fc1889057ba8c9797fb9ca11734d69e1c",
+      "before_sha256": "b33ef9ac1416ed54137e1a5093885e5fc1889057ba8c9797fb9ca11734d69e1c"
+    },
+    {
+      "path": "telegram-ios/Tests/Exteraless/BUILD",
+      "role": "shared-integration",
+      "bytes": 10445,
+      "sha256": "0665dd2749723e181dd37bdf67fc545fcb5bbba4843c52994b1efb933d9ac61b",
+      "lf_sha256": "0665dd2749723e181dd37bdf67fc545fcb5bbba4843c52994b1efb933d9ac61b",
+      "before_sha256": "0f9a986729481fb3ba1034335ffa6ac89e6dabef098570c4f08f7e3956529e29"
+    },
+    {
+      "path": "telegram-ios/Tests/Exteraless/PluginTrustUIContractsTests.swift",
+      "role": "shared-integration",
+      "bytes": 3659,
+      "sha256": "f7a4029c33b3d1ac675ffaf0df890cbbdb5be5d2d48542f696651ef7bd762571",
+      "lf_sha256": "f7a4029c33b3d1ac675ffaf0df890cbbdb5be5d2d48542f696651ef7bd762571",
+      "before_sha256": null
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift",
+      "role": "shared-integration",
+      "bytes": 68990,
+      "sha256": "7d2a70683e9337fe56c2a2e33769876a908d198c24420250a48e1810dd594fa8",
+      "lf_sha256": "7d2a70683e9337fe56c2a2e33769876a908d198c24420250a48e1810dd594fa8",
+      "before_sha256": "43938adb9f119b916addacb82bb42bc2954dc7240a340699254b836621dcc816"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift",
+      "role": "shared-integration",
+      "bytes": 40281,
+      "sha256": "19ed41cc6da216871e6faaa0bcb5e91bfd043ae70f54a543513e172f8d19ea6c",
+      "lf_sha256": "19ed41cc6da216871e6faaa0bcb5e91bfd043ae70f54a543513e172f8d19ea6c",
+      "before_sha256": "5895e1b48afe8b81a130190398ecb5cd54711a9c345b261bbdb2fe3deb966af5"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginTrustControls.swift",
+      "role": "shared-integration",
+      "bytes": 8027,
+      "sha256": "8ffb43e7c16978e31669e90867a324a09124626cc71de297e74d2bb124346517",
+      "lf_sha256": "8ffb43e7c16978e31669e90867a324a09124626cc71de297e74d2bb124346517",
+      "before_sha256": null
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginServices/PluginNativeServicesBridgeExtension.swift",
+      "role": "shared-integration",
+      "bytes": 39794,
+      "sha256": "20700cb8ae7b354a5ef28c125ea60c9a39cc73f396f52e6c7c514f9cc46b6b32",
+      "lf_sha256": "20700cb8ae7b354a5ef28c125ea60c9a39cc73f396f52e6c7c514f9cc46b6b32",
+      "before_sha256": "2c6330e389e99b8de4bc9da73e2260e14bb80be6e5509870f0c60b78d8b838b6"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginConfigBridgeExtension.swift",
+      "role": "shared-integration",
+      "bytes": 7980,
+      "sha256": "48f6e7690a46474cae73a1bb13418b667cad645e2d0716ad534dd54c73ccabb9",
+      "lf_sha256": "48f6e7690a46474cae73a1bb13418b667cad645e2d0716ad534dd54c73ccabb9",
+      "before_sha256": "7d10fffce395a25c8cd50e5da177009e486648e66ab3c2043b3120c093986e6d"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperBridgeExtension.swift",
+      "role": "developer-extra",
+      "bytes": 5630,
+      "sha256": "22e992036562e292b28132f94af671eafd3d81a4d55a3b8ebf86c5704af14356",
+      "lf_sha256": "22e992036562e292b28132f94af671eafd3d81a4d55a3b8ebf86c5704af14356",
+      "before_sha256": "e5f188eb63e9974deae592f41ff66a6c37a477f0d56440cca8489427fcffaf20"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUIBridgeExtension.swift",
+      "role": "shared-integration",
+      "bytes": 58865,
+      "sha256": "65814d7032e377c3c29c0639864c23e46ba4693783d46506dbb783e35e036aae",
+      "lf_sha256": "65814d7032e377c3c29c0639864c23e46ba4693783d46506dbb783e35e036aae",
+      "before_sha256": "f1749131840545b34e42002de6852847c75319b79ab796477dab6946418e1f03"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUILifecycle.swift",
+      "role": "shared-integration",
+      "bytes": 28943,
+      "sha256": "6aef2cb46e6bb3f02408e71f39145a62340734095fd9a29dc7748c843c0f5687",
+      "lf_sha256": "6aef2cb46e6bb3f02408e71f39145a62340734095fd9a29dc7748c843c0f5687",
+      "before_sha256": "cd83fe3b26d89fa4f4db07b54efd83296eab493c373990c84bc8750f040e23f6"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsActionAuthority.swift",
+      "role": "shared-integration",
+      "bytes": 3383,
+      "sha256": "e1354ae6f5dd7aaa81801ede3f13fc7477c3c68780b6e614b81579450fce64ae",
+      "lf_sha256": "e1354ae6f5dd7aaa81801ede3f13fc7477c3c68780b6e614b81579450fce64ae",
+      "before_sha256": "90d3a56c2e1df0db4f9cc379e015aa42c6bc58fd54c93a0d41ce15e40dbc3639"
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginTrustUIFixture.swift",
+      "role": "shared-integration",
+      "bytes": 3923,
+      "sha256": "011822bc30334c22c9bc8c15580f30d54e86ee687162166ffe9ad7a2600d7c9c",
+      "lf_sha256": "011822bc30334c22c9bc8c15580f30d54e86ee687162166ffe9ad7a2600d7c9c",
+      "before_sha256": null
+    },
+    {
+      "path": "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/TL/PluginTLBridgeExtension.swift",
+      "role": "shared-integration",
+      "bytes": 32864,
+      "sha256": "cf692f8205717edc0f810089d1a14f490d23bbeb5903337fef511cd029892499",
+      "lf_sha256": "cf692f8205717edc0f810089d1a14f490d23bbeb5903337fef511cd029892499",
+      "before_sha256": "60b9129f9424ada9d4a626336e01e69af2ce2044e04652b43fb07546de3a613c"
+    }
+  ]
+}

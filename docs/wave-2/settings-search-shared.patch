@@ -1,0 +1,590 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift
+@@ -31,6 +31,7 @@
+     public static func registerActions(_ actions: [ExteralessSettingsAction]) {
+         for action in actions {
+             if self.actionsById[action.id] == nil { self.actionOrder.append(action.id) }
+             self.actionsById[action.id] = action
++            ExteralessSettingsSearchRegistry.registered(action.id)
+         }
+         if !actions.isEmpty { NotificationCenter.default.post(name: self.actionsDidChange, object: nil) }
+@@ -39,5 +40,6 @@
+     public static func unregisterActions(ids: Set<String>) {
+         for id in ids { self.actionsById.removeValue(forKey: id) }
+         self.actionOrder.removeAll { ids.contains($0) }
++        ExteralessSettingsSearchRegistry.removed(ids)
+         if !ids.isEmpty { NotificationCenter.default.post(name: self.actionsDidChange, object: nil) }
+     }
+@@ -59,6 +61,49 @@
+ public func exteralessSettingsController(context: AccountContext, settings: ClientSettings) -> ViewController {
+     return ExteralessClientSettingsController(context: context, settings: settings, mode: .root)
+ }
+ 
++@MainActor
++public func exteralessSettingsController(context: AccountContext, settings: ClientSettings, searchSession: ExteralessSettingsSearchSession) -> ViewController? {
++    guard searchSession.matches(context: context, settings: settings) else { return nil }
++    return ExteralessClientSettingsController(context: context, settings: settings, mode: .root, searchSession: searchSession)
++}
++
++@MainActor
++func exteralessSettingsDestinationController(context: AccountContext, settings: ClientSettings, route: ClientSettingsRoute,
++                                            searchSession: ExteralessSettingsSearchSession, ticket: ClientSettingsSearchTicket) -> ViewController? {
++    guard searchSession.matches(context: context, settings: settings), searchSession.accepts(ticket) else { return nil }
++    let mode: ExteralessClientSettingsController.Mode
++    let focus: String?
++    switch route {
++    case .root:
++        mode = .root
++        focus = nil
++    case let .row(key), let .setting(key):
++        let snapshot = settings.readSnapshot()
++        guard let definition = snapshot.definitions.first(where: { $0.key == key }),
++              ClientSettingsSearchIndex.isGenericVisible(definition) else { return nil }
++        if case .row = route {
++            mode = .root
++            focus = "setting:" + key
++        } else if snapshot.secretKeys.contains(key) {
++            mode = .editor(key)
++            focus = "input:" + key
++        } else if !definition.options.isEmpty {
++            mode = .selector(key)
++            focus = nil
++        } else if case .bool = definition.defaultValue {
++            mode = .root
++            focus = "setting:" + key
++        } else {
++            mode = .editor(key)
++            focus = "input:" + key
++        }
++    default: return nil
++    }
++    guard searchSession.accepts(ticket) else { return nil }
++    return ExteralessClientSettingsController(context: context, settings: settings, mode: mode,
++        searchSession: searchSession, routeTicket: ticket, focusRowID: focus)
++}
++
+ @MainActor
+ private final class ExteralessClientSettingsController: ExteralessSettingsListController {
+@@ -76,8 +121,18 @@
+     private var editingSecret = false
+     private var exportButton: UIBarButtonItem?
++    private var searchButton: UIBarButtonItem?
++    private let searchSession: ExteralessSettingsSearchSession?
++    private let routeTicket: ClientSettingsSearchTicket?
++    private var routeFocus: ExteralessSettingsRowFocus?
+ 
+-    init(context: AccountContext, settings: ClientSettings, mode: Mode) {
++    init(context: AccountContext, settings: ClientSettings, mode: Mode, searchSession: ExteralessSettingsSearchSession? = nil,
++         routeTicket: ClientSettingsSearchTicket? = nil, focusRowID: String? = nil) {
+         self.settings = settings
+         self.mode = mode
++        self.searchSession = searchSession ?? ExteralessSettingsSearch.session(context: context, settings: settings)
++        self.routeTicket = routeTicket
+         super.init(context: context)
++        if let focusRowID {
++            self.routeFocus = ExteralessSettingsRowFocus(rowID: focusRowID, valid: { [weak self] in self?.routeIsCurrent == true })
++        }
+         // Subscribe before the initial coherent read; callbacks only invalidate.
+@@ -95,9 +150,29 @@
+         NotificationCenter.default.addObserver(self, selector: #selector(self.actionsChanged), name: ExteralessSettingsUI.actionsDidChange, object: nil)
++        if let session = self.searchSession {
++            NotificationCenter.default.addObserver(self, selector: #selector(self.actionsChanged), name: ExteralessSettingsSearchSession.didChange, object: session)
++        }
+     }
+ 
+     required init(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+ 
+     deinit { self.observation?.cancel() }
+ 
++    private var routeIsCurrent: Bool {
++        guard let session = self.searchSession else { return true }
++        guard session.matches(context: self.context, settings: self.settings) else { return false }
++        return self.routeTicket.map { session.accepts($0) } ?? true
++    }
++
++    override func viewDidAppear(_ animated: Bool) {
++        super.viewDidAppear(animated)
++        self.routeFocus?.apply(to: self)
++    }
++
++    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
++        super.containerLayoutUpdated(layout, transition: transition)
++        self.routeFocus?.apply(to: self)
++    }
++
+     override func refresh() {
++        guard self.routeIsCurrent else { self.render(); return }
+         if case .editor = self.mode {
+@@ -112,2 +187,7 @@
+     override func render() {
++        guard self.routeIsCurrent else {
++            self.navigationItem.rightBarButtonItems = nil
++            self.setSections([ExteralessSettingsSection(rows: [ExteralessSettingsRow(id: "settings.route.changed", title: clientSettingsText("Search.Changed", "Reopen this setting from the current search results."))])])
++            return
++        }
+         let snapshot = self.settings.readSnapshot()
+@@ -119,4 +199,5 @@
+         case let .editor(key):
+             self.renderEditor(key, snapshot: snapshot)
+         }
++        self.routeFocus?.apply(to: self)
+     }
+@@ -133,4 +214,13 @@
+         export.accessibilityLabel = clientSettingsText("Export", "Export settings")
+         export.isEnabled = !self.isBusy && snapshot.definitions.contains(where: { !$0.isSecret })
+-        self.navigationItem.rightBarButtonItem = export
++        let search: UIBarButtonItem
++        if let current = self.searchButton { search = current }
++        else {
++            search = UIBarButtonItem(barButtonSystemItem: .search, target: self, action: #selector(self.searchPressed))
++            self.searchButton = search
++        }
++        search.accessibilityIdentifier = "settings.search.open"
++        search.accessibilityLabel = clientSettingsText("Search.Open", "Search settings")
++        search.isEnabled = !self.isBusy && self.searchSession?.isCurrent == true
++        self.navigationItem.rightBarButtonItems = [export, search]
+         var sections = self.operationSections(storageError: snapshot.lastError)
+@@ -147,14 +237,16 @@
+-        for definition in snapshot.definitions where definition.section != "AI state"
+-            && !ClientAPIFeatures.requiresNativeEditor(definition.key)
+-            && !ExteraConfigCompatibility.keys.contains(definition.key) {
++        for definition in snapshot.definitions where ClientSettingsSearchIndex.isGenericVisible(definition) {
+             append(self.settingRow(definition, snapshot: snapshot), section: definition.section)
+         }
+-        for action in ExteralessSettingsUI.registeredActions {
++        for action in self.searchSession?.rootActions ?? ExteralessSettingsUI.registeredActions {
+             var row = ExteralessSettingsRow(id: "action:" + action.id, title: clientSettingsText("Action." + action.id, action.title))
+             row.accessory = .disclosure
+             row.enabled = !self.isBusy
++            row.longAction = { [weak self] in
++                guard let self, self.routeIsCurrent else { return }
++                self.searchSession?.presentRowMenu(request: .canonical(.action(action.id)), from: self, reset: nil)
++            }
+             row.action = { [weak self] in
+-                guard let self, !self.isBusy else { return }
++                guard let self, !self.isBusy, self.routeIsCurrent else { return }
+                 // Re-query the registry so a replaced account action is current.
+-                guard let current = ExteralessSettingsUI.registeredActions.first(where: { $0.id == action.id }) else { return }
++                guard let current = (self.searchSession?.rootActions ?? ExteralessSettingsUI.registeredActions).first(where: { $0.id == action.id }) else { return }
+                 current.action(self.context, self)
+@@ -179,4 +271,11 @@
+         var row = ExteralessSettingsRow(id: "setting:" + key, title: self.settingTitle(definition), detail: explanation)
+         row.enabled = !self.isBusy
+         row.reset = { [weak self] in self?.confirmReset(key) }
++        if let session = self.searchSession {
++            row.longAction = { [weak self] in
++                guard let self, self.routeIsCurrent else { return }
++                session.presentRowMenu(request: .canonical(.row(key)), from: self,
++                    reset: { [weak self] in self?.confirmReset(key) })
++            }
++        }
+         if snapshot.secretKeys.contains(key) {
+@@ -335,8 +434,22 @@
+     private func open(_ mode: Mode) {
+-        guard !self.isBusy else { return }
++        guard !self.isBusy, self.routeIsCurrent else { return }
++        if let session = self.searchSession {
++            let request: ClientSettingsRouteRequest
++            switch mode {
++            case .root: request = .canonical(.root)
++            case let .selector(key), let .editor(key): request = .canonical(.setting(key))
++            }
++            _ = session.open(request: request, context: self.context, from: self)
++            return
++        }
+         self.push(ExteralessClientSettingsController(context: self.context, settings: self.settings, mode: mode))
+     }
+ 
++    @objc private func searchPressed() {
++        guard !self.isBusy, self.routeIsCurrent, let controller = self.searchSession?.makeSearchController() else { return }
++        self.push(controller)
++    }
++
+     private func update(_ value: ClientSettingValue, key: String, closeOnSuccess: Bool = false) {
+-        guard !self.isBusy else { return }
++        guard !self.isBusy, self.routeIsCurrent else { return }
+         do {
+@@ -356,3 +469,3 @@
+     private func confirmReset(_ key: String) {
+-        guard !self.isBusy, let definition = self.settings.definitions().first(where: { $0.key == key }) else { return }
++        guard !self.isBusy, self.routeIsCurrent, let definition = self.settings.definitions().first(where: { $0.key == key }) else { return }
+         let alert = UIAlertController(title: clientSettingsText("Reset", "Reset to default"), message: self.settingTitle(definition), preferredStyle: .alert)
+@@ -362,3 +475,3 @@
+         alert.addAction(UIAlertAction(title: clientSettingsText("Reset.Action", "Reset"), style: .destructive, handler: { [weak self] _ in
+-            guard let self else { return }
++            guard let self, self.routeIsCurrent else { return }
+             let settings = self.settings
+@@ -386,3 +499,3 @@
+     @objc private func savePressed() {
+-        guard !self.isBusy, case let .editor(key) = self.mode else { return }
++        guard !self.isBusy, self.routeIsCurrent, case let .editor(key) = self.mode else { return }
+         let snapshot = self.settings.readSnapshot()
+@@ -417,3 +530,3 @@
+     @objc private func exportPressed() {
+-        guard !self.isBusy else { return }
++        guard !self.isBusy, self.routeIsCurrent else { return }
+         let settings = self.settings
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift
+@@ -95,4 +95,5 @@
+     var input: ExteralessSettingsInput?
+     var action: (() -> Void)?
+     var reset: (() -> Void)?
++    var longAction: (() -> Void)?
+ 
+@@ -584,3 +585,3 @@
+         }
+-        self.longPress?.isEnabled = row.enabled && row.reset != nil && row.input == nil
++        self.longPress?.isEnabled = row.enabled && (row.longAction != nil || row.reset != nil) && row.input == nil
+         self.configureAccessibility(row)
+@@ -601,2 +602,5 @@
+         var actions: [UIAccessibilityCustomAction] = []
++        if row.enabled, let menu = row.longAction {
++            actions.append(UIAccessibilityCustomAction(name: clientSettingsText("Search.LinkMenu", "Settings link and actions"), actionHandler: { _ in menu(); return true }))
++        }
+         if row.enabled, let reset = row.reset {
+@@ -660,3 +664,3 @@
+     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
+-        if recognizer.state == .began, self.row?.enabled == true { self.row?.reset?() }
++        if recognizer.state == .began, self.row?.enabled == true { (self.row?.longAction ?? self.row?.reset)?() }
+     }
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift
+@@ -315,4 +315,8 @@
+         identity?.update(context: context)
+         retention?.update(context: context)
+         cloud?.update(context: context)
++        ExteralessSettingsSearch.install(context: context, isCurrent: { [weak self, weak context] in
++            guard let self, let context else { return false }
++            return !self.terminated && self.isPrepared && self.currentContext === context
++        })
+     }
+@@ -375,3 +379,4 @@
+     private func clearAccountDomains() {
++        ExteralessSettingsSearch.retire()
+         contextToken?.invalidate()
+         contextToken = nil
+diff --git a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift
+--- a/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift
++++ b/telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift
+@@ -76,3 +76,8 @@
+     let breadcrumbs: [String]
+     let isVisible: Bool
++    public let clientCopyLink: (() -> String?)?
++    public var linkForCopy: String? {
++        if let clientCopyLink { return clientCopyLink() }
++        return "tg://settings/\(self.id)"
++    }
+     public let present: (AccountContext, NavigationController?, @escaping (SettingsSearchableItemPresentation, ViewController?) -> Void) -> Void
+@@ -86,2 +91,3 @@
+         isVisible: Bool = true,
++        clientCopyLink: (() -> String?)? = nil,
+         present: @escaping (AccountContext, NavigationController?, @escaping (SettingsSearchableItemPresentation, ViewController?) -> Void) -> Void
+@@ -93,9 +99,10 @@
+         self.breadcrumbs = breadcrumbs
+         self.isVisible = isVisible
++        self.clientCopyLink = clientCopyLink
+         self.present = present
+     }
+     
+     func withUpdatedTitle(_ title: String) -> SettingsSearchableItem {
+-        return SettingsSearchableItem(id: self.id, title: title, alternate: self.alternate, icon: self.icon, breadcrumbs: self.breadcrumbs, isVisible: self.isVisible,  present: self.present)
++        return SettingsSearchableItem(id: self.id, title: title, alternate: self.alternate, icon: self.icon, breadcrumbs: self.breadcrumbs, isVisible: self.isVisible, clientCopyLink: self.clientCopyLink, present: self.present)
+     }
+ }
+@@ -4476,5 +4483,8 @@
+         allItems.append(deleteAccount)
+     
+         return allItems
+     }
++    |> mapToSignal { nativeItems in
++        exteralessSettingsSearchUpdates(context: context, nativeItems: nativeItems)
++    }
+ }
+@@ -4572,2 +4582,6 @@
+ public func handleSettingsPathUrl(context: AccountContext, path: String, navigationController: NavigationController) {
++    if let parent = navigationController.topViewController as? ViewController,
++       MainActor.assumeIsolated({ ExteralessSettingsSearchEntry.handle(path: path, context: context, from: parent) }) {
++        return
++    }
+     var notificationExceptionsList: Signal<NotificationExceptionsList?, NoError> = .single(nil)
+diff --git a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+--- a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
++++ b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift
+@@ -5118,2 +5118,2 @@
+-                            let link = "tg://settings/\(item.id)"
++                            guard item.linkForCopy != nil else { return }
+                             let items: [ContextMenuItem] = [
+@@ -5125,4 +5125,5 @@
+                                     action: { [weak self] _, f in
+                                         f(.default)
+                                         
++                                        guard let link = item.linkForCopy else { return }
+                                         UIPasteboard.general.string = link
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift b/telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift
+@@ -367,3 +367,18 @@
+         return
+     }
++    if let parsed = URL(string: url), ExteralessSettingsSearchEntry.recognizes(parsed) {
++        dismissInput()
++        let _ = (context.sharedContext.appLockContext.isPasscodeLocked
++        |> filter { !$0 }
++        |> take(1)
++        |> timeout(30.0, queue: .mainQueue(), alternate: .complete())
++        |> deliverOnMainQueue).startStandalone(next: { [weak context, weak navigationController] _ in
++            guard let context,
++                  let parent = (navigationController ?? context.sharedContext.mainWindow?.viewController as? NavigationController)?.topViewController as? ViewController else { return }
++            MainActor.assumeIsolated {
++                _ = ExteralessSettingsSearchEntry.handle(url: parsed, context: context, from: parent)
++            }
++        })
++        return
++    }
+     let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift b/telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -435,3 +435,4 @@
+     private let privacyExtrasRecoveryDisposable = MetaDisposable()
++    private let settingsRouteDisposable = MetaDisposable()
+     
+     private let badgeDisposable = MetaDisposable()
+@@ -1591,3 +1592,4 @@
+             self.crashReportPromptDisposable.set(nil)
+             self.privacyExtrasRecoveryDisposable.set(nil)
++            self.settingsRouteDisposable.set(nil)
+             self.contextValue = context
+@@ -2554,2 +2556,3 @@
+         self.clientPreparationDisposable.dispose()
++        self.settingsRouteDisposable.dispose()
+         self.clientAPIErrorsDisposable.dispose()
+@@ -3006,2 +3009,3 @@
+         guard self.clientSettingsPrepared, !exteralessPrivacyExtrasIsRecoveryRoute(url),
++              !ExteralessSettingsSearchEntry.recognizes(url),
+               ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) else { return url }
+@@ -3035,2 +3039,19 @@
++    private func consumeClientSettingsURL(_ url: URL, context: AuthorizedApplicationContext?) -> Bool {
++        guard ExteralessSettingsSearchEntry.recognizes(url) else { return false }
++        guard let context else { return true }
++        self.settingsRouteDisposable.set((combineLatest(context.isReady.get(), context.context.sharedContext.appLockContext.isPasscodeLocked)
++        |> filter { ready, locked in ready && !locked }
++        |> take(1)
++        |> timeout(30.0, queue: .mainQueue(), alternate: .complete())
++        |> deliverOnMainQueue).start(next: { [weak self, weak context] _ in
++            guard let self, let context, self.contextValue === context,
++                  let parent = context.rootController.topViewController as? ViewController else { return }
++            MainActor.assumeIsolated {
++                _ = ExteralessSettingsSearchEntry.handle(url: url, context: context.context, from: parent)
++            }
++        }))
++        return true
++    }
++
+     private func openUrl(url: URL) {
+         let url = self.clientCleanOpeningURL(url)
+@@ -3048,3 +3069,4 @@
+             let url = self.clientCleanOpeningURL(url)
+             if self.consumePrivacyExtrasRecoveryURL(url, context: context) { return }
++            if self.consumeClientSettingsURL(url, context: context) { return }
+             if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
+diff --git a/telegram-ios/submodules/AccountContext/BUILD b/telegram-ios/submodules/AccountContext/BUILD
+--- a/telegram-ios/submodules/AccountContext/BUILD
++++ b/telegram-ios/submodules/AccountContext/BUILD
+@@ -12,4 +12,5 @@
+         "Sources/AccountContext.swift",
+         "Sources/ExteralessContentOcclusions.swift",
+         "Sources/ExteralessPillEntry.swift",
++        "Sources/ExteralessSettingsSearchEntry.swift",
+     ],
+diff --git a/telegram-ios/submodules/TelegramUI/BUILD b/telegram-ios/submodules/TelegramUI/BUILD
+--- a/telegram-ios/submodules/TelegramUI/BUILD
++++ b/telegram-ios/submodules/TelegramUI/BUILD
+@@ -63,6 +63,9 @@
+         "Sources/ExteralessClient/Chats/ExteralessChatTableController.swift",
+         "Sources/ExteralessClient/ExteralessSettingsController.swift",
+         "Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift",
++        "Sources/ExteralessClient/ExteralessSettingsSearch.swift",
+         "Sources/ExteralessClient/ExteralessClientRuntime.swift",
+         "Sources/ExteralessClient/ClientSettingsBridgeExtension.swift",
++        "Sources/AppDelegate.swift",
++        "Sources/OpenUrl.swift",
+     ],
+diff --git a/telegram-ios/submodules/SettingsUI/BUILD b/telegram-ios/submodules/SettingsUI/BUILD
+--- a/telegram-ios/submodules/SettingsUI/BUILD
++++ b/telegram-ios/submodules/SettingsUI/BUILD
+@@ -3,3 +3,13 @@
+ load("@build_bazel_rules_apple//apple/testing/default_runner:ios_test_runner.bzl", "ios_test_runner")
+ 
++filegroup(
++    name = "ClientHarnessSettingsSearchSources",
++    srcs = [
++        "Sources/Search/ExteralessSettingsSearch.swift",
++        "Sources/Search/SettingsSearchableItems.swift",
++        "Sources/Search/SettingsSearchItem.swift",
++    ],
++    visibility = ["//Tests/ExteralessHarness:__pkg__"],
++)
++
+ swift_library(
+diff --git a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
+--- a/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
++++ b/telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD
+@@ -1,3 +1,9 @@
+ load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
+ 
++filegroup(
++    name = "ClientHarnessSettingsSearchSources",
++    srcs = ["Sources/PeerInfoScreen.swift"],
++    visibility = ["//Tests/ExteralessHarness:__pkg__"],
++)
++
+ swift_library(
+diff --git a/telegram-ios/Tests/Exteraless/BUILD b/telegram-ios/Tests/Exteraless/BUILD
+--- a/telegram-ios/Tests/Exteraless/BUILD
++++ b/telegram-ios/Tests/Exteraless/BUILD
+@@ -6,3 +6,8 @@
+ package(default_visibility = ["//visibility:public"])
+ 
++exports_files(
++    ["SettingsSearchUIViewRouteChecks.swift"],
++    visibility = ["//Tests/ExteralessHarness:__pkg__"],
++)
++
+ ios_test_runner(
+diff --git a/telegram-ios/Tests/ExteralessHarness/BUILD b/telegram-ios/Tests/ExteralessHarness/BUILD
+--- a/telegram-ios/Tests/ExteralessHarness/BUILD
++++ b/telegram-ios/Tests/ExteralessHarness/BUILD
+@@ -68,4 +68,4 @@
+     name = "ClientUIHarnessLib",
+     module_name = "ClientUIHarnessLib",
+-    srcs = glob(["Sources/*.swift"]),
++    srcs = glob(["Sources/*.swift"]) + ["//Tests/Exteraless:SettingsSearchUIViewRouteChecks.swift"],
+     deps = [
+@@ -106,3 +106,6 @@
+         "//submodules/TelegramUI:ClientHarnessDomainFingerprintSources",
++        "//submodules/SettingsUI:ClientHarnessSettingsSearchSources",
++        "//submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen:ClientHarnessSettingsSearchSources",
++        "//Tests/Exteraless:SettingsSearchUIViewRouteChecks.swift",
+         "//submodules/TelegramCore:ClientHarnessDomainFingerprintSources",
+         "//submodules/AccountContext:ClientHarnessDomainFingerprintSources",
+diff --git a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift
+--- a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift
++++ b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift
+@@ -173,5 +173,6 @@
+     private(set) var navigation: NavigationController!
+     private(set) var driver: ClientHarnessUIKit!
+     private(set) var runtime: ClientHarnessRuntime?
++    private(set) var settingsSearchChecks: SettingsSearchUIViewRouteChecks?
+     private var started = false
+     let viewIdentities = ClientHarnessViewIdentities()
+@@ -237,5 +238,14 @@
+         self.driver = ClientHarnessUIKit(window: self.window, navigation: self.navigation, journal: self.report.journal)
++        if ["core-light", "core-dark"].contains(self.report.scenario) {
++            let checks = SettingsSearchUIViewRouteChecks(context: self.context, settings: self.settings, navigation: self.navigation)
++            self.settingsSearchChecks = checks
++            ExteralessSettingsSearchEntry.install(checks.session)
++        }
+         let home = ClientHarnessHomeController(data: data, settings: { [weak self] in
+             guard let self else { return }
+-            self.navigation.pushViewController(exteralessSettingsController(context: self.context, settings: self.settings))
++            do {
++                let controller = try self.settingsSearchChecks?.root()
++                    ?? exteralessSettingsController(context: self.context, settings: self.settings)
++                self.navigation.pushViewController(controller)
++            } catch { self.report.fail(error) }
+         }, plugins: { [weak self] in
+diff --git a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift
+--- a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift
++++ b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift
+@@ -29,3 +29,4 @@
+         try await ui.until("settings root") { ui.hasText("setting:harness.enabled") }
+         try self.probe("settings-root")
++        try await self.runSettingsSearchSegment()
+ 
+@@ -38,3 +39,4 @@
+         try await ui.settle()
++        try self.assertSettingsSearchSelector("harness.mode")
+         try self.probe("selector-open")
+         try await ui.row("option:harness.mode:1")
+@@ -48,3 +50,4 @@
+         try await ui.enter("input:harness.text", text: "Fixture text 雪")
+         try await ui.until("software keyboard") { (self.navigation.validLayout?.inputHeight ?? 0) > 100 }
++        try self.assertSettingsSearchEditor("harness.text")
+         try self.probe("text-keyboard")
+@@ -58,3 +61,4 @@
+         try await ui.settle()
+         try await ui.enter("input:harness.number", text: "-1")
++        try self.assertSettingsSearchEditor("harness.number")
+         try ui.rightButton()
+@@ -74,3 +78,4 @@
+         try clientHarnessRequire(self.navigation.viewControllers.count == 1, "core navigation leaked a screen")
+         try clientHarnessRequire(self.window.findFirstResponder() == nil, "core editor retained first responder")
++        try self.finishSettingsSearchChecks()
+         try self.settings.reload()
+diff --git a/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSettingsSearch.swift b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSettingsSearch.swift
+new file mode 100644
+--- /dev/null
++++ b/telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSettingsSearch.swift
+@@ -0,0 +1,49 @@
++import AccountContext
++import Display
++import Foundation
++
++@MainActor
++extension ClientHarnessSession {
++    private func requireSearchChecks() throws -> SettingsSearchUIViewRouteChecks {
++        guard let checks = self.settingsSearchChecks else { throw ClientHarnessFailure(description: "native settings search fixture missing") }
++        return checks
++    }
++
++    func runSettingsSearchSegment() async throws {
++        try clientHarnessRequire(["core-light", "core-dark"].contains(self.report.scenario), "search segment must use an existing core scenario")
++        try self.loadDomainSourceEvidence()
++        let required = [
++            "swift/ExteralessCore/Sources/ExteralessCore/ClientSettingsSearchIndex.swift",
++            "swift/ExteralessCore/Sources/ExteralessCore/ClientSettingsSourceRoutes.swift",
++            "telegram-ios/submodules/AccountContext/Sources/ExteralessSettingsSearchEntry.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsSearch.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift",
++            "telegram-ios/submodules/SettingsUI/Sources/Search/ExteralessSettingsSearch.swift",
++            "telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift",
++            "telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift",
++            "telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift",
++            "telegram-ios/Tests/Exteraless/SettingsSearchUIViewRouteChecks.swift",
++            "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSettingsSearch.swift",
++            "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift",
++            "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift",
++            "telegram-ios/Tests/ExteralessHarness/BUILD", "telegram-ios/Tests/ExteralessHarness/Info.plist"
++        ]
++        let manifest = self.report.facts["domainSources"] as? [String: Any]
++        let files = manifest?["files"] as? [String: String] ?? [:]
++        try clientHarnessRequire(required.allSatisfy { files[$0]?.count == 64 }, "settings search source/config fingerprints missing")
++        self.report.facts["settingsSearchSources"] = Dictionary(uniqueKeysWithValues: required.map { ($0, files[$0]!) })
++        try await self.requireSearchChecks().exerciseSearch { name, fields in try self.probe(name, extra: fields) }
++    }
++
++    func assertSettingsSearchSelector(_ key: String) throws { try self.requireSearchChecks().assertSelector(key) }
++    func assertSettingsSearchEditor(_ key: String) throws { try self.requireSearchChecks().assertEditor(key) }
++
++    func finishSettingsSearchChecks() throws {
++        guard let home = self.navigation.topViewController as? ViewController else { throw ClientHarnessFailure(description: "search cleanup home missing") }
++        try self.requireSearchChecks().assertRetirement(from: home)
++        ExteralessSettingsSearchEntry.install(nil)
++    }
++}
+diff --git a/tools/runtime/client_ui_harness.py b/tools/runtime/client_ui_harness.py
+--- a/tools/runtime/client_ui_harness.py
++++ b/tools/runtime/client_ui_harness.py
+@@ -40,2 +40,3 @@
+-CORE_PROBES = ["home", "settings-root", "toggle-confirmed", "selector-open", "selector-committed",
++CORE_PROBES = ["home", "settings-root", "settings-search-results", "settings-search-row",
++               "toggle-confirmed", "selector-open", "selector-committed",
+                "text-keyboard", "text-committed", "number-error", "number-committed", "secret-availability", "core-cleanup"]

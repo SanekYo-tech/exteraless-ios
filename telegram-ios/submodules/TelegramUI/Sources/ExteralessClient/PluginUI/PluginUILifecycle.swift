@@ -64,13 +64,21 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         var state: PluginUIState
         var content: PluginUILeaseContent
         let callbacks: [String: PluginUICallback]
+        let permissionIsCurrent: @Sendable () -> Bool
         var terminalActionDelivered = false
+        var settingsUpdate: PluginUISettingsUpdate?
     }
 
     struct Delivery: Sendable {
         let owner: Owner
         let handle: Int64
         let arguments: PluginUIJSON
+        let permissionIsCurrent: @Sendable () -> Bool
+        init(owner: Owner, handle: Int64, arguments: PluginUIJSON,
+             permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) {
+            self.owner = owner; self.handle = handle; self.arguments = arguments
+            self.permissionIsCurrent = permissionIsCurrent
+        }
     }
 
     struct Retirement: Sendable {
@@ -146,15 +154,16 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         }
     }
 
-    func accept(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], expectedScope: PluginUIScope? = nil, admission: () throws -> Void = {}) throws -> Entry {
+    func accept(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], expectedScope: PluginUIScope? = nil, admission: () throws -> Void = {}, permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) throws -> Entry {
         return try self.locked {
             try self.requireScopeLocked(expectedScope)
             try admission()
-            return try self.acceptLocked(pluginId: pluginId, owner: owner, content: content, callbacks: callbacks)
+            guard permissionIsCurrent() else { throw PluginUIFailure.permission("UI permission admission expired") }
+            return try self.acceptLocked(pluginId: pluginId, owner: owner, content: content, callbacks: callbacks, permissionIsCurrent: permissionIsCurrent)
         }
     }
 
-    private func acceptLocked(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], replacing: Set<UUID> = []) throws -> Entry {
+    private func acceptLocked(pluginId: String, owner: Owner, content: PluginUILeaseContent, callbacks: [String: PluginUICallback], replacing: Set<UUID> = [], permissionIsCurrent: @escaping @Sendable () -> Bool = { true }) throws -> Entry {
         guard !pluginId.isEmpty else { throw PluginUIFailure.permission("Native plugin identity is required") }
         guard let scope = self.scope else { throw PluginUIFailure.unavailable("No active account UI") }
         guard !self.retiring.values.contains(where: { $0.owner == owner }) else {
@@ -179,7 +188,7 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
             state.valueByteCount = try self.valueBytes(state.values)
             guard state.valueByteCount <= self.limits.valueBytes else { throw PluginUIFailure.malformed("Aggregate UI input values exceed their 256 KiB budget") }
         }
-        let entry = Entry(owner: owner, state: state, content: content, callbacks: callbacks)
+        let entry = Entry(owner: owner, state: state, content: content, callbacks: callbacks, permissionIsCurrent: permissionIsCurrent)
         self.entries[id] = entry
         self.handles[owner, default: []].formUnion(incomingHandles)
         return entry
@@ -304,6 +313,7 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
     func beginPresentation(id: UUID) -> Entry? {
         return self.locked {
             guard var entry = self.entries[id], entry.state.scope == self.scope, entry.state.phase == .accepted else { return nil }
+            guard entry.permissionIsCurrent() else { return nil }
             entry.state.phase = .presenting
             self.entries[id] = entry
             return entry
@@ -327,7 +337,61 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         }
     }
 
-    func update(id: UUID, pluginId: String, patch: PluginUIJSON, expectedScope: PluginUIScope? = nil, admission: () throws -> Void = {}) throws -> Entry {
+    func reserveSettingsUpdate(id: UUID, pluginId: String, owner: Owner, patch: PluginUIJSON, request: PluginUIJSON,
+                               expectedScope: PluginUIScope, admission: () throws -> Void) throws -> PluginUISettingsUpdate {
+        return try self.locked {
+            try self.requireScopeLocked(expectedScope)
+            try admission()
+            guard var entry = self.entries[id], entry.owner == owner, entry.state.pluginId == pluginId,
+                  entry.state.scope == self.scope, entry.state.phase != .dismissing, entry.settingsUpdate == nil,
+                  entry.permissionIsCurrent(), case let .presentation(model) = entry.content else {
+                throw PluginUIFailure.invalidHandle("Settings update requires its current, idle presentation owner")
+            }
+            let candidate = try model.applying(patch)
+            let update = try PluginUISettingsUpdate(request, previous: model, candidate: candidate, revision: entry.state.revision)
+            guard entry.callbacks.count < 128, !(self.handles[owner] ?? []).contains(update.completion.handle) else {
+                throw PluginUIFailure.invalidHandle("Settings completion must be a unique bounded callback lease")
+            }
+            entry.settingsUpdate = update
+            self.entries[id] = entry
+            self.handles[owner, default: []].insert(update.completion.handle)
+            return update
+        }
+    }
+
+    /// Settles only the reserved update. Failure before commit leaves S1's model,
+    /// revision, visibility and callbacks intact. Completion retains its credit
+    /// through the same ACK/release retirement queue as other native controls.
+    func finishSettingsUpdate(id: UUID, updateId: UUID, failure: PluginUIFailure? = nil) -> Retirement? {
+        return self.locked {
+            guard var entry = self.entries[id], var update = entry.settingsUpdate, update.id == updateId,
+                  self.retiring[updateId] == nil else { return nil }
+            let committed = update.committed == true
+            update.committed = committed
+            entry.settingsUpdate = update
+            self.entries[id] = entry
+            var event = entry.state.callbackMetadata
+            event["id"] = .string(id.uuidString)
+            event["event"] = .string("settingsUpdate")
+            event["_uiTerminal"] = .bool(true)
+            event["updateId"] = .string(update.id.uuidString)
+            event["previousSnapshotId"] = .string(update.previousSnapshotId)
+            event["snapshotId"] = .string(update.snapshotId)
+            event["committed"] = .bool(committed)
+            if !committed, let failure {
+                event["error"] = PluginUIFailure(kind: failure.kind, message: String(failure.message.prefix(2048))).json
+            }
+            let delivery = Delivery(owner: entry.owner, handle: update.completion.handle, arguments: .array([.object(event)]),
+                permissionIsCurrent: entry.permissionIsCurrent)
+            let retirement = Retirement(id: update.id, pluginId: entry.state.pluginId, owner: entry.owner,
+                handles: [update.completion.handle], deliveries: [delivery], isMenu: false)
+            self.retiring[update.id] = retirement
+            return retirement
+        }
+    }
+
+    func update(id: UUID, pluginId: String, patch: PluginUIJSON, expectedScope: PluginUIScope? = nil,
+                settingsUpdateId: UUID? = nil, admission: () throws -> Void = {}) throws -> Entry {
         return try self.locked {
             try self.requireScopeLocked(expectedScope)
             try admission()
@@ -339,6 +403,14 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
             }
             guard entry.state.revision < Int64.max else { throw PluginUIFailure.unavailable("UI revision exhausted") }
             let updated = try model.applying(patch)
+            if model.raw["settingsSnapshotId"] != nil || updated.raw["settingsSnapshotId"] != nil {
+                guard let ticket = entry.settingsUpdate, ticket.id == settingsUpdateId, entry.permissionIsCurrent() else {
+                    throw PluginUIFailure.invalidHandle("Settings snapshots require their reserved native commit")
+                }
+                try ticket.check(previous: model, candidate: updated, revision: entry.state.revision)
+            } else if settingsUpdateId != nil {
+                throw PluginUIFailure.invalidHandle("Unexpected settings update transaction")
+            }
             try updated.validateCallbacks(Set(entry.callbacks.keys))
             let previous = model.valueDefaults
             var values = updated.valueDefaults
@@ -351,6 +423,7 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
             entry.state.valueByteCount = bytes
             entry.content = .presentation(updated)
             entry.state.revision += 1
+            if settingsUpdateId != nil { entry.settingsUpdate?.committed = true }
             self.entries[id] = entry
             return entry
         }
@@ -365,6 +438,8 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
                   (entry.content.isMenu && entry.state.phase == .registered) || (entry.state.phase == .presented && entry.state.isPresented) else {
                 return (false, nil)
             }
+            guard entry.permissionIsCurrent() else { return (false, nil) }
+            guard entry.settingsUpdate?.committed != true else { return (false, nil) }
             if let key = payload["key"]?.string, let value = payload["value"] {
                 guard let previous = entry.state.values[key],
                       let oldCost = try? self.valueCost(key: key, value: previous),
@@ -419,6 +494,11 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         self.locked {
             guard let retirement = self.retiring[id], retirement.owner == owner else { return }
             self.retiring.removeValue(forKey: id)
+            for presentationId in Array(self.entries.keys) {
+                if self.entries[presentationId]?.owner == owner, self.entries[presentationId]?.settingsUpdate?.id == id {
+                    self.entries[presentationId]?.settingsUpdate = nil
+                }
+            }
             self.handles[owner]?.subtract(retirement.handles)
             if self.handles[owner]?.isEmpty == true { self.handles.removeValue(forKey: owner) }
         }
@@ -439,6 +519,16 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         }
     }
 
+    func retirePermissions(pluginId: String) -> [Retirement] {
+        self.locked {
+            let ids = self.entries.values.filter { $0.state.pluginId == pluginId && !$0.permissionIsCurrent() }.map { $0.state.id }
+            return ids.compactMap {
+                self.retireLocked($0, reason: "permissionsChanged", notify: true,
+                    failure: .permission("Plugin access was reduced"))
+            }
+        }
+    }
+
     func menus() -> [Entry] {
         return self.locked {
             return self.entries.values.filter { $0.content.isMenu && $0.state.scope == self.scope && $0.state.phase == .registered }.sorted { lhs, rhs in
@@ -454,9 +544,14 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         guard let callback = entry.callbacks[name] else { return nil }
         var event = payload
         for (key, value) in entry.state.callbackMetadata { event[key] = value }
+        event.removeValue(forKey: "_uiSettingsSnapshot")
+        if case let .presentation(model) = entry.content, let snapshot = model.raw["settingsSnapshotId"] {
+            event["_uiSettingsSnapshot"] = snapshot
+        }
         event["id"] = .string(entry.state.id.uuidString)
         event["event"] = .string(name)
-        return Delivery(owner: entry.owner, handle: callback.handle, arguments: .array([.object(event)]))
+        let permission: @Sendable () -> Bool = name == "closed" ? { true } : entry.permissionIsCurrent
+        return Delivery(owner: entry.owner, handle: callback.handle, arguments: .array([.object(event)]), permissionIsCurrent: permission)
     }
 
     private func valueCost(key: String, value: PluginUIJSON) throws -> Int {
@@ -483,7 +578,10 @@ final class PluginUILeaseStore<Owner: Hashable & Sendable>: @unchecked Sendable 
         // accumulated values from pages that have already been replaced/closed.
         entry.state.values.removeAll()
         entry.state.valueByteCount = 0
-        let handles = Set(entry.callbacks.values.map { $0.handle })
+        var handles = Set(entry.callbacks.values.map { $0.handle })
+        if let update = entry.settingsUpdate, self.retiring[update.id] == nil {
+            handles.insert(update.completion.handle)
+        }
         self.history[id] = entry.state
         self.historyOwners[id] = entry.owner
         self.historyOrder.append(id)

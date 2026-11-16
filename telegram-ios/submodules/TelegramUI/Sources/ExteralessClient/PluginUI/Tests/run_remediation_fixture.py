@@ -26,6 +26,7 @@ REPO = UI.parents[5]
 SOURCES = (
     "PluginUIModel.swift", "PluginUIStyleModel.swift", "PluginUIMenuModel.swift",
     "PluginUILifecycle.swift", "PluginUINavigation.swift", "PluginUIRequest.swift",
+    "PluginUISettingsUpdate.swift",
     "PluginUISettingsActionGate.swift", "PluginUISettingsActionInvocation.swift",
     "PluginUISettingsReadInvocation.swift",
     "PluginUIRetainedEffect.swift", "PluginUIUnprovenSchemaCache.swift",

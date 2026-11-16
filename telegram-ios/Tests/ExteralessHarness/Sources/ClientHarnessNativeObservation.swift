@@ -2,8 +2,8 @@ import Foundation
 import PluginHost
 import TelegramUI
 
-/// Transparent native engine forwarder. No source injection, interpreter
-/// replacement, rendered pixels, or fabricated return values.
+/// Host sources are forwarded exactly once. Two separately counted FD-helper
+/// calls follow each real plugin load on the same owner worker; no backend replacement.
 final class ClientHarnessObservedEngine: CPythonEngine, @unchecked Sendable {
     private let native = CPythonXCFrameworkEngine()
     private let lock = NSLock()
@@ -12,6 +12,8 @@ final class ClientHarnessObservedEngine: CPythonEngine, @unchecked Sendable {
     private var initialized = 0
     private var finalized = 0
     private var scriptCalls = 0
+    private var fdProbeScriptCalls = 0
+    private var fdPaths: [[String: Any]] = []
     private let journal: ClientHarnessJournal
 
     init(journal: ClientHarnessJournal) { self.journal = journal }
@@ -42,7 +44,48 @@ final class ClientHarnessObservedEngine: CPythonEngine, @unchecked Sendable {
     func runScript(_ reference: InterpRef, _ source: String) throws -> String {
         try clientHarnessRequire(!Thread.isMainThread, "Python entered on main")
         self.lock.lock(); self.scriptCalls += 1; self.lock.unlock()
-        return try self.native.runScript(reference, source)
+        let result = try self.native.runScript(reference, source)
+        if source.hasPrefix("_exteraless_runtime.load_json(") {
+            guard let helper = Bundle.main.url(forResource: "native_plugin_probe", withExtension: "py") else {
+                throw ClientHarnessFailure(description: "missing bundled actual FD helper")
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .withoutEscapingSlashes
+            let helperPath = String(decoding: try encoder.encode(helper.path), as: UTF8.self)
+            _ = try self.native.runScript(reference, """
+            import importlib.util as _fd_import, sys as _fd_sys, json as _fd_json, hashlib as _fd_hash, _thread as _fd_thread
+            from extera_utils import plugin_loader as _fd_loader
+            from base_plugin import PythonBridge as _fd_bridge
+            import exteraless_runtime as _fd_runtime, _exteraless_bridge as _fd_native
+            if _fd_sys.platform != "ios":
+                raise AssertionError("UIKit FD witness requires actual sys.platform ios")
+            _fd_spec = _fd_import.spec_from_file_location("_client_ui_native_fd", \(helperPath))
+            _fd_module = _fd_import.module_from_spec(_fd_spec)
+            _fd_spec.loader.exec_module(_fd_module)
+            _fd_record = _fd_loader.plugins["clientUIFixture"]
+            if _fd_runtime._state.plugin_id != "clientUIFixture" or _fd_record.instance.worker != _fd_thread.get_ident():
+                raise AssertionError("FD witness left the actual UIKit plugin owner")
+            with _fd_loader.plugin_context("clientUIFixture"):
+                _fd_module._probe_darwin_family_fds(_fd_record, _fd_bridge.getCacheDir())
+            with open(\(helperPath), "rb") as _fd_input:
+                _fd_digest = _fd_hash.file_digest(_fd_input, "sha256").hexdigest()
+            _fd_observation = {"platform": _fd_sys.platform, "checks": dict(_fd_module._sdk_checks),
+                "nativeReference": \(reference.raw), "ownerToken": _fd_runtime._state.owner_token,
+                "helperSHA256": _fd_digest, "bridgeBuiltin": _fd_native.__spec__.origin == "built-in"}
+            """)
+            let json = try self.native.runScript(reference, "_fd_json.dumps(_fd_observation)")
+            guard let data = json.data(using: .utf8),
+                  let observation = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  observation["platform"] as? String == "ios",
+                  let checks = observation["checks"] as? [String: Bool], checks["actual_ios_fd_paths"] == true else {
+                throw ClientHarnessFailure(description: "actual iOS FD operations did not complete")
+            }
+            self.lock.lock()
+            self.fdProbeScriptCalls += 2
+            self.fdPaths.append(observation)
+            self.lock.unlock()
+        }
+        return result
     }
 
     func destroyInterpreter(_ reference: InterpRef) throws {
@@ -58,7 +101,8 @@ final class ClientHarnessObservedEngine: CPythonEngine, @unchecked Sendable {
         self.lock.lock(); defer { self.lock.unlock() }
         return ["initializations": self.initialized, "finalizations": self.finalized,
             "created": self.created.sorted(), "destroyed": self.destroyed.sorted(), "scriptCalls": self.scriptCalls,
-            "allDestroyed": !self.created.isEmpty && self.created == self.destroyed]
+            "allDestroyed": !self.created.isEmpty && self.created == self.destroyed,
+            "fdProbeScriptCalls": self.fdProbeScriptCalls, "fdPaths": self.fdPaths]
     }
 }
 

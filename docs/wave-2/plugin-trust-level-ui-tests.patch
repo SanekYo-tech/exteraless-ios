@@ -1,0 +1,144 @@
+*** Begin Patch
+*** Add File: telegram-ios/Tests/Exteraless/PluginTrustUIContractsTests.swift
++import Foundation
++import PluginHost
++import XCTest
++
++/// Shipping editor draft and native UI lease contracts. These do not claim
++/// recorded UIKit appearance, an account, a Python engine or a network provider.
++final class PluginTrustUIContractsTests: XCTestCase {
++    func testInstallDraftStartsAtZeroAndOnlyActualSelectionGrantsPermissions() throws {
++        var draft = PluginTrustSelection()
++        XCTAssertEqual(draft.record, PluginPermissionRecord())
++        XCTAssertThrowsError(try draft.select(.network, granted: true))
++        draft.selectLevel(.gated)
++        XCTAssertTrue(draft.grants.isEmpty)
++        try draft.select(.network, granted: true)
++        XCTAssertThrowsError(try draft.select(.hooks, granted: true))
++        draft.selectLevel(.trusted)
++        XCTAssertEqual(draft.grants, [.network])
++        try draft.select(.hooks, granted: true)
++        draft.selectLevel(.gated)
++        draft.selectLevel(.trusted)
++        XCTAssertEqual(draft.grants, [.network])
++        draft.selectLevel(.isolated)
++        draft.selectLevel(.trusted)
++        XCTAssertTrue(draft.grants.isEmpty)
++    }
++
++    func testPermissionLowerRetiresShareAndItsQueuedBodyButKeepsUICleanup() throws {
++        let root = FileManager.default.temporaryDirectory.appendingPathComponent("trust-ui-\(UUID().uuidString)")
++        defer { try? FileManager.default.removeItem(at: root) }
++        let disk = try PluginStore(directory: root)
++        let permissions = PermissionsModel()
++        try permissions.setConsent("alpha", level: .gated, permissions: [.intents], to: disk)
++        let current = permissions.futurePredicate("alpha", requiring: [.ui, .intents])
++        typealias Store = PluginUILeaseStore<String>
++        var limits = Store.Limits()
++        limits.terminalHistory = 0 // The captured predicate must outlive history.
++        let ui = Store(limits: limits)
++        _ = ui.replaceScope(accountRecordId: 7)
++        let callbacks = try PluginUICallback.map(.object([
++            "action": .object(["__handle__": .integer(101)]),
++            "closed": .object(["__handle__": .integer(102)])
++        ]))
++        let entry = try ui.accept(pluginId: "alpha", owner: "owner:1",
++            content: .presentation(PluginUIModel(kind: .share, value: .object(["text": .string("fixture")]))),
++            callbacks: callbacks, permissionIsCurrent: current)
++        _ = try ui.accept(pluginId: "alpha", owner: "owner:1",
++            content: .presentation(PluginUIModel(kind: .alert, value: .object([:]))), callbacks: [:])
++        XCTAssertNotNil(ui.beginPresentation(id: entry.state.id))
++        _ = ui.observeVisibility(id: entry.state.id, visible: true)
++        let queued = try XCTUnwrap(ui.action(id: entry.state.id, revision: 0, scope: entry.state.scope,
++            name: "action", payload: [:], dismissReason: "completed").delivery)
++        XCTAssertTrue(queued.permissionIsCurrent())
++        try permissions.setLevel("alpha", .isolated, to: disk)
++        let retired = ui.retirePermissions(pluginId: "alpha")
++        XCTAssertEqual(retired.count, 1)
++        XCTAssertEqual(ui.liveCount, 1, "UI-only presentations remain allowed")
++        try permissions.setConsent("alpha", level: .gated, permissions: [.intents], to: disk)
++        XCTAssertFalse(queued.permissionIsCurrent(), "A retained old body must not recover after regrant")
++        let closed = try XCTUnwrap(retired.first?.deliveries.first {
++            $0.arguments.array?.first?.object?["event"] == .string("closed")
++        })
++        XCTAssertTrue(closed.permissionIsCurrent(), "Closing bookkeeping still uses the captured owner FIFO")
++        XCTAssertEqual(retired.first?.handles, [101, 102])
++    }
++}
+*** Update File: telegram-ios/Tests/Exteraless/BUILD
+@@
+         "PluginManagerAuthorityTests.swift",
++        "PluginTrustUIContractsTests.swift",
+@@
+         "//third-party/exteraless:ExteralessCore",
++        "//third-party/exteraless:PluginHost",
+*** Add File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginTrustUIFixture.swift
++#if PLUGIN_TRUST_UI_FIXTURE
++import AccountContext
++import Display
++import Foundation
++import PluginHost
++
++/// Prepared loginless-harness entry points over disposable local storage.
++/// The caller supplies its harness AccountContext; these entry points never
++/// start Runtime, CPython, network work, or any real-account operation.
++@MainActor final class PluginTrustUIFixture {
++    private let root: URL
++    private let model = PermissionsModel()
++    private let store: PluginStore
++    private let failWrites: Bool
++    private var plugins: [Plugin]
++
++    private init(failWrites: Bool) throws {
++        self.root = FileManager.default.temporaryDirectory.appendingPathComponent("trust-ui-frames-\(UUID().uuidString)")
++        self.store = try PluginStore(directory: self.root)
++        self.failWrites = failWrites
++        self.plugins = [Plugin(id: "trust_fixture", name: "Trust selection fixture", permissions: ["network", "hooks", "native"], permissionsDeclared: true, enabled: false)]
++        try self.model.prepareInstall("trust_fixture", replacing: false, to: self.store)
++    }
++
++    deinit { try? FileManager.default.removeItem(at: self.root) }
++
++    private func trustActions() -> PluginManagerTrustActions {
++        let model = self.model
++        let store = self.store
++        let failWrites = self.failWrites
++        return PluginManagerTrustActions(snapshot: { model.snapshot($0) }, captureEdit: { id, expected, page in
++            guard page(), model.snapshot(id) == expected else { throw PluginPermissionStoreError.authorityExpired }
++            return .init(setLevel: { level in
++                if failWrites { throw CocoaError(.fileWriteNoPermission) }
++                try model.setLevel(id, level, to: store, isCurrent: { page() && model.snapshot(id) == expected })
++            }, setGrants: { grants in
++                if failWrites { throw CocoaError(.fileWriteNoPermission) }
++                try model.setConsent(id, level: expected.level, permissions: grants, to: store,
++                    isCurrent: { page() && model.snapshot(id) == expected })
++            })
++        }, readMetadata: { _ in self.plugins[0] }, captureInstall: { _, plugin, selection, page in
++            return {
++                if self.failWrites { throw CocoaError(.fileWriteNoPermission) }
++                try self.model.prepareInstall(plugin.id, replacing: false, selection: selection, to: self.store, isCurrent: page)
++                self.plugins = [plugin]
++            }
++        })
++    }
++
++    static func manager(context: AccountContext, failWrites: Bool = false) throws -> ViewController {
++        let fixture = try PluginTrustUIFixture(failWrites: failWrites)
++        let actions = PluginManagerActions(status: { "Local trust UI fixture" }, snapshot: { fixture.plugins },
++            importPlugin: { _ in throw PluginUIError(message: "Use the level-aware fixture import") },
++            setEnabled: { _, _ in throw PluginUIError(message: "This fixture does not execute plugins") },
++            remove: { _ in fixture.plugins = [] }, settings: { _ in "[]" }, updateSetting: { _, _, _ in }, click: { _, _ in },
++            logs: { [] }, trust: fixture.trustActions())
++        return exteralessPluginManagerController(context: context, actions: actions)
++    }
++
++    static func install(context: AccountContext) throws -> ViewController {
++        let fixture = try PluginTrustUIFixture(failWrites: false)
++        let url = fixture.root.appendingPathComponent("trust_fixture.plugin")
++        try Data("# inert fixture bytes\n".utf8).write(to: url)
++        return PluginTrustInstallController(context: context, copy: PluginImportCopy(url: url, directory: fixture.root),
++            metadata: fixture.plugins[0], initial: PluginPermissionRecord(), actions: fixture.trustActions(), completed: {})
++    }
++}
++#endif
+*** End Patch

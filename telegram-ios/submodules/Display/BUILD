@@ -8,6 +8,10 @@ filegroup(
         "Source/ImageNode.swift",
         "Source/DisplayLinkDispatcher.swift",
         "Source/TransformImageNode.swift",
+        "Source/Navigation/NavigationContainer.swift",
+        "Source/NavigationTransitionCoordinator.swift",
+        "Source/NavigationTransitionSpring.swift",
+        "Source/NavigationInteractivePopTracker.swift",
     ],
     visibility = ["//Tests/ExteralessHarness:__pkg__"],
 )

@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import shutil
 import struct
+from client_ui_control_frames import MATH_PROBES, validate_control_probes
 
 VISUAL_SCENARIOS = ("avatar-render", "composer-render")
 BUILD_SELECTION = {"bundle": "org.exteraless.ClientUIHarness", "target": "//Telegram:ClientUIHarness",
@@ -15,7 +16,7 @@ AVATAR_STEPS = ("legacy", "v2-pending", "v2", "bubble-60", "bubble-38", "bubble-
                     f"forum-{corners}-{radius}" for corners in (0, 14, 28) for radius in ("native", "unified"))
 PROBES = {
     "avatar-render": ["home"] + [f"avatar-{palette}-{step}" for palette in ("light", "dark") for step in AVATAR_STEPS] + ["avatar-cleanup"],
-    "composer-render": ["home", "composer-rich-light", "composer-date-selected", "composer-date-added",
+    "composer-render": ["home", *MATH_PROBES, "composer-rich-light", "composer-date-selected", "composer-date-added",
                         "composer-date-add-undone", "composer-date-removed", "composer-date-remove-undone",
                         "composer-cell-selected", "composer-cell-mentioned", "composer-cell-undone",
                         "composer-code-pasted", "composer-code-undone", "composer-rich-dark", "composer-cleanup"],
@@ -41,6 +42,7 @@ VISUAL_SOURCES = {
         "swift/ExteralessCore/Sources/ExteralessCore/AppearanceFeatures.swift",
     ),
     "composer-render": (
+        "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessConfigurationControls.swift",
         "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessComposer.swift",
         "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessComposerHost.swift",
         "telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessComposerInteraction.swift",
@@ -132,6 +134,7 @@ def validate_visual(state, scenario):
         validate_avatar(probes, family, artifacts)
     else:
         validate_composer(probes, family)
+        validate_control_probes(state['probes'], scenario)
 
 
 def validate_avatar(probes, family, artifacts):
@@ -258,6 +261,8 @@ def recorded_frame_index(state, timing, info):
         item = {"name": probe["name"], "semantic": f"state.json#/probes/{index}", **locate(probe["wallTime"])}
         semantic = probe.get("semantic", {})
         item["nativeViewImage"] = semantic.get("nativeViewImage")
+        if "nativeButtonImage" in semantic:
+            item["nativeButtonImage"] = semantic["nativeButtonImage"]
         item["events"] = [{"name": event["name"], **locate(event["wallTime"]),
                            "semantic": f"state.json#/probes/{index}/semantic/events/{event_index}"}
                           for event_index, event in enumerate(semantic.get("events", []))]

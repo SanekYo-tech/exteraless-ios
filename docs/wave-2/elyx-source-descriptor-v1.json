@@ -1,0 +1,71 @@
+{
+  "abi": "exteraless.elyx.source.v1",
+  "descriptor_max_utf8_bytes": 4096,
+  "descriptor_exact_keys": ["abi", "schema", "capability", "purpose", "plugin_id", "owner_token", "format", "source_sha256", "byte_length", "source_namespace", "source_nonce"],
+  "descriptor": {
+    "abi": "exteraless.elyx.source.v1",
+    "schema": 1,
+    "capability": "native-issued random 64 lowercase hex, single claim",
+    "purpose": "inspect | load | manifest",
+    "plugin_id": "exact Elyx ID (never a filename-derived alias)",
+    "owner_token": "null for inspect; exact native CallbackOwner.wireToken otherwise",
+    "format": "elyx | eaf",
+    "source_sha256": "64 lowercase hex of exact issued regular-file bytes",
+    "byte_length": "integer 1...33554432",
+    "source_namespace": "opaque native-issued 64 lowercase hex identifying held installation/staging namespace",
+    "source_nonce": "opaque native-issued 64 lowercase hex for this exact source version/receipt"
+  },
+  "authority": {
+    "gate": "_exteraless_bridge.xt_elyx_source(operation: str, payload_json: str) -> dict",
+    "transport": "existing retained native dispatcher; C injects pluginId/ownerToken; no legacy service registry",
+    "inspector_c_identity": "@elyx-inspection (only injected when C plugin_id is unset); ownerToken null",
+    "native_hook": "BridgeServices.elyxSourceDispatcher(requestJSON, immutablePluginId, immutableOwnerToken) -> responseJSON",
+    "native_envelope": {"op": "elyx_source", "operation": "claim | manifest | read | check | release", "payload": "JSON string, at most 4096 UTF-8 bytes", "pluginId": "C-injected immutable id, never taken from payload", "ownerToken": "C-injected immutable token or null"},
+    "execution": "synchronous read-only native callback under the existing caller GIL; no Python reverse callback, actor wait, publication or interpreter creation; returned JSON buffers are copied",
+    "provider_owner": "native developer owner implements/installs this hook in PluginElyxDeveloperFiles.swift",
+    "raw_fd": "NOT an envelope field and NEVER a Python authority; descriptors/ticket duplicates remain native-owned",
+    "native_checks": [
+      "exact descriptor equality against a registered unclaimed capability, not self-reported JSON",
+      "C-bound owner/purpose, live native invocation/session and source/version/namespace custody",
+      "held descriptor regular type, O_RDONLY status, size and content SHA-256",
+      "held ancestor/source device+inode and version including ctime/mtime detect replacement and ABA",
+      "independent retained duplicate/read offset per read ticket; never close on async waiter cancellation",
+      "ticket and capability cleanup at actual native invocation completion, even if Python abandons or release fails",
+      "manifest claims refer to the live native Source.open(target) receipt for this C owner and expected digest; ambiguous concurrent receipts must fail, never pick by path/digest alone"
+    ]
+  },
+  "operations": {
+    "claim": {
+      "request": "the exact descriptor (purpose inspect or load)",
+      "reply_exact_keys": ["abi", "read_id", "descriptor", "read_only", "load_reader_abi"],
+      "reply": {"abi": "exteraless.elyx.source.v1", "read_id": "native random 64 lowercase hex", "descriptor": "authoritative exact descriptor", "read_only": true, "load_reader_abi": 1}
+    },
+    "manifest": {
+      "request": {"abi": "exteraless.elyx.source.v1", "expected_source_sha256": "64 lowercase hex"},
+      "reply": "same shape as claim, with a native descriptor of purpose manifest; bound to registered Source.open receipt"
+    },
+    "read": {
+      "request": {"abi": "exteraless.elyx.source.v1", "read_id": "opaque ticket", "offset": "integer 0...length", "count": "integer 1...65536"},
+      "reply_exact_keys": ["offset", "data_base64"],
+      "reply": "exact requested offset and exactly min(count, remaining) bytes; native checkCurrent before and after pinned pread"
+    },
+    "check": {
+      "request": {"abi": "exteraless.elyx.source.v1", "read_id": "opaque ticket"},
+      "reply_exact_keys": ["read_id", "descriptor", "current"],
+      "reply": {"read_id": "same ticket", "descriptor": "same native proof", "current": true}
+    },
+    "release": {
+      "request": {"abi": "exteraless.elyx.source.v1", "read_id": "opaque ticket"},
+      "reply": {"released": "boolean"},
+      "semantics": "idempotently release only this caller's ticket; no new read authority, allowed for its retiring owner"
+    }
+  },
+  "readiness": "claim must refuse unless the real FD-backed registry, inspection purpose and fresh-owner load purpose of ABI 1 are installed. load_reader_abi is a native provider contract, not a Python Boolean substitute. prepare must complete full inspect_fd_json successfully before old-owner retirement.",
+  "python_hooks": {
+    "ArchiveAdapter.developer_manifest": "fresh native manifest ticket -> exact verified installed source bytes -> bounded validation -> outer ZIP file SHA-256 map; no extraction walk or active cached snapshot",
+    "inspect_developer_descriptor": "claim inspect -> bounded native FD reads -> full static archive inspection -> check -> release; returns metadata only, no cache/entry/mapping execution",
+    "verified_developer_load": "claim load for exact fresh owner -> bounded native FD reads -> immutable validated bytes held through load_json -> check -> release; path is a label, never reopened"
+  },
+  "native_gate_patch": "docs/wave-2/elyx-source-capability-coordinator.patch",
+  "native_execution_claimed": false
+}

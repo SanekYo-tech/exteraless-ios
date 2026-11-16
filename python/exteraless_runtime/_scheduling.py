@@ -9,8 +9,10 @@ from ._platform import RuntimeStateError
 
 class OwnerQueue(Object):
     def __init__(self, scheduler, name): self.scheduler, self.name = scheduler, str(name)
-    def postRunnable(self, callback, delay=0): return self.scheduler.post(callback, self.name, delay)
-    def cancelRunnable(self, callback): return self.scheduler.cancel(callback)
+    def postRunnable(self, callback, delay=0):
+        self.scheduler.post(callback, self.name, delay)
+        return True  # Original DispatchQueue admission Bool; native IDs stay internal.
+    def cancelRunnable(self, callback): return self.scheduler.cancel(callback, queue=self.name)
     def getName(self): return self.name
 
 
@@ -20,13 +22,14 @@ class Scheduler:
         self.tasks = {}
 
     def post(self, callback, queue, delay=0):
+        queue = str(queue)
         delay = int(delay or 0)
         if not 0 <= delay <= 86_400_000: raise ValueError("native delay must be 0...86400000 milliseconds")
         if not callable(callback) and not callable(getattr(callback, "run", None)):
             raise TypeError("queue work must be a callable or Runnable")
         p = self.platform
         account = p.loader.client_utils.get_hook_account()
-        lease = p.callbacks.new("queue:" + str(queue), lambda ident: p.call("cancelOwnerTask", ident))
+        lease = p.callbacks.new("queue:" + queue, lambda ident: p.call("cancelOwnerTask", ident))
         def forget():
             with p.callbacks.lock:
                 current = self.tasks.get(lease.id)
@@ -48,12 +51,12 @@ class Scheduler:
             # This is a narrow transport exception, not execution on this thread.
             # Native captures the originating CallbackOwner and enqueues only.
             request = {"op": "call", "fqcn": "exteraless.ios.Runtime", "member": "postToOwner",
-                       "args": [wrapper, delay, str(queue)], "kwargs": {}, "instance": None, "value": None}
+                       "args": [wrapper, delay, queue], "kwargs": {}, "instance": None, "value": None}
             ident = admitted_id(p.bridge.xt_call_host(request))
             with p.callbacks.lock:
                 lease.id = ident
                 if lease.open:
-                    self.tasks[ident] = (lease, callback)
+                    self.tasks[ident] = (lease, callback, queue)
         except BaseException:
             with p.callbacks.lock:
                 lease.native_owned = False
@@ -61,11 +64,13 @@ class Scheduler:
             raise
         return ident
 
-    def cancel(self, callback_or_id):
+    def cancel(self, callback_or_id, *, queue=None):
         self.platform.check_worker()
+        queue = None if queue is None else str(queue)
         with self.platform.callbacks.lock:
-            selected = [(ident, lease) for ident, (lease, callback) in self.tasks.items()
-                         if ident == callback_or_id or callback is callback_or_id]
+            selected = [(ident, lease) for ident, (lease, callback, task_queue) in self.tasks.items()
+                         if (queue is None or task_queue == queue)
+                         and (ident == callback_or_id or callback is callback_or_id)]
         cancelled = False
         for ident, lease in selected:
             with self.platform.callbacks.lock:

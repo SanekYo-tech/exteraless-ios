@@ -1,0 +1,54 @@
+__id__ = "sdkDirectHooksProbe"
+__name__ = "Owned direct-hook regression"
+__version__ = "1.0"
+
+from base_plugin import BasePlugin
+from client_utils import get_hook_account
+from file_utils import _current_plugin_id
+from java import jclass
+
+
+class DirectHooksPlugin(BasePlugin):
+    def on_plugin_load(self):
+        self.events = []
+        self.command = None
+        self.set_setting("loads", self.get_setting("loads", 0) + 1)
+
+    def on_app_event(self, event_type):
+        target, method, args = self.command
+        receiver = jclass("app.exteraless.plugins.PythonBridge") if target == "direct" else self
+        getattr(receiver, method)(*args)
+
+    def register_from_callback(self):
+        jclass("app.exteraless.plugins.PythonBridge").addRequestHook(self.id, "users.getUsers", False, 17)
+
+    def on_plugin_unload(self):
+        bridge = jclass("app.exteraless.plugins.PythonBridge")
+        bridge.removeRequestHook(self.id, "users.getUsers")
+        bridge.removeSendMessageHook(self.id)
+
+    def note(self, phase, name, account, value=None):
+        assert _current_plugin_id() == self.id == "sdkDirectHooksProbe"
+        assert get_hook_account() == account == 2
+        if value is not None:
+            metadata = value._exteraless_tl_context["metadata"]
+            assert metadata["fixture"] == "direct-hooks"
+            assert tuple(metadata["nested"]) == (1, 2)
+        self.events.append((phase, name, account))
+        self.set_setting("invocations", len(self.events))
+
+    def pre_request_hook(self, name, account, request):
+        self.note("pre", name, account, request)
+
+    def post_request_hook(self, name, account, response, error):
+        assert error is None
+        self.note("post", name, account, response)
+
+    def on_update_hook(self, name, account, update):
+        self.note("update", name, account, update)
+
+    def on_updates_hook(self, name, account, updates):
+        self.note("updates", name, account, updates)
+
+    def on_send_message_hook(self, account, params):
+        self.note("send", None, account)

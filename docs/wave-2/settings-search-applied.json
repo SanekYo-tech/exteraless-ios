@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "module_id": "module.settings",
+  "finding": "MS-ROUTE-01",
+  "status": "applied-source",
+  "application_tool": "functions.patch",
+  "source_packet": "docs/wave-2/settings-search-shared.patch",
+  "source_packet_sha256": "302cf3010dd7ae899698a4aa09d6d0c62b134c3b9a3cb349ecdcd28d00aa580d",
+  "applied_path_count": 16,
+  "applied_hunk_count": 50,
+  "hash_encoding": "SHA-256 of actual post-application raw bytes; these are source files, not projected or compiled artifacts.",
+  "applied": [
+    {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsController.swift","bytes":28318,"sha256":"6b84ab54c99f85325066daed71717d9f8b57139e228a43c6d39f62921ac3053a"},
+    {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessSettingsUIHelpers.swift","bytes":32676,"sha256":"92d974d7eaf88b71c2cf9157f4fd9fef3b73f913e2cd1cdc486aed85a4de630b"},
+    {"path":"telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/ExteralessClientRuntime.swift","bytes":22680,"sha256":"b6b066575d9ad2af0ef81e2f103f589ad1498b78b3eed9e9fe5c056832c58b27"},
+    {"path":"telegram-ios/submodules/SettingsUI/Sources/Search/SettingsSearchableItems.swift","bytes":198768,"sha256":"dfd6cb16d526075cb221cdf8b7043ac989f6206e99e4fc071e5184abd704bf86"},
+    {"path":"telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift","bytes":419147,"sha256":"70a014013b4f4f82b4a0b885e3426474d189c53fa2b17e833c1cb900ce03d140"},
+    {"path":"telegram-ios/submodules/TelegramUI/Sources/OpenUrl.swift","bytes":53997,"sha256":"1bec273cbb339ce173af41a63d366ea11ae623a34fafeff5e01dffa45019cc67"},
+    {"path":"telegram-ios/submodules/TelegramUI/Sources/AppDelegate.swift","bytes":196396,"sha256":"bc6137f4a134e191f8923223b8c6a4023cb54aa06b884e5f0cba972d900690e4"},
+    {"path":"telegram-ios/submodules/AccountContext/BUILD","bytes":2072,"sha256":"b30c6f9f7ea19046eb8e9ab0fcda5d491539ca0b3b3b64a7d79ca6f0344bb3c8"},
+    {"path":"telegram-ios/submodules/TelegramUI/BUILD","bytes":47931,"sha256":"bc7ec961ff6444ea7fdc589891813f4b1a7702e2183d058e1b68124ca3623ef8"},
+    {"path":"telegram-ios/submodules/SettingsUI/BUILD","bytes":9464,"sha256":"7c0c9e467ca55332a3f9428111534532a82652651a77adc5c69e4699c8ce45f3"},
+    {"path":"telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD","bytes":10043,"sha256":"19484f3c0fb0e71c73bb10370a991bbc5c7317c0dece4d26040e225ce02ec058"},
+    {"path":"telegram-ios/Tests/ExteralessHarness/BUILD","bytes":9538,"sha256":"dd2710d544e3e683024a1eacae790582be78cb28571c370936467cb5d60e0b69"},
+    {"path":"telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessApplication.swift","bytes":16875,"sha256":"33cc85ff5b094d1ade34a06af41ddff9d9d947e9bb38ad6d5c16b6dc1d9c11c0"},
+    {"path":"telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenarios.swift","bytes":11956,"sha256":"280984ae4486efcc757f6c6af4e24c3c465811a2d8b440a8a238eef4b9164455"},
+    {"path":"telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSettingsSearch.swift","bytes":3342,"sha256":"6b462f63b9ffe5292cc820cc4a1e190110d288574371bfc60592d1ef5030e19c"},
+    {"path":"tools/runtime/client_ui_harness.py","bytes":26145,"sha256":"c9dbe6bbf5d2d2e4887da5dfc32631744884890d5e6fc817b115a05a262651d7"}
+  ],
+  "deferred": {
+    "path": "telegram-ios/Tests/Exteraless/BUILD",
+    "owner": "coordinator/trust owner",
+    "applied": false,
+    "reason": "Explicitly excluded by the application authorization; its one source-export hunk is separate.",
+    "patch": "docs/wave-2/settings-search-tests-build.patch",
+    "sha256": "3fa9c2675b8f9cb467fc701058fbaf449f4b70db698050e15551b5ba383b097c"
+  },
+  "checks": {
+    "reverse_packet_check": {"passed":true,"command":"git apply --reverse --check --exclude=telegram-ios/Tests/Exteraless/BUILD docs/wave-2/settings-search-shared.patch"},
+    "python_driver_contracts": {"passed":7,"failed":0,"reported_seconds":0.062,"command":"python -B -m unittest discover -s telegram-ios/Tests/ExteralessHarness/Tests -p test_driver_contract.py -v","scope":"host driver/source contracts, not UIKit or native execution"},
+    "core_probe_sequence_matches_applied_swift": true,
+    "core_probes": ["home","settings-root","settings-search-results","settings-search-row","toggle-confirmed","selector-open","selector-committed","text-keyboard","text-committed","number-error","number-committed","secret-availability","core-cleanup"],
+    "core_probe_count": 13,
+    "scenario_batches": [["core-light","core-dark","sdk-ui"],["feed-render","player-render","pill-render"],["avatar-render","composer-render"]],
+    "python_and_build_ast": "passed"
+  },
+  "preserved": {
+    "secret_status_labels": ["Stored value unavailable","Secure storage unavailable","Stored securely","Not set"],
+    "secret_availability_source": {"path":"telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessSecretAvailability.swift","sha256":"1f7944570a3dafd9d22562e0b387eda4430182cea2163d88a2595027064bb78e"},
+    "scenario_selection_source": {"path":"telegram-ios/Tests/ExteralessHarness/Sources/ClientHarnessScenario.swift","sha256":"082490e65cf6f4fbd0f593fe9d2c1ecc59fee70334d3028c2fefd0976cff4e80"},
+    "manager_custom_alias_group": {"path":"telegram-ios/submodules/TelegramUI/BUILD","symbol":"ExteralessManagerCustomAliasSources","normalized_block_sha256":"aa59bb3edab9e9355033197e49246e827ed41d17bf084166c1d6b2820dd741db"},
+    "existing_app_bootstrap": "The patch-only delta/reverse check preserves current PFR/SDK/CA/TBF/bootstrap and privacy-await code outside its URL-route hunks.",
+    "unrelated_developer_custom_ui_plugin_runtime": "Not edited by this application; their concurrent changes remain owned elsewhere."
+  },
+  "linux_core_cohort": {
+    "manifest": "docs/wave-2/settings-search-core-cohort.json",
+    "archive": "docs/wave-2/settings-search-core-cohort.tar.gz",
+    "sha256": "c15c986b1d4ea1f5c722b68fb5112bb4eb835fc68c1e9b8e5728079bfd364585",
+    "test_count": 16,
+    "execution": "not-run",
+    "archive_members_and_source_bytes_checked": true
+  },
+  "sdk_manifest": "Not regenerated or edited. ExteralessClientRuntime raw root pin changes from 5709414fc3a29f553eb160c3fc267956e3138de56fc207cbcf61e57981a4dcbf to b6b066575d9ad2af0ef81e2f103f589ad1498b78b3eed9e9fe5c056832c58b27; coordinator regen should follow unrelated PluginRuntime WIP completion.",
+  "coordinator_core_evidence": {
+    "provenance": "user/coordinator report, no CI query",
+    "run_id": "43756548501",
+    "source_ref": "1c97",
+    "reported_core_compiled_and_executed": true,
+    "reported_search_fixture_failures": 1,
+    "reported_failure": "The prior localizer key.hasSuffix(.Title) also renamed Search.Title; the search route correctly won the resulting exact-title tie.",
+    "preserved_correction": "Only the fixture mapper is narrowed to Setting.appearance.avatarCorners.Title, with an explicit Search Exteraless -> .search control. Index/source-route algorithms unchanged.",
+    "corrected_test_sha256": "2181e9ac2ab100419fda6e0bc549986adfe89e94d1ebadf406528ee9b366ef03",
+    "corrected_fixture_run": "not claimed"
+  },
+  "local_swift_compiled": false,
+  "local_xctest_executed": false,
+  "uikit_executed": false,
+  "ci_queried_or_dispatched": false,
+  "committed": false,
+  "verified": false,
+  "ported": false
+}

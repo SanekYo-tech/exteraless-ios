@@ -36,6 +36,7 @@ def worker(case, directory):
             self.fail_present = False
             self.fail_ui_update = False
             self.ui_updates = 0
+            self.settings_updates = {}
             self.protected_paths = []
             self.client_settings = {}
             self.client_reads = []
@@ -182,9 +183,19 @@ def worker(case, directory):
                 return {"id": ident}
             if member == "uiState": return {"visible": self.presentations[args[0]]["visible"]}
             if member == "uiUpdate":
-                assert len(args) == 2 and isinstance(args[1], dict)
+                assert len(args) in (2, 3) and isinstance(args[1], dict)
                 assert "__handle__" not in json.dumps(args[1]), "uiUpdate cannot add C callbacks"
                 if self.fail_ui_update: raise JavaMemberError("native resource unavailable")
+                if len(args) == 3:
+                    ident, model, control = args
+                    assert ident not in self.settings_updates
+                    assert control["previousSnapshotId"] == self.presentations[ident]["model"]["settingsSnapshotId"]
+                    assert control["snapshotId"] == model["settingsSnapshotId"]
+                    update_id = self.identity("settings-update")
+                    self.settings_updates[ident] = {"id": update_id, "model": model,
+                        "previous": control["previousSnapshotId"], "snapshot": control["snapshotId"],
+                        "handle": self.register(control["completion"])}
+                    return {"id": update_id}  # Admission only; the fixture must explicitly commit.
                 self.ui_updates += 1
                 self.presentations[args[0]]["model"] = args[1]
                 return None
@@ -192,6 +203,8 @@ def worker(case, directory):
                 if not runtime._state.callbacks.active:
                     record = self.presentations.pop(args[0], None)
                     if record: self.release(record["callbacks"].values())
+                    update = self.settings_updates.pop(args[0], None)
+                    if update: self.release([update["handle"]])
                 return None
             if member == "uiActiveFragment": return {"account": 2, "kind": "chat", "id": "screen-fixture", "scope": "scope-fixture", "isPresented": True}
             if member == "uiNavigate":
@@ -250,9 +263,27 @@ def worker(case, directory):
 
         def event(self, ident, event, **values):
             record = self.presentations[ident]
+            if "settingsSnapshotId" in record["model"]:
+                values["_uiSettingsSnapshot"] = record["model"]["settingsSnapshotId"]
+                values["_uiRevision"] = record.get("revision", 0)
             handle = record["callbacks"].get(event)
             if handle is not None:
                 return runtime.invoke_handle_json(handle, "__call__", json.dumps([dict(id=ident, event=event, **values)]))
+
+        def commit_settings_update(self, ident):
+            update = self.settings_updates.pop(ident)
+            record = self.presentations[ident]
+            record["model"] = update["model"]
+            record["revision"] = record.get("revision", 0) + 1
+            self.ui_updates += 1
+            try:
+                runtime.invoke_handle_json(update["handle"], "__call__", json.dumps([{
+                    "id": ident, "event": "settingsUpdate", "updateId": update["id"], "_uiTerminal": True,
+                    "previousSnapshotId": update["previous"], "snapshotId": update["snapshot"],
+                    "committed": True, "_uiRevision": record["revision"]}]))
+            finally:
+                self.release([update["handle"]])
+            return update["handle"]
 
         def close_ui(self, ident):
             record = self.presentations[ident]
@@ -261,6 +292,8 @@ def worker(case, directory):
                 finally: self.event(ident, "closed", reason="dismissed")
             finally:
                 self.release(record["callbacks"].values())
+                update = self.settings_updates.pop(ident, None)
+                if update: self.release([update["handle"]])
                 del self.presentations[ident]
 
         def response(self, ident, response, error=None):
@@ -686,20 +719,30 @@ def worker(case, directory):
             old_callback = rows[3]["callback_id"]
             plugin.set_setting("ui_label", " refreshed")
             next_handle = host.next_handle
+            before_update_handles = set(host.handles)
             host.fail_ui_update = True
             raises(Exception, lambda: host.event(settings.id, "refresh"), "unavailable")
             host.fail_ui_update = False
             assert host.presentations[settings.id]["model"]["rows"][3]["callback_id"] == old_callback
+            assert set(host.handles) == before_update_handles, "rejected candidate completion must release its handle"
             host.event(settings.id, "action", callbackId=old_callback)
             assert plugin.events[-1][0] == "click"
             host.event(settings.id, "refresh")
+            assert host.presentations[settings.id]["model"]["rows"][3]["callback_id"] == old_callback
+            host.event(settings.id, "action", callbackId=old_callback)
+            assert plugin.events[-1][0] == "click"
+            update_handle = host.commit_settings_update(settings.id)
             rows = host.presentations[settings.id]["model"]["rows"]
             assert rows[3]["text"] == "Tap refreshed" and rows[3]["callback_id"] != old_callback
             host.event(settings.id, "action", callbackId=rows[3]["callback_id"])
             assert plugin.events[-1][0] == "click"
             host.event(settings.id, "longAction", callbackId=rows[3]["long_callback_id"])
             assert plugin.events[-1][0] == "long-click"
-            assert host.next_handle == next_handle and host.presentations[settings.id]["callbacks"] == settings_handles
+            # One completion wrapper per attempted update, neither retained nor
+            # installed as a new presentation callback. Logical UI assertions above
+            # still observe old callbacks until commit, then the refreshed callbacks.
+            assert host.next_handle == next_handle + 2 and host.presentations[settings.id]["callbacks"] == settings_handles
+            assert set(host.handles) == before_update_handles and host.release_counts[update_handle] == 1
             host.close_ui(settings.id)
             from android_utils import get_context
             Intent = jclass("android.content.Intent")
@@ -855,7 +898,9 @@ def worker(case, directory):
                         cancel, method, arguments = operation.cancel, "__call__", '[{"fixture":true},null]'
                     else:
                         with client_utils.hook_scope(5):
-                            ident = client_utils.get_queue_by_name(client_utils.PLUGINS_QUEUE).postRunnable(lambda: plugin.note("completion-winner"))
+                            before_tasks = set(runtime._state.scheduler.tasks)
+                            assert client_utils.get_queue_by_name(client_utils.PLUGINS_QUEUE).postRunnable(lambda: plugin.note("completion-winner")) is True
+                            ident, = set(runtime._state.scheduler.tasks) - before_tasks
                         lease = runtime._state.scheduler.tasks[ident][0]
                         handle = host.tasks.pop(ident)
                         cancel = lambda: runtime._state.scheduler.cancel(ident)
@@ -881,9 +926,13 @@ def worker(case, directory):
             assert queue.cancelRunnable(callback) is True and queue.cancelRunnable(callback) is False
             # An old completion/close cannot erase an entry replaced at the same
             # dictionary slot while cancellation was outside the SDK lock.
-            ident = queue.postRunnable(callback)
+            before_tasks = set(runtime._state.scheduler.tasks)
+            assert queue.postRunnable(callback) is True
+            ident, = set(runtime._state.scheduler.tasks) - before_tasks
             old = runtime._state.scheduler.tasks[ident][0]
-            replacement = queue.postRunnable(callback)
+            before_tasks = set(runtime._state.scheduler.tasks)
+            assert queue.postRunnable(callback) is True
+            replacement, = set(runtime._state.scheduler.tasks) - before_tasks
             entry = runtime._state.scheduler.tasks[replacement]
             runtime._state.scheduler.tasks[ident] = entry
             old.close()

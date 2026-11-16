@@ -28,6 +28,28 @@ class NativeWaveProbe(BasePlugin):
         self.add_on_send_message_hook()
         self.log("native fixture loaded")
 
+    def fd_family_probe(self, asset_fd, code_fd, directory_fd):
+        import os
+        import sys
+        if sys.platform not in ("darwin", "ios"):
+            raise AssertionError("FD family probe needs the actual Darwin-family runtime")
+        if os.write(asset_fd, b"owned") != 5:
+            raise AssertionError("owned asset FD write failed")
+        try:
+            os.write(code_fd, b"bad")
+        except PermissionError as error:
+            if "archive code" not in str(error): raise
+        else:
+            raise AssertionError("code FD write escaped the actual owner audit")
+        try:
+            leaked = os.open("code.py", os.O_WRONLY | os.O_TRUNC, dir_fd=directory_fd)
+        except PermissionError as error:
+            if "archive code" not in str(error): raise
+        else:
+            os.close(leaked)
+            raise AssertionError("code dir_fd write escaped the actual owner audit")
+        return True
+
     def on_plugin_unload(self):
         self.set_setting("unloads", self.get_setting("unloads", 0) + 1)
 

@@ -30,7 +30,12 @@ class NativeHNS(BasePlugin):
 
     def pending_resources(self):
         from ui.alert import AlertDialogBuilder
-        self.task_id = client.get_queue_by_name(client.PLUGINS_QUEUE).postRunnable(lambda: self.body("long-task"), 60000)
+        queue = client.get_queue_by_name(client.PLUGINS_QUEUE)
+        before = set(queue.scheduler.tasks)
+        assert queue.postRunnable(lambda: self.body("long-task"), 60000) is True
+        # The public SDK returns admission Bool; this native-only fixture needs
+        # the actual retained id to check cleanup against the native scheduler.
+        self.task_id, = set(queue.scheduler.tasks) - before
         self.observer = client.get_messages_controller(2).observePeer(101, lambda value, error: self.body("persistent", value, error))
         owner = self
         class Observer(client.NotificationCenterDelegate):

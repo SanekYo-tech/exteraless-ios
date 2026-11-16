@@ -82,7 +82,8 @@ def main():
     present = body(bridge, "private func presentPending(")
     assert "reason: \"executionRevoked\", notify: false" in present
     assert present.count("self.requireNativeEffect(effect)") >= 5
-    assert "presentShare(model, entry: entry, presenter: presenter, effect: effect)" in present
+    assert "presentShare(model, entry: entry, presenter: presenter, effect: effect, files: shareFiles)" in present
+    assert "shareFiles: [PluginResourcePath]" in present
     registration = body(bridge, "private func call(").split('case "menuRegister":', 1)[1].split('case "uiActiveFragment":', 1)[0]
     assert "expectedScope: scope" in registration and "validateNewLease(origin, owner: acceptedOwner, execution: execution)" in registration
     assert registration.index("self.leases.registerMenu") < registration.index("self.notifyMenuChanges()")
@@ -94,12 +95,13 @@ def main():
     assert "model.title == (outcome == \"success\" ? \"batch\" : \"original\")" in batch
 
     # HNS-04: UI captures before its Task and Host receives no recaptured owner.
-    assert controller.count("invocation = try capturePluginSettingsAction(self.actionScope)") == 4
-    assert controller.count("invocation: invocation, mutation:") == 4
+    # Four mutations plus the two custom-widget/selector captures added by MCA.
+    assert controller.count("invocation = try capturePluginSettingsAction(self.actionScope)") == 6
+    assert controller.count("invocation: invocation, page: page, mutation:") == 4
     assert controller.count("self.actionScope?.setVisible(false)") == 3
     assert controller.count("self.actionScope?.close()") >= 3
-    assert "PluginUISettingsActionExecution.withInvocation(invocation, operation: mutation)" in controller
     mutation = body(controller, "private func mutatePluginSettings(")
+    assert mutation.index("PluginUISettingsActionExecution.withInvocation(invocation)") < mutation.index("PluginSettingsPageExecution.$current.withValue(page, operation: mutation)")
     assert mutation.index("guard invocation.isCurrent") < mutation.index("loadPluginSettings(actions:")
     assert "if case .superseded = error { throw error }" in mutation
     assert "@TaskLocal public static var current:" in execution and "onCancel: { invocation.cancel() }" in execution

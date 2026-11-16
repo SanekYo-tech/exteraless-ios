@@ -1,0 +1,84 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+     private var elyxDeveloperFiles: (any PluginElyxDeveloperFileAuthority)?
++
++    /// Invoke from the native descriptor-verifier composition after it has
++    /// registered the C resolver and confirmed all three Python FD hooks. The
++    /// bridge has mandatory concrete closures; there is no permissive default.
++    private func installElyxDeveloperFileAuthority(registry: PluginElyxDeveloperDescriptorRegistry,
++                                                  bridge: PluginElyxDeveloperDescriptorBridge) throws {
++        guard let host = self.host else { throw PluginHostError.notRunning }
++        let logs = self.services.serviceLogs
++        let previous = host.bridge.elyxSourceDispatcher
++        host.bridge.elyxSourceDispatcher = { json, pluginId, ownerToken in
++            registry.dispatch(requestJSON: json, immutablePluginId: pluginId, immutableOwnerToken: ownerToken)
++        }
++        do {
++        self.elyxDeveloperFiles = try PluginElyxDeveloperFiles(
++            pluginsDirectory: URL(fileURLWithPath: host.configuration.runtime.pluginRootDirectory),
++            registry: registry, bridge: bridge,
++            currentTarget: { [weak host] target in
++                guard let host, host.callbackOwner(id: target.plugin.id) == target.owner,
++                      let plugin = host.pluginList().first(where: { $0.id == target.plugin.id }) else { return false }
++                return target.matches(plugin) && host.permissionSnapshot(id: target.plugin.id) == target.consent
++            }, currentConsent: { [weak host] target in
++                // Host changes metadata and retires the old owner under its ID
++                // reservation; consent is the immutable input across that step.
++                guard let host else { return false }
++                return host.permissionSnapshot(id: target.plugin.id) == target.consent
++            }, diagnostic: { message in
++                logs.append(pluginId: "host", level: .error, message: message)
++            })
++        } catch { host.bridge.elyxSourceDispatcher = previous; throw error }
++    }
+*** Update File: swift/PluginHost/Sources/PluginHost/PluginHost.swift
+@@
+         let inspector = try await interpreters.createInterpreter(for: "exteralessMetadataInspector",
+             bootstrapScript: configuration.runtime.metadataBootstrapScript(), configuration: policy)
+         do {
++            guard let issued = descriptor as? PluginElyxDeveloperDescriptor else {
++                throw PluginElyxDeveloperError.stale("inspection requires a native-issued descriptor lease")
++            }
++            let consumer = try issued.bindNativeInspection()
+             let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['inspect_fd_json']).inspect_fd_json("
+@@
+-                shouldExecute: { shouldExecute() && (try? descriptor.checkCurrent()) != nil }, maintenanceEpoch: nil,
+-                onExecutionFinished: { withExtendedLifetime(descriptor) {} })
++                shouldExecute: {
++                    PluginElyxDeveloperDescriptorExecution.install(nil)
++                    guard shouldExecute(), (try? descriptor.checkCurrent()) != nil else { return false }
++                    PluginElyxDeveloperDescriptorExecution.install(consumer, isCurrent: {
++                        shouldExecute() && (try? descriptor.checkCurrent()) != nil
++                    })
++                    return true
++                }, maintenanceEpoch: nil,
++                onExecutionFinished: {
++                    PluginElyxDeveloperDescriptorExecution.install(nil)
++                    withExtendedLifetime(descriptor) {}
++                })
+@@
+                 return try await self.interpreters.invoke(handle, script: script, shouldExecute: {
++                    PluginElyxDeveloperDescriptorExecution.install(nil)
++                    let elyxConsumer: PluginElyxDeveloperDescriptorConsumer?
++                    if let retainingElyxSource {
++                        guard let issued = retainingElyxSource as? PluginElyxDeveloperDescriptor,
++                              let consumer = try? issued.nativeLoadConsumer() else { return false }
++                        elyxConsumer = consumer
++                    } else if let target = self.state.target(id: plugin.id, expected: handle, allowLoading: true) {
++                        // Manifest reads use the captured owner too, without an
++                        // inspection/load descriptor. JSON cannot select it.
++                        elyxConsumer = .owner(CallbackOwner(wireToken: target.wireToken,
++                            hostIdentity: self.callbackHostIdentity, interpreter: handle))
++                    } else { elyxConsumer = nil }
+                     // Recheck after the FIFO wait, on the actual owner worker.
+@@
+                     PluginTLNativeOrigin.install(originScope)
++                    PluginElyxDeveloperDescriptorExecution.install(elyxConsumer, isCurrent: {
++                        invocationCancellation.error == nil && shouldExecute()
++                            && (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil
++                    })
+@@
+                     retained.nativeFinished()
++                    PluginElyxDeveloperDescriptorExecution.install(nil)
+*** End Patch

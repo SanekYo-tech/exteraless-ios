@@ -17,7 +17,11 @@ extension ClientHarnessSession {
         case "composer-render":
             if #available(iOS 18.4, *) { try await self.runComposerScenario() }
             else { throw ClientHarnessFailure(description: "composer-render requires the real iOS 18.4+ InputDec backend") }
-        default: try await self.coreScenario()
+        case "core-light", "core-dark": try await self.coreScenario()
+        case let value where ClientHarnessScenario.isReset(value): try await self.runResetSupplement()
+        case "trust-secondary-permissions": try await self.runTrustSecondarySupplement()
+        case "map-attribution": try await self.runMapAttributionSupplement()
+        default: throw ClientHarnessFailure(description: "Unknown explicit UIKit scenario: " + self.report.scenario)
         }
         try clientHarnessRequire(self.report.journal.unexpectedServices.isEmpty, "unexpected fixture service calls")
     }
@@ -28,6 +32,7 @@ extension ClientHarnessSession {
         try await ui.settle()
         try await ui.until("settings root") { ui.hasText("setting:harness.enabled") }
         try self.probe("settings-root")
+        try await self.runSettingsSearchSegment()
 
         try ui.toggle("setting:harness.enabled", to: true)
         try await ui.until("persisted switch") { self.settings.value("harness.enabled") == .bool(true) }
@@ -36,6 +41,7 @@ extension ClientHarnessSession {
 
         try await ui.row("setting:harness.mode")
         try await ui.settle()
+        try self.assertSettingsSearchSelector("harness.mode")
         try self.probe("selector-open")
         try await ui.row("option:harness.mode:1")
         try await ui.until("selector persistence") { self.settings.value("harness.mode") == .string("ocean") }
@@ -47,6 +53,7 @@ extension ClientHarnessSession {
         try await ui.settle()
         try await ui.enter("input:harness.text", text: "Fixture text 雪")
         try await ui.until("software keyboard") { (self.navigation.validLayout?.inputHeight ?? 0) > 100 }
+        try self.assertSettingsSearchEditor("harness.text")
         try self.probe("text-keyboard")
         try ui.rightButton()
         try await ui.until("text persistence") { self.settings.value("harness.text") == .string("Fixture text 雪") }
@@ -57,6 +64,7 @@ extension ClientHarnessSession {
         try await ui.row("setting:harness.number")
         try await ui.settle()
         try await ui.enter("input:harness.number", text: "-1")
+        try self.assertSettingsSearchEditor("harness.number")
         try ui.rightButton()
         try await ui.settle()
         try clientHarnessRequire(ui.hasText("error"), "validation error row was not rendered")
@@ -73,6 +81,7 @@ extension ClientHarnessSession {
         try await ui.settle()
         try clientHarnessRequire(self.navigation.viewControllers.count == 1, "core navigation leaked a screen")
         try clientHarnessRequire(self.window.findFirstResponder() == nil, "core editor retained first responder")
+        try await self.finishSettingsSearchChecks()
         try self.settings.reload()
         let actual = self.settings.snapshot()
         try clientHarnessRequire(actual["harness.enabled"] == .bool(true) && actual["harness.mode"] == .string("ocean")
@@ -86,6 +95,7 @@ extension ClientHarnessSession {
 
     private func sdkScenario() async throws {
         guard let runtime = self.runtime else { throw ClientHarnessFailure(description: "native runtime missing") }
+        try self.loadDomainSourceEvidence()
         let ui = self.driver!
         try clientHarnessRequire(try runtime.stored("loads") == .integer(1), "fixture did not execute exactly once")
         guard case let .object(sources) = try runtime.stored("sdk_sources") else {

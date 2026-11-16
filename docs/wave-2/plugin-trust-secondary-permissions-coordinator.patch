@@ -1,0 +1,21 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+                     controlledCallback: { owner, handle, method, json, permissionCurrent in
+                         callbacks.callback(owner, handle, method, json,
+                             shouldExecute: { permissionCurrent() && uiGate.permits(owner: owner, argumentsJSON: json) },
+                             guaranteed: PluginUICallbackGate.isTerminal(argumentsJSON: json))
+-                    })
++                    }, classifyShareFile: { id, path in
++                        try PluginResourcePath(path: path,
++                            allowedRoots: [services.serviceStorage.filesDirectory(pluginId: id),
++                                           services.serviceStorage.cacheDirectory(pluginId: id)])
++                    })
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+         "Sources/ExteralessClient/PluginUI/Tests/PluginTrustUIFixture.swift",
++        "Sources/ExteralessClient/PluginUI/Tests/PluginTrustSecondaryUIFixture.swift",
+@@
+-    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift", "Tests/PluginElyxDeveloperProtocolTests.swift"],
++    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift", "Tests/PluginElyxDeveloperProtocolTests.swift", "Tests/PluginTLSecondaryPermissionTests.swift"],
+*** End Patch

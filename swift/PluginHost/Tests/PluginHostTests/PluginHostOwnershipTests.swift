@@ -64,6 +64,7 @@ private final class OwnershipEngine: CPythonEngine, @unchecked Sendable {
             {"metadata":{"id":"ownerTest"},"handles":{"app_event":true,"pre_request":false,"post_request":false,"update":false,"updates":false,"send_message":true},"has_settings":true}
             """
         }
+        if source.hasPrefix("_exteraless_runtime.hook_priority_json("), source.contains("on_send_message_hook") { return "0" }
         if source.hasPrefix("_exteraless_runtime.dispatch_json(") {
             if source.contains("create_settings") { return "[]" }
             if source.contains("on_send_message_hook") { return "{\"strategy\":\"DEFAULT\"}" }

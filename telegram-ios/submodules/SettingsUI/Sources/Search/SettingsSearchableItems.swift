@@ -75,6 +75,11 @@ public struct SettingsSearchableItem {
     let icon: SettingsSearchableItemIcon
     let breadcrumbs: [String]
     let isVisible: Bool
+    public let clientCopyLink: (() -> String?)?
+    public var linkForCopy: String? {
+        if let clientCopyLink { return clientCopyLink() }
+        return "tg://settings/\(self.id)"
+    }
     public let present: (AccountContext, NavigationController?, @escaping (SettingsSearchableItemPresentation, ViewController?) -> Void) -> Void
     
     init(
@@ -84,6 +89,7 @@ public struct SettingsSearchableItem {
         icon: SettingsSearchableItemIcon = .privacy,
         breadcrumbs: [String] = [],
         isVisible: Bool = true,
+        clientCopyLink: (() -> String?)? = nil,
         present: @escaping (AccountContext, NavigationController?, @escaping (SettingsSearchableItemPresentation, ViewController?) -> Void) -> Void
     ) {
         self.id = id
@@ -92,11 +98,12 @@ public struct SettingsSearchableItem {
         self.icon = icon
         self.breadcrumbs = breadcrumbs
         self.isVisible = isVisible
+        self.clientCopyLink = clientCopyLink
         self.present = present
     }
     
     func withUpdatedTitle(_ title: String) -> SettingsSearchableItem {
-        return SettingsSearchableItem(id: self.id, title: title, alternate: self.alternate, icon: self.icon, breadcrumbs: self.breadcrumbs, isVisible: self.isVisible,  present: self.present)
+        return SettingsSearchableItem(id: self.id, title: title, alternate: self.alternate, icon: self.icon, breadcrumbs: self.breadcrumbs, isVisible: self.isVisible, clientCopyLink: self.clientCopyLink, present: self.present)
     }
 }
 
@@ -4477,6 +4484,9 @@ func settingsSearchableItems(
     
         return allItems
     }
+    |> mapToSignal { nativeItems in
+        exteralessSettingsSearchUpdates(context: context, nativeItems: nativeItems)
+    }
 }
 
 private func stringTokens(_ string: String) -> [EngineDataBuffer] {
@@ -4570,6 +4580,10 @@ func searchSettingsItems(items: [SettingsSearchableItem], query: String) -> [Set
 }
 
 public func handleSettingsPathUrl(context: AccountContext, path: String, navigationController: NavigationController) {
+    if let parent = navigationController.topViewController as? ViewController,
+       MainActor.assumeIsolated({ ExteralessSettingsSearchEntry.handle(path: path, context: context, from: parent) }) {
+        return
+    }
     var notificationExceptionsList: Signal<NotificationExceptionsList?, NoError> = .single(nil)
     var activeSessionsContext: Signal<ActiveSessionsContext?, NoError> = .single(nil)
     var webSessionsContext: Signal<WebSessionsContext?, NoError> = .single(nil)

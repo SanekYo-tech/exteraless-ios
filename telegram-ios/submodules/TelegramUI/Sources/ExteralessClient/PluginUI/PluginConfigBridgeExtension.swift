@@ -23,27 +23,43 @@ final class PluginConfigBridgeExtension: PluginBridgeExtension, @unchecked Senda
     private let installedIds: @Sendable () -> Set<String>
     private let captureOwner: @Sendable (String) -> PluginHost.CallbackOwner?
     private let permits: @Sendable (String, PluginPermission) -> Bool
-    private let queue: ExteraConfigCommandQueue<PluginHost.CallbackOwner>
+    private let permissionAdmission: PluginPermissionAdmission
+    private struct Admission: Hashable, Sendable {
+        let owner: PluginHost.CallbackOwner
+        let permissionIsCurrent: @Sendable () -> Bool
+        // Queue quotas are per interpreter, not per request/predicate instance.
+        static func == (lhs: Admission, rhs: Admission) -> Bool { lhs.owner == rhs.owner }
+        func hash(into hasher: inout Hasher) { hasher.combine(owner) }
+    }
+    private let queue: ExteraConfigCommandQueue<Admission>
 
     init(snapshot: @escaping @Sendable () throws -> PluginManagerPresentationState,
          installedIds: @escaping @Sendable () -> Set<String>,
          captureOwner: @escaping @Sendable (String) -> PluginHost.CallbackOwner?,
          permits: @escaping @Sendable (String, PluginPermission) -> Bool,
           apply: @escaping @MainActor @Sendable (PluginConfigMutation, PluginConfigAuthority) async throws -> Void,
-         failed: @escaping @Sendable (String, String, Error) -> Void) {
+         failed: @escaping @Sendable (String, String, Error) -> Void,
+         permissionAdmission: PluginPermissionAdmission? = nil) {
         self.snapshot = snapshot
         self.installedIds = installedIds
         self.captureOwner = captureOwner
         self.permits = permits
-        self.queue = ExteraConfigCommandQueue(apply: { owner, mutation in
-            try await Self.perform(owner: owner, mutation: mutation, captureOwner: captureOwner, permits: permits, apply: apply)
-        }, failed: { owner, field, error in failed(owner.pluginId, field, error) })
+        self.permissionAdmission = permissionAdmission ?? { id, required in
+            { required.allSatisfy { permits(id, $0) } }
+        }
+        self.queue = ExteraConfigCommandQueue(apply: { admission, mutation in
+            try await Self.perform(owner: admission.owner, mutation: mutation, captureOwner: captureOwner, permits: permits,
+                permissionIsCurrent: admission.permissionIsCurrent, apply: apply)
+        }, failed: { admission, field, error in failed(admission.owner.pluginId, field, error) })
     }
 
     @MainActor private static func perform(owner: PluginHost.CallbackOwner, mutation: PluginConfigMutation,
         captureOwner: @escaping @Sendable (String) -> PluginHost.CallbackOwner?, permits: @escaping @Sendable (String, PluginPermission) -> Bool,
+        permissionIsCurrent: @escaping @Sendable () -> Bool,
         apply: @MainActor @Sendable (PluginConfigMutation, PluginConfigAuthority) async throws -> Void) async throws {
-        let current: @Sendable () -> Bool = { captureOwner(owner.pluginId) == owner && permits(owner.pluginId, .settings) }
+        let current: @Sendable () -> Bool = {
+            captureOwner(owner.pluginId) == owner && permits(owner.pluginId, .settings) && permissionIsCurrent()
+        }
         guard current() else {
             throw BridgeFailure.invalidHandle("Plugin config caller or settings grant expired before execution")
         }
@@ -99,14 +115,20 @@ final class PluginConfigBridgeExtension: PluginBridgeExtension, @unchecked Senda
             }
         }
         _ = try snapshot() // An unavailable native store fails before admission.
+        let permissionIsCurrent = permissionAdmission(pluginId, [.settings])
+        guard permissionIsCurrent() else { throw BridgeFailure.permission("Plugin config permission admission expired") }
         let id: String
-        do { id = try queue.enqueue(owner: owner, mutation: mutation) }
+        do { id = try queue.enqueue(owner: Admission(owner: owner, permissionIsCurrent: permissionIsCurrent), mutation: mutation) }
         catch ExteraConfigCommandError.queueFull { throw BridgeFailure.unavailable("Plugin config command queue is full") }
         return try PluginBridgeJSON.success(.object(["accepted": .bool(true), "operationId": .string(id)]))
     }
 
     func releaseInstances(pluginId: String) {
         let current = captureOwner(pluginId)
-        queue.retire { $0.pluginId == pluginId && $0 != current }
+        queue.retire { $0.owner.pluginId == pluginId && $0.owner != current }
+    }
+
+    func permissionsChanged(pluginId: String) {
+        queue.retire { $0.owner.pluginId == pluginId && !$0.permissionIsCurrent() }
     }
 }

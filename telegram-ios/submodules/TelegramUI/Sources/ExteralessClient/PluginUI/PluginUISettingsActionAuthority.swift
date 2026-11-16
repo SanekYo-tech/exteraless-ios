@@ -38,6 +38,19 @@ import PluginHost
         return PluginUISettingsActionScope(owner: owner, accountGate: self.accountGate,
             accountToken: token, captureOwner: self.captureOwner)
     }
+
+    /// Native manager only: disabled plugins legitimately have no interpreter.
+    /// Capture nil as well, so a later owner cannot inherit an old native action.
+    func captureManagerAuthority(context: AccountContext, pluginId: String?) -> PluginConfigAuthority? {
+        guard self.context === context, let token = self.accountGate.snapshot,
+              token.recordId == context.account.id.int64 else { return nil }
+        let accountGate = self.accountGate
+        let captureOwner = self.captureOwner
+        let owner = pluginId.flatMap { captureOwner($0) }
+        return PluginConfigAuthority(isCurrent: {
+            accountGate.permits(token) && (pluginId.map { captureOwner($0) == owner } ?? true)
+        })
+    }
 }
 
 /// Keeps existing ManagerActions constructors source-compatible. A missing

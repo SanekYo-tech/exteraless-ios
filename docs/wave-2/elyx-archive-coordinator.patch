@@ -1,0 +1,111 @@
+diff --git a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
+--- a/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
++++ b/telegram-ios/submodules/TelegramUI/Sources/Exteraless/PluginManagerController.swift
+@@ -207,7 +207,7 @@
+                 return
+             }
+         }
+-        var importRow = PluginListRow(id: "import", title: pluginText("Import.File", "Import plugin"), detail: pluginText("Import.Formats", "Choose a .plugin or .py file in Files."))
++        var importRow = PluginListRow(id: "import", title: pluginText("Import.File", "Import plugin"), detail: pluginText("Import.Formats", "Choose a .plugin, .py, .elyx or .eaf file in Files."))
+         importRow.style = .accent
+         importRow.enabled = !self.isBusy && !self.isPickingDocument && self.presentationState?.safeMode != true
+         importRow.action = { [weak self] in self?.importPressed() }
+@@ -503,7 +503,8 @@
+             // document providers. Validate the extension after selection as well.
+             let pluginType = UTType(filenameExtension: "plugin", conformingTo: .data) ?? .data
+             let pythonType = UTType(filenameExtension: "py", conformingTo: .text) ?? .text
+-            picker = UIDocumentPickerViewController(forOpeningContentTypes: [pluginType, pythonType, .data], asCopy: true)
++            let archiveTypes = ["elyx", "eaf"].compactMap { UTType(filenameExtension: $0, conformingTo: .data) }
++            picker = UIDocumentPickerViewController(forOpeningContentTypes: [pluginType, pythonType, .data] + archiveTypes, asCopy: true)
+         } else {
+             picker = UIDocumentPickerViewController(documentTypes: ["public.data", "public.python-script"], in: .import)
+         }
+@@ -534,8 +535,8 @@
+             let copy = try await PluginImportCopy.create(from: url)
+             defer { try? FileManager.default.removeItem(at: copy.directory) }
+             try Task.checkCancellation()
+-            // The coordinator parses metadata using native Python AST and copies
+-            // the validated source into its durable Application Support store.
++            // The host statically inspects source/ZIP metadata and installs the
++            // original container format in its durable Application Support store.
+             try await actions.importPlugin(copy.url)
+         }, completion: { [weak self] _ in
+             self?.readSnapshot(force: true)
+@@ -550,8 +551,8 @@
+     let directory: URL
+ 
+     static func create(from url: URL) async throws -> PluginImportCopy {
+-        guard url.isFileURL, ["plugin", "py"].contains(url.pathExtension.lowercased()) else {
+-            throw PluginUIError(message: pluginText("Import.InvalidFile", "Choose a .plugin or .py source file."))
++        guard url.isFileURL, ["plugin", "py", "elyx", "eaf"].contains(url.pathExtension.lowercased()) else {
++            throw PluginUIError(message: pluginText("Import.InvalidFile", "Choose a .plugin, .py, .elyx or .eaf file."))
+         }
+         return try await withCheckedThrowingContinuation { continuation in
+             DispatchQueue.global(qos: .userInitiated).async {
+@@ -573,7 +574,26 @@
+                             guard try readableURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+                                 throw PluginUIError(message: pluginText("Import.NotSource", "The selected item is not a regular source file."))
+                             }
+-                            try manager.copyItem(at: readableURL, to: target)
++                            if ["elyx", "eaf"].contains(target.pathExtension.lowercased()) {
++                                guard try readableURL.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
++                                    throw PluginUIError(message: "An archive must be a regular file, not a symbolic link.")
++                                }
++                                let input = try FileHandle(forReadingFrom: readableURL)
++                                defer { try? input.close() }
++                                try Data().write(to: target, options: .withoutOverwriting)
++                                let output = try FileHandle(forWritingTo: target)
++                                defer { try? output.close() }
++                                var total = 0
++                                while let chunk = try input.read(upToCount: 65_536), !chunk.isEmpty {
++                                    total += chunk.count
++                                    guard total <= 32 * 1024 * 1024 else {
++                                        throw PluginUIError(message: "Elyx archive exceeds the 32 MiB compressed limit.")
++                                    }
++                                    try output.write(contentsOf: chunk)
++                                }
++                            } else {
++                                try manager.copyItem(at: readableURL, to: target)
++                            }
+                             didCopy = true
+                         } catch {
+                             copyError = error
+diff --git a/swift/ExteralessCore/Sources/ExteralessCore/ToolsPluginSchemaCache.swift b/swift/ExteralessCore/Sources/ExteralessCore/ToolsPluginSchemaCache.swift
+--- a/swift/ExteralessCore/Sources/ExteralessCore/ToolsPluginSchemaCache.swift
++++ b/swift/ExteralessCore/Sources/ExteralessCore/ToolsPluginSchemaCache.swift
+@@ -62,8 +62,12 @@
+     /// a filename, never a plugin display name or a path supplied by an archive.
+     public static func settingsFileName(pluginId: String) throws -> String {
+         guard (2...32).contains(pluginId.utf8.count), let first = pluginId.utf8.first,
+-              (65...90).contains(first) || (97...122).contains(first),
+-              pluginId.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 95 || $0 == 45 }) else {
++              pluginId.lowercased() != "exteralessmetadatainspector" else { throw ToolsError.unsafePath }
++        let letterFirst = (65...90).contains(first) || (97...122).contains(first)
++        // Native service IDs are the union of source and Elyx grammars. A
++        // digit/underscore-first Elyx ID cannot contain a source-only hyphen.
++        guard pluginId.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0)
++            || (48...57).contains($0) || $0 == 95 || (letterFirst && $0 == 45) }) else {
+             throw ToolsError.unsafePath
+         }
+         return pluginId + "-" + pluginId.utf8.map { String(format: "%02x", $0) }.joined() + ".json"
+diff --git a/swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsArchiveIDCodecTests.swift b/swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsArchiveIDCodecTests.swift
+new file mode 100644
+--- /dev/null
++++ b/swift/ExteralessCore/Tests/ExteralessCoreTests/ToolsArchiveIDCodecTests.swift
+@@ -0,0 +1,16 @@
++import XCTest
++@testable import ExteralessCore
++
++final class ToolsArchiveIDCodecTests: XCTestCase {
++    func testArchiveIDsUseTheExistingNativeSettingsComponent() throws {
++        XCTAssertEqual(try ToolsPluginSchemaCache.settingsFileName(pluginId: "12"), "12-3132.json")
++        XCTAssertEqual(try ToolsPluginSchemaCache.settingsFileName(pluginId: "_p"), "_p-5f70.json")
++        XCTAssertEqual(try ToolsPluginSchemaCache.settingsFileName(pluginId: "__"), "__-5f5f.json")
++        XCTAssertNoThrow(try ToolsPluginSchemaCache.settingsFileName(pluginId: "a-b"))
++        XCTAssertNotEqual(try ToolsPluginSchemaCache.settingsFileName(pluginId: "Case").lowercased(),
++                          try ToolsPluginSchemaCache.settingsFileName(pluginId: "case").lowercased())
++        for id in ["a", "1-b", "_a-b", "../ab", "a.b", "exteralessMetadataInspector"] {
++            XCTAssertThrowsError(try ToolsPluginSchemaCache.settingsFileName(pluginId: id))
++        }
++    }
++}

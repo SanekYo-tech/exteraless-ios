@@ -433,6 +433,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
     private let openChatWhenReadyDisposable = MetaDisposable()
     private let openUrlWhenReadyDisposable = MetaDisposable()
     private let privacyExtrasRecoveryDisposable = MetaDisposable()
+    private let settingsRouteDisposable = MetaDisposable()
     
     private let badgeDisposable = MetaDisposable()
     private let quickActionsDisposable = MetaDisposable()
@@ -1590,6 +1591,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
             }
             self.crashReportPromptDisposable.set(nil)
             self.privacyExtrasRecoveryDisposable.set(nil)
+            self.settingsRouteDisposable.set(nil)
             self.contextValue = context
             // This signal is delivered on main. Publish the account snapshot in
             // the same order as contextValue, before asynchronous host startup.
@@ -2552,6 +2554,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
             ExteralessClientRuntime.shared.cancelPreparation()
         }
         self.clientPreparationDisposable.dispose()
+        self.settingsRouteDisposable.dispose()
         self.clientAPIErrorsDisposable.dispose()
         self.clientRetentionRecoveryDisposable.dispose()
         Task { @MainActor in
@@ -3004,6 +3007,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         // Pending launch links retain their original bytes until preparation has
         // loaded the user's rules. Recovery capabilities always stay local/exact.
         guard self.clientSettingsPrepared, !exteralessPrivacyExtrasIsRecoveryRoute(url),
+              !ExteralessSettingsSearchEntry.recognizes(url),
               ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) else { return url }
         return URL(string: ChatLinkPolicy.removingTracking(from: url.absoluteString)) ?? url
     }
@@ -3032,6 +3036,23 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         return true
     }
 
+    private func consumeClientSettingsURL(_ url: URL, context: AuthorizedApplicationContext?) -> Bool {
+        guard ExteralessSettingsSearchEntry.recognizes(url) else { return false }
+        guard let context else { return true }
+        self.settingsRouteDisposable.set((combineLatest(context.isReady.get(), context.context.sharedContext.appLockContext.isPasscodeLocked)
+        |> filter { ready, locked in ready && !locked }
+        |> take(1)
+        |> timeout(30.0, queue: .mainQueue(), alternate: .complete())
+        |> deliverOnMainQueue).start(next: { [weak self, weak context] _ in
+            guard let self, let context, self.contextValue === context,
+                  let parent = context.rootController.topViewController as? ViewController else { return }
+            MainActor.assumeIsolated {
+                _ = ExteralessSettingsSearchEntry.handle(url: url, context: context.context, from: parent)
+            }
+        }))
+        return true
+    }
+
     private func openUrl(url: URL) {
         let url = self.clientCleanOpeningURL(url)
         let _ = (self.sharedContextPromise.get()
@@ -3047,6 +3068,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         |> deliverOnMainQueue).start(next: { sharedContext, context, authContext in
             let url = self.clientCleanOpeningURL(url)
             if self.consumePrivacyExtrasRecoveryURL(url, context: context) { return }
+            if self.consumeClientSettingsURL(url, context: context) { return }
             if let authContext = authContext, let confirmationCode = parseConfirmationCodeUrl(sharedContext: sharedContext, url: url) {
                 authContext.rootController.applyConfirmationCode(confirmationCode)
             } else if let context = context {
@@ -3401,14 +3423,19 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         }
         self.openUrlWhenReadyDisposable.set((signal
         |> deliverOnMainQueue).start(next: { [weak self] context in
-            let url = self?.clientCleanOpeningURL(url) ?? url
-            if self?.consumePrivacyExtrasRecoveryURL(url, context: context) == true {
-                self?.openUrlInProgress = nil
+            guard let self else { return }
+            let url = self.clientCleanOpeningURL(url)
+            if self.consumePrivacyExtrasRecoveryURL(url, context: context) {
+                self.openUrlInProgress = nil
+                return
+            }
+            if self.consumeClientSettingsURL(url, context: context) {
+                self.openUrlInProgress = nil
                 return
             }
             let nativeOpen = {
                 if (WalletContext.isTonConnectUrl(url.absoluteString) || url.scheme?.lowercased() == "ton"), !WalletConfiguration.with(appConfiguration: context.context.currentAppConfiguration.with { $0 }).isAvailable {
-                    self?.presentWalletUnavailable(in: context)
+                    self.presentWalletUnavailable(in: context)
                 } else if WalletContext.isTonConnectUrl(url.absoluteString) {
                     context.context.walletContext?.processTonConnectUrl(url.absoluteString)
                 } else if url.scheme?.lowercased() == "ton" {
@@ -3428,7 +3455,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
             }
             if !intercepted { nativeOpen() }
             
-            Queue.mainQueue().after(1.0, {
+            Queue.mainQueue().after(1.0, { [weak self] in
                 self?.openUrlInProgress = nil
             })
         }))

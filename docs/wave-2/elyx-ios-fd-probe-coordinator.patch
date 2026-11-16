@@ -1,0 +1,100 @@
+diff --git a/python/runtime/smoke/native_plugin_probe.py b/python/runtime/smoke/native_plugin_probe.py
+--- a/python/runtime/smoke/native_plugin_probe.py
++++ b/python/runtime/smoke/native_plugin_probe.py
+@@ -148,6 +148,56 @@
+     })
+ 
+ 
++def _probe_darwin_family_fds(record, cache):
++    # Actual embedded sys.platform; no selector substitution or service double.
++    if sys.platform not in ("darwin", "ios"):
++        return
++    import hashlib
++    import uuid
++    from exteraless_runtime import _archives, _audit_paths
++    raw = cache
++    for name in ("var", "tmp", "etc"):
++        if raw.startswith("/private/" + name + "/"):
++            raw = raw[len("/private"):]
++            break
++    nonce = uuid.uuid4().hex
++    digest = hashlib.sha256(b"owned native FD family probe").hexdigest()
++    extraction = _archives._Extraction(raw, "elyx/" + digest + "/" + digest + "-" + nonce)
++    descriptors = []
++    try:
++        extraction.create()
++        extraction.write("contents/asset.bin", b"before")
++        extraction.write("contents/code.py", b"# owned data-only code fixture\n")
++        directory = extraction.directory("contents")
++        for name in ("asset.bin", "code.py"):
++            descriptors.append(os.open(name, os.O_RDWR, dir_fd=directory.fd))
++        if not record.instance.fd_family_probe(*descriptors, directory.fd):
++            raise AssertionError("native FD family fixture did not finish")
++        resolved = _audit_paths._descriptor_path(descriptors[0])
++        if not resolved or not os.path.samefile(resolved, os.path.join(directory.path, "asset.bin")):
++            raise AssertionError("actual Darwin-family F_GETPATH lost the owned asset inode")
++        os.lseek(descriptors[0], 0, os.SEEK_SET)
++        if os.read(descriptors[0], 5) != b"owned":
++            raise AssertionError("actual owned asset FD write failed")
++        os.symlink(".", "untrusted-link", dir_fd=directory.fd)
++        try:
++            _archives._Directory.open_native(os.path.join(directory.path, "untrusted-link"))
++        except _archives.ArchiveValidationError:
++            pass
++        else:
++            raise AssertionError("native root-alias support followed a descendant symlink")
++        _sdk_checks["darwin_family_fd_paths"] = True
++        if sys.platform == "ios":
++            _sdk_checks["actual_ios_fd_paths"] = True
++    finally:
++        for descriptor in descriptors:
++            os.close(descriptor)
++        try:
++            extraction.cleanup()
++        finally:
++            extraction.close()
++
++
+ class _NativeChecks:
+     def verify_owner(self):
+         import _exteraless_bridge as bridge
+@@ -346,6 +396,7 @@
+             _unknown_rejected = True
+         else:
+             raise AssertionError("unknown native member was silently accepted")
++        _probe_darwin_family_fds(record, directories["cache"])
+         _directories = directories
+         _services_verified = True
+ 
+diff --git a/python/runtime/smoke/plugins/native_wave_probe.plugin b/python/runtime/smoke/plugins/native_wave_probe.plugin
+--- a/python/runtime/smoke/plugins/native_wave_probe.plugin
++++ b/python/runtime/smoke/plugins/native_wave_probe.plugin
+@@ -28,6 +28,28 @@
+         self.add_on_send_message_hook()
+         self.log("native fixture loaded")
+ 
++    def fd_family_probe(self, asset_fd, code_fd, directory_fd):
++        import os
++        import sys
++        if sys.platform not in ("darwin", "ios"):
++            raise AssertionError("FD family probe needs the actual Darwin-family runtime")
++        if os.write(asset_fd, b"owned") != 5:
++            raise AssertionError("owned asset FD write failed")
++        try:
++            os.write(code_fd, b"bad")
++        except PermissionError as error:
++            if "archive code" not in str(error): raise
++        else:
++            raise AssertionError("code FD write escaped the actual owner audit")
++        try:
++            leaked = os.open("code.py", os.O_WRONLY | os.O_TRUNC, dir_fd=directory_fd)
++        except PermissionError as error:
++            if "archive code" not in str(error): raise
++        else:
++            os.close(leaked)
++            raise AssertionError("code dir_fd write escaped the actual owner audit")
++        return True
++
+     def on_plugin_unload(self):
+         self.set_setting("unloads", self.get_setting("unloads", 0) + 1)
+ 

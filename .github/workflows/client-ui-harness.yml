@@ -16,7 +16,7 @@ concurrency:
 jobs:
   acceptance:
     runs-on: xcode-27
-    timeout-minutes: 200
+    timeout-minutes: 215
     concurrency:
       # Also share the current normal app workflow's same-ref admission key.
       # The build owner can widen both keys to one repository-wide app queue.
@@ -73,7 +73,8 @@ jobs:
         run: >-
           python -B -m unittest tools.ci.tests.test_native_test_workflow
           tools.ci.tests.test_native_fixture_classes tools.ci.tests.test_client_ui_batches
-          tools.ci.tests.test_native_input_identity -v
+          tools.ci.tests.test_native_input_identity tools.ci.tests.test_client_ui_supplements
+          tools.ci.tests.test_client_ui_map -v
 
       - name: Stage or refresh the sentinel-owned harness source
         run: >-
@@ -190,6 +191,82 @@ jobs:
           --final-visuals "$CLIENT_UI_RUN_DIR/evidence/final-visuals"
           --output "$CLIENT_UI_RUN_DIR/evidence/batches.json" --summary "$GITHUB_STEP_SUMMARY"
 
+      - name: Record Reset supplement 1 of 4, ready and held prepare return
+        timeout-minutes: 4
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-1"
+          --scenario reset-ready-cancelled --scenario reset-prepare-before-return --scenario reset-prepare-after-return
+
+      - name: Record Reset supplement 2 of 4, reset reply return and actual pop
+        timeout-minutes: 4
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-2"
+          --scenario reset-reply-before-return --scenario reset-reply-after-return --scenario reset-prepare-actual-pop
+
+      - name: Record Reset supplement 3 of 4, pop and retired-context witnesses
+        timeout-minutes: 4
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-3"
+          --scenario reset-reply-actual-pop --scenario reset-retired-ready --scenario reset-retired-prepare
+
+      - name: Record Reset supplement 4 of 4, retired reset reply
+        timeout-minutes: 3
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 120 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/reset-4"
+          --scenario reset-retired-reply
+
+      - name: Record secondary trust permissions in one fresh owned process
+        timeout-minutes: 3
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/trust-secondary"
+          --scenario trust-secondary-permissions
+
+      - name: Record native Map attributions, light and dark, in one fresh owned process
+        timeout-minutes: 3
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
+          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/evidence/supplements/map-attribution"
+          --scenario map-attribution
+
+      - name: Verify all base and supplemental scenes from the single IPA
+        timeout-minutes: 1
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 30 -- python -B tools/runtime/verify_client_ui_supplements.py
+          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
+          --base-batches "$CLIENT_UI_RUN_DIR/evidence/batches.json" --supplements "$CLIENT_UI_RUN_DIR/evidence/supplements"
+          --output "$CLIENT_UI_RUN_DIR/evidence/complete-gate.json"
+
       - name: Upload recorded frames and semantic evidence
         if: ${{ always() && env.CLIENT_UI_RUN_DIR != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -223,4 +300,4 @@ jobs:
       - name: Evidence status
         if: always()
         run: |
-          echo 'Evidence: evidence/baseline/ (3), evidence/domains/ (3), evidence/final-visuals/ (2). All batches use the same compiled IPA, run serially after NativeIntegrationTests on distinct fresh simulators, and retain the 30s process cap. Missing batches/fingerprints fail the gate. MP4/frame review per telegram-ios/AGENTS.md is still required; semantic success is not a visual pass.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Evidence: base 3+3+2 retains evidence/batches.json; Reset 3+3+3+1, secondary trust 1 and Map attribution 1 join in complete-gate.json (20 scenes, 9 fresh serial simulators). One retained IPA, 30s/app. Map has two <4s palette segments, injected owned OSM PNG/failure, and permitted public Apple/GeoServices map requests. Supplemental hard envelopes total 990s including verification; job limit is 215m. Native PNG/ffprobe PTS frame review remains required.' >> "$GITHUB_STEP_SUMMARY"

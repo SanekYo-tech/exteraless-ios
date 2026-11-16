@@ -23,8 +23,14 @@
   full-app compilation; Mac DTO/codec receipts не подтверждают Telegram network/UIKit.
 - Актуальная сборка/владение файлами: [wave-2/progress.md](wave-2/progress.md).
 
-Последняя проверенная Telegram IPA ниже — **build 23 на `68bb1adf`**. Новая волна
-в неё не входит. Полный app graph использует **runner `xcode-27`, Xcode 27.1**;
+Последняя независимо проверенная Telegram IPA — **build40 на `6de4ac36`**, run
+[43779402542](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43779402542).
+Размер98 177 711байт, SHA-256
+`e28940fdb017941525824ba1906d09e32da6bd973fa1c1c7c41bd294eeee3d99`.
+Подтверждены67unsignedARM64Mach-O,60frameworks,6extensions,1418resourceplacements,
+419sourcepins. [Полный receipt](wave-2/ipa-build40-acceptance.md).
+Новая Host/SDK FD-дельта и UIKit20 приёмка ещё выполняются.
+Полный app graph использует **runner `xcode-27`, Xcode 27.1**;
 `macos-26` / Xcode 26.6 — для Foundation/CPython component workflow.
 
 ## Интеграционная волна — 14.11.2026

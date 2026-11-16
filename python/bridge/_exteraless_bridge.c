@@ -3521,7 +3521,80 @@ static PyObject *py_xt_bind(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+/* Read-only Elyx source capability gate. No fd/path in a Python request is
+ * authority: the native registry validates issuance, purpose, immutable caller,
+ * namespace/version and actual retained descriptors on every operation.
+ * An unconfigured data-only inspector uses an invalid-as-plugin internal ID.
+ * This does not change C owner state, handle realms, GIL or interpreter lifetime. */
+static PyObject *py_xt_elyx_source(PyObject *self, PyObject *args)
+{
+    xt_state *st = state_from_module(self);
+    PyObject *operation, *payload, *request = NULL, *identity = NULL;
+    PyObject *text = NULL, *out = NULL;
+    const char *op, *body, *wire, *plugin;
+    Py_ssize_t op_size, body_size, wire_size, plugin_size;
+    EXLPythonBridgeBuffer response = {0};
+    NativeDispatcher *entry;
+    int rc;
+    if (st == NULL || state_require_open(st) == NULL)
+        return NULL;
+    if (!PyArg_ParseTuple(args, "UU:xt_elyx_source", &operation, &payload))
+        return NULL;
+    op = PyUnicode_AsUTF8AndSize(operation, &op_size);
+    body = PyUnicode_AsUTF8AndSize(payload, &body_size);
+    if (op == NULL || body == NULL)
+        return NULL;
+    if (op_size < 1 || op_size > 16 || memchr(op, 0, (size_t)op_size) != NULL ||
+        body_size < 1 || body_size > 4096 || memchr(body, 0, (size_t)body_size) != NULL ||
+        (strcmp(op, "claim") && strcmp(op, "manifest") && strcmp(op, "read") &&
+         strcmp(op, "check") && strcmp(op, "release"))) {
+        PyErr_SetString(PyExc_ValueError, "invalid Elyx source operation or payload (4096-byte limit)");
+        return NULL;
+    }
+    identity = st->plugin_id != NULL ? Py_NewRef(st->plugin_id) :
+        PyUnicode_FromString("@elyx-inspection");
+    if (identity == NULL)
+        goto done;
+    request = Py_BuildValue("{s:s,s:O,s:O,s:O,s:O}",
+        "op", "elyx_source", "operation", operation, "payload", payload,
+        "pluginId", identity, "ownerToken", st->owner_token != NULL ? st->owner_token : Py_None);
+    if (request == NULL)
+        goto done;
+    text = json_dumps_obj(st, request);
+    if (text == NULL)
+        goto done;
+    wire = PyUnicode_AsUTF8AndSize(text, &wire_size);
+    plugin = PyUnicode_AsUTF8AndSize(identity, &plugin_size);
+    if (wire == NULL || plugin == NULL)
+        goto done;
+    entry = native_dispatcher_acquire();
+    if (entry == NULL) {
+        bridge_error(st, "bridge: native Elyx source dispatcher is not installed");
+        goto done;
+    }
+    /* The existing dispatcher is retained; the current owner's GIL stays held. */
+    rc = entry->dispatch(entry->context, wire, (size_t)wire_size,
+                         plugin, (size_t)plugin_size, &response);
+    native_dispatcher_release(entry);
+    if (PyErr_Occurred()) {
+        PyErr_Clear();
+        bridge_error(st, "bridge: Elyx source dispatcher left a pending exception");
+    } else if (rc != 0) {
+        bridge_error(st, "bridge: Elyx source dispatcher failed (rc=%d)", rc);
+    } else {
+        out = native_decode_response(st, NULL, &response);
+    }
+done:
+    EXLPythonBridgeBufferFree(&response);
+    Py_XDECREF(identity);
+    Py_XDECREF(request);
+    Py_XDECREF(text);
+    return out;
+}
+
 static PyMethodDef module_methods[] = {
+    {"xt_elyx_source", py_xt_elyx_source, METH_VARARGS,
+     "xt_elyx_source(operation, payload_json) -> native read-only source capability reply"},
     {"xt_set_plugin_id", py_xt_set_plugin_id, METH_O,
      "xt_set_plugin_id(str) -> None — bind an interpreter owner once; same ID is idempotent"},
     {"xt_set_owner_token", py_xt_set_owner_token, METH_O,

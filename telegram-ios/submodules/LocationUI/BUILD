@@ -1,5 +1,16 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 
+filegroup(
+    name = "ClientHarnessMapFingerprintSources",
+    srcs = [
+        "BUILD",
+        "Sources/ExteralessLocationMapProvider.swift",
+        "Sources/LocationMapNode.swift",
+        "Sources/Tests/ExteralessMapAttributionFixture.swift",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 swift_library(
     name = "LocationUI",
     module_name = "LocationUI",
@@ -8,7 +19,10 @@ swift_library(
     ]),
     copts = [
         "-warnings-as-errors",
-    ],
+    ] + select({
+        "//Telegram:debug": ["-DEXTERALESS_MAP_ATTRIBUTION_FIXTURE"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//third-party/exteraless:ExteralessCore",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",

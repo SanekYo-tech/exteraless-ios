@@ -331,6 +331,13 @@ public final class NativeServiceLeasePool<Owner: Hashable & Sendable>: @unchecke
         return leases.count
     }
 
+    public func retirePermissions(pluginId: String) {
+        lock.lock()
+        let candidates = leases.values.filter { $0.pluginId == pluginId }
+        lock.unlock()
+        for lease in candidates where !lease.isOpen { lease.close() }
+    }
+
     deinit {
         for lease in leases.values { lease.close() }
     }

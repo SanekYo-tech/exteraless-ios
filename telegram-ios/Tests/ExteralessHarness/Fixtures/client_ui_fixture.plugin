@@ -26,6 +26,28 @@ class ClientUIFixture(BasePlugin):
             "fixture": __file__.endswith("/plugins/clientUIFixture.plugin"),
         })
 
+    def fd_family_probe(self, asset_fd, code_fd, directory_fd):
+        import os
+        import sys
+        if sys.platform not in ("darwin", "ios"):
+            raise AssertionError("FD family probe needs the actual Darwin-family runtime")
+        if os.write(asset_fd, b"owned") != 5:
+            raise AssertionError("owned asset FD write failed")
+        try:
+            os.write(code_fd, b"bad")
+        except PermissionError as error:
+            if "archive code" not in str(error): raise
+        else:
+            raise AssertionError("code FD write escaped the actual owner audit")
+        try:
+            leaked = os.open("code.py", os.O_WRONLY | os.O_TRUNC, dir_fd=directory_fd)
+        except PermissionError as error:
+            if "archive code" not in str(error): raise
+        else:
+            os.close(leaked)
+            raise AssertionError("code dir_fd write escaped the actual owner audit")
+        return True
+
     def owner(self):
         import exteraless_runtime as runtime
         from extera_utils import plugin_loader

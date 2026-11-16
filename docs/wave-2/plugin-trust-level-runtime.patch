@@ -1,0 +1,121 @@
+*** Begin Patch
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginUISettingsActionAuthority.swift
+@@
+     public func capture(context: AccountContext, pluginId: String) -> PluginUISettingsActionScope? {
+@@
+         return PluginUISettingsActionScope(owner: owner, accountGate: self.accountGate,
+             accountToken: token, captureOwner: self.captureOwner)
+     }
++
++    /// Native manager only: disabled plugins legitimately have no interpreter.
++    /// Capture nil as well, so a later owner cannot inherit an old native action.
++    func captureManagerAuthority(context: AccountContext, pluginId: String?) -> PluginConfigAuthority? {
++        guard self.context === context, let token = self.accountGate.snapshot,
++              token.recordId == context.account.id.int64 else { return nil }
++        let accountGate = self.accountGate
++        let captureOwner = self.captureOwner
++        let owner = pluginId.flatMap { captureOwner($0) }
++        return PluginConfigAuthority(isCurrent: {
++            accountGate.permits(token) && (pluginId.map { captureOwner($0) == owner } ?? true)
++        })
++    }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+-                    diagnostic: { logs.append(pluginId: "host", level: .warning, message: $0) })
++                    diagnostic: { logs.append(pluginId: "host", level: .warning, message: $0) },
++                    permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
+@@
+-                    resolveShareFile: { id, path in
++                    resolveShareFile: { id, path in
+                         return try PluginUIShareFiles.resolve(path: path,
+                             allowedRoots: [services.serviceStorage.filesDirectory(pluginId: id),
+                                            services.serviceStorage.cacheDirectory(pluginId: id)],
+                             allowExternal: callbacks.hasPermission(id, .files))
+-                    })
++                    }, permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
+@@
+     public func setPermissions(id: String, permissions: [PluginPermission]) async throws {
+@@
+         changed()
+     }
+ 
++    public func managerTrustActions(context: AccountContext) -> PluginManagerTrustActions {
++        PluginManagerTrustActions(snapshot: { [weak self] id in
++            self?.host?.permissionSnapshot(id: id) ?? PluginPermissionSnapshot(record: nil, unsafeMode: false)
++        }, captureEdit: { [weak self, weak context] id, expected, page in
++            guard let self, let context else { throw PluginHostError.notRunning }
++            let (host, authority) = try self.captureConsentAuthority(context: context, pluginId: id, page: page)
++            guard host.pluginList().contains(where: { $0.id == id }), host.permissionSnapshot(id: id) == expected else {
++                throw PluginPermissionStoreError.authorityExpired
++            }
++            return PluginManagerTrustActions.Edit(setLevel: { [weak self] level in
++                guard let self else { throw PluginHostError.notRunning }
++                try await self.applyConsent(id: id, expected: expected, level: level, grants: nil,
++                    capturedHost: host, authority: authority)
++            }, setGrants: { [weak self] grants in
++                guard let self else { throw PluginHostError.notRunning }
++                try await self.applyConsent(id: id, expected: expected, level: expected.level, grants: grants,
++                    capturedHost: host, authority: authority)
++            })
++        }, readMetadata: { [weak self, weak context] url in
++            guard let self, let context, self.currentContext === context else { throw PluginHostError.notRunning }
++            let host = try await self.operationHost()
++            defer { self.activeOperations -= 1 }
++            let result = try await host.readPluginMetadata(sourceURL: url)
++            guard self.host === host, self.currentContext === context else { throw PluginPermissionStoreError.authorityExpired }
++            return result
++        }, captureInstall: { [weak self, weak context] url, metadata, selection, page in
++            guard let self, let context else { throw PluginHostError.notRunning }
++            let (host, authority) = try self.captureConsentAuthority(context: context, pluginId: nil, page: page)
++            let owner = host.callbackOwner(id: metadata.id)
++            let oldPlugin = host.pluginList().first { $0.id == metadata.id }
++            let oldConsent = host.permissionSnapshot(id: metadata.id)
++            let admission: @Sendable () -> Bool = {
++                authority.isCurrent() && host.callbackOwner(id: metadata.id) == owner
++                    && host.pluginList().first(where: { $0.id == metadata.id }) == oldPlugin
++                    && host.permissionSnapshot(id: metadata.id) == oldConsent
++            }
++            return { [weak self] in
++                guard let self, authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
++                let activeHost = try await self.operationHost()
++                defer { self.activeOperations -= 1; self.refreshSubscriptions(); self.changed() }
++                guard activeHost === host else { throw PluginPermissionStoreError.authorityExpired }
++                let installed = try await host.installPlugin(sourceURL: url, metadata: metadata, selection: selection,
++                    admission: admission, shouldExecute: authority.isCurrent)
++                if let error = installed.loadError { throw PluginHostError.runtimeFailure(error) }
++            }
++        })
++    }
++
++    private func captureConsentAuthority(context: AccountContext, pluginId: String?, page: @escaping @Sendable () -> Bool) throws -> (PluginHost, PluginConfigAuthority) {
++        try requirePluginExecution()
++        guard let host, currentContext === context,
++              let accountOwner = settingsActionAuthority?.captureManagerAuthority(context: context, pluginId: pluginId) else {
++            throw PluginPermissionStoreError.authorityExpired
++        }
++        let permission: @Sendable () -> Bool = pluginId.map { host.permissions.futurePredicate($0, requiring: [.ui]) } ?? { true }
++        let authority = PluginConfigAuthority(isCurrent: { page() && accountOwner.isCurrent() && permission() })
++        guard authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
++        return (host, authority)
++    }
++
++    private func applyConsent(id: String, expected: PluginPermissionSnapshot, level: PluginTrustLevel,
++                              grants: [PluginPermission]?, capturedHost: PluginHost, authority: PluginConfigAuthority) async throws {
++        guard authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
++        let host = try await operationHost()
++        defer { activeOperations -= 1; refreshSubscriptions(); changed() }
++        guard host === capturedHost, authority.isCurrent() else { throw PluginPermissionStoreError.authorityExpired }
++        try await Task.detached(priority: .userInitiated) {
++            if let grants {
++                try host.setGrantedPermissions(id: id, permissions: grants, atLevel: level, expected: expected,
++                    shouldExecute: authority.isCurrent)
++            } else {
++                try host.setPluginTrustLevel(id: id, level: level, expected: expected, shouldExecute: authority.isCurrent)
++            }
++        }.value
++        // The writer's returned result is the commit result. Do not turn a
++        // committed change into a failure because the page disappeared afterward.
++    }
++
+     public func emitAppEvent(_ name: String) {
+*** End Patch

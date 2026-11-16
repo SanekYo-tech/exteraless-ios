@@ -1,0 +1,112 @@
+--- a/python/exteraless_runtime/__init__.py
++++ b/python/exteraless_runtime/__init__.py
+@@ -273,6 +273,9 @@
+         raise TypeError("hook names must be strings")
+     instance = platform.loader.plugins[platform.plugin_id].instance
+     with _scope(platform):
++        if hook == "on_send_message_hook":
++            from ._hook_registrations import send_priority
++            return _codec.dumps(send_priority(instance) if platform.callbacks.active else None)
+         matches = list(_matching_priorities(platform, instance, hook, name, canonical_name))
+         return _codec.dumps(max(matches) if matches else None)
+ 
+--- a/swift/PluginHost/Sources/PluginHost/PluginHost.swift
++++ b/swift/PluginHost/Sources/PluginHost/PluginHost.swift
+@@ -1497,6 +1497,13 @@
+         return true
+     }
+ 
++    private func canInvokeSend(pluginId: String, handle: InterpreterHandle) -> Bool {
++        guard permissions.has(pluginId, .messagesSend),
++              let target = state.target(id: pluginId, expected: handle), target.plugin.isEnabled,
++              target.plugin.handles(.sendMessage) else { return false }
++        return true
++    }
++
+     private func handleEvent(_ event: PluginEvent, execution: PluginEventExecution) async throws -> PluginEventResult {
+         try execution.check()
+         if case .appEvent(let payload) = event, lifecycle.isBarrier(payload.name) { return .none }
+@@ -1531,16 +1538,52 @@
+             var result = PluginSendMessageResult()
+             var currentParams = payload.paramsJSON
+             let sendRoot = UUID().uuidString
++            var ordered: [(plugin: Plugin, handle: InterpreterHandle, priority: Int32)] = []
+             for target in subscribers {
+                 try execution.check()
++                guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
++                do {
++                    let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [target.plugin.id])
++                    let source = PluginRuntimeScript.call("hook_priority_json", ["on_send_message_hook", "", ""])
++                    let output = try await invokePlugin(target.plugin, source, expectedHandle: target.handle,
++                        shouldExecute: { [weak self] in self?.canInvokeSend(pluginId: target.plugin.id, handle: target.handle) == true },
++                        tlOrigin: origin, batch: execution)
++                    try execution.check()
++                    guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
++                    guard output.utf8.count <= 128 else {
++                        log?("SEND_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
++                        continue
++                    }
++                    let raw = try PluginRuntimeScript.jsonValue(output)
++                    if raw is NSNull { continue }
++                    let value = try PluginServiceArgument.integer(raw, name: "Send hook priority")
++                    guard let priority = Int32(exactly: value) else {
++                        log?("SEND_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
++                        continue
++                    }
++                    ordered.append((target.plugin, target.handle, priority))
++                } catch {
++                    try execution.check()
++                    // Metadata inspection failure is not a callback verdict.
++                    if canInvokeSend(pluginId: target.plugin.id, handle: target.handle) {
++                        log?("SEND_HOOK_PRIORITY_UNAVAILABLE: \(target.plugin.id)")
++                    }
++                }
++            }
++            ordered.sort { $0.priority == $1.priority ? $0.plugin.id < $1.plugin.id : $0.priority > $1.priority }
++            for target in ordered {
++                try execution.check()
++                guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
+                 let plugin = target.plugin
+                 do {
+                     let currentEvent = PluginEvent.sendMessage(SendMessagePayload(
+                         account: payload.account, paramsJSON: currentParams))
+                     let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [plugin.id])
+                     let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle,
++                        shouldExecute: { [weak self] in self?.canInvokeSend(pluginId: target.plugin.id, handle: target.handle) == true },
+                         tlOrigin: origin, batch: execution)
+                     try execution.check()
++                    guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
+                     let decision = try PluginRuntimeScript.applyingSendResult(output, to: currentParams)
+                     switch decision.strategy {
+                     case .default:
+@@ -1554,7 +1597,9 @@
+                     }
+                 } catch {
+                     try execution.check()
+-                    await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
++                    if canInvokeSend(pluginId: plugin.id, handle: target.handle) {
++                        await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
++                    }
+                 }
+             }
+             return .sendMessage(result)
+--- a/swift/PluginHost/Tests/PluginHostTests/PluginBatchOwnershipTests.swift
++++ b/swift/PluginHost/Tests/PluginHostTests/PluginBatchOwnershipTests.swift
+@@ -67,6 +67,7 @@
+             if source.hasPrefix("_exteraless_runtime.load_json(") {
+                 return "{\"metadata\":{\"id\":\"\(names[Int(reference.raw - 1)])\"},\"handles\":{\"send_message\":true},\"has_settings\":false}"
+             }
++            if source.hasPrefix("_exteraless_runtime.hook_priority_json(") { return "0" }
+             if source.hasPrefix("_exteraless_runtime.dispatch_json(") {
+                 if reference.raw == 1 { effects.append(PluginNativeCallLease(isCurrent: { true })) }
+                 if reference.raw == 2 { entered.succeed(()); try maintenanceTestBlock(gate) }
+--- a/swift/PluginHost/Tests/PluginHostTests/PluginHostOwnershipTests.swift
++++ b/swift/PluginHost/Tests/PluginHostTests/PluginHostOwnershipTests.swift
+@@ -64,6 +64,7 @@
+             {"metadata":{"id":"ownerTest"},"handles":{"app_event":true,"pre_request":false,"post_request":false,"update":false,"updates":false,"send_message":true},"has_settings":true}
+             """
+         }
++        if source.hasPrefix("_exteraless_runtime.hook_priority_json("), source.contains("on_send_message_hook") { return "0" }
+         if source.hasPrefix("_exteraless_runtime.dispatch_json(") {
+             if source.contains("create_settings") { return "[]" }
+             if source.contains("on_send_message_hook") { return "{\"strategy\":\"DEFAULT\"}" }

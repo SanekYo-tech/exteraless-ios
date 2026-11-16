@@ -141,8 +141,12 @@ extension ClientHarnessSession {
         let files = manifest?["files"] as? [String: String] ?? [:]
         try clientHarnessRequire(required.allSatisfy { files[$0]?.count == 64 }, "secret-label source/config fingerprint inputs missing")
 
-        let controller = exteralessSettingsController(context: self.context, settings: settings)
-        self.report.journal.record("secret-availability-open", ["factory": "exteralessSettingsController(context:settings:)"])
+        let scope = ExteralessSettingsSearchSession(context: self.context, settings: settings, isCurrent: { true })
+        defer { scope.retire() }
+        guard let controller = exteralessSettingsController(context: self.context, settings: settings, searchSession: scope) else {
+            throw ClientHarnessFailure(description: "owned secret fixture scope refused Root")
+        }
+        self.report.journal.record("secret-availability-open", ["factory": "exteralessSettingsController(context:settings:searchSession:)"])
         self.navigation.pushViewController(controller)
         try await self.driver.settle()
         guard let table = self.driver.views(in: controller.view).compactMap({ $0 as? UITableView }).first else {

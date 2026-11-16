@@ -5,6 +5,11 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(
+    ["SettingsSearchUIViewRouteChecks.swift", "SettingsResetNavigationChecks.swift"],
+    visibility = ["//Tests/ExteralessHarness:__pkg__"],
+)
+
 ios_test_runner(
     name = "Runner",
     device_type = "iPhone 17",
@@ -47,6 +52,7 @@ swift_library(
     srcs = [
         "NativeUIContractsTests.swift",
         "PluginManagerAuthorityTests.swift",
+        "PluginTrustUIContractsTests.swift",
         "BrowserGestureContractsTests.swift",
         "//submodules/TelegramUI:ExteralessNativeUIContractSources",
         "//submodules/BrowserUI:ExteralessBrowserGestureContractSource",
@@ -56,6 +62,7 @@ swift_library(
         "//submodules/Display:Display",
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//third-party/exteraless:ExteralessCore",
+        "//third-party/exteraless:PluginHost",
     ],
 )
 
@@ -250,6 +257,7 @@ test_suite(
     name = "IntegrationTests",
     tests = [
         ":NativeUIContractsTests",
+        "//Tests/ManagerCustomAlias:ManagerCustomAliasTests",
         ":NativeTLContractsTests",
         ":RuntimeRecoveryContinuationTests",
         ":IdentityPresentationTests",

@@ -546,6 +546,7 @@ public final class PluginHost: @unchecked Sendable {
     private let persistenceLock = NSLock()
     private let delegateBox = WeakDelegateBox()
     private let log: (@Sendable (String) -> Void)?
+    private let elyxDeveloperServices = PluginElyxDeveloperServiceSlot()
 
     /// Делегат UI-слоя (слабая ссылка, вызовы — на главном акторе).
     public var delegate: (any PluginHostDelegate)? {
@@ -580,7 +581,7 @@ public final class PluginHost: @unchecked Sendable {
             engine: resolvedEngine, limits: configuration.interpreters)
         self.store = try PluginStore(directory: configuration.storageDirectory)
         let permissionModel = PermissionsModel(unsafeMode: unsafePermissionsMode, log: log)
-        permissionModel.load(from: self.store)
+        try permissionModel.load(from: self.store)
         self.permissions = permissionModel
         let policy = reflectionPolicy
             ?? ReflectionPolicy(mode: configuration.strictReflection ? .manifestOnly : .permissive)
@@ -610,7 +611,9 @@ public final class PluginHost: @unchecked Sendable {
             }
             return active
         }
-        for plugin in self.store.loadPlugins() {
+        let installed = self.store.loadPlugins()
+        try self.permissions.migrateInstalled(installed.map(\.id), to: self.store)
+        for plugin in installed {
             self.state.upsert(plugin)
         }
     }
@@ -697,6 +700,7 @@ public final class PluginHost: @unchecked Sendable {
     /// Остановить: очередь → сторож → интерпретаторы → CPython.
     /// Терминальная операция. При pending/abandoned CPython не финализируется.
     public func stop() async {
+        elyxDeveloperServices.invalidate()
         var loggedWaiting = false
         while true {
             switch lifecycle.requestStop() {
@@ -730,6 +734,7 @@ public final class PluginHost: @unchecked Sendable {
         let seconds = configured.isFinite && configured > 0 ? min(configured, 86_400) : 5
         let deadline = try! PluginLifecycleDeadline(seconds: seconds)
         let active = state.beginStopping()
+        elyxDeveloperServices.invalidate()
         gate.reset()
         await queue.stop()
         await watchdog.stop()
@@ -782,6 +787,7 @@ public final class PluginHost: @unchecked Sendable {
         try Task.checkCancellation()
         let deadline = try PluginLifecycleDeadline(seconds: timeout)
         let context = try lifecycle.beginMaintenance()
+        elyxDeveloperServices.invalidate()
         recomputeGate()
         do {
             try await deadline.run { try await self.lifecycle.waitUntilIdle(context.attempt) }
@@ -916,7 +922,244 @@ public final class PluginHost: @unchecked Sendable {
 
     // MARK: - Жизненный цикл плагинов
 
-    /// Прочитать метаданные через AST SDK, не исполняя устанавливаемый файл.
+    /// The actual production activation path: install a new native registry
+    /// binding, probe it on a fresh trusted worker, then construct native FD IO.
+    /// A failed probe remains retryable for this same captured scope.
+    public func activateElyxDeveloper(scope: UUID, isCurrent: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperService {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        guard isRunning, isCurrent() else { throw PluginElyxDeveloperError.stale("Elyx activation has no current running Host") }
+        let service = try elyxDeveloperServices.acquire(host: self, scope: scope, isCurrent: isCurrent,
+            diagnostic: { [log = self.log] text in log?(text) })
+        _ = try await service.prepare()
+        guard isCurrent(), service.isActive else { throw PluginElyxDeveloperError.stale("Elyx activation scope retired") }
+        return service
+    }
+
+    /// Native-only, synchronous revocation before mode/context/Host transitions.
+    public func deactivateElyxDeveloper(scope: UUID? = nil) { elyxDeveloperServices.invalidate(scope: scope) }
+
+    /// No source file, plugin, archive entry or Python mapping is evaluated.
+    /// The probe's unknown-ticket check must reach this exact installed registry.
+    public func probeElyxSourceReadiness(registry: PluginElyxDeveloperDescriptorRegistry, bindingEpoch: UUID,
+                                         shouldExecute: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperBridgeReadiness {
+        let activity = try lifecycle.enter()
+        let retained = PluginInvocationRetention(batch: nil) { activity.finish() }
+        let cancellation = PluginEventRevocation(external: shouldExecute)
+        let handle = PluginElyxProbeHandle()
+        let challenge = try registry.beginReadinessChallenge()
+        let current: @Sendable () -> Bool = { [weak self] in
+            guard let self else { return false }
+            return self.isRunning && shouldExecute() && cancellation.error == nil
+                && self.bridge.elyxSourceDispatcherBindingEpoch == bindingEpoch
+        }
+        let timeout = min(8, max(0.1, configuration.interpreters.callTimeout))
+        do {
+            return try await withTaskCancellationHandler(operation: {
+                try await withDispatchTimeout(timeout) { [self, retained] in
+                    defer { withExtendedLifetime(retained) {}; challenge.finished() }
+                    guard current() else { throw PluginElyxDeveloperError.stale("Elyx readiness retired before inspector creation") }
+                    var policy = PythonInterpreterConfiguration()
+                    policy.allowThreads = false
+                    let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
+                        bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
+                    handle.set(inspector)
+                    do {
+                        let source = "__import__('exteraless_runtime._elyx_readiness', fromlist=['probe_json']).probe_json("
+                            + PluginRuntimeScript.quote(challenge.nonce) + ")"
+                        let output = try await self.interpreters.invoke(inspector, script: source, shouldExecute: {
+                            PluginElyxDeveloperDescriptorExecution.install(nil)
+                            guard current() else { return false }
+                            PluginElyxDeveloperDescriptorExecution.install(.inspection(challenge.context), isCurrent: current)
+                            return true
+                        }, maintenanceEpoch: nil, onExecutionFinished: {
+                            PluginElyxDeveloperDescriptorExecution.install(nil)
+                            challenge.finished()
+                            retained.nativeFinished()
+                        })
+                        await self.interpreters.destroy(inspector)
+                        guard current() else { throw PluginElyxDeveloperError.stale("Elyx readiness retired before its receipt") }
+                        return try challenge.validate(output, registryID: registry.identifier, epoch: bindingEpoch)
+                    } catch { await self.interpreters.destroy(inspector); throw error }
+                }
+            }, onCancel: { cancellation.revoke(.superseded("Elyx readiness waiter cancelled")) })
+        } catch is DispatchTimeoutError {
+            cancellation.revoke(.timeout("Elyx readiness"))
+            if let inspector = handle.current { await interpreters.abandon(inspector) }
+            throw PluginHostError.timeout("Elyx source readiness")
+        }
+    }
+
+    /// Native authenticated ingress captures these values synchronously.
+    /// This API and the file capabilities have no Python bridge registration.
+    public func elyxDeveloperTargets(_ request: PluginElyxDeveloperRequest) throws -> [PluginElyxDeveloperTarget] {
+        guard state.isRunning, lifecycle.permitsCallbacks else { throw PluginHostError.notRunning }
+        let targets = state.eventTargets().filter { $0.plugin.fileFormat.isArchive && $0.plugin.isEnabled && !$0.plugin.notResponding }
+            .sorted { $0.plugin.id < $1.plugin.id }
+        let selected = targets.filter { request.pluginId == nil || request.pluginId == $0.plugin.id }
+        if request.pluginId != nil, selected.count != 1 { throw PluginElyxDeveloperError.stale("selected Elyx plugin is not loaded") }
+        return try (request.kind == .ping ? Array(selected.prefix(1)) : selected).map { target in
+            guard let owner = currentCallbackOwner(id: target.plugin.id), owner.interpreter == target.handle else {
+                throw PluginElyxDeveloperError.stale("Elyx owner retired during capture")
+            }
+            return try PluginElyxDeveloperTarget(plugin: target.plugin, owner: owner, consent: permissions.snapshot(target.plugin.id))
+        }
+    }
+
+    private func isCurrentElyxDeveloperTarget(_ target: PluginElyxDeveloperTarget) -> Bool {
+        guard state.isRunning, target.owner.hostIdentity == callbackHostIdentity,
+              let live = state.target(id: target.plugin.id, expected: target.owner.interpreter),
+              live.wireToken == target.owner.wireToken, live.plugin.loaded, live.plugin.isEnabled else { return false }
+        return target.matches(live.plugin) && permissions.snapshot(target.plugin.id) == target.consent
+    }
+
+    /// Static FD inspection supplied to the native file authority. This creates
+    /// an inspector, never a plugin generation; the SDK hook has no exec mapping.
+    public func inspectElyxDeveloperDescriptor(_ descriptor: any PluginElyxDeveloperDescriptorLease, format: PluginFileFormat,
+                                               shouldExecute: @escaping @Sendable () -> Bool) async throws -> Plugin {
+        let activity = try lifecycle.enter()
+        defer { activity.finish() }
+        try descriptor.checkCurrent()
+        let descriptorJSON = descriptor.descriptorJSON
+        guard state.isRunning, shouldExecute(), format.isArchive, descriptorJSON.utf8.count <= 4096 else {
+            throw PluginElyxDeveloperError.stale("Elyx descriptor inspection was not admitted")
+        }
+        var policy = PythonInterpreterConfiguration()
+        policy.allowThreads = false
+        let inspector = try await interpreters.createInterpreter(for: "exteralessMetadataInspector",
+            bootstrapScript: configuration.runtime.metadataBootstrapScript(), configuration: policy)
+        do {
+            guard let issued = descriptor as? PluginElyxDeveloperDescriptor else {
+                throw PluginElyxDeveloperError.stale("inspection requires a native-issued descriptor lease")
+            }
+            let consumer = try issued.bindNativeInspection()
+            let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['inspect_fd_json']).inspect_fd_json("
+                + PluginRuntimeScript.quote(descriptorJSON) + ")"
+            let output = try await interpreters.invoke(inspector, script: source,
+                shouldExecute: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    guard shouldExecute(), (try? descriptor.checkCurrent()) != nil else { return false }
+                    PluginElyxDeveloperDescriptorExecution.install(consumer, isCurrent: {
+                        shouldExecute() && (try? descriptor.checkCurrent()) != nil
+                    })
+                    return true
+                }, maintenanceEpoch: nil,
+                onExecutionFinished: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    withExtendedLifetime(descriptor) {}
+                })
+            await interpreters.destroy(inspector)
+            guard shouldExecute() else { throw PluginElyxDeveloperError.stale("Elyx inspection scope retired") }
+            return try PluginRuntimeScript.metadata(output, format: format)
+        } catch { await interpreters.destroy(inspector); throw error }
+    }
+
+    public func elyxDeveloper(_ request: PluginElyxDeveloperRequest, targets: [PluginElyxDeveloperTarget], account: Int32,
+                              files: (any PluginElyxDeveloperFileAuthority)?, deadline: TimeInterval,
+                              shouldExecute: @escaping @Sendable () -> Bool,
+                              publication: PluginElyxDeveloperPublicationState? = nil) async throws -> [String: PluginJSONValue] {
+        let publication = publication ?? (request.kind == .changes ? PluginElyxDeveloperPublicationState(pluginId: request.pluginId) : nil)
+        do {
+            let activity = try lifecycle.enter()
+            defer { activity.finish() }
+            guard account >= 0 else { throw PluginElyxDeveloperError.malformed("developer account must be a nonnegative Int32") }
+            let live: @Sendable () -> Bool = { shouldExecute() && ProcessInfo.processInfo.systemUptime < deadline && self.state.isRunning }
+            return try await PluginElyxDeveloperTransaction.run(request, targets: targets, files: files,
+                current: { self.isCurrentElyxDeveloperTarget($0) },
+                installedCurrent: { installed, consent in
+                    guard let plugin = self.state.plugin(id: installed.plugin.id), PluginElyxDeveloperTarget.sameInstallation(plugin, installed.plugin) else { return false }
+                    return self.currentCallbackOwner(id: plugin.id) == installed.owner && self.permissions.snapshot(plugin.id) == consent
+                }, session: live,
+                read: { target, digest in
+                    guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired before worker admission") }
+                    let name = digest == nil ? "_elyx_developer.read_json" : "_elyx_developer.manifest_json"
+                    var args = [target.plugin.id, target.owner.wireToken]
+                    if let digest { args.append(digest) }
+                    args.append(String(account))
+                    let output = try await self.invokePlugin(target.plugin, PluginRuntimeScript.call(name, args),
+                        expectedHandle: target.owner.interpreter,
+                        shouldExecute: { live() && self.isCurrentElyxDeveloperTarget(target) },
+                        timeout: min(self.configuration.interpreters.callTimeout, max(0.01, deadline - ProcessInfo.processInfo.systemUptime)))
+                    guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired after worker read") }
+                    return output
+                }, ping: {
+                    guard live() else { throw PluginElyxDeveloperError.stale("Elyx ping session retired") }
+                    var policy = PythonInterpreterConfiguration()
+                    policy.allowThreads = false
+                    let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
+                        bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
+                    do {
+                        let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['ping_json']).ping_json()"
+                        let value = try await self.interpreters.invoke(inspector, script: source, shouldExecute: live)
+                        await self.interpreters.destroy(inspector)
+                        return value
+                    } catch { await self.interpreters.destroy(inspector); throw error }
+                }, publish: { target, source, prepared in
+                    guard let publication else { throw PluginHostError.internalInconsistency("missing native publication state") }
+                    return try await self.publishElyxDeveloper(target: target, source: source, prepared: prepared, shouldExecute: live, publication: publication)
+                }, publication: publication)
+        } catch {
+            if let publication { throw publication.failure(error) }
+            throw error
+        }
+    }
+
+    private func publishElyxDeveloper(target: PluginElyxDeveloperTarget, source: any PluginElyxDeveloperSource,
+                                      prepared: any PluginElyxDeveloperPrepared,
+                                      shouldExecute: @escaping @Sendable () -> Bool,
+                                      publication: PluginElyxDeveloperPublicationState) async throws -> PluginElyxDeveloperInstalled {
+        try Task.checkCancellation()
+        try state.beginMutation(target.plugin.id)
+        defer { state.endMutation(target.plugin.id) }
+        guard shouldExecute(), isCurrentElyxDeveloperTarget(target), target.consent.record != nil else {
+            throw PluginElyxDeveloperError.stale("Elyx replacement owner/consent retired before mutation")
+        }
+        try source.checkCurrent()
+        try prepared.checkBeforePublication()
+        var plugin = prepared.metadata
+        guard plugin.id == target.plugin.id, plugin.fileFormat == target.plugin.fileFormat,
+              plugin.engine == "python", Plugin.isValidID(plugin.id, format: plugin.fileFormat) else {
+            throw PluginElyxDeveloperError.malformed("Elyx candidate changed installed ID/format/engine")
+        }
+        plugin.path = target.plugin.path
+        plugin.enabled = target.plugin.enabled
+        guard shouldExecute(), isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx replacement retired before unload") }
+        guard await unloadPlugin(id: plugin.id, expectedHandle: target.owner.interpreter, duringMutation: true) else {
+            throw PluginElyxDeveloperError.stale("Elyx unload did not retire the captured owner")
+        }
+        // Our own retirement is expected. The per-ID reservation still excludes
+        // replacement/consent edits; model, session and source CAS remain live.
+        let publishCurrent: @Sendable () -> Bool = {
+            guard shouldExecute(), !self.state.isStopping, self.currentCallbackOwner(id: target.plugin.id) == nil,
+                  let current = self.state.plugin(id: target.plugin.id), target.matches(current) else { return false }
+            return self.permissions.snapshot(target.plugin.id) == target.consent
+        }
+        guard publishCurrent() else { throw PluginElyxDeveloperError.stale("Elyx publication scope retired") }
+        try source.checkCurrent()
+        try prepared.checkBeforePublication()
+        do {
+            try prepared.publish(shouldExecute: publishCurrent)
+            publication.record(.committed)
+            try prepared.checkPublished()
+            // Consent is preserved exactly. Metadata requests never select a new tier
+            // or grant. The captured revision is checked at publication and load.
+            plugin = try persistInstalledPlugin(plugin)
+            let loadCurrent: @Sendable () -> Bool = {
+                shouldExecute() && self.permissions.snapshot(target.plugin.id) == target.consent
+                    && (try? prepared.checkPublished()) != nil
+            }
+            if plugin.enabled {
+                plugin = await loadPlugin(plugin, duringMutation: true, shouldExecute: loadCurrent, verifiedArchive: prepared,
+                                          onFailure: { publication.recordLoadFailure($0) })
+            }
+            notifyReload()
+            if let failure = publication.loadFailure { throw failure }
+            guard loadCurrent() else { throw PluginElyxDeveloperError.stale("Elyx installed source/session retired before receipt") }
+            return PluginElyxDeveloperInstalled(plugin: plugin, owner: currentCallbackOwner(id: plugin.id))
+        } catch { throw publication.failure(error) }
+    }
+
+    /// Static SDK metadata inspection (source AST or bounded Elyx ZIP data).
     public func readPluginMetadata(sourceURL: URL) async throws -> Plugin {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
@@ -925,6 +1168,7 @@ public final class PluginHost: @unchecked Sendable {
 
     private func readPluginMetadataImpl(sourceURL: URL) async throws -> Plugin {
         guard state.isRunning else { throw PluginHostError.notRunning }
+        let format = try pluginFormat(sourceURL)
         var policy = PythonInterpreterConfiguration()
         policy.allowThreads = false
         let inspector = try await interpreters.createInterpreter(
@@ -934,7 +1178,7 @@ public final class PluginHost: @unchecked Sendable {
         do {
             let output = try await interpreters.invoke(inspector,
                 script: PluginRuntimeScript.call("metadata_json", [sourceURL.path]))
-            let metadata = try PluginRuntimeScript.metadata(output)
+            let metadata = try PluginRuntimeScript.metadata(output, format: format)
             await interpreters.destroy(inspector)
             return metadata
         } catch {
@@ -953,38 +1197,87 @@ public final class PluginHost: @unchecked Sendable {
 
     /// Установить проверенный файл, затем загрузить его на worker плагина.
     @discardableResult
-    public func installPlugin(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
+    public func installPlugin(sourceURL: URL, metadata: Plugin, selection: PluginPermissionRecord? = nil,
+                              admission: @escaping @Sendable () -> Bool = { true },
+                              shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> Plugin {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
-        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata)
+        return try await installPluginImpl(sourceURL: sourceURL, metadata: metadata,
+                                           selection: selection, admission: admission, shouldExecute: shouldExecute)
     }
 
-    private func installPluginImpl(sourceURL: URL, metadata: Plugin) async throws -> Plugin {
-        guard Plugin.isValidID(metadata.id) else {
-            throw PluginHostError.invalidPlugin("id \(metadata.id) не проходит валидацию ^[A-Za-z][A-Za-z0-9_-]{1,31}$")
+    private func installPluginImpl(sourceURL: URL, metadata: Plugin, selection: PluginPermissionRecord? = nil,
+                                   admission: @escaping @Sendable () -> Bool = { true },
+                                   shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> Plugin {
+        let format = try pluginFormat(sourceURL)
+        guard !Plugin.isReservedID(metadata.id) else {
+            throw PluginHostError.invalidPlugin("plugin id is reserved for the native metadata inspector")
+        }
+        guard Plugin.isValidID(metadata.id, format: format), metadata.engine == "python" else {
+            throw PluginHostError.invalidPlugin("unsupported plugin id or engine for \(format.rawValue)")
         }
         try state.beginMutation(metadata.id)
         defer { state.endMutation(metadata.id) }
+        let oldPlugin = state.plugin(id: metadata.id)
+        guard admission(), shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
+        // Archive IDs are also case-sensitive on a case-insensitive filesystem.
+        let name = format.isArchive ? PluginServiceStorage.component(metadata.id) : metadata.id
         let target = URL(fileURLWithPath: configuration.runtime.pluginRootDirectory)
-            .appendingPathComponent(metadata.id + ".plugin")
+            .appendingPathComponent(name).appendingPathExtension(format.installedExtension)
         try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var plugin = metadata
+        plugin.fileFormat = format
         if sourceURL.standardizedFileURL != target.standardizedFileURL {
             let staged = target.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).incoming")
+                .appendingPathExtension(format.installedExtension)
             defer { try? FileManager.default.removeItem(at: staged) }
-            try FileManager.default.copyItem(at: sourceURL, to: staged)
+            if format.isArchive {
+                try copyArchive(sourceURL, to: staged)
+                // Re-read the exact native-staged bytes, not a mutable picker URL
+                // or metadata supplied by a caller. Inspection never runs code.
+                plugin = try await readPluginMetadataImpl(sourceURL: staged)
+                guard plugin.id == metadata.id else { throw PluginHostError.invalidPlugin("staged archive id changed") }
+                plugin.enabled = metadata.enabled
+            } else {
+                try FileManager.default.copyItem(at: sourceURL, to: staged)
+            }
+            guard shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
             await unloadPlugin(id: metadata.id, duringMutation: true)
+            // Archive inspection above owns the authoritative staged metadata.
+            // Commit consent after retiring the old owner and before replacing
+            // source bytes, publishing metadata, or bootstrapping the new owner.
+            try commitInstallConsent(plugin: plugin, replacing: oldPlugin != nil, selection: selection, isCurrent: shouldExecute)
+            try rejectPluginSymlink(target)
             if FileManager.default.fileExists(atPath: target.path) {
                 _ = try FileManager.default.replaceItemAt(target, withItemAt: staged)
             } else {
                 try FileManager.default.moveItem(at: staged, to: target)
             }
         } else {
+            if format.isArchive {
+                plugin = try await readPluginMetadataImpl(sourceURL: sourceURL)
+                guard plugin.id == metadata.id else { throw PluginHostError.invalidPlugin("installed archive id changed") }
+                plugin.enabled = metadata.enabled
+            }
+            guard shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
             await unloadPlugin(id: metadata.id, duringMutation: true)
+            try commitInstallConsent(plugin: plugin, replacing: oldPlugin != nil, selection: selection, isCurrent: shouldExecute)
         }
-        var plugin = metadata
+        guard shouldExecute() else { throw PluginPermissionStoreError.authorityExpired }
+        if let oldPlugin, let previous = oldPlugin.path, previous != target.path {
+            // A source/archive format replacement must not leave the old file
+            // available as an unowned neighbour import. Only remove native files.
+            let oldURL = URL(fileURLWithPath: previous).standardizedFileURL
+            let oldName = (oldPlugin.fileFormat.isArchive ? PluginServiceStorage.component(oldPlugin.id) : oldPlugin.id)
+                + "." + oldPlugin.fileFormat.installedExtension
+            if oldURL.lastPathComponent == oldName,
+               oldURL.deletingLastPathComponent() == target.deletingLastPathComponent().standardizedFileURL,
+               FileManager.default.fileExists(atPath: oldURL.path) {
+                try FileManager.default.removeItem(at: oldURL)
+            }
+        }
         plugin.path = target.path
-        plugin = state.upsert(plugin)
-        persistPlugins()
+        plugin = try persistInstalledPlugin(plugin)
         if plugin.enabled {
             await loadPlugin(plugin, duringMutation: true)
             plugin = state.plugin(id: plugin.id) ?? plugin
@@ -999,14 +1292,65 @@ public final class PluginHost: @unchecked Sendable {
         defer { activity.finish() }
         try state.beginMutation(id)
         defer { state.endMutation(id) }
-        await unloadPlugin(id: id, duringMutation: true)
-        if let plugin = state.plugin(id: id), let path = plugin.path {
-            try? FileManager.default.removeItem(atPath: path)
+        guard let installed = state.plugin(id: id) else { throw PluginHostError.pluginNotFound(id) }
+        // Pin existing archive inodes before retirement can suspend. A late
+        // filesystem replacement must never become a new purge target by name.
+        let storageRoot = URL(fileURLWithPath: configuration.runtime.pluginRootDirectory).deletingLastPathComponent()
+        let archiveCache: PluginArchiveCacheLease?
+        if installed.fileFormat.isArchive {
+            archiveCache = try PluginServiceStorage(rootDirectory: storageRoot).captureArchiveCache(pluginId: id)
+        } else {
+            archiveCache = nil
         }
-        state.removePlugin(id: id)
-        persistPlugins()
-        permissions.clear(id, in: store)
+        let previousPermissions = permissions.effective(id)
+        // Fail before destructive archive/model cleanup if consent cannot be
+        // removed. Both level and raw grants are forgotten in one commit.
+        try permissions.clear(id, in: store)
+        permissionsChanged(id: id, previous: previousPermissions)
+        await unloadPlugin(id: id, duringMutation: true)
+        // No await after this cleanup: a replacement cannot acquire this ID
+        // until all old archive resources and model state have been retired.
+        try archiveCache?.purge()
+        if let plugin = state.plugin(id: id), let path = plugin.path, FileManager.default.fileExists(atPath: path) {
+            try FileManager.default.removeItem(atPath: path)
+        }
+        try persistUninstalledPlugin(id: id)
         notifyReload()
+    }
+
+    private func pluginFormat(_ url: URL) throws -> PluginFileFormat {
+        guard url.isFileURL, let format = PluginFileFormat(pathExtension: url.pathExtension) else {
+            throw PluginHostError.invalidPlugin("expected a .py, .plugin, .elyx or .eaf file")
+        }
+        return format
+    }
+
+    private func rejectPluginSymlink(_ url: URL) throws {
+        let attributes: [FileAttributeKey: Any]
+        do { attributes = try FileManager.default.attributesOfItem(atPath: url.path) }
+        catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && (error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError) { return }
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            throw PluginHostError.invalidPlugin("plugin file must be a regular file, not a symbolic link")
+        }
+    }
+
+    private func copyArchive(_ source: URL, to target: URL) throws {
+        try rejectPluginSymlink(source)
+        // Matches _archives.MAX_ARCHIVE_BYTES. Bound the copy itself even if a
+        // provider changes its file after the metadata preview/stat.
+        let maximum = 32 * 1024 * 1024
+        let input = try FileHandle(forReadingFrom: source)
+        defer { try? input.close() }
+        try Data().write(to: target, options: .withoutOverwriting)
+        let output = try FileHandle(forWritingTo: target)
+        defer { try? output.close() }
+        var total = 0
+        while let chunk = try input.read(upToCount: 65_536), !chunk.isEmpty {
+            total += chunk.count
+            guard total <= maximum else { throw PluginHostError.invalidPlugin("Elyx archive exceeds 32 MiB compressed limit") }
+            try output.write(contentsOf: chunk)
+        }
     }
 
     /// Включить/выключить плагин (персистентно).
@@ -1045,14 +1389,66 @@ public final class PluginHost: @unchecked Sendable {
     public func pluginList() -> [Plugin] { state.pluginList() }
 
     public func grantedPermissions(id: String) -> [PluginPermission] {
-        PluginPermission.allCases.filter { permissions.has(id, $0) }
+        let effective = permissions.snapshot(id).effective
+        return PluginPermission.allCases.filter { effective.contains($0) }
     }
 
+    public func permissionSnapshot(id: String) -> PluginPermissionSnapshot { permissions.snapshot(id) }
+
+    /// Legacy explicit native consent includes its necessary tier. Level-aware
+    /// manager controls use the overload below; Python has no consent setter.
     public func setGrantedPermissions(id: String, permissions grants: [PluginPermission]) throws {
+        try mutatePluginConsent(id: id) { current in
+            try self.permissions.setGranted(id, grants, to: self.store, isCurrent: current)
+        }
+    }
+
+    public func setGrantedPermissions(id: String, permissions grants: [PluginPermission], atLevel level: PluginTrustLevel,
+                                      expected: PluginPermissionSnapshot,
+                                      shouldExecute: @escaping @Sendable () -> Bool) throws {
+        try mutatePluginConsent(id: id, expected: expected, shouldExecute: shouldExecute) { current in
+            try self.permissions.setConsent(id, level: level, permissions: grants, to: self.store, isCurrent: current)
+        }
+    }
+
+    public func setPluginTrustLevel(id: String, level: PluginTrustLevel,
+                                   expected: PluginPermissionSnapshot? = nil,
+                                   shouldExecute: @escaping @Sendable () -> Bool = { true }) throws {
+        try mutatePluginConsent(id: id, expected: expected, shouldExecute: shouldExecute) { current in
+            try self.permissions.setLevel(id, level, to: self.store, isCurrent: current)
+        }
+    }
+
+    private func mutatePluginConsent(id: String, expected: PluginPermissionSnapshot? = nil,
+                                     shouldExecute: @escaping @Sendable () -> Bool = { true },
+                                     _ change: (@Sendable () -> Bool) throws -> Void) throws {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
+        try state.beginMutation(id)
+        defer { state.endMutation(id) }
         guard state.plugin(id: id) != nil else { throw PluginHostError.pluginNotFound(id) }
-        permissions.setGranted(id, grants, to: store)
+        let current: @Sendable () -> Bool = { [self] in
+            !state.isStopping && shouldExecute()
+                && (expected.map { permissions.snapshot(id) == $0 } ?? true)
+        }
+        guard current() else { throw PluginPermissionStoreError.authorityExpired }
+        let previous = permissions.effective(id)
+        try change(current)
+        // No throwing/cancellation check after the durable permission commit.
+        permissionsChanged(id: id, previous: previous)
+    }
+
+    private func commitInstallConsent(plugin: Plugin, replacing: Bool, selection: PluginPermissionRecord?,
+                                      isCurrent: @Sendable () -> Bool) throws {
+        let previous = permissions.effective(plugin.id)
+        try permissions.prepareInstall(plugin.id, replacing: replacing, selection: selection, to: store, isCurrent: isCurrent)
+        permissionsChanged(id: plugin.id, previous: previous)
+    }
+
+    private func permissionsChanged(id: String, previous: Set<PluginPermission>) {
+        if !previous.subtracting(permissions.effective(id)).isEmpty {
+            bridge.permissionsChanged(pluginId: id)
+        }
         recomputeGate()
         notifyReload()
     }
@@ -1068,14 +1464,42 @@ public final class PluginHost: @unchecked Sendable {
     /// lock-only account/page/read predicate, rechecked on the actual worker.
     public func settingsJSON(id: String, account: Int32,
                              expectedOwner: CallbackOwner? = nil,
-                             shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws -> String {
+                             shouldExecute: @escaping @Sendable () -> Bool = { true },
+                             page: PluginSettingsPageLease? = nil) async throws -> String {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
         try Task.checkCancellation()
         let owner = try Self.resolveSettingsReadOwner(id: id, expectedOwner: expectedOwner,
                                                       state: state, hostIdentity: callbackHostIdentity)
-        return try await events.requestCreateSettings(CreateSettingsPayload(
-            pluginId: id, account: account, expectedOwner: owner, shouldExecute: shouldExecute))
+        if let page {
+            let pageId = page.id
+            try page.claimRead(owner: owner, account: account) { [weak self] in
+                Task.detached { [weak self] in await self?.releaseSettingsPage(id: id, pageId: pageId, owner: owner) }
+            }
+        }
+        let guardRead: @Sendable () -> Bool = { shouldExecute() && (page?.isOpen ?? true) }
+        do {
+            let json = try await events.requestCreateSettings(CreateSettingsPayload(
+                pluginId: id, account: account, expectedOwner: owner, shouldExecute: guardRead, settingsPage: page))
+            try Task.checkCancellation()
+            guard guardRead() else { throw PluginHostError.superseded("Settings page expired after its worker read") }
+            guard json.utf8.count <= 1024 * 1024 else { throw PluginHostError.runtimeFailure("Settings response exceeds 1 MiB") }
+            return json
+        } catch {
+            page?.close()
+            throw error
+        }
+    }
+
+    private func releaseSettingsPage(id: String, pageId: String, owner: CallbackOwner) async {
+        // If close preceded worker entry, its page guard rejects materialization.
+        // If it followed entry, this same mailbox FIFO releases after the build.
+        // Unload has its own SDK CallbackLeases.end cleanup for a retired owner.
+        guard let activity = try? reserveCallbackActivity(owner) else { return }
+        defer { activity.finish() }
+        guard let target = try? settingsTarget(id: id, expectedOwner: owner) else { return }
+        _ = try? await invokePlugin(target.plugin, PluginRuntimeScript.call("_ui.release_settings_page_json", [pageId]),
+            expectedHandle: target.handle)
     }
 
     private static func resolveSettingsReadOwner(id: String, expectedOwner: CallbackOwner?,
@@ -1097,9 +1521,20 @@ public final class PluginHost: @unchecked Sendable {
                               shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
-        let target = try settingsTarget(id: id, expectedOwner: expectedOwner)
+        let page = PluginSettingsPageExecution.current
+        let target = try settingsTarget(id: id, expectedOwner: expectedOwner ?? page?.owner)
         guard shouldExecute() else { throw PluginHostError.superseded("Settings execution scope expired") }
-        _ = try PluginRuntimeScript.jsonValue(valueJSON)
+        let value = try PluginRuntimeScript.jsonValue(valueJSON)
+        if let page {
+            try page.check(owner: expectedOwner ?? page.owner, account: account ?? page.account)
+            let event = try PluginRuntimeScript.encodeJSON(["kind": "change", "key": key, "value": value])
+            let current: @Sendable () -> Bool = { [permissions = self.permissions] in
+                page.isOpen && shouldExecute() && permissions.has(id, .ui)
+            }
+            _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("_ui.settings_page_event_json", [page.id, event]),
+                expectedHandle: target.handle, shouldExecute: current, settingsEffectGuard: current)
+            return
+        }
         _ = try await invokePlugin(target.plugin, try settingsScript("setting_changed_json", [key, valueJSON], account: account),
                                    expectedHandle: target.handle, shouldExecute: shouldExecute)
     }
@@ -1109,8 +1544,24 @@ public final class PluginHost: @unchecked Sendable {
                              shouldExecute: @escaping @Sendable () -> Bool = { true }) async throws {
         let activity = try lifecycle.enter()
         defer { activity.finish() }
-        let target = try settingsTarget(id: id, expectedOwner: expectedOwner)
+        let page = PluginSettingsPageExecution.current
+        let target = try settingsTarget(id: id, expectedOwner: expectedOwner ?? page?.owner)
         guard shouldExecute() else { throw PluginHostError.superseded("Settings execution scope expired") }
+        if let page {
+            try page.check(owner: expectedOwner ?? page.owner, account: account ?? page.account)
+            let event = try PluginSettingsPageExecution.widgetEventJSON
+                ?? PluginRuntimeScript.encodeJSON(["kind": "click", "callbackId": callbackId])
+            guard event.utf8.count <= 512 * 1024,
+                  (try PluginRuntimeScript.jsonValue(event)) is [String: Any] else {
+                throw PluginHostError.runtimeFailure("Settings widget event must be bounded JSON")
+            }
+            let current: @Sendable () -> Bool = { [permissions = self.permissions] in
+                page.isOpen && shouldExecute() && permissions.has(id, .ui)
+            }
+            _ = try await invokePlugin(target.plugin, PluginRuntimeScript.call("_ui.settings_page_event_json", [page.id, event]),
+                expectedHandle: target.handle, shouldExecute: current, settingsEffectGuard: current)
+            return
+        }
         _ = try await invokePlugin(target.plugin, try settingsScript("setting_click_json", [callbackId], account: account),
                                    expectedHandle: target.handle, shouldExecute: shouldExecute)
     }
@@ -1248,16 +1699,21 @@ public final class PluginHost: @unchecked Sendable {
     // MARK: - Загрузка/выгрузка
 
     @discardableResult
-    private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false) async -> Plugin {
+    private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false,
+                            shouldExecute: @escaping @Sendable () -> Bool = { true },
+                            verifiedArchive: (any PluginElyxDeveloperPrepared)? = nil,
+                            onFailure: (@Sendable (Error) -> Void)? = nil) async -> Plugin {
         var plugin = plugin
         var created: InterpreterHandle?
         var publishedHandle = false
         var riskyOperation: PluginWatchdog.RiskyOperation?
         do {
+            guard shouldExecute(), !Task.isCancelled else { return state.plugin(id: plugin.id) ?? plugin }
             try state.beginLoading(plugin.id, duringMutation: duringMutation)
         } catch {
             // A rejected duplicate owns no generation and must not publish a
             // failed copy over an active/in-progress load or release its handles.
+            onFailure?(error)
             log?("PluginHost skipped load \(plugin.id): \(error)")
             return state.plugin(id: plugin.id) ?? plugin
         }
@@ -1266,29 +1722,47 @@ public final class PluginHost: @unchecked Sendable {
         do {
             guard !state.isStopping else { throw PluginHostError.notRunning }
             guard let path = plugin.path else { throw PluginHostError.invalidPlugin("Plugin file path is missing") }
+            let format = try pluginFormat(URL(fileURLWithPath: path))
+            guard format == plugin.fileFormat, Plugin.isValidID(plugin.id, format: format), !Plugin.isReservedID(plugin.id) else {
+                throw PluginHostError.invalidPlugin("persisted plugin format or id does not match its file")
+            }
             // Загрузка — рискованная операция: маркер сторожа немедленно
             // (notePluginEnter(id, risky=true) в PluginsWatchdog.java).
             riskyOperation = await watchdog.noteRiskyOperation(plugin.id)
-            guard !state.isStopping else { throw PluginHostError.notRunning }
+            guard !state.isStopping, shouldExecute(), !Task.isCancelled else { throw PluginHostError.notRunning }
             let handle = try await interpreters.createInterpreter(
                 for: plugin.id,
-                bootstrapScript: configuration.runtime.bootstrapScript(interpreterPluginId: plugin.id))
+                bootstrapScript: configuration.runtime.bootstrapScript(interpreterPluginId: plugin.id, fileFormat: format))
             created = handle
             guard state.setHandle(handle) else {
                 throw PluginHostError.notRunning
             }
             publishedHandle = true
             guard let owner = currentCallbackOwner(id: plugin.id) else { throw PluginHostError.notRunning }
+            let verifiedSource = try verifiedArchive?.loadSource(owner: owner)
+            if let verifiedSource, verifiedSource.descriptorJSON.utf8.count > 4096 {
+                throw PluginElyxDeveloperError.malformed("verified load descriptor exceeds 4096 bytes")
+            }
+            let loadCurrent: @Sendable () -> Bool = {
+                guard shouldExecute() else { return false }
+                if let verifiedSource { return (try? verifiedSource.checkCurrent()) != nil }
+                return true
+            }
             let tokenJSON = try PluginRuntimeScript.encodeJSON(owner.wireToken)
             let bindSource = "_exteraless_bridge.xt_set_owner_token(\(PluginRuntimeScript.quote(owner.wireToken)))\n"
                 + PluginRuntimeScript.call("bind_owner_json", [tokenJSON])
-            _ = try await invokePlugin(plugin, bindSource, expectedHandle: handle)
-            let output = try await invokePlugin(plugin, PluginRuntimeScript.call("load_json", [path]), expectedHandle: handle)
+            _ = try await invokePlugin(plugin, bindSource, expectedHandle: handle, shouldExecute: loadCurrent)
+            let loadSource = verifiedSource.map { PluginRuntimeScript.call("_elyx_developer.load_verified_json", [path, $0.descriptorJSON]) }
+                ?? PluginRuntimeScript.call("load_json", [path])
+            let output = try await invokePlugin(plugin, loadSource, expectedHandle: handle, shouldExecute: loadCurrent,
+                                                retainingElyxSource: verifiedSource)
             plugin = try PluginRuntimeScript.applyLoadResult(output, to: plugin)
+            guard loadCurrent() else { throw PluginElyxDeveloperError.stale("verified Elyx load scope retired before publication") }
             guard state.publishLoaded(plugin, handle: handle) else {
                 throw PluginHostError.superseded("Load owner was retired: \(plugin.id)")
             }
         } catch {
+            onFailure?(error)
             var expectedForFailure = created
             if let created {
                 if await unloadPlugin(id: plugin.id, expectedHandle: created, duringMutation: duringMutation) {
@@ -1365,6 +1839,13 @@ public final class PluginHost: @unchecked Sendable {
         return true
     }
 
+    private func canInvokeSend(pluginId: String, handle: InterpreterHandle) -> Bool {
+        guard permissions.has(pluginId, .messagesSend),
+              let target = state.target(id: pluginId, expected: handle), target.plugin.isEnabled,
+              target.plugin.handles(.sendMessage) else { return false }
+        return true
+    }
+
     private func handleEvent(_ event: PluginEvent, execution: PluginEventExecution) async throws -> PluginEventResult {
         try execution.check()
         if case .appEvent(let payload) = event, lifecycle.isBarrier(payload.name) { return .none }
@@ -1386,6 +1867,7 @@ public final class PluginHost: @unchecked Sendable {
             }
             _ = try Self.resolveSettingsReadOwner(id: payload.pluginId, expectedOwner: owner,
                                                   state: state, hostIdentity: callbackHostIdentity)
+            if let page = payload.settingsPage { try page.check(owner: owner, account: payload.account) }
             guard payload.shouldExecute() else { throw PluginHostError.superseded("Settings read execution scope expired") }
             guard let target = subscribers.first(where: { $0.plugin.id == payload.pluginId && $0.handle == owner.interpreter }) else {
                 return .settingsJSON("[]")
@@ -1398,16 +1880,52 @@ public final class PluginHost: @unchecked Sendable {
             var result = PluginSendMessageResult()
             var currentParams = payload.paramsJSON
             let sendRoot = UUID().uuidString
+            var ordered: [(plugin: Plugin, handle: InterpreterHandle, priority: Int32)] = []
             for target in subscribers {
                 try execution.check()
+                guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
+                do {
+                    let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [target.plugin.id])
+                    let source = PluginRuntimeScript.call("hook_priority_json", ["on_send_message_hook", "", ""])
+                    let output = try await invokePlugin(target.plugin, source, expectedHandle: target.handle,
+                        shouldExecute: { [weak self] in self?.canInvokeSend(pluginId: target.plugin.id, handle: target.handle) == true },
+                        tlOrigin: origin, batch: execution)
+                    try execution.check()
+                    guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
+                    guard output.utf8.count <= 128 else {
+                        log?("SEND_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
+                        continue
+                    }
+                    let raw = try PluginRuntimeScript.jsonValue(output)
+                    if raw is NSNull { continue }
+                    let value = try PluginServiceArgument.integer(raw, name: "Send hook priority")
+                    guard let priority = Int32(exactly: value) else {
+                        log?("SEND_HOOK_PRIORITY_INVALID: \(target.plugin.id)")
+                        continue
+                    }
+                    ordered.append((target.plugin, target.handle, priority))
+                } catch {
+                    try execution.check()
+                    // Metadata inspection failure is not a callback verdict.
+                    if canInvokeSend(pluginId: target.plugin.id, handle: target.handle) {
+                        log?("SEND_HOOK_PRIORITY_UNAVAILABLE: \(target.plugin.id)")
+                    }
+                }
+            }
+            ordered.sort { $0.priority == $1.priority ? $0.plugin.id < $1.plugin.id : $0.priority > $1.priority }
+            for target in ordered {
+                try execution.check()
+                guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
                 let plugin = target.plugin
                 do {
                     let currentEvent = PluginEvent.sendMessage(SendMessagePayload(
                         account: payload.account, paramsJSON: currentParams))
                     let origin = try PluginTLInvocationOrigin(rootId: sendRoot, pluginIds: [plugin.id])
                     let output = try await invokePlugin(plugin, try PluginScriptBuilder.dispatch(for: currentEvent), expectedHandle: target.handle,
+                        shouldExecute: { [weak self] in self?.canInvokeSend(pluginId: target.plugin.id, handle: target.handle) == true },
                         tlOrigin: origin, batch: execution)
                     try execution.check()
+                    guard canInvokeSend(pluginId: target.plugin.id, handle: target.handle) else { continue }
                     let decision = try PluginRuntimeScript.applyingSendResult(output, to: currentParams)
                     switch decision.strategy {
                     case .default:
@@ -1421,7 +1939,9 @@ public final class PluginHost: @unchecked Sendable {
                     }
                 } catch {
                     try execution.check()
-                    await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
+                    if canInvokeSend(pluginId: plugin.id, handle: target.handle) {
+                        await recordExecutionFailure(plugin, expectedHandle: target.handle, message: String(describing: error))
+                    }
                 }
             }
             return .sendMessage(result)
@@ -1559,12 +2079,16 @@ public final class PluginHost: @unchecked Sendable {
                                allowUnloading: Bool = false,
                                shouldExecute: @escaping @Sendable () -> Bool = { true },
                                 maintenanceEpoch: UUID? = nil, timeout overrideTimeout: TimeInterval? = nil,
-                                tlOrigin: PluginTLInvocationOrigin? = nil, batch: PluginEventExecution? = nil) async throws -> String {
+                                tlOrigin: PluginTLInvocationOrigin? = nil, batch: PluginEventExecution? = nil,
+                                settingsEffectGuard: (@Sendable () -> Bool)? = nil,
+                                retainingElyxSource: (any PluginElyxDeveloperDescriptorLease)? = nil) async throws -> String {
         try Task.checkCancellation()
         try batch?.check()
         try state.beginInvocation(handle, allowUnloading: allowUnloading)
-        let retained = PluginInvocationRetention(batch: batch) { [state] in state.endInvocation(handle) }
-        let invocationCancellation = PluginEventRevocation(external: { true })
+        let retained = PluginInvocationRetention(batch: batch) { [state, retainingElyxSource] in
+            withExtendedLifetime(retainingElyxSource) { state.endInvocation(handle) }
+        }
+        let invocationCancellation = PluginEventRevocation(external: settingsEffectGuard ?? { true })
         let originScope: PluginTLInvocationScope?
         if let tlOrigin, let target = state.target(id: plugin.id, expected: handle, allowLoading: true) {
             let owner = CallbackOwner(wireToken: target.wireToken, hostIdentity: callbackHostIdentity, interpreter: handle)
@@ -1580,6 +2104,16 @@ public final class PluginHost: @unchecked Sendable {
                 // the same handle, never resolve pluginId to a newer interpreter.
                 try self.state.checkInvocation(handle, allowUnloading: allowUnloading)
                 return try await self.interpreters.invoke(handle, script: script, shouldExecute: {
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
+                    let elyxConsumer: PluginElyxDeveloperDescriptorConsumer?
+                    if let retainingElyxSource {
+                        guard let issued = retainingElyxSource as? PluginElyxDeveloperDescriptor,
+                              let consumer = try? issued.nativeLoadConsumer() else { return false }
+                        elyxConsumer = consumer
+                    } else if let target = self.state.target(id: plugin.id, expected: handle, allowLoading: true) {
+                        elyxConsumer = .owner(CallbackOwner(wireToken: target.wireToken,
+                            hostIdentity: self.callbackHostIdentity, interpreter: handle))
+                    } else { elyxConsumer = nil }
                     // Recheck after the FIFO wait, on the actual owner worker.
                     guard invocationCancellation.error == nil,
                           (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil,
@@ -1589,10 +2123,15 @@ public final class PluginHost: @unchecked Sendable {
                         return false
                     }
                     PluginTLNativeOrigin.install(originScope)
-                    PluginNativeExecutionContext.install(batch?.revocation)
+                    PluginElyxDeveloperDescriptorExecution.install(elyxConsumer, isCurrent: {
+                        invocationCancellation.error == nil && shouldExecute()
+                            && (try? self.state.checkInvocation(handle, allowUnloading: allowUnloading)) != nil
+                    })
+                    PluginNativeExecutionContext.install(batch?.revocation ?? (settingsEffectGuard == nil ? nil : invocationCancellation))
                     return true
                 }, maintenanceEpoch: maintenanceEpoch, onExecutionFinished: {
                     retained.nativeFinished()
+                    PluginElyxDeveloperDescriptorExecution.install(nil)
                     PluginTLNativeOrigin.install(nil)
                     PluginNativeExecutionContext.install(nil)
                 })
@@ -1664,6 +2203,25 @@ public final class PluginHost: @unchecked Sendable {
             guard let delegate = box.load() else { return }
             work(delegate, self)
         }
+    }
+
+    /// Publish installed/removed metadata only after the throwing native write.
+    private func persistInstalledPlugin(_ plugin: Plugin) throws -> Plugin {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+        var next = state.pluginList()
+        if let index = next.firstIndex(where: { $0.id == plugin.id }) { next[index] = plugin }
+        else { next.append(plugin) }
+        try store.savePlugins(next)
+        return state.upsert(plugin)
+    }
+
+    private func persistUninstalledPlugin(id: String) throws {
+        persistenceLock.lock()
+        defer { persistenceLock.unlock() }
+        let next = state.pluginList().filter { $0.id != id }
+        try store.savePlugins(next)
+        state.removePlugin(id: id)
     }
 
     private func persistPlugins() {
@@ -1772,6 +2330,10 @@ enum PluginScriptBuilder {
                 "params": try PluginRuntimeScript.jsonValue(payload.paramsJSON),
             ])
         case .createSettings(let payload):
+            if let page = payload.settingsPage {
+                return PluginRuntimeScript.call("_ui.read_settings_page_json", [page.id,
+                    try PluginRuntimeScript.encodeJSON(["account": payload.account])])
+            }
             return try call("create_settings", ["account": payload.account])
         }
     }

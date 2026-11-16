@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "date": "2026-11-16",
+  "finding": "NFD-02",
+  "semantic_change": "Opaque-FD developer inspection now applies the same known load-policy preflight as ArchiveAdapter._load_record before returning success",
+  "metadata_preview": "unchanged; ordinary readPluginMetadata/metadata_json can preview valid but unloadable archives",
+  "native_provider_changes": false,
+  "native_execution_claimed": false,
+  "checks": {
+    "new_policy_cases": {"passed": 3, "deselected": 7, "seconds": 2.09},
+    "source_authority_and_platform_suites": {"passed": 12, "skipped_posix": 3, "seconds": 4.30},
+    "child_timeout_seconds": 20,
+    "sdk_original_byte_identical": 36,
+    "p2_platform_selectors": "preserved",
+    "ast_whitespace": "passed"
+  },
+  "sha256": {
+    "python/exteraless_runtime/_archives.py": "7238088539f31c414307e1f9e8b986940a87d4525ce6b31e5020b09871b555da",
+    "tools/compat/tests/test_ios_elyx_source_authority.py": "d0a4b5a51ad04c9e582c0c74453a8b924d7629b449574e9f5679f674c022ba23"
+  }
+}

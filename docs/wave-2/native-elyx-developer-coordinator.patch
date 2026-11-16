@@ -1,0 +1,264 @@
+*** Begin Patch
+*** Update File: python/exteraless_runtime/_platform.py
+@@
+         _developer.install(self)
++        from . import _elyx_developer
++        _elyx_developer.install(self)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/PluginDeveloperProtocol.swift
+@@
+         result["#"] = id
+-        result["ok"] = .bool(error == nil)
++        if error != nil { result["ok"] = .bool(false) }
++        else if result["ok"] == nil { result["ok"] = .bool(true) }
++        else if result["ok"]?.bool == nil {
++            result["ok"] = .bool(false)
++            result["error"] = .string("Malformed developer response status")
++        }
+         if let error { result["error"] = .string(error) }
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/Exteraless/ExteralessPluginRuntime.swift
+@@
+     private lazy var developerServer = PluginDeveloperServer { [weak self] request, session in
+@@
+         return try await self.handleDeveloperRequest(request, session: session)
+     }
++    // Installed by the archive FD/source-authority composition. No path-only
++    // fallback while that provider/verified-load ABI is unavailable.
++    private var elyxDeveloperFiles: (any PluginElyxDeveloperFileAuthority)?
+@@
+     private func handleDeveloperRequest(_ request: [String: PluginUIJSON], session: PluginDeveloperSession) async throws -> [String: PluginUIJSON] {
+         try Task.checkCancellation()
+         guard session.isActive, managerPreferences?.snapshot.developerMode == true, let context = currentContext else {
+             throw PluginHostError.runtimeFailure("Developer service is not active")
+         }
++        if let command = request["@"]?.string, PluginElyxDeveloperRequest.recognizes(command) {
++            do {
++                try requirePluginExecution()
++                guard let capturedHost = self.host, capturedHost.isRunning, let store = managerPreferences,
++                      let account = services.accountIndex(recordId: context.account.id.int64) else {
++                    throw PluginHostError.notRunning
++                }
++                // ID, owner and consent are captured before ANY await, including
++                // operationHost/startup. Only the selected owners can be read.
++                let plan = try PluginElyxDeveloperIngress.capture(request, host: capturedHost, account: account,
++                    targets: { try capturedHost.elyxDeveloperTargets($0) })
++                activeOperations += 1
++                defer { activeOperations -= 1 }
++                let result = await PluginElyxDeveloperIngress.run(plan, session: session, files: elyxDeveloperFiles,
++                    nativeCurrent: {
++                        let state = store.snapshot
++                        return state.developerMode && state.permitsPluginExecution
++                    }, execute: { call in
++                        try await capturedHost.elyxDeveloper(call.request, targets: call.targets, account: call.account,
++                            files: call.files, deadline: call.deadline, shouldExecute: call.isCurrent)
++                    }, actorCurrent: { [weak self, weak context, weak capturedHost] in
++                        guard let self, let context, let capturedHost else { return false }
++                        return self.currentContext === context && self.host === capturedHost
++                            && !self.terminating && !self.changingRuntimeMode && self.settingsMaintenanceID == nil
++                            && !self.toolsRecoveryRequired
++                    })
++                if plan.request.kind == .changes {
++                    if let target = plan.targets.first, capturedHost.callbackOwner(id: target.plugin.id) != target.owner {
++                        invalidateSettingsSchema(id: target.plugin.id)
++                    }
++                    refreshSubscriptions()
++                    changed()
++                }
++                return result
++            } catch { return PluginElyxDeveloperIngress.failure(error) }
++        }
+         let host = try await operationHost()
+*** Update File: swift/PluginHost/Sources/PluginHost/PluginHost.swift
+@@
+     // MARK: - Жизненный цикл плагинов
++
++    /// Native authenticated ingress captures these values synchronously.
++    /// This API and the file capabilities have no Python bridge registration.
++    public func elyxDeveloperTargets(_ request: PluginElyxDeveloperRequest) throws -> [PluginElyxDeveloperTarget] {
++        guard state.isRunning, lifecycle.permitsCallbacks else { throw PluginHostError.notRunning }
++        let targets = state.eventTargets().filter { $0.plugin.fileFormat.isArchive && $0.plugin.isEnabled && !$0.plugin.notResponding }
++            .sorted { $0.plugin.id < $1.plugin.id }
++        let selected = targets.filter { request.pluginId == nil || request.pluginId == $0.plugin.id }
++        if request.pluginId != nil, selected.count != 1 { throw PluginElyxDeveloperError.stale("selected Elyx plugin is not loaded") }
++        return try (request.kind == .ping ? Array(selected.prefix(1)) : selected).map { target in
++            guard let owner = currentCallbackOwner(id: target.plugin.id), owner.interpreter == target.handle else {
++                throw PluginElyxDeveloperError.stale("Elyx owner retired during capture")
++            }
++            return try PluginElyxDeveloperTarget(plugin: target.plugin, owner: owner, consent: permissions.snapshot(target.plugin.id))
++        }
++    }
++
++    private func isCurrentElyxDeveloperTarget(_ target: PluginElyxDeveloperTarget) -> Bool {
++        guard state.isRunning, target.owner.hostIdentity == callbackHostIdentity,
++              let live = state.target(id: target.plugin.id, expected: target.owner.interpreter),
++              live.wireToken == target.owner.wireToken, live.plugin.loaded, live.plugin.isEnabled else { return false }
++        return target.matches(live.plugin) && permissions.snapshot(target.plugin.id) == target.consent
++    }
++
++    /// Static FD inspection supplied to the native file authority. This creates
++    /// an inspector, never a plugin generation; the SDK hook has no exec mapping.
++    public func inspectElyxDeveloperDescriptor(_ descriptor: any PluginElyxDeveloperDescriptorLease, format: PluginFileFormat,
++                                               shouldExecute: @escaping @Sendable () -> Bool) async throws -> Plugin {
++        let activity = try lifecycle.enter()
++        defer { activity.finish() }
++        try descriptor.checkCurrent()
++        let descriptorJSON = descriptor.descriptorJSON
++        guard state.isRunning, shouldExecute(), format.isArchive, descriptorJSON.utf8.count <= 4096 else {
++            throw PluginElyxDeveloperError.stale("Elyx descriptor inspection was not admitted")
++        }
++        var policy = PythonInterpreterConfiguration()
++        policy.allowThreads = false
++        let inspector = try await interpreters.createInterpreter(for: "exteralessMetadataInspector",
++            bootstrapScript: configuration.runtime.metadataBootstrapScript(), configuration: policy)
++        do {
++            let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['inspect_fd_json']).inspect_fd_json("
++                + PluginRuntimeScript.quote(descriptorJSON) + ")"
++            let output = try await interpreters.invoke(inspector, script: source,
++                shouldExecute: { shouldExecute() && (try? descriptor.checkCurrent()) != nil }, maintenanceEpoch: nil,
++                onExecutionFinished: { withExtendedLifetime(descriptor) {} })
++            await interpreters.destroy(inspector)
++            guard shouldExecute() else { throw PluginElyxDeveloperError.stale("Elyx inspection scope retired") }
++            return try PluginRuntimeScript.metadata(output, format: format)
++        } catch { await interpreters.destroy(inspector); throw error }
++    }
++
++    public func elyxDeveloper(_ request: PluginElyxDeveloperRequest, targets: [PluginElyxDeveloperTarget], account: Int32,
++                              files: (any PluginElyxDeveloperFileAuthority)?, deadline: TimeInterval,
++                              shouldExecute: @escaping @Sendable () -> Bool) async throws -> [String: PluginJSONValue] {
++        let activity = try lifecycle.enter()
++        defer { activity.finish() }
++        guard account >= 0 else { throw PluginElyxDeveloperError.malformed("developer account must be a nonnegative Int32") }
++        let live: @Sendable () -> Bool = { shouldExecute() && ProcessInfo.processInfo.systemUptime < deadline && self.state.isRunning }
++        return try await PluginElyxDeveloperTransaction.run(request, targets: targets, files: files,
++            current: { self.isCurrentElyxDeveloperTarget($0) },
++            installedCurrent: { installed, consent in
++                guard let plugin = self.state.plugin(id: installed.plugin.id), PluginElyxDeveloperTarget.sameInstallation(plugin, installed.plugin) else { return false }
++                return self.currentCallbackOwner(id: plugin.id) == installed.owner && self.permissions.snapshot(plugin.id) == consent
++            }, session: live,
++            read: { target, digest in
++                guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired before worker admission") }
++                let name = digest == nil ? "_elyx_developer.read_json" : "_elyx_developer.manifest_json"
++                var args = [target.plugin.id, target.owner.wireToken]
++                if let digest { args.append(digest) }
++                args.append(String(account))
++                let output = try await self.invokePlugin(target.plugin, PluginRuntimeScript.call(name, args),
++                    expectedHandle: target.owner.interpreter,
++                    shouldExecute: { live() && self.isCurrentElyxDeveloperTarget(target) },
++                    timeout: min(self.configuration.interpreters.callTimeout, max(0.01, deadline - ProcessInfo.processInfo.systemUptime)))
++                guard live(), self.isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx owner retired after worker read") }
++                return output
++            }, ping: {
++                guard live() else { throw PluginElyxDeveloperError.stale("Elyx ping session retired") }
++                var policy = PythonInterpreterConfiguration()
++                policy.allowThreads = false
++                let inspector = try await self.interpreters.createInterpreter(for: "exteralessMetadataInspector",
++                    bootstrapScript: self.configuration.runtime.metadataBootstrapScript(), configuration: policy)
++                do {
++                    let source = "__import__('exteraless_runtime._elyx_developer', fromlist=['ping_json']).ping_json()"
++                    let value = try await self.interpreters.invoke(inspector, script: source, shouldExecute: live)
++                    await self.interpreters.destroy(inspector)
++                    return value
++                } catch { await self.interpreters.destroy(inspector); throw error }
++            }, publish: { target, source, prepared in
++                try await self.publishElyxDeveloper(target: target, source: source, prepared: prepared, shouldExecute: live)
++            })
++    }
++
++    private func publishElyxDeveloper(target: PluginElyxDeveloperTarget, source: any PluginElyxDeveloperSource,
++                                      prepared: any PluginElyxDeveloperPrepared,
++                                      shouldExecute: @escaping @Sendable () -> Bool) async throws -> PluginElyxDeveloperInstalled {
++        try Task.checkCancellation()
++        try state.beginMutation(target.plugin.id)
++        defer { state.endMutation(target.plugin.id) }
++        guard shouldExecute(), isCurrentElyxDeveloperTarget(target), target.consent.record != nil else {
++            throw PluginElyxDeveloperError.stale("Elyx replacement owner/consent retired before mutation")
++        }
++        try source.checkCurrent()
++        try prepared.checkBeforePublication()
++        var plugin = prepared.metadata
++        guard plugin.id == target.plugin.id, plugin.fileFormat == target.plugin.fileFormat,
++              plugin.engine == "python", Plugin.isValidID(plugin.id, format: plugin.fileFormat) else {
++            throw PluginElyxDeveloperError.malformed("Elyx candidate changed installed ID/format/engine")
++        }
++        plugin.path = target.plugin.path
++        plugin.enabled = target.plugin.enabled
++        guard shouldExecute(), isCurrentElyxDeveloperTarget(target) else { throw PluginElyxDeveloperError.stale("Elyx replacement retired before unload") }
++        guard await unloadPlugin(id: plugin.id, expectedHandle: target.owner.interpreter, duringMutation: true) else {
++            throw PluginElyxDeveloperError.stale("Elyx unload did not retire the captured owner")
++        }
++        // Our own retirement is expected. The per-ID reservation still excludes
++        // replacement/consent edits; model, session and source CAS remain live.
++        let publishCurrent: @Sendable () -> Bool = {
++            guard shouldExecute(), !self.state.isStopping, self.currentCallbackOwner(id: target.plugin.id) == nil,
++                  let current = self.state.plugin(id: target.plugin.id), target.matches(current) else { return false }
++            return self.permissions.snapshot(target.plugin.id) == target.consent
++        }
++        guard publishCurrent() else { throw PluginElyxDeveloperError.stale("Elyx publication scope retired") }
++        try source.checkCurrent()
++        try prepared.checkBeforePublication()
++        try prepared.publish(shouldExecute: publishCurrent)
++        try prepared.checkPublished()
++        // Consent is preserved exactly. Metadata requests never select a new tier
++        // or grant. The captured revision is checked at publication and load.
++        plugin = try persistInstalledPlugin(plugin)
++        let loadCurrent: @Sendable () -> Bool = {
++            shouldExecute() && self.permissions.snapshot(target.plugin.id) == target.consent
++                && (try? prepared.checkPublished()) != nil
++        }
++        if plugin.enabled {
++            plugin = await loadPlugin(plugin, duringMutation: true, shouldExecute: loadCurrent, verifiedArchive: prepared)
++        }
++        notifyReload()
++        guard loadCurrent() else { throw PluginElyxDeveloperError.stale("Elyx installed source/session retired before receipt") }
++        return PluginElyxDeveloperInstalled(plugin: plugin, owner: currentCallbackOwner(id: plugin.id))
++    }
+@@
+-    private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false) async -> Plugin {
++    private func loadPlugin(_ plugin: Plugin, duringMutation: Bool = false,
++                            shouldExecute: @escaping @Sendable () -> Bool = { true },
++                            verifiedArchive: (any PluginElyxDeveloperPrepared)? = nil) async -> Plugin {
+@@
+         var riskyOperation: PluginWatchdog.RiskyOperation?
+         do {
++            guard shouldExecute(), !Task.isCancelled else { return state.plugin(id: plugin.id) ?? plugin }
+             try state.beginLoading(plugin.id, duringMutation: duringMutation)
+@@
+             riskyOperation = await watchdog.noteRiskyOperation(plugin.id)
+-            guard !state.isStopping else { throw PluginHostError.notRunning }
++            guard !state.isStopping, shouldExecute(), !Task.isCancelled else { throw PluginHostError.notRunning }
+             let handle = try await interpreters.createInterpreter(
+@@
+             guard let owner = currentCallbackOwner(id: plugin.id) else { throw PluginHostError.notRunning }
++            let verifiedSource = try verifiedArchive?.loadSource(owner: owner)
++            if let verifiedSource, verifiedSource.descriptorJSON.utf8.count > 4096 {
++                throw PluginElyxDeveloperError.malformed("verified load descriptor exceeds 4096 bytes")
++            }
++            let loadCurrent: @Sendable () -> Bool = {
++                guard shouldExecute() else { return false }
++                if let verifiedSource { return (try? verifiedSource.checkCurrent()) != nil }
++                return true
++            }
+             let tokenJSON = try PluginRuntimeScript.encodeJSON(owner.wireToken)
+@@
+-            _ = try await invokePlugin(plugin, bindSource, expectedHandle: handle)
+-            let output = try await invokePlugin(plugin, PluginRuntimeScript.call("load_json", [path]), expectedHandle: handle)
++            _ = try await invokePlugin(plugin, bindSource, expectedHandle: handle, shouldExecute: loadCurrent)
++            let loadSource = verifiedSource.map { PluginRuntimeScript.call("_elyx_developer.load_verified_json", [path, $0.descriptorJSON]) }
++                ?? PluginRuntimeScript.call("load_json", [path])
++            let output = try await invokePlugin(plugin, loadSource, expectedHandle: handle, shouldExecute: loadCurrent,
++                                                retainingElyxSource: verifiedSource)
+             plugin = try PluginRuntimeScript.applyLoadResult(output, to: plugin)
++            guard loadCurrent() else { throw PluginElyxDeveloperError.stale("verified Elyx load scope retired before publication") }
+@@
+-                                settingsEffectGuard: (@Sendable () -> Bool)? = nil) async throws -> String {
++                                settingsEffectGuard: (@Sendable () -> Bool)? = nil,
++                                retainingElyxSource: (any PluginElyxDeveloperDescriptorLease)? = nil) async throws -> String {
+@@
+-        let retained = PluginInvocationRetention(batch: batch) { [state] in state.endInvocation(handle) }
++        let retained = PluginInvocationRetention(batch: batch) { [state, retainingElyxSource] in
++            withExtendedLifetime(retainingElyxSource) { state.endInvocation(handle) }
++        }
+*** Update File: telegram-ios/submodules/TelegramUI/BUILD
+@@
+-    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift"],
++    srcs = ["Tests/PluginTLEditModelTests.swift", "Tests/PluginTLExecutionGuardTests.swift", "Tests/PluginElyxDeveloperProtocolTests.swift"],
+*** End Patch

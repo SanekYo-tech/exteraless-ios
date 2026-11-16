@@ -312,11 +312,11 @@ final class PermissionsTests: XCTestCase {
     func testEffectiveAndCompatMode() throws {
         let store = try PluginStore(directory: tempDirectory("perms"))
         let model = PermissionsModel()
-        model.load(from: store)
+        try model.load(from: store)
         // Режим совместимости: записи нет — только ui.
         XCTAssertEqual(model.effective("legacy"), [.ui])
         XCTAssertFalse(model.check("legacy", .messagesRead))
-        model.setGranted("p1", [.messagesRead, .messagesSend, .ui], to: store)
+        try model.setGranted("p1", [.messagesRead, .messagesSend, .ui], to: store)
         XCTAssertEqual(model.effective("p1"), [.ui, .messagesRead, .messagesSend])
         XCTAssertFalse(model.check("p1", .hooks))
         model.unsafeMode = true
@@ -333,8 +333,8 @@ final class PermissionsTests: XCTestCase {
         try store.savePlugins([plugin])
         let loaded = store.loadPlugins()
         XCTAssertEqual(loaded, [plugin])
-        store.saveGrants(["ab": [.messagesRead, .network]])
-        XCTAssertEqual(store.loadGrants()["ab"] ?? [], [.messagesRead, .network])
+        try store.saveGrants(["ab": [.messagesRead, .network]])
+        XCTAssertEqual(try store.loadGrants()["ab"] ?? [], [.messagesRead, .network])
     }
 
     func testRequestedPermissions() {

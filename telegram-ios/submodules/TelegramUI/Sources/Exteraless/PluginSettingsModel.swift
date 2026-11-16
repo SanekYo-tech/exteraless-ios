@@ -95,11 +95,13 @@ struct PluginSetting: Decodable, Equatable, Sendable {
         case edittext
         case text
         case slider
+        case custom
     }
 
     var identifier = ""
     let type: String
     let rowId: String?
+    let linkAlias: String?
     let key: String?
     let text: String?
     let subtext: String?
@@ -116,17 +118,24 @@ struct PluginSetting: Decodable, Equatable, Sendable {
     let maxLength: Int?
     let callbackId: String?
     let longCallbackId: String?
+    /// Python materializes on the owner worker. Foundation carries only opaque
+    /// JSON; the PluginUI consumer parses it into its existing widget model.
+    let widgetJSON: String?
+    let customError: String?
     var subPage: [PluginSetting]?
 
     private enum CodingKeys: String, CodingKey {
         case type, key, text, subtext, hint, value, items, step, accent, red, multiline
         case rowId = "row_id"
+        case linkAlias = "link_alias"
         case defaultValue = "default"
         case minimum = "min"
         case maximum = "max"
         case maxLength = "max_length"
         case callbackId = "callback_id"
         case longCallbackId = "long_callback_id"
+        case widgetJSON = "widget_json"
+        case customError = "custom_error"
         case subPage = "sub_page"
     }
 
@@ -178,6 +187,28 @@ enum PluginSettingsDocument {
             page = next
         }
         return page
+    }
+
+    /// Matches _ui.resolve_settings_target: exact original alias OR key, counted
+    /// once per row, across the current bounded document. Swift String == folds
+    /// canonical Unicode equivalents; byte equality here deliberately does not.
+    static func resolve(target: String?, in document: [PluginSetting]) throws -> PluginSettingsTarget {
+        guard let target else { return PluginSettingsTarget(pagePath: [], rowId: nil) }
+        guard !target.isEmpty, !target.utf8.contains(0) else { throw PluginSettingsTargetError.invalid }
+        guard target.utf8.count <= 256 else { throw PluginSettingsTargetError.tooLong }
+        var matches: [PluginSettingsTarget] = []
+        func visit(_ rows: [PluginSetting], path: [String]) {
+            for row in rows {
+                if row.linkAlias?.utf8.elementsEqual(target.utf8) == true || row.key?.utf8.elementsEqual(target.utf8) == true {
+                    matches.append(PluginSettingsTarget(pagePath: path, rowId: row.identifier))
+                }
+                if let children = row.subPage { visit(children, path: path + [row.identifier]) }
+            }
+        }
+        visit(document, path: [])
+        guard !matches.isEmpty else { throw PluginSettingsTargetError.unknown }
+        guard matches.count == 1 else { throw PluginSettingsTargetError.ambiguous }
+        return matches[0]
     }
 
     private static func validate(_ rows: [PluginSetting], depth: Int, count: inout Int) throws -> [PluginSetting] {
@@ -238,7 +269,7 @@ enum PluginSettingsDocument {
                     } else {
                         valid = false
                     }
-                case .header, .divider, .text:
+                case .header, .divider, .text, .custom:
                     break
                 }
                 guard valid else {
@@ -252,4 +283,14 @@ enum PluginSettingsDocument {
         }
         return result
     }
+}
+
+struct PluginSettingsTarget: Equatable, Sendable {
+    let pagePath: [String]
+    let rowId: String?
+}
+
+enum PluginSettingsTargetError: String, LocalizedError {
+    case invalid, tooLong, unknown, ambiguous
+    var errorDescription: String? { return "SettingsTarget.\(self.rawValue)" }
 }

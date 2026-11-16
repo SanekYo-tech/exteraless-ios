@@ -140,15 +140,22 @@ class SerialUIBatchChecks(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'fresh simulator'):
                 verify_devices(repeated)
 
-    def test_both_shipping_modules_need_debug_in_actual_compile_arguments(self):
+    def test_shipping_factory_modules_need_their_actual_debug_compile_definitions(self):
         graph = {'targets': [{'id': 1, 'label': '//submodules/TelegramCore:TelegramCore'},
-                             {'id': 2, 'label': '//submodules/TelegramUI:TelegramUI'}],
-                 'actions': [{'targetId': 1, 'mnemonic': 'SwiftCompile', 'arguments': ['swiftc', '-DDEBUG']},
-                             {'targetId': 2, 'mnemonic': 'SwiftCompile', 'paramFiles': [{'arguments': ['-D', 'DEBUG']}]}]}
+                             {'id': 2, 'label': '//submodules/TelegramUI:TelegramUI'},
+                             {'id': 3, 'label': '//submodules/LocationUI:LocationUI'}],
+                  'actions': [{'targetId': 1, 'mnemonic': 'SwiftCompile', 'arguments': ['swiftc', '-DDEBUG']},
+                             {'targetId': 2, 'mnemonic': 'SwiftCompile', 'paramFiles': [{'arguments': ['-D', 'DEBUG']}]},
+                             {'targetId': 3, 'mnemonic': 'SwiftCompile', 'arguments': ['swiftc', '-DEXTERALESS_MAP_ATTRIBUTION_FIXTURE']}]}
         with tempfile.TemporaryDirectory(prefix='domain-debug-declaration-') as temporary:
             path = Path(temporary) / 'actions.json'
             path.write_text(json.dumps(graph))
-            self.assertEqual(len(validate_domain_debug_actions(path)['debug_modules']), 2)
+            self.assertEqual(len(validate_domain_debug_actions(path)['debug_modules']), 3)
+            graph['actions'][2]['arguments'] = ['swiftc', '-DDEBUG']
+            path.write_text(json.dumps(graph))
+            with self.assertRaisesRegex(ValueError, 'require EXTERALESS_MAP_ATTRIBUTION_FIXTURE'):
+                validate_domain_debug_actions(path)
+            graph['actions'][2]['arguments'] = ['swiftc', '-DEXTERALESS_MAP_ATTRIBUTION_FIXTURE']
             graph['actions'][1]['paramFiles'][0]['arguments'] = ['-DNDEBUG']
             path.write_text(json.dumps(graph))
             with self.assertRaisesRegex(ValueError, 'require DEBUG'):

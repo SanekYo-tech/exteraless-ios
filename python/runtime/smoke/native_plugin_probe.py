@@ -148,6 +148,56 @@ def _native(member, *args):
     })
 
 
+def _probe_darwin_family_fds(record, cache):
+    # Actual embedded sys.platform; no selector substitution or service double.
+    if sys.platform not in ("darwin", "ios"):
+        return
+    import hashlib
+    import uuid
+    from exteraless_runtime import _archives, _audit_paths
+    raw = cache
+    for name in ("var", "tmp", "etc"):
+        if raw.startswith("/private/" + name + "/"):
+            raw = raw[len("/private"):]
+            break
+    nonce = uuid.uuid4().hex
+    digest = hashlib.sha256(b"owned native FD family probe").hexdigest()
+    extraction = _archives._Extraction(raw, "elyx/" + digest + "/" + digest + "-" + nonce)
+    descriptors = []
+    try:
+        extraction.create()
+        extraction.write("contents/asset.bin", b"before")
+        extraction.write("contents/code.py", b"# owned data-only code fixture\n")
+        directory = extraction.directory("contents")
+        for name in ("asset.bin", "code.py"):
+            descriptors.append(os.open(name, os.O_RDWR, dir_fd=directory.fd))
+        if not record.instance.fd_family_probe(*descriptors, directory.fd):
+            raise AssertionError("native FD family fixture did not finish")
+        resolved = _audit_paths._descriptor_path(descriptors[0])
+        if not resolved or not os.path.samefile(resolved, os.path.join(directory.path, "asset.bin")):
+            raise AssertionError("actual Darwin-family F_GETPATH lost the owned asset inode")
+        os.lseek(descriptors[0], 0, os.SEEK_SET)
+        if os.read(descriptors[0], 5) != b"owned":
+            raise AssertionError("actual owned asset FD write failed")
+        os.symlink(".", "untrusted-link", dir_fd=directory.fd)
+        try:
+            _archives._Directory.open_native(os.path.join(directory.path, "untrusted-link"))
+        except _archives.ArchiveValidationError:
+            pass
+        else:
+            raise AssertionError("native root-alias support followed a descendant symlink")
+        _sdk_checks["darwin_family_fd_paths"] = True
+        if sys.platform == "ios":
+            _sdk_checks["actual_ios_fd_paths"] = True
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        try:
+            extraction.cleanup()
+        finally:
+            extraction.close()
+
+
 class _NativeChecks:
     def verify_owner(self):
         import _exteraless_bridge as bridge
@@ -346,6 +396,7 @@ class _NativeChecks:
             _unknown_rejected = True
         else:
             raise AssertionError("unknown native member was silently accepted")
+        _probe_darwin_family_fds(record, directories["cache"])
         _directories = directories
         _services_verified = True
 

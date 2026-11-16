@@ -29,6 +29,7 @@ final class PluginUIContentController: ViewController {
     private var pagePath: [String] = []
     private var selector: UIAlertController?
     private var inlineError: String?
+    private let settingsTargetFocus = PluginUISettingsTargetFocus()
 
     let event: (Int64, String, [String: PluginUIJSON], String?) -> Bool
     let canAct: (Int64) -> Bool
@@ -138,6 +139,7 @@ final class PluginUIContentController: ViewController {
             else { UIAccessibility.post(notification: .announcement, argument: [self.model.title, self.model.text, self.model.subtitle].compactMap { $0 }.joined(separator: ". ")) }
         }
         self.armTimer()
+        self.revealSettingsTarget()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -253,6 +255,12 @@ final class PluginUIContentController: ViewController {
         transition.updateFrame(view: self.panelBlur, frame: CGRect(origin: .zero, size: CGSize(width: width, height: height)))
         self.scrollView.layoutIfNeeded()
         self.revealInput()
+        self.revealSettingsTarget()
+    }
+
+    private func revealSettingsTarget() {
+        self.settingsTargetFocus.reveal(model: self.model, revision: self.revision, pagePath: self.pagePath,
+            scrollView: self.scrollView, widgets: self.widgetViews(), permitted: !self.isClosing && self.canAct(self.revision))
     }
 
     private func page() -> (title: String?, rows: [PluginUIWidget]) {

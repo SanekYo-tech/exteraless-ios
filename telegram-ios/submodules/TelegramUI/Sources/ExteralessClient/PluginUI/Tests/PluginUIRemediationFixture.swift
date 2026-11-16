@@ -491,6 +491,7 @@ private final class HNSNativeSchemaPin: ToolsPluginSchemaValidity, @unchecked Se
                 let id = URL(fileURLWithPath: arguments[0]).deletingPathExtension().lastPathComponent
                 return "{\"metadata\":{\"id\":\"\(id)\"},\"handles\":{\"app_event\":true,\"send_message\":true},\"has_settings\":false}"
             }
+            if source.hasPrefix("_exteraless_runtime.hook_priority_json("), source.contains("on_send_message_hook") { return "0" }
             guard source.hasPrefix("_exteraless_runtime.dispatch_json("), source.contains("ui_followup") else { return nil }
             if reference.raw == 1 {
                 guard let host = hostReference.get(), let owner = host.callbackOwner(id: "alpha") else { throw HNSFixtureError("Missing actual A owner") }

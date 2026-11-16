@@ -80,6 +80,7 @@ def worker(case, directory):
     assert host.value("enabled") is False and host.value("change_account") == host.value("click_account") == 41
     if case == "cleanup":
         pending = json.loads(runtime.invoke_handle_json(checks, "pending", "[]"))
+        assert type(pending["task"]) is str and host.entries[pending["task"]][0] == "postToOwner"
         assert len(pending["handles"]) == 12 and bridge.xt_handle_count() == 13 and len(host.entries) == 4
         host.retiring = True
         runtime.unload()

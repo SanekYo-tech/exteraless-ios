@@ -95,6 +95,7 @@ struct ExteralessSettingsRow {
     var input: ExteralessSettingsInput?
     var action: (() -> Void)?
     var reset: (() -> Void)?
+    var longAction: (() -> Void)?
 
     init(id: String, title: String, detail: String? = nil) {
         self.id = id
@@ -582,7 +583,7 @@ private final class ExteralessSettingsCell: UITableViewCell, UITextViewDelegate,
                 self.textField.attributedPlaceholder = NSAttributedString(string: input.placeholder, attributes: [.foregroundColor: theme.list.itemPlaceholderTextColor])
             }
         }
-        self.longPress?.isEnabled = row.enabled && row.reset != nil && row.input == nil
+        self.longPress?.isEnabled = row.enabled && (row.longAction != nil || row.reset != nil) && row.input == nil
         self.configureAccessibility(row)
     }
 
@@ -599,6 +600,9 @@ private final class ExteralessSettingsCell: UITableViewCell, UITextViewDelegate,
     private func configureAccessibility(_ row: ExteralessSettingsRow) {
         let label = [row.title, row.detail].compactMap { $0 }.joined(separator: "\n")
         var actions: [UIAccessibilityCustomAction] = []
+        if row.enabled, let menu = row.longAction {
+            actions.append(UIAccessibilityCustomAction(name: clientSettingsText("Search.LinkMenu", "Settings link and actions"), actionHandler: { _ in menu(); return true }))
+        }
         if row.enabled, let reset = row.reset {
             actions.append(UIAccessibilityCustomAction(name: clientSettingsText("Reset", "Reset to default"), actionHandler: { _ in reset(); return true }))
         }
@@ -658,7 +662,7 @@ private final class ExteralessSettingsCell: UITableViewCell, UITextViewDelegate,
     }
 
     @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
-        if recognizer.state == .began, self.row?.enabled == true { self.row?.reset?() }
+        if recognizer.state == .began, self.row?.enabled == true { (self.row?.longAction ?? self.row?.reset)?() }
     }
 
     @objc private func fieldChanged() { self.row?.input?.updated(self.textField.text ?? "") }

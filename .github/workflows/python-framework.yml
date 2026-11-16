@@ -46,7 +46,39 @@ jobs:
             telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Pills
             telegram-ios/submodules/TelegramUI/Sources/Exteraless
             telegram-ios/submodules/BrowserUI/Sources
+            telegram-ios/submodules/AccountContext/Sources
+            telegram-ios/submodules/AvatarNode/Sources
+            telegram-ios/submodules/ChatPresentationInterfaceState/Sources
+            telegram-ios/submodules/DirectMediaImageCache/Sources
+            telegram-ios/submodules/Display/Source
+            telegram-ios/submodules/LocationUI/Sources
+            telegram-ios/submodules/PhotoResources/Sources
+            telegram-ios/submodules/SettingsUI/Sources/Search
+            telegram-ios/submodules/TextFormat/Sources
+            telegram-ios/submodules/TelegramCore/Sources/Account
+            telegram-ios/submodules/TelegramCore/Sources/ChatInputContent
+            telegram-ios/submodules/TelegramCore/Sources/ExteralessClientAPI
+            telegram-ios/submodules/TelegramCore/Sources/ExteralessRetention
+            telegram-ios/submodules/TelegramCore/Sources/SyncCore
+            telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Messages
+            telegram-ios/submodules/TelegramCore/Sources/TelegramEngine/Resources
             telegram-ios/submodules/TelegramCore/Sources/ExteralessRuntime
+            telegram-ios/submodules/TelegramUI/Sources/Chat
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Appearance
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Chats
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Feed
+            telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Player
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatInputTextNode/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageBubbleItemNode/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageInteractiveMediaNode/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageItemImpl/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatRichTextEditorComposer/Sources
+            telegram-ios/submodules/TelegramUI/Components/Chat/ChatTextInputPanelNode/Sources
+            telegram-ios/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditor/Sources
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditorMediaView/Sources
+            telegram-ios/submodules/TelegramUI/Components/RichTextEditorMessageConversion/Sources
             telegram-ios/submodules/TelegramCore/Tests
             telegram-ios/submodules/TelegramUI/Tests/AI
             telegram-ios/submodules/TelegramUI/Tests/Appearance
@@ -77,7 +109,8 @@ jobs:
             telegram-ios/Tests/ComposerHarness/Sources
             telegram-ios/Tests/ComposerHarness/Tests
             telegram-ios/Tests/Exteraless
-            telegram-ios/Tests/ExteralessHarness/Sources
+            telegram-ios/Tests/ExteralessHarness
+            telegram-ios/Tests/ManagerCustomAlias
             swift/PluginHost
             swift/PluginHooks
             swift/ExteralessCore
@@ -123,6 +156,79 @@ jobs:
 
       - name: Test SDK adapter and dependency bundle
         run: python -B -m pytest tools/runtime/tests/test_dependency_bundle.py tools/compat/tests/test_ios_runtime.py -q
+
+      - name: Create owned SDK followup evidence directory
+        run: |
+          SDK_FOLLOWUP_DIR="$(mktemp -d "$RUNNER_TEMP/sdk-followup.XXXXXX")"
+          echo "SDK_FOLLOWUP_DIR=$SDK_FOLLOWUP_DIR" >> "$GITHUB_ENV"
+
+      - name: Test finite SDK core, hooks, manager, archives and developer contracts
+        timeout-minutes: 4
+        env:
+          # Use the already checksum-verified pure PyYAML bundle for Elyx fixtures.
+          PYTHONPATH: ${{ github.workspace }}/python/vendor
+        run: >-
+          python -B -m pytest -q
+          tools/compat/tests/test_sdk_core_counterexamples.py
+          tools/compat/tests/test_sdk_direct_hooks.py
+          tools/compat/tests/test_sdk_manager_custom_alias.py
+          tools/compat/tests/test_ios_elyx_archives.py
+          tools/compat/tests/test_sdk_developer_proxy.py
+          tools/compat/tests/test_ios_elyx_p1.py
+          tools/compat/tests/test_native_elyx_developer.py
+          --basetemp "$SDK_FOLLOWUP_DIR/python"
+          --junitxml "$SDK_FOLLOWUP_DIR/sdk-followup.xml"
+
+      - name: Compile 120s and run 10s actual Darwin developer listener
+        timeout-minutes: 3
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_sdk_developer_native.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-listener"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-listener.xml"
+
+      - name: Compile and verify native Elyx candidate against independent ZIP bodies
+        timeout-minutes: 3
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python/vendor
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_native_elyx_candidate.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-candidate"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-candidate.xml"
+
+      - name: Compile 120s and run 30s native FD, activation and transaction tests
+        timeout-minutes: 3
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_native_elyx_files.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-files"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-files.xml"
+
+      - name: Compile 120s and run 30s actual native ingress tests
+        timeout-minutes: 3
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_native_elyx_ingress.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-ingress"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-ingress.xml"
+
+      - name: Reject invalid and counterfeit readiness without a native success substitute
+        timeout-minutes: 2
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_native_elyx_readiness.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-readiness"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-readiness.xml"
+
+      - name: Compile 120s and run 30s actual Root developer-mode ABA tests
+        timeout-minutes: 3
+        run: >-
+          python -B -m pytest -q -s tools/compat/tests/test_native_elyx_mode_aba.py
+          --basetemp "$SDK_FOLLOWUP_DIR/native-mode-aba"
+          --junitxml "$SDK_FOLLOWUP_DIR/native-mode-aba.xml"
+
+      - name: Check fifth-child owned ZIP and JSON fixture inputs
+        timeout-minutes: 1
+        run: >-
+          python -B -m pytest -q tools/runtime/tests/test_elyx_developer_fixtures.py
+          --basetemp "$SDK_FOLLOWUP_DIR/fifth-child-inputs"
+          --junitxml "$SDK_FOLLOWUP_DIR/fifth-child-inputs.xml"
 
       - name: Test shipping native UI models and generation leases
         run: python -B telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_fixture.py
@@ -196,13 +302,14 @@ jobs:
       - name: Compile and run Swift adapter with native CPython
         run: python tools/runtime/check_swift_embedding.py --output "$RUNNER_TEMP/python-swift"
 
-      - name: Run all three owner-bound SDK children through Swift and C bridge
-        timeout-minutes: 10
+      - name: Run five isolated SDK children through actual Swift Host and C bridge
+        timeout-minutes: 12
         run: |
           python -B tools/runtime/check_swift_plugin_embedding.py \
             --python "$(command -v python)" \
             --python-root "$GITHUB_WORKSPACE/python" \
             --output "$RUNNER_TEMP/python-plugin"
+          python -B tools/runtime/verify_native_sdk_cohort.py --directory "$RUNNER_TEMP/python-plugin"
 
       - name: Cache pinned support archive
         uses: actions/cache@v4
@@ -239,6 +346,9 @@ jobs:
             ${{ runner.temp }}/python-plugin/swift-plugin-smoke.json
             ${{ runner.temp }}/python-plugin/swift-sdk-tl-smoke.json
             ${{ runner.temp }}/python-plugin/swift-sdk-hns-smoke.json
+            ${{ runner.temp }}/python-plugin/swift-sdk-archive-smoke.json
+            ${{ runner.temp }}/python-plugin/swift-sdk-elyx-developer-smoke.json
+            ${{ runner.temp }}/python-plugin/five-child-acceptance.json
             ${{ runner.temp }}/python-plugin/build-inputs.json
           if-no-files-found: error
           retention-days: 30
@@ -266,10 +376,15 @@ jobs:
           cp "$RUNNER_TEMP/python-plugin/swift-plugin-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-sdk-tl-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-sdk-hns-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-archive-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-elyx-developer-smoke.json" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/five-child-acceptance.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-plugin-build.log" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-plugin-console.log" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-sdk-tl-console.log" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/swift-sdk-hns-console.log" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-archive-console.log" "$RUNNER_TEMP/runtime-artifacts/"
+          cp "$RUNNER_TEMP/python-plugin/swift-sdk-elyx-developer-console.log" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-plugin/build-inputs.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-dependencies.json" "$RUNNER_TEMP/runtime-artifacts/"
           cp "$RUNNER_TEMP/python-native/ExteralessPythonSmoke-unsigned.ipa" "$RUNNER_TEMP/runtime-artifacts/"
@@ -308,5 +423,14 @@ jobs:
         with:
           name: swift-component-tests-${{ github.run_id }}
           path: ${{ runner.temp }}/swift-components/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload bounded SDK followup and native listener evidence
+        if: ${{ always() && env.SDK_FOLLOWUP_DIR != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-followup-tests-${{ github.run_id }}
+          path: ${{ env.SDK_FOLLOWUP_DIR }}/
           if-no-files-found: ignore
           retention-days: 7

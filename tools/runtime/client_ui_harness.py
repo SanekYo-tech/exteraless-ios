@@ -29,7 +29,11 @@ import zipfile
 from client_ui_harness_domains import (DOMAIN_SCENARIOS, batch_name, check_manifest, complete_batch,
                                        manifest_from_ipa, selected_scenarios, validate_domain)
 from client_ui_harness_visuals import (VISUAL_SCENARIOS, BUILD_SELECTION, copy_visual_artifacts,
-                                       recorded_frame_index, validate_visual)
+                                        recorded_frame_index, validate_visual)
+from client_ui_harness_supplements import (RESET_SCENARIOS, TRUST_SCENARIOS, SUPPLEMENT_SCENARIOS,
+                                           check_sources as check_supplement_sources, validate_reset, validate_trust)
+from client_ui_harness_map import MAP_SCENARIOS, validate_map, map_recording_evidence
+from native_fd_evidence import IOS_FD_HELPER, validate_ios_fd_observations, verify_ios_fd_helper_bundle
 
 ROOT = Path(__file__).resolve().parents[2]
 BUNDLE = "org.exteraless.ClientUIHarness"
@@ -37,7 +41,8 @@ APP_ROOT = "Payload/ClientUIHarness.app"
 RUNTIME_SECONDS = 30
 DEVICE_PREFIX = "EXL-UI-"
 SCENARIOS = ("core-light", "core-dark", "sdk-ui")
-CORE_PROBES = ["home", "settings-root", "toggle-confirmed", "selector-open", "selector-committed",
+CORE_PROBES = ["home", "settings-root", "settings-search-results", "settings-search-row",
+               "toggle-confirmed", "selector-open", "selector-committed",
                "text-keyboard", "text-committed", "number-error", "number-committed", "secret-availability", "core-cleanup"]
 SDK_PROBES = ["home", "plugin-manager", "plugin-settings", "alert-shown", "alert-keyboard",
               "alert-dark-draft", "alert-closed", "sheet-widgets", "sheet-closed", "menu-shown", "menu-closed",
@@ -136,6 +141,12 @@ def verify_ipa(ipa, manifest_path, telegram):
         fixture = "Tests/ExteralessHarness/Fixtures/client_ui_fixture.plugin"
         if archive.read(APP_ROOT + "/client_ui_fixture.plugin") != (telegram / fixture).read_bytes():
             raise ValueError("Bundled plugin is not the owned fixture source")
+        tile = "Tests/ExteralessHarness/Fixtures/map-attribution-grid.png"
+        if archive.read(APP_ROOT + "/map-attribution-grid.png") != (telegram / tile).read_bytes():
+            raise ValueError("Bundled Map PNG is not the owned tile input")
+        fd_helper_sha = verify_ios_fd_helper_bundle(archive, APP_ROOT, manifest_from_ipa(archive, APP_ROOT))
+        if fd_helper_sha != digest(telegram / IOS_FD_HELPER.removeprefix("telegram-ios/")):
+            raise ValueError("Bundled iOS FD helper is not the current verified source copy")
         for resource in ("PresentationStrings.data", "en.lproj/Localizable.strings", "Assets.car"):
             if APP_ROOT + "/" + resource not in names:
                 raise ValueError("Required UIKit/string resource missing: " + resource)
@@ -150,6 +161,7 @@ def verify_ipa(ipa, manifest_path, telegram):
             packaging.macho_loads(archive, path, spec["platform_id"])
         packaging.verify_dependency_archive(archive, APP_ROOT, manifest)
     return {"ipaSha256": digest(ipa), "bundle": BUNDLE, "frameworks": frameworks,
+            "iosFDHelperSha256": fd_helper_sha,
             "clientSourcePatches": source_patches,
             "runtimeResources": len(expected), "simulatorPlatform": 7, "runtimeExecutionVerified": False}
 
@@ -183,18 +195,26 @@ def select_device_type_and_runtime(types, runtimes, sdk):
 
 
 def validate_state(state, scenario, run_id):
+    if scenario not in SCENARIOS + DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS:
+        raise ValueError("Unknown explicit UIKit scenario")
     if (state.get("format") != "exteraless-client-ui-harness/1" or state.get("runId") != run_id or
             state.get("scenario") != scenario or state.get("phase") != "completed" or state.get("semanticPassed") is not True):
         raise ValueError("Harness did not complete this exact run")
     expected = SDK_PROBES if scenario == "sdk-ui" else CORE_PROBES
-    if scenario not in DOMAIN_SCENARIOS + VISUAL_SCENARIOS and [probe.get("name") for probe in state.get("probes", [])] != expected:
+    if scenario not in DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS and [probe.get("name") for probe in state.get("probes", [])] != expected:
         raise ValueError("Missing/reordered UIKit probes; a zero-scenario pass is forbidden")
     if state.get("unexpectedServices") != [] or state.get("visualReview") != "pending-recorded-frame-review":
         raise ValueError("Unexpected service effect or unsupported visual-pass claim")
     for probe in state["probes"]:
         if not probe.get("elements") or not probe.get("controllers") or probe.get("scale", 0) <= 0:
             raise ValueError("Probe contains no observed UIKit hierarchy")
-    if scenario in DOMAIN_SCENARIOS:
+    if scenario in RESET_SCENARIOS:
+        validate_reset(state, scenario)
+    elif scenario in TRUST_SCENARIOS:
+        validate_trust(state, scenario)
+    elif scenario in MAP_SCENARIOS:
+        validate_map(state, scenario)
+    elif scenario in DOMAIN_SCENARIOS:
         validate_domain(state, scenario)
     elif scenario in VISUAL_SCENARIOS:
         check_manifest(state.get("facts", {}).get("domainSources", {}))
@@ -214,6 +234,7 @@ def validate_state(state, scenario, run_id):
         epochs, c_epochs = runtime.get("hostEpochs", []), runtime.get("ui", {}).get("cEpochs", [])
         if len(epochs) != 2 or len(set(epochs)) != 2 or set(epochs) != set(c_epochs):
             raise ValueError("Reload did not use fresh observed C/Host epochs")
+        validate_ios_fd_observations(engine, epochs, check_manifest(state.get("facts", {}).get("domainSources", {})))
         if runtime.get("ui", {}).get("nativeUICalls", 0) < 5:
             raise ValueError("Actual C -> native UIKit provider was not exercised")
     elif state.get("facts", {}).get("realPython") is not False:
@@ -231,6 +252,8 @@ def wait_state(path, scenario, run_id, phase, deadline):
             if state.get("phase") == "failed":
                 raise RuntimeError("UIKit scenario failed: " + str(state.get("error")))
             if state.get("phase") == phase:
+                if phase == "ready" and scenario in SUPPLEMENT_SCENARIOS:
+                    check_supplement_sources(check_manifest(state.get("facts", {}).get("domainSources", {})), (scenario,))
                 return state
         time.sleep(0.05)
     raise TimeoutError("Harness {} deadline expired".format(phase))
@@ -338,10 +361,9 @@ def run_scenario(udid, scenario, output, log):
                 write_json(destination / "timing.json", timing)
                 if state_path.is_file() and state_path.stat().st_size <= 8 * 1024 * 1024:
                     shutil.copyfile(state_path, destination / "state.json")
-                    if scenario in VISUAL_SCENARIOS:
-                        evidence = json.loads((destination / "state.json").read_text(encoding="utf-8"))
-                        if evidence.get("facts", {}).get("visualArtifacts"):
-                            copy_visual_artifacts(evidence, state_path.parent, destination)
+                    evidence = json.loads((destination / "state.json").read_text(encoding="utf-8"))
+                    if evidence.get("facts", {}).get("visualArtifacts"):
+                        copy_visual_artifacts(evidence, state_path.parent, destination)
 
 
 def analyze_recording(folder, telegram, log):
@@ -369,14 +391,17 @@ def analyze_recording(folder, telegram, log):
                 timeout=90, log=analysis)
     if not list((folder / "frames").glob("sheet-*.png")) or not (folder / "frames/frames.tsv").is_file():
         raise ValueError("animation_sheet produced no labelled frame evidence")
-    if state.get("scenario") in VISUAL_SCENARIOS:
+    if state.get("scenario") in VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS:
         timing = json.loads((folder / "timing.json").read_text(encoding="utf-8"))
         handles = recorded_frame_index(state, timing, info)
         if any(not (folder / frame["frame"]).is_file() or not (folder / frame["sheet"]).is_file() for frame in handles["frames"]):
             raise ValueError("Indexed PTS frame/sheet handle is missing")
         write_json(folder / "frame-handles.json", handles)
-    return {"scenario": folder.name, "recordingSha256": digest(video), "frameCount": len(frames),
-            "timestampSource": "ffprobe", "visualReview": "pending-recorded-frame-review"}
+    result = {"scenario": folder.name, "recordingSha256": digest(video), "frameCount": len(frames),
+              "timestampSource": "ffprobe", "visualReview": "pending-recorded-frame-review"}
+    if state.get("scenario") in MAP_SCENARIOS:
+        result["mapEvidence"] = map_recording_evidence(folder, state, handles)
+    return result
 
 
 def main():
@@ -385,7 +410,7 @@ def main():
     parser.add_argument("--staging-manifest", type=Path, required=True)
     parser.add_argument("--telegram-root", type=Path, default=ROOT / "telegram-ios")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--scenario", choices=SCENARIOS + DOMAIN_SCENARIOS + VISUAL_SCENARIOS, action="append")
+    parser.add_argument("--scenario", choices=SCENARIOS + DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS, action="append")
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("Real UIKit recording requires macOS/Xcode; no model fallback exists")
@@ -407,7 +432,7 @@ def main():
     failure = None
     try:
         report["bundle"] = verify_ipa(args.ipa, args.staging_manifest, args.telegram_root)
-        if set(selected) & set(DOMAIN_SCENARIOS + VISUAL_SCENARIOS):
+        if set(selected) & set(DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS):
             with zipfile.ZipFile(args.ipa) as archive:
                 sources = manifest_from_ipa(archive, APP_ROOT, selected)
             report["domainSources"] = sources
@@ -430,7 +455,7 @@ def main():
                     command(["xcrun", "simctl", "install", udid, app], timeout=45, log=log)
                 for scenario in selected:
                     result = run_scenario(udid, scenario, output, log)
-                    if scenario in DOMAIN_SCENARIOS + VISUAL_SCENARIOS:
+                    if scenario in DOMAIN_SCENARIOS + VISUAL_SCENARIOS + SUPPLEMENT_SCENARIOS:
                         state = json.loads((output / scenario / "state.json").read_text(encoding="utf-8"))
                         if state["facts"]["domainSources"] != report["domainSources"]:
                             raise ValueError("Running native app source manifest differs from the built IPA")

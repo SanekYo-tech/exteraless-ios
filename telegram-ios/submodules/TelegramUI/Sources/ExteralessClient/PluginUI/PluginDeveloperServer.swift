@@ -140,7 +140,9 @@ final class PluginDeveloperServer: @unchecked Sendable {
             do {
                 try Task.checkCancellation()
                 let value = try await handler(request, session)
-                try Task.checkCancellation()
+                // The handler's final guard carries native publication knowledge.
+                // Preserve that receipt; epoch/connection checks in respond still
+                // reject closed transports without replacing it by a bare error.
                 result = PluginDeveloperProtocol.response(id: request["#"] ?? .null, value: value)
             } catch { result = PluginDeveloperProtocol.response(id: request["#"] ?? .null, error: String(describing: error)) }
             guard let self else { return }

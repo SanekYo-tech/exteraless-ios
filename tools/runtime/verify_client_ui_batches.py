@@ -116,6 +116,7 @@ def main():
                      native_results_sha256=digest(args.native_tests))
     devices = [read(path / "owned-device.json") for path in (args.baseline, args.domains, args.final_visuals)]
     verify_devices(devices)
+    result["simulatorIds"] = [str(uuid.UUID(device["udid"])) for device in devices]
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.summary:
         with args.summary.open("a", encoding="utf-8") as stream:

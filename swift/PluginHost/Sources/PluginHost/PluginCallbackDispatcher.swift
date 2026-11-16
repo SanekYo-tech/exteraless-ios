@@ -76,6 +76,11 @@ public final class PluginCallbackDispatcher: @unchecked Sendable {
         host?.permissions.has(pluginId, permission) ?? false
     }
 
+    public func permissionPredicate(_ pluginId: String, requiring permissions: Set<PluginPermission>) -> @Sendable () -> Bool {
+        guard let host = self.host else { return { false } }
+        return host.permissions.futurePredicate(pluginId, requiring: permissions)
+    }
+
     var outstandingWorkCount: Int {
         lock.lock(); defer { lock.unlock() }
         return queuedCallbacks + queuedControls

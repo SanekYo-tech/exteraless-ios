@@ -96,9 +96,9 @@ public struct PythonRuntimeConfiguration: Hashable, Sendable {
 /// Загрузочный скрипт каждого суб-интерпретатора: пути + virtualjava + мост.
 public extension PythonRuntimeConfiguration {
     /// Metadata inspection imports only the platform entry module. The module's
-    /// metadata_json path is AST-only and does not configure or execute a plugin.
+    /// metadata_json is a bounded static archive/AST reader, with no plugin imports.
     func metadataBootstrapScript() -> String {
-        let paths = compatibilityDirectories.filter { !$0.isEmpty }
+        let paths = compatibilityDirectories.filter { !$0.isEmpty && $0 != pluginRootDirectory }
             .map(Self.pythonStringLiteral).joined(separator: ", ")
         return "import sys\nsys.path[:0] = [\(paths)]\nimport exteraless_runtime as _exteraless_runtime\n"
     }
@@ -108,10 +108,10 @@ public extension PythonRuntimeConfiguration {
     /// Ошибки импорта/инициализации передаются вызывающему коду.
     /// Пользовательский файл загружается отдельным вызовом load_json после
     /// регистрации handle, чтобы watchdog мог ограничить on_plugin_load.
-    func bootstrapScript(interpreterPluginId: String) -> String {
+    func bootstrapScript(interpreterPluginId: String, fileFormat: PluginFileFormat = .source) -> String {
         var seenPaths = Set<String>()
         let paths = (compatibilityDirectories + [pluginRootDirectory])
-            .filter { !$0.isEmpty && seenPaths.insert($0).inserted }
+            .filter { !$0.isEmpty && (!fileFormat.isArchive || $0 != pluginRootDirectory) && seenPaths.insert($0).inserted }
             .map(Self.pythonStringLiteral)
             .joined(separator: ", ")
         let manifest = manifestPath.map(Self.pythonStringLiteral) ?? "None"
@@ -131,6 +131,7 @@ public extension PythonRuntimeConfiguration {
             \(Self.pythonStringLiteral(interpreterPluginId)),
             \(Self.pythonStringLiteral(pluginRootDirectory)),
             \(Self.pythonStringLiteral(URL(fileURLWithPath: pluginRootDirectory).deletingLastPathComponent().appendingPathComponent("settings").path)),
+            plugin_format=\(Self.pythonStringLiteral(fileFormat.rawValue)),
         )
         """
     }

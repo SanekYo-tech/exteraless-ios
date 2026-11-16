@@ -366,6 +366,17 @@ func openExternalUrlImpl(context: AccountContext, urlContext: OpenURLContext, ur
         }
         return
     }
+    if let parsed = URL(string: url), ExteralessSettingsSearchEntry.recognizes(parsed) {
+        MainActor.assumeIsolated {
+            let operation = ExteralessSettingsSearchEntry.prepare(url: parsed, context: context)
+            dismissInput()
+            operation?.start(whenUnlocked: context.sharedContext.appLockContext.isPasscodeLocked |> map { !$0 }, from: { [weak context, weak navigationController] in
+                guard let context else { return nil }
+                return (navigationController ?? context.sharedContext.mainWindow?.viewController as? NavigationController)?.topViewController as? ViewController
+            })
+        }
+        return
+    }
     let url = ClientSettings.shared.bool("chats.stripTrackingOnOpen", default: true) ? ChatLinkPolicy.removingTracking(from: url) : url
     let original = {
         openExternalUrlAfterNativeServices(context: context, urlContext: urlContext, url: url, forceExternal: forceExternal, presentationData: presentationData, navigationController: navigationController, dismissInput: dismissInput)

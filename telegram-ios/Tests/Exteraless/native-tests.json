@@ -21,6 +21,10 @@
     }
   },
   "required_sources": {
+    "submodules/TelegramUI/Tests/PluginTLSecondaryPermissionTests.swift": "//submodules/TelegramUI:ExteralessTLModelTests",
+    "submodules/TelegramUI/Tests/PluginElyxDeveloperProtocolTests.swift": "//submodules/TelegramUI:ExteralessTLModelTests",
+    "Tests/ManagerCustomAlias/ManagerCustomAliasNativeTests.swift": "//Tests/ManagerCustomAlias:ManagerCustomAliasTests",
+    "Tests/Exteraless/PluginTrustUIContractsTests.swift": "//Tests/Exteraless:NativeUIContractsTests",
     "submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl/Tests/ToolsDCTRendererTimingTests.swift": "//submodules/TelegramUI/Components/DCTMultiAnimationRendererImpl:ExteralessDCTTimingTests",
     "submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl/Tests/ToolsSubcodecRendererTimingTests.swift": "//submodules/TelegramUI/Components/SubcodecMultiAnimationRendererImpl:ExteralessSubcodecTimingTests",
     "submodules/ChatListUI/Tests/ChatSwipeNativeTests.swift": "//submodules/ChatListUI:ExteralessChatSwipeTests",

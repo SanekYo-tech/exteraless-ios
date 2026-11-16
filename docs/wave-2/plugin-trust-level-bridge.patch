@@ -1,0 +1,192 @@
+*** Begin Patch
+*** Update File: swift/PluginHost/Sources/PluginHost/PluginBridgeExtension.swift
+@@
+     func releaseInstances(pluginId: String)
++    /// Permission policy changed while the interpreter is still alive. Revoke
++    /// disallowed retained native work through its normal FIFO cleanup path.
++    func permissionsChanged(pluginId: String)
+@@
+     func releaseInstances(pluginId: String) {}
++    func permissionsChanged(pluginId: String) {}
+@@
+     public func releaseInstances(pluginId: String) {
+         for provider in providers { provider.releaseInstances(pluginId: pluginId) }
+     }
++
++    public func permissionsChanged(pluginId: String) {
++        for provider in providers { provider.permissionsChanged(pluginId: pluginId) }
++    }
+*** Update File: swift/PluginHost/Sources/PluginHost/BridgeServices.swift
+@@
+-                    "hasPermission", "isUnsafeMode", "log", "logEvent"].contains(member)
++                    "hasPermission", "isUnsafeMode", "getTrustLevel", "log", "logEvent"].contains(member)
+@@
+         if request.member == "isUnsafeMode" {
+             try request.arity(0...0)
+             return permissions?.unsafeMode ?? false
+         }
++        if request.member == "getTrustLevel" {
++            try request.arity(0...0)
++            return (permissions?.snapshot(pluginId).level ?? .default).rawValue
++        }
+@@
+-            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getSettings", "setSettings", "updateSettings", "clearSettings", "getFilesDir", "getPluginsDir", "getCacheDir", "getProtectedPaths", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode"],
++            Self.runtimeClassName: ["getSetting", "setSetting", "removeSetting", "getSettings", "setSettings", "updateSettings", "clearSettings", "getFilesDir", "getPluginsDir", "getCacheDir", "getProtectedPaths", "log", "getVersion", "sendMessage", "addToClipboard", "openURL", "completeCallback", "hasPermission", "isUnsafeMode", "getTrustLevel"],
+@@
+     // MARK: Helpers
++
++    public func permissionsChanged(pluginId: String) {
++        // Do not clear C pending-reference accounting as if the owner unloaded.
++        // Live-owner providers cancel effects and release on that owner's FIFO.
++        extensionProvider?.permissionsChanged(pluginId: pluginId)
++    }
+@@
+     private func nativeEffectLease(pluginId: String, ownerToken: String?, permission: PluginPermission) throws -> PluginNativeCallLease {
++        let permissionCurrent: @Sendable () -> Bool = permissions?.futurePredicate(pluginId, requiring: [permission]) ?? { true }
+         let lease = PluginNativeCallLease { [weak self] in
+@@
+-            return self.permissions?.has(pluginId, permission) ?? true
++            return permissionCurrent()
+*** Update File: swift/PluginHost/Sources/PluginHost/PluginCallbackDispatcher.swift
+@@
+     public func hasPermission(_ pluginId: String, _ permission: PluginPermission) -> Bool {
+         host?.permissions.has(pluginId, permission) ?? false
+     }
++
++    public func permissionPredicate(_ pluginId: String, requiring permissions: Set<PluginPermission>) -> @Sendable () -> Bool {
++        host?.permissions.futurePredicate(pluginId, requiring: permissions) ?? { false }
++    }
+*** Update File: swift/PluginHost/Sources/PluginHost/NativeServiceCallback.swift
+@@
+     public var count: Int {
+         lock.lock(); defer { lock.unlock() }
+         return leases.count
+     }
++
++    public func retirePermissions(pluginId: String) {
++        lock.lock()
++        let candidates = leases.values.filter { $0.pluginId == pluginId }
++        lock.unlock()
++        for lease in candidates where !lease.isOpen { lease.close() }
++    }
+*** Update File: swift/PluginHost/Sources/PluginHost/NativeServiceOperations.swift
+@@
+     public var count: Int {
+         lock.lock(); defer { lock.unlock() }
+         return entries.count
+     }
++
++    public func retirePermissions(pluginId: String) -> [Ticket] {
++        lock.lock()
++        let candidates = entries.values.map(\.ticket).filter { $0.lease.pluginId == pluginId }
++        lock.unlock()
++        return candidates.filter { !$0.lease.isOpen }.compactMap { take(id: $0.id, owner: $0.lease.owner) }
++    }
+*** Update File: swift/PluginHost/Sources/PluginHost/NativeServiceOpenBarrier.swift
+@@
+     public func releaseInstances(pluginId: String? = nil) {
+@@
+         notifyBarriers()
+     }
+ 
++    public func retirePermissions(pluginId: String) {
++        lock.lock()
++        let fileLeases = files.values.map(\.lease).filter { $0.pluginId == pluginId }
++        let intentLeases = intents.map(\.lease).filter { $0.pluginId == pluginId }
++        lock.unlock()
++        for lease in fileLeases where !lease.isOpen { _ = remove(id: lease.id, owner: lease.owner, file: true) }
++        for lease in intentLeases where !lease.isOpen { _ = remove(id: lease.id, owner: lease.owner, file: false) }
++    }
++
+     public func interceptFile(_ context: NativeServiceFileOpenContext, accountRecordId: Int64? = nil,
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginServices/PluginNativeServicesBridgeExtension.swift
+@@
+     private let hasPermission: HasPermission
++    private let permissionAdmission: PluginPermissionAdmission
+@@
+-                acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil) {
++                acknowledgedRelease: NativeServiceAcknowledgedRelease<Owner>? = nil,
++                permissionAdmission: PluginPermissionAdmission? = nil) {
+@@
+         self.hasPermission = hasPermission
++        self.permissionAdmission = permissionAdmission ?? { id, required in
++            { required.allSatisfy { hasPermission(id, $0) } }
++        }
+@@
+-            publisherSites: publisherSites, acknowledgedRelease: retirement)
++            publisherSites: publisherSites, acknowledgedRelease: retirement,
++            permissionAdmission: { callbacks.permissionPredicate($0, requiring: $1) })
+@@
+     public func releaseInstances(pluginId: String) {
+         scheduler.cancelAll(pluginId: pluginId)
+         interceptions.releaseInstances(pluginId: pluginId)
+         for ticket in operations.takeAll(pluginId: pluginId) { ticket.lease.close() }
+         eventDelivery.remove(pluginId: pluginId)
+         leases.closeAll(pluginId: pluginId)
+     }
++
++    public func permissionsChanged(pluginId: String) {
++        interceptions.retirePermissions(pluginId: pluginId)
++        for ticket in operations.retirePermissions(pluginId: pluginId) {
++            eventDelivery.remove(subscriptionId: ticket.id)
++            ticket.lease.close()
++        }
++        leases.retirePermissions(pluginId: pluginId)
++    }
+@@
+     private func makeLease(_ request: NativeServiceRequest, pluginId: String, handle: Int64, permissions: Set<PluginPermission>,
+                            scope: NativeServiceSnapshots.Scope? = nil) throws -> Lease {
+-        try require(pluginId, permissions: permissions)
++        let permissionCurrent = permissionAdmission(pluginId, permissions)
++        guard permissionCurrent() else { throw BridgeFailure.permission("Native service permission admission expired") }
+         let captured = try owner(request, pluginId: pluginId)
+         let captureOwner = self.captureOwner
+-        let hasPermission = self.hasPermission
+         let snapshots = controllerSnapshots.values
+         return try leases.make(pluginId: pluginId, owner: captured, handle: handle, isCurrent: { owner in
+-            captureOwner(owner.pluginId) == owner && permissions.allSatisfy { hasPermission(owner.pluginId, $0) }
++            captureOwner(owner.pluginId) == owner && permissionCurrent()
+                 && (scope.map { snapshots.isCurrent($0) } ?? true)
+*** Update File: telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/TL/PluginTLBridgeExtension.swift
+@@
+     private let hasPermission: HasPermission
++    private let permissionAdmission: PluginPermissionAdmission
+@@
+-                diagnostic: @escaping @Sendable (String) -> Void = { NSLog("[Exteraless TL] %@", $0) }) {
++                diagnostic: @escaping @Sendable (String) -> Void = { NSLog("[Exteraless TL] %@", $0) },
++                permissionAdmission: PluginPermissionAdmission? = nil) {
+         self.init(storage: storage, hasPermission: hasPermission, captureOwner: captureOwner, callback: callback,
+             release: release, accountLookup: accountLookup, resolveAccount: resolveAccount, diagnostic: diagnostic,
+-            scheduleStart: { work in DispatchQueue.main.async { work() } })
++            scheduleStart: { work in DispatchQueue.main.async { work() } }, permissionAdmission: permissionAdmission)
+@@
+-         scheduleStart: @escaping @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void) {
++         scheduleStart: @escaping @Sendable (@escaping @MainActor @Sendable () -> Void) -> Void,
++         permissionAdmission: PluginPermissionAdmission? = nil) {
+@@
+         self.hasPermission = hasPermission
++        self.permissionAdmission = permissionAdmission ?? { id, required in
++            { required.allSatisfy { hasPermission(id, $0) } }
++        }
+@@
+     public func releaseInstances(pluginId: String) {
+         for ticket in self.registry.takeAll(pluginId: pluginId) {
+             _ = self.release(ticket.owner, [ticket.callbackHandle])
+         }
+     }
++
++    public func permissionsChanged(pluginId: String) {
++        for ticket in self.registry.runningTickets where ticket.pluginId == pluginId && !ticket.permitsExecution {
++            self.finish(ticket, error: .local("PERMISSION_REVOKED"))
++        }
++    }
+@@
+         let origin = try PluginTLNativeOrigin.capture(owner: owner)
+         let captureOwner = self.captureOwner
+-        let hasPermission = self.hasPermission
++        let permissionCurrent = self.permissionAdmission(pluginId, [permission])
+         let execution: @Sendable () -> Bool = {
+-            parentExecution() && accountExecution() && hasPermission(pluginId, permission)
++            parentExecution() && accountExecution() && permissionCurrent()
+         }
+*** End Patch
