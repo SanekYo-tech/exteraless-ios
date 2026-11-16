@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 5
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      PROBE_OUTPUT: ${{ runner.temp }}/chat-table-symbols-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -30,12 +29,14 @@ jobs:
             /telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Chats/ExteralessChatTableController.swift
             /telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/Retention/ExteralessAyuImportController.swift
       - name: Bounded two-class SDK and symbol differential (compile-only)
+        env:
+          PROBE_OUTPUT: ${{ runner.temp }}/chat-table-symbols-${{ github.run_id }}-${{ github.run_attempt }}
         run: python3 -B tools/diagnostics/uikit_chat_table_link_probe.py
       - name: Retain exact-source compiler and symbol evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: chat-table-symbols-${{ github.run_id }}
-          path: ${{ env.PROBE_OUTPUT }}
+          path: ${{ runner.temp }}/chat-table-symbols-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
