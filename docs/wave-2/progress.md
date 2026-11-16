@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `b06bb000`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `d245ec52`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -21,15 +21,32 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 
 | Актуальная проверка | Подтверждённое состояние |
 |---|---|
-| Compat | **43792348534 /3daf8d97 GREEN:521 PASS /36skip**,143.73s |
+| Compat | **43852477202 /d245ec52 GREEN:521 PASS /36skip**,185.35s; Swift job skipped by path filter |
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43834798503 /b06bb000 FAILED**: native compile получил orphan cache hits (`Lost inputs`); один Glass actor diagnostic |
+| UIKit | **43852504839 /d245ec52 FAILED**: 33/37 native targets собраны, четыре остановлены ENOSPC; места для frame tools тоже не хватило |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43852504839 завершён; watcher завершён. 5927 action /1943 remote cache hits,
+  compile715.911s:33/37targets. Free21.48GB→139MB; 4 поздних ENOSPC, source diagnostics=0.
+  Cache completeness работает. 102 Mac tooling checks PASS (17.862s), включая
+  настоящий POSIX whole-group SIGTERM и отрицательный child exit; 29 harness checks PASS.
+- `ses_e1bc65877ffewSDpIp7RfHUHm7`: уменьшение unsigned test-archive дублирования,
+  с малым настоящим APFS copy-on-write proof перед полным Apple-повтором.
+- `ses_e25088d28ffem4nSC3FcOP577B`: отдельная bounded capacity recovery перед
+  frame tools/recordings; оставшийся claimed cache5.95GB доступен для этого этапа.
+
+**Корневая причина ENOSPC — накопление output bases.** Rsync-staging не чистит
+sibling `bazel-user-root`; выходы3+ прогонов занимали60–80GB. Координатор добавил
+`native_test_disk.py reset` (после staging, удаляет только execroot-каталоги,
+сохраняет install/lock) и `recordings` (после native, реклеймит cache до4GiB
+floor для pip/ffmpeg/кадров).53 local testsPASS,1744inputscovered.
+- Compat43852477202/d245ec52 завершён GREEN: 521 PASS /36 skips; watcher завершён.
+- Общий corrective cohort опубликован: 24 файла; 9 recording envelopes согласованы
+  с owned-exec, 77 local PASS/4 POSIX skip,1743 inputs. Все delegated owners завершены.
 - UIKit43834798503 завершён; watcher завершён. Cache: 40818 hits /562 misses,
   2.22GB прочитано; native result FAILED, классы/кадры не исполнялись.
 - Cache completeness после reclamation готова и проверена на реальном Bazel.

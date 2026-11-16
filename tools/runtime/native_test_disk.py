@@ -44,6 +44,10 @@ class Limits:
     delete_bytes: int = 64 * GIB
 
 
+RECORDING_LIMITS = Limits(minimum_free=4 * GIB, target_free=6 * GIB,
+                          maximum_cache=GIB, phase_seconds=45)
+
+
 class DiskCapacityError(RuntimeError):
     pass
 
@@ -451,6 +455,69 @@ def sys_platform_is_posix():
     return os.name == 'posix'
 
 
+def _iter_output_bases(bazel_root):
+    """Yield validated output-base directories under the owned user root.
+
+    Bazel stores one hash-named output base per workspace under its user root;
+    the shared install directory and lock files never contain execroot.
+    """
+    root = _directory(bazel_root)
+    for child in root.iterdir():
+        info = child.lstat()
+        if _is_link(info) or not stat.S_ISDIR(info.st_mode):
+            continue
+        if child.name == 'install':
+            continue
+        if (child / 'execroot').is_dir():
+            yield child
+
+
+def reset_output_bases(owned_root, repository, generation, bazel_root):
+    """Remove accumulated Bazel output bases; keep install and non-output content.
+
+    The persistent workspace reuses one bazel-user-root across runs. Rsync
+    staging replaces the source tree but never the sibling output bases, so
+    completed-run outputs accumulate until the volume fills. Only directories
+    that actually contain execroot are removed; the shared install directory
+    and lock files are preserved. The disk action cache lives outside this
+    root and is not touched.
+    """
+    checked_workspace(owned_root, repository, generation, bazel_root)
+    root = _directory(bazel_root)
+    removed = []
+    for child in _iter_output_bases(bazel_root):
+        shutil.rmtree(child)
+        removed.append(child.name)
+    report = {'schema': 1, 'status': 'reset', 'generation': generation,
+              'bazelRoot': str(root), 'removedOutputBases': removed,
+              'retained': ['install', 'lock', 'non-output files'],
+              'note': 'Output bases are recreated on the next Bazel invocation; '
+                      'the disk action cache and staged source are unaffected.'}
+    return report
+
+
+def reclaim_for_recordings(owned_root, repository, generation, cache, bazel_root, run_output):
+    """After native tests, before frame tools: reclaim remaining cache.
+
+    Uses the same verified AC/CAS reclamation with recording-specific limits:
+    a 4 GiB floor for pip/ffmpeg/simulator frames, a 6 GiB target, and a 1 GiB
+    cache cap. The Bazel server is idle by this point (the workflow runs this
+    after the native step and the server's max_idle_secs has elapsed).
+    """
+    bases = list(_iter_output_bases(bazel_root))
+    if len(bases) != 1:
+        raise ValueError('Expected one Bazel output base for capacity measurement; found: '
+                         + str([b.name for b in bases]))
+    def quiesce(timeout):
+        return {'status': 'assumed-idle-post-native-step', 'seconds': 0.0,
+                'note': 'Sequential workflow step; server max_idle_secs=30 already elapsed'}
+    report = recover_capacity(owned_root, repository, generation, cache,
+                              bazel_root, bases[0], run_output,
+                              quiesce=quiesce, limits=RECORDING_LIMITS)
+    report['purpose'] = 'before-frame-tools-and-recordings'
+    return report
+
+
 def observe_after_compile(owned_root, repository, generation, cache, bazel_root, bazel_output, run_output):
     """Small read-only sizing receipt, also emitted when compiler output hits ENOSPC."""
     owned = checked_workspace(owned_root, repository, generation, bazel_root)
@@ -468,17 +535,29 @@ def observe_after_compile(owned_root, repository, generation, cache, bazel_root,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('claim',))
+    parser.add_argument('action', choices=('claim', 'reset', 'recordings'))
     parser.add_argument('--owned-root', type=Path, required=True)
     parser.add_argument('--repository', required=True)
     parser.add_argument('--generation', required=True)
-    parser.add_argument('--cache', type=Path, required=True)
+    parser.add_argument('--cache', type=Path)
+    parser.add_argument('--bazel-root', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    report = claim_cache(args.owned_root, args.repository, args.generation, args.cache)
+    if args.action == 'claim':
+        report = claim_cache(args.owned_root, args.repository, args.generation, args.cache)
+    elif args.action == 'reset':
+        if args.bazel_root is None:
+            parser.error('reset requires --bazel-root')
+        report = reset_output_bases(args.owned_root, args.repository, args.generation, args.bazel_root)
+    else:
+        if args.cache is None or args.bazel_root is None:
+            parser.error('recordings requires --cache and --bazel-root')
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        report = reclaim_for_recordings(args.owned_root, args.repository, args.generation,
+                                        args.cache, args.bazel_root, args.output.parent)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     _write_json(args.output, report)
-    print('NATIVE_DISK_CACHE_CLAIM ' + json.dumps(report, sort_keys=True), flush=True)
+    print('NATIVE_DISK_' + args.action.upper() + ' ' + json.dumps(report, sort_keys=True), flush=True)
 
 
 if __name__ == '__main__':
