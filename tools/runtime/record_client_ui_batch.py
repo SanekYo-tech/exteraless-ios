@@ -225,7 +225,10 @@ class Recording:
                     os.kill(observed['pid'], signum)
             observed['sentSignals'].append(int(signum))
             return True
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
+            # ESRCH: the owned group is already gone after the leader was
+            # reaped. EPERM: a busy runner recycled the PID into another
+            # user's process; our own group members are already dead.
             return True
         except OSError as error:
             self.payload['processErrors'].append(observed['role'] + ': ' + str(error))
