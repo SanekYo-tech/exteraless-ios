@@ -30,6 +30,24 @@ final class PluginDeveloperServer: @unchecked Sendable {
 
     var snapshot: Snapshot { self.lock.lock(); defer { self.lock.unlock() }; return self.published }
 
+    /// Public diagnostics contain the native error domain/code, never a snapshot
+    /// description (which would also contain the private authentication token).
+    private static func diagnostic(_ error: Error) -> String {
+        let text: String
+        if let error = error as? NWError {
+            switch error {
+            case let .posix(code): text = "NWError.posix(\(code.rawValue), \(POSIXError(code).localizedDescription))"
+            case let .dns(code): text = "NWError.dns(\(code))"
+            case let .tls(code): text = "NWError.tls(\(code))"
+            default: text = "NWError: \(error)"
+            }
+        } else {
+            let error = error as NSError
+            text = "\(error.domain)(\(error.code)): \(error.localizedDescription)"
+        }
+        return String(decoding: text.utf8.prefix(768), as: UTF8.self)
+    }
+
     func start(tokenDirectory: URL) {
         self.lock.lock()
         guard self.currentSession == nil else { self.lock.unlock(); return }
@@ -67,7 +85,9 @@ final class PluginDeveloperServer: @unchecked Sendable {
             let port = NWEndpoint.Port(rawValue: 42690)!
             let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("127.0.0.1"), port: port)
-            let listener = try NWListener(using: parameters, on: port)
+            // requiredLocalEndpoint supplies BOTH address and port. Supplying on:
+            // as well makes Network reject listener creation with EINVAL.
+            let listener = try NWListener(using: parameters)
             self.listener = listener
             let file = tokenDirectory.appendingPathComponent(".devserver_token")
             self.tokenURL = file
@@ -76,10 +96,23 @@ final class PluginDeveloperServer: @unchecked Sendable {
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self, self.epoch == epoch, session.isActive else { return }
                 switch state {
-                case .ready: self.publish(Snapshot(status: "Listening on 127.0.0.1:42690", token: token), session: session)
-                case let .waiting(error): self.publish(Snapshot(status: "Developer server waiting: \(error)", token: nil), session: session)
+                case .ready:
+                    guard self.listener?.port == port else {
+                        self.publish(Snapshot(status: "Developer server unavailable: native bound port differs from requested loopback port", token: nil), session: session, failed: true)
+                        self.stopOnQueue()
+                        return
+                    }
+                    self.publish(Snapshot(status: "Listening on 127.0.0.1:42690", token: token), session: session)
+                case let .waiting(error):
+                    // Network can report a bind collision as waiting, rather
+                    // than failed. Release this attempt so start can retry after
+                    // the owner of the port leaves; do not latch pending forever.
+                    let bindCollision: Bool
+                    if case .posix(.EADDRINUSE) = error { bindCollision = true } else { bindCollision = false }
+                    self.publish(Snapshot(status: "Developer server waiting: \(Self.diagnostic(error))", token: nil), session: session, failed: bindCollision)
+                    if bindCollision { self.stopOnQueue() }
                 case let .failed(error):
-                    self.publish(Snapshot(status: "Developer server failed: \(error)", token: nil), session: session, failed: true)
+                    self.publish(Snapshot(status: "Developer server failed: \(Self.diagnostic(error))", token: nil), session: session, failed: true)
                     self.stopOnQueue()
                 default: break
                 }
@@ -93,7 +126,7 @@ final class PluginDeveloperServer: @unchecked Sendable {
             }
             listener.start(queue: self.queue)
         } catch {
-            self.publish(Snapshot(status: "Developer server unavailable: \(error)", token: nil), session: session, failed: true)
+            self.publish(Snapshot(status: "Developer server unavailable: \(Self.diagnostic(error))", token: nil), session: session, failed: true)
             self.stopOnQueue()
         }
     }

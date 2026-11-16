@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `5fa35f34`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+**HEAD `d296e456`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
@@ -12,14 +12,16 @@ Mac43786995069/5fa35f34 завершён FAILED, watcher завершён.
 Отдельно **722 Core /30 Hooks PASS**, все297 source pins сверены с Git:
 `mac-core-722-acceptance.md`. Host заблокирован конфликтом `kevent`, standalone UI —
 closure inference. Оба source fixes готовы (`darwin-sdk-typecheck.md`).
-Listener readiness диагностирует отдельный owner. Независимые этапы сохраняют
-реальные результаты и failure общего gate; HNS/Mac5 ещё не выполнены.
+Listener readiness исправлен и проверен: Darwin43787862250/bbc54817 PASS,
+compile9.864s/execute0.337s. Шесть inputs и три изменённых postimages сверены с
+passing artifact/Git. Причина — EINVAL от двойного задания endpoint/port;
+NWListener(using:) сохраняет127.0.0.1:42690. HNS/Mac5 ещё не выполнены.
 
 Предыдущие watchers завершены. Compat43786135131/a823e619 GREEN:
 478 passed,36 skipped,147.86s. Mac43786148988 прошёл91 packaging,63 plumbing
 и49 finite SDK tests (13 пропусков), затем failed на readiness реального listener.
-`ses_e1f7a723bffeBMTKIuM4Qx6b3m` получает конкретное NWListener-состояние отдельным
-bounded Darwin-прогоном; production fake-readiness не допускается.
+Отдельный bounded Darwin-прогон установил и закрыл этот listener-дефект;
+`developer-listener-native-remediation.md` содержит точное состояние и evidence.
 
 Mac43785374048 и Compat43785348360 остановились на импорте pytest из helper
 в изолированном child. Исправление опубликовано в a823e619; локально4PASS,
@@ -30,9 +32,16 @@ ExteralessHarness в test_clients. Точное исключение и bounded 
 README/PLAN/runtime docs и Obsidian обновлены; source closure overlays в parity
 сводит `ses_e1fc2b7aeffe9GcuqtB99tTZZz`.
 
+**Три текущих watchers на d296e456 — не poll:**
+- Mac43788170016: `sh_1e2088c56001gl8CaWIXs06pOx`, `python-d296e456-watch.log`.
+- UIKit43788169856: `sh_1e2088cca001U378Kki29sg3D6`, `uikit-d296e456-watch.log`.
+- Compat43788114300: `sh_1e208e59f001MlZjzxhFgsAI9Q`, `compat-d296e456-watch.log`.
+Darwin compiler fixes и Postbox visibility опубликованы; старый UI postimage
+сохранён, новый admission manifest — `plugin-ui-darwin-compiler-postimage.json`.
+
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **5fa35f34**: independent native diagnostic continuation; helper fix a823e619 |
+| HEAD | **d296e456**: Darwin compiler corrections / scoped Postbox harness access |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
 | Linux Swift | **43784503847 / f704d76c:712 Core /273 Host /30 Hooks PASS**, 9.176/5.545/0.356s |
 | Linux Python | **43786135131 /a823e619 GREEN:478 PASS /36skip**,147.86s |
