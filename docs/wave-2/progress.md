@@ -4,9 +4,34 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `5ce84b96`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
-(288 файлов). Все известные source findings закрыты независимым ревью;
-полная native/UIKit-приёмка нового среза ещё выполняется.
+**HEAD `53cab85a`**: исправлен resource ID в debug Feed fixture.
+Общий Host/SDK/UIKit cohort — `f704d76c` (288 файлов); hermetic parity overlay
+опубликован в `3daf8d97`:39 source-closed scopes,34 raw report snapshots,
+исторические567/925 и14/102/666 сохранены, verification promotions=0.
+
+| Актуальная проверка | Подтверждённое состояние |
+|---|---|
+| Compat | **43792348534 /3daf8d97 GREEN:521 PASS /36skip**,143.73s |
+| Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
+| Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
+| Последний полный Mac | 43791248294/5ce84b96 FAILED: один archive swap-hook всё ещё не включился; отдельная диагностика ниже |
+| UIKit | **43793245829 /53cab85a выполняется**; предыдущий run прошёл aquery и остановился на Feed resource wrapper |
+| План приёмки | 5 real SDK children;434 native XCTest methods;20 записываемых сцен; исполнения/кадры ещё pending |
+| Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
+
+**Активные независимые работы — не poll:**
+- UIKit watcher `sh_1e23732e9001n8wBLzVGAxUL79`, `uikit-53cab85a-watch.log`.
+- Archive swap fixture завершён: **Darwin43794021047/cef03eec 7/7PASS**.
+  Наблюдения подтвердили один inode при разных /var и /private/var labels;
+  fixture выбирает захваченную identity и проверяет точный отказ storage.
+  Testpostimage b9b101e1 и artifact conclusion сверены с Git/receipt.
+- `ses_e25088ca2ffeapc0yZ2vwlbKAh`: отдельный actual Swift/C/CPython five-child gate
+  на опубликованных inputs; этот прогон не зависит от test-only swap selector.
+
+### История промежуточных gates до 53cab85a
+
+Состояния «выполняется» ниже относятся к указанным checkpoint; актуальные owners
+и watchers перечислены выше.
 
 Mac43786995069/5fa35f34 завершён FAILED, watcher завершён.
 Отдельно **722 Core /30 Hooks PASS**, все297 source pins сверены с Git:
