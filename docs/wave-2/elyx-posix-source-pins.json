@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-fd-test-20261116-40bf925c",
+  "branch": "ci/elyx-fd-hang-diag-20261116-5ae310d4",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -24,12 +24,12 @@
   "files": [
     {
       "path": ".github/workflows/compat-tests.yml",
-      "origin": "workflow",
-      "raw_sha256": "3f4493a07795fb64c8c8b081994aa5ec51a62726e164eda311f8f06d5da86a17",
-      "raw_bytes": 13032,
-      "canonical_sha256": "3f4493a07795fb64c8c8b081994aa5ec51a62726e164eda311f8f06d5da86a17",
-      "canonical_bytes": 13032,
-      "git_blob": "64a68c44122b9c1ae129dd9e14746b72d1bea43c"
+      "origin": "diagnostic-workflow",
+      "raw_sha256": "160507e35be1e49a13f9cc9252459e3971d069b02552665b36ebdf92aff7ad03",
+      "raw_bytes": 19894,
+      "canonical_sha256": "160507e35be1e49a13f9cc9252459e3971d069b02552665b36ebdf92aff7ad03",
+      "canonical_bytes": 19894,
+      "git_blob": "83f82ccdc8460168defda6ad81cb74205a702e0f"
     },
     {
       "path": "docs/wave-2/elyx-nfd02-inputs.json",
@@ -1793,5 +1793,29 @@
     "workflow_unchanged": true,
     "expected_host_cases": 47,
     "expected_ingress_cases": 7
+  },
+  "host_hang_diagnostics": {
+    "source_parent": "a707e85bcf4ce8bce39029829acf7577b5d8950c",
+    "captured_utc": "2026-11-16T01:00:29.009121+00:00",
+    "source_or_test_changes": [],
+    "mode": "direct discovered XCTest binary through stdbuf -o0 -e0",
+    "expected_host_cases": 47,
+    "groups": {
+      "PluginElyxDeveloperFilesTests": 29,
+      "PluginElyxDeveloperActivationTests": 6,
+      "PluginElyxDeveloperTests": 12
+    },
+    "bounds_seconds": {
+      "build": 180,
+      "discovery_each": 10,
+      "group_each": 15,
+      "conditional_combined": 30,
+      "focused_case": 10,
+      "abort_to_kill": 2,
+      "existing_debugger_attach": 4,
+      "diagnostic_step": 300
+    },
+    "no_ingress_or_python_execution": true,
+    "single_focused_rerun_maximum": 1
   }
 }

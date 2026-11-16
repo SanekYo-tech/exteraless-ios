@@ -1,4 +1,4 @@
-name: Sealed Elyx FD startup and ingress POSIX
+name: Elyx FD Host direct XCTest diagnostics
 
 on:
   workflow_dispatch:
@@ -12,16 +12,13 @@ env:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
 jobs:
-  sealed-native-posix:
-    name: Sealed Elyx Host 47 + Foundation ingress 7 (POSIX)
+  direct-xctest:
+    name: Frozen Host 47 direct groups and bounded backtrace (POSIX)
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
     env:
       SWIFT_ROOT: /home/runner/swift-6.4.2
-      EVIDENCE: ${{ github.workspace }}/build/elyx-fd-final
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      PIP_DEFAULT_TIMEOUT: "15"
-      PIP_RETRIES: "1"
+      EVIDENCE: ${{ github.workspace }}/build/elyx-fd-hang-diagnostics
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -39,21 +36,16 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
-      - name: Verify sealed source pins
+      - name: Verify immutable source pins
         run: |
           set -euo pipefail
-          mkdir -p "$EVIDENCE/host" "$EVIDENCE/ingress"
+          mkdir -p "$EVIDENCE"
           cp docs/wave-2/elyx-posix-source-pins.json "$EVIDENCE/"
-          cp docs/wave-2/native-elyx-developer-final-inputs.json "$EVIDENCE/"
           git rev-parse HEAD | tee "$EVIDENCE/cohort-sha.txt"
           python -c 'import json; p=json.load(open("docs/wave-2/elyx-posix-source-pins.json")); print("\n".join("{}  {}".format(f["canonical_sha256"], f["path"]) for f in p["files"]))' > "$EVIDENCE/sources.sha256"
           sha256sum --check "$EVIDENCE/sources.sha256" > "$EVIDENCE/source-check.log"
           uname -a | tee "$EVIDENCE/platform.log"
-      - name: Install the supplied ingress driver's import dependency
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 120s python -m pip install pytest==8.3.5 2>&1 | tee "$EVIDENCE/driver-tools.log"
-      - name: Install Swift build dependencies
+      - name: Install existing Swift build dependencies
         timeout-minutes: 6
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -63,7 +55,7 @@ jobs:
           sudo apt-get install -y -qq binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 \
             libgcc-13-dev libncurses-dev libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev \
             libz3-dev pkg-config tzdata unzip zip zlib1g-dev 2>&1 | tee "$EVIDENCE/apt-install.log"
-      - name: Restore existing Swift 6.4.2 toolchain cache
+      - name: Restore existing Swift 6.4.2 toolchain
         id: swift-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -80,136 +72,245 @@ jobs:
           sha256sum "${SWIFT_ROOT}/${tarball}" > "$EVIDENCE/swift-download.sha256"
           tar -xzf "${SWIFT_ROOT}/${tarball}" -C "$SWIFT_ROOT" --strip-components=1
           rm -f "${SWIFT_ROOT}/${tarball}"
-          test -x "${SWIFT_ROOT}/usr/bin/swift"
-      - name: Verify and record the same compiler identity
+      - name: Verify compiler identity
         run: |
           set -euo pipefail
           printf '%s  %s\n' 76db9f3dd8487a14ae39374509620e33af02f10da5dc42247406657832e4e9da "$SWIFT_ROOT/usr/bin/swift-frontend" | sha256sum --check | tee "$EVIDENCE/toolchain-check.log"
           echo "${SWIFT_ROOT}/usr/bin" >> "$GITHUB_PATH"
           "${SWIFT_ROOT}/usr/bin/swift" --version | tee "$EVIDENCE/swift-version.log"
-          sha256sum "${SWIFT_ROOT}/usr/bin/swift-frontend" > "$EVIDENCE/swift-frontend.sha256"
-      - name: Compile complete sealed Host and test target
-        id: host-build
+      - name: Compile the unchanged Host test binary (180 seconds)
         working-directory: swift/PluginHost
         run: |
           set -euo pipefail
-          timeout --signal=KILL 180s swift build --build-tests --jobs 2 2>&1 | tee "$EVIDENCE/host/build.log"
-      - name: Execute all 47 sealed Elyx Host cases
-        working-directory: swift/PluginHost
-        run: |
-          set -euo pipefail
-          timeout --signal=KILL 30s swift test --skip-build --jobs 2 \
-            --filter 'PluginElyxDeveloper(ActivationTests|FilesTests|Tests)' \
-            --xunit-output "$EVIDENCE/host/native.xml" 2>&1 | tee "$EVIDENCE/host/test.log"
-      - name: Run the sealed Linux ingress driver (120s compile, 30s test)
-        if: ${{ !cancelled() && steps.host-build.outcome == 'success' }}
-        timeout-minutes: 4
-        run: |
-          set -euo pipefail
-          python -B - <<'PY' 2>&1 | tee "$EVIDENCE/ingress/driver.log"
-          import json, os, pathlib, runpy, shutil, sys, time
-          root = pathlib.Path.cwd()
-          evidence = pathlib.Path(os.environ["EVIDENCE"]) / "ingress"
-          package = pathlib.Path(os.environ["RUNNER_TEMP"]) / ("elyx-ingress-" + os.environ["GITHUB_RUN_ID"])
-          assert sys.platform == "linux" and not package.exists()
-          driver = root / "tools/compat/tests/test_native_elyx_ingress.py"
-          helper = root / "tools/compat/tests/test_sdk_developer_native.py"
-          calls, started = [], {}
-          # Observe the supplied helper's real return values. No driver, Swift
-          # source, subprocess command or timeout is replaced by this log hook.
-          def profile(frame, event, arg):
-              if frame.f_code.co_filename != str(helper) or frame.f_code.co_name != "run_bounded":
-                  return
-              if event == "call":
-                  started[id(frame)] = time.monotonic()
-              elif event == "return":
-                  command = frame.f_locals["command"]
-                  phase = "build" if command[1] == "build" else "test"
-                  output = arg if isinstance(arg, str) else frame.f_locals.get("output", "")
-                  (evidence / (phase + ".log")).write_text(output, encoding="utf-8")
-                  process = frame.f_locals.get("process")
-                  calls.append({"phase": phase, "command": command, "timeout_seconds": frame.f_locals["timeout"],
-                                "seconds": time.monotonic() - started.pop(id(frame), time.monotonic()),
-                                "returncode": process.returncode if process is not None else None})
-          sys.argv = [str(driver), str(package)]
-          sys.setprofile(profile)
-          try:
-              runpy.run_path(str(driver), run_name="__main__")
-          finally:
-              sys.setprofile(None)
-              (evidence / "commands.json").write_text(json.dumps(calls, indent=2) + "\n")
-              for name in ("input-sha256.json", "Package.swift"):
-                  if (package / name).exists():
-                      shutil.copyfile(package / name, evidence / name)
-          assert [(c["phase"], c["timeout_seconds"], c["returncode"]) for c in calls] == [("build", 120, 0), ("test", 30, 0)]
-          PY
-      - name: Record exact Host and ingress native XCTest evidence
-        if: always()
+          timeout --signal=KILL 180s swift build --build-tests --jobs 2 2>&1 | tee "$EVIDENCE/build.log"
+      - name: Direct discovery, three bounded groups and one focused backtrace
+        timeout-minutes: 5
         run: |
           python -B - <<'PY'
-          import collections, hashlib, json, os, pathlib, re, xml.etree.ElementTree as ET
-          root = pathlib.Path(os.environ["EVIDENCE"])
-          pins = json.loads(pathlib.Path("docs/wave-2/elyx-posix-source-pins.json").read_text())
-          summaries = {}
-          for group, summary_name in (("host", "Selected tests"), ("ingress", "All tests")):
-              directory = root / group
-              directory.mkdir(parents=True, exist_ok=True)
-              spec = pins["native_fd_final"]["expected_tests"][group]
-              expected = set(spec["case_ids"])
-              log = directory / "test.log"
-              if not log.exists():
-                  summaries[group] = {"error": "Native XCTest log absent; inspect compiler/driver logs", "expected": spec["count"]}
-                  (directory / "counts.json").write_text(json.dumps(summaries[group], indent=2) + "\n")
-                  continue
-              raw = log.read_bytes()
-              text = re.sub(r"\x1b\[[0-9;]*m", "", raw.decode("utf-8", "replace"))
-              normalize = lambda name: ".".join(name.rsplit(".", 2)[-2:])
-              starts = [normalize(n) for n in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' started at .+$", text, re.M)]
-              finished = [(normalize(n), s, t) for n, s, t in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' (passed|failed|skipped) \(([0-9.]+) seconds\)$", text, re.M)]
-              summary = re.search(r"^Test Suite '" + re.escape(summary_name) + r"' (passed|failed) at [^\n]+\n\s*Executed (\d+) tests, with (\d+) failures \((\d+) unexpected\) in ([0-9.]+) \([0-9.]+\) seconds", text, re.M)
-              cases = [{"class": n.split(".")[0], "name": n.split(".")[1], "status": s, "seconds": t} for n, s, t in finished]
-              counts = {"expected": spec["count"], "tests": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
-                        "failures": sum(c["status"] == "failed" for c in cases), "errors": 0,
-                        "skipped": sum(c["status"] == "skipped" for c in cases), "cases": cases,
-                        "seconds": summary[5] if summary else None, "cohort_sha": os.environ["GITHUB_SHA"],
-                        "log_sha256": hashlib.sha256(raw).hexdigest(), "provenance": "Native XCTest case events and complete suite summary"}
-              issues = []
-              if len(expected) != spec["count"] or collections.Counter(starts) != collections.Counter({n: 1 for n in expected}):
-                  issues.append("Native starts differ from exact sealed case inventory")
-              if collections.Counter(n for n, _, _ in finished) != collections.Counter({n: 1 for n in expected}):
-                  issues.append("Native finishes differ from exact sealed case inventory")
-              if summary is None or summary[1] != "passed" or int(summary[2]) != len(cases) or int(summary[3]) != counts["failures"]:
-                  issues.append("Missing or nonpassing complete native suite summary")
-              if counts["passed"] != spec["count"] or counts["skipped"]:
-                  issues.append("Not every required case passed without skips")
-              counts["report_errors"] = issues
-              counts["native_diagnostic_lines"] = [line for line in text.splitlines() if "error:" in line or re.search(r"\.swift:\d+", line)]
-              counts["module_counts"] = dict(collections.Counter(c["class"] for c in cases))
-              document = ET.Element("testsuites")
-              suite = ET.SubElement(document, "testsuite", name=group + " native XCTest", tests=str(len(cases)),
-                                    failures=str(counts["failures"]), errors="0", skipped=str(counts["skipped"]), time=counts["seconds"] or "0")
-              properties = ET.SubElement(suite, "properties")
-              for name, value in (("source", "test.log native XCTest case events"), ("source_sha256", counts["log_sha256"]), ("cohort_sha", counts["cohort_sha"])):
-                  ET.SubElement(properties, "property", name=name, value=value)
-              for case in cases:
-                  item = ET.SubElement(suite, "testcase", classname=case["class"], name=case["name"], time=case["seconds"])
-                  if case["status"] == "failed":
-                      ET.SubElement(item, "failure", message="Native XCTest failure").text = "\n".join(counts["native_diagnostic_lines"])
-                  elif case["status"] == "skipped":
-                      ET.SubElement(item, "skipped")
-              if issues:
-                  ET.SubElement(suite, "system-err").text = "\n".join(issues)
-              ET.ElementTree(document).write(directory / "xctest.xml", encoding="utf-8", xml_declaration=True)
-              (directory / "counts.json").write_text(json.dumps(counts, indent=2) + "\n")
-              summaries[group] = {k:v for k,v in counts.items() if k not in ("cases", "native_diagnostic_lines")}
-          (root / "summary.json").write_text(json.dumps(summaries, indent=2) + "\n")
-          print(json.dumps(summaries, indent=2))
-          assert all("error" not in s and not s["report_errors"] for s in summaries.values()), "Incomplete or failed native cohort; see retained logs and per-case JSON"
+          import collections, hashlib, json, os, pathlib, re, resource, shutil, signal, subprocess, time
+          root = pathlib.Path.cwd()
+          package = root / "swift/PluginHost"
+          evidence = pathlib.Path(os.environ["EVIDENCE"])
+          resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+          pins = json.loads((root / "docs/wave-2/elyx-posix-source-pins.json").read_text())
+          expected = set(pins["native_fd_final"]["expected_tests"]["host"]["case_ids"])
+          classes = ["PluginElyxDeveloperFilesTests", "PluginElyxDeveloperActivationTests", "PluginElyxDeveloperTests"]
+          assert len(expected) == 47
+          stdbuf = shutil.which("stdbuf")
+          assert stdbuf, "Direct unbuffered execution requires the preinstalled coreutils stdbuf"
+          commands, groups = [], []
+          result = {"cohort_sha": os.environ["GITHUB_SHA"], "source_parent": "a707e85bcf4ce8bce39029829acf7577b5d8950c",
+                    "expected_count": 47, "mode": "direct XCTest, stdbuf -o0 -e0, separate fresh group processes",
+                    "commands": commands, "groups": groups, "debugger": shutil.which("gdb") or shutil.which("lldb")}
+          binary = None
+          def write_result():
+              (evidence / "diagnostics.json").write_text(json.dumps(result, indent=2) + "\n")
+          def digest(path):
+              value = hashlib.sha256()
+              with path.open("rb") as file:
+                  for block in iter(lambda: file.read(1024 * 1024), b""):
+                      value.update(block)
+              return value.hexdigest()
+          def kill_group(process, sig):
+              try:
+                  os.killpg(process.pid, sig)
+              except ProcessLookupError:
+                  pass
+          def execute(command, label, seconds, *, abort=False, inspect=False):
+              assert 0 < seconds <= 30
+              log = evidence / (label + ".log")
+              record = {"label": label, "command": command, "cwd": str(package), "limit_seconds": seconds,
+                        "timeout_signal": "SIGABRT then SIGKILL after 2s" if abort else "SIGKILL",
+                        "log": log.name, "timed_out": False}
+              commands.append(record)
+              print(json.dumps({"event": "command_start", **record}), flush=True)
+              env = dict(os.environ, DEBUGINFOD_URLS="")
+              if abort:
+                  env["SWIFT_BACKTRACE"] = "enable=yes,interactive=no,threads=all"
+                  record["diagnostic_env"] = {"SWIFT_BACKTRACE": env["SWIFT_BACKTRACE"]}
+              started = time.monotonic()
+              process = None
+              with log.open("wb") as output:
+                  try:
+                      process = subprocess.Popen(command, cwd=package, env=env, stdin=subprocess.DEVNULL,
+                                                 stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                      record["pid"] = process.pid
+                      if inspect:
+                          try:
+                              process.wait(timeout=3)
+                          except subprocess.TimeoutExpired:
+                              debugger = result["debugger"]
+                              target = pathlib.Path("/proc") / str(process.pid) / "exe"
+                              if debugger and process.poll() is None and target.resolve() == binary:
+                                  if pathlib.Path(debugger).name == "gdb":
+                                      args = [debugger, "--batch", "--nx", "-iex", "set debuginfod enabled off", "-p", str(process.pid), "-ex", "set pagination off",
+                                              "-ex", "thread apply all bt 30", "-ex", "detach", "-ex", "quit"]
+                                  else:
+                                      args = [debugger, "--batch", "--no-lldbinit", "-p", str(process.pid),
+                                              "-o", "thread backtrace all", "-o", "process detach", "-o", "quit"]
+                                  sudo = shutil.which("sudo")
+                                  if sudo:
+                                      args = [sudo, "-n", *args]
+                                  record["debugger_attach"] = execute(args, label + "-debugger", 4)
+                                  if process.poll() is None:
+                                      kill_group(process, signal.SIGCONT)
+                      process.wait(timeout=max(0.05, seconds - (time.monotonic() - started)))
+                  except subprocess.TimeoutExpired:
+                      record["timed_out"] = True
+                      kill_group(process, signal.SIGABRT if abort else signal.SIGKILL)
+                      try:
+                          process.wait(timeout=2)
+                      except subprocess.TimeoutExpired:
+                          kill_group(process, signal.SIGKILL)
+                          process.wait(timeout=2)
+                  finally:
+                      if process is not None and process.poll() is None:
+                          kill_group(process, signal.SIGKILL)
+                          process.wait(timeout=2)
+              record["seconds"] = time.monotonic() - started
+              record["returncode"] = process.returncode if process is not None else None
+              record["log_sha256"] = digest(log)
+              print(json.dumps({"event": "command_end", "label": label, "seconds": record["seconds"],
+                                "returncode": record["returncode"], "timed_out": record["timed_out"]}), flush=True)
+              write_result()
+              return record
+          def is_elf(path):
+              if not path.is_file() or not os.access(path, os.X_OK):
+                  return False
+              with path.open("rb") as file:
+                  return file.read(4) == b"\x7fELF"
+          def normalize_event(name):
+              return ".".join(name.rsplit(".", 2)[-2:])
+          def events(record, wanted):
+              raw = (evidence / record["log"]).read_text(errors="replace")
+              text = re.sub(r"\x1b\[[0-9;]*m", "", raw)
+              starts = [normalize_event(name) for name in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' started at .+$", text, re.M)]
+              finished = [(normalize_event(n), s, t) for n, s, t in re.findall(r"^Test Case '([A-Za-z0-9_.]+\.test[A-Za-z0-9_]+)' (passed|failed|skipped) \(([0-9.]+) seconds\)$", text, re.M)]
+              endings = {name for name, _, _ in finished}
+              unfinished = [name for name in starts if name not in endings]
+              summary = {"started": starts, "finished": [{"case_id": n, "status": s, "seconds": t} for n, s, t in finished],
+                         "unfinished_started": unfinished, "passed": sum(s == "passed" for _, s, _ in finished),
+                         "failed": [n for n, s, _ in finished if s == "failed"], "skipped": [n for n, s, _ in finished if s == "skipped"],
+                         "missing_finishes": sorted(set(wanted) - endings),
+                         "diagnostic_lines": [line for line in text.splitlines() if "error:" in line or re.search(r"\.swift:\d+", line)]}
+              summary["complete_pass"] = (not record["timed_out"] and record["returncode"] == 0
+                  and collections.Counter(starts) == collections.Counter({n: 1 for n in wanted})
+                  and collections.Counter(n for n, _, _ in finished) == collections.Counter({n: 1 for n in wanted})
+                  and summary["passed"] == len(wanted) and not summary["failed"] and not summary["skipped"])
+              return summary
+          try:
+              location = execute([shutil.which("swift"), "build", "--show-bin-path"], "bin-path-query", 10)
+              path_lines = (evidence / location["log"]).read_text(errors="replace").splitlines()
+              bin_dirs = [pathlib.Path(line.strip()) for line in path_lines
+                          if line.strip() and pathlib.Path(line.strip()).is_absolute() and pathlib.Path(line.strip()).is_dir()]
+              assert not location["timed_out"] and location["returncode"] == 0 and bin_dirs, "Cannot determine actual build output directory"
+              bin_dir = bin_dirs[-1]
+              candidates = {}
+              for entry in bin_dir.glob("*.xctest"):
+                  if is_elf(entry):
+                      candidates[str(entry.resolve())] = entry.resolve()
+                  elif entry.is_dir():
+                      for child in entry.rglob("*"):
+                          if is_elf(child) and child.suffix not in (".so", ".o"):
+                              candidates[str(child.resolve())] = child.resolve()
+              if not candidates:
+                  for entry in bin_dir.iterdir():
+                      if entry.name.startswith("PluginHost") and entry.suffix not in (".so", ".a", ".o") and is_elf(entry):
+                          candidates[str(entry.resolve())] = entry.resolve()
+              result["binary_candidates"] = list(candidates)
+              assert len(candidates) == 1, "Actual test binary is missing or ambiguous; see candidates"
+              binary = next(iter(candidates.values()))
+              result["binary"] = {"path": str(binary), "bytes": binary.stat().st_size, "sha256": digest(binary), "bin_path": str(bin_dir)}
+              listing = execute([stdbuf, "-o0", "-e0", str(binary), "--list-tests"], "list-tests", 10)
+              dumping = execute([stdbuf, "-o0", "-e0", str(binary), "--dump-tests-json"], "dump-tests-json", 10)
+              list_text = (evidence / listing["log"]).read_text(errors="replace")
+              qualified = [line.strip() for line in list_text.splitlines()
+                           if re.fullmatch(r"[A-Za-z0-9_.]+/test[A-Za-z0-9_]+(?:\(\))?", line.strip())]
+              dump_text = (evidence / dumping["log"]).read_text(errors="replace")
+              try:
+                  dump = json.loads(dump_text)
+                  result["dump_json_parsed"] = True
+                  if not qualified:
+                      def leaves(node, parent=None):
+                          name = node.get("name", "")
+                          owner = name if name.rsplit(".", 1)[-1] in classes else parent
+                          if owner and name.startswith("test") and not node.get("tests"):
+                              yield owner + "/" + name
+                          for child in node.get("tests", []):
+                              yield from leaves(child, owner)
+                      qualified = list(leaves(dump))
+              except (ValueError, TypeError):
+                  result["dump_json_parsed"] = False
+              selected = {}
+              for cli_id in qualified:
+                  owner, method = cli_id.split("/", 1)
+                  normalized = owner.rsplit(".", 1)[-1] + "." + method.removesuffix("()")
+                  if normalized in expected:
+                      assert normalized not in selected, "Duplicate native discovery ID"
+                      selected[normalized] = cli_id
+              result["all_discovered_ids"] = qualified
+              result["selected_qualified_ids"] = selected
+              (evidence / "selected-47-ids.json").write_text(json.dumps(selected, indent=2, sort_keys=True) + "\n")
+              if set(selected) != expected:
+                  result["missing_discovered_ids"] = sorted(expected - set(selected))
+                  if listing["timed_out"] or dumping["timed_out"]:
+                      result["startup_backtrace"] = execute([stdbuf, "-o0", "-e0", str(binary), "--list-tests"], "startup-backtrace", 10, abort=True, inspect=True)
+                  raise AssertionError("Actual discovery did not produce every sealed Host ID; no guessed selectors executed")
+              pending = []
+              for index, cls in enumerate(classes, 1):
+                  wanted = {name for name in expected if name.startswith(cls + ".")}
+                  selectors = {selected[name].split("/", 1)[0] for name in wanted}
+                  assert len(selectors) == 1
+                  selector = next(iter(selectors))
+                  print(json.dumps({"event": "group_start", "class": cls, "selector": selector, "expected": len(wanted)}), flush=True)
+                  record = execute([stdbuf, "-o0", "-e0", str(binary), selector], f"group-{index}-{cls}", 15)
+                  group = {"class": cls, "selector": selector, "expected_ids": sorted(wanted), "command": record, **events(record, wanted)}
+                  groups.append(group)
+                  if record["timed_out"] and group["unfinished_started"]:
+                      pending.append(group["unfinished_started"][-1])
+                  print(json.dumps({"event": "group_end", "class": cls, "passed": group["passed"], "failed": group["failed"],
+                                    "timed_out": record["timed_out"], "unfinished": group["unfinished_started"]}), flush=True)
+                  write_result()
+              # If fresh groups all pass, preserve the whole-cohort comparison:
+              # one direct process, actual discovered IDs, never a subset green.
+              if all(group["complete_pass"] for group in groups):
+                  record = execute([stdbuf, "-o0", "-e0", str(binary), ",".join(selected[name] for name in sorted(expected))], "combined-direct-47", 30)
+                  result["combined"] = {"command": record, **events(record, expected)}
+                  if record["timed_out"] and result["combined"]["unfinished_started"]:
+                      pending.append(result["combined"]["unfinished_started"][-1])
+              known_cancellation_cases = {
+                  "PluginElyxDeveloperFilesTests.testCancelledLoadWaiterCannotRecycleRetainedDescriptor",
+                  "PluginElyxDeveloperFilesTests.testCancelledWaiterRetainsActualInspectorFDThroughCompletion",
+              }
+              result["other_hang_candidates"] = sorted(set(pending) - known_cancellation_cases)
+              if pending and not result["other_hang_candidates"]:
+                  current = pending[0]
+                  assert current in selected
+                  result["focused_case"] = current
+                  record = execute([stdbuf, "-o0", "-e0", str(binary), selected[current]], "focused-case-backtrace", 10, abort=True, inspect=True)
+                  result["focused"] = {"command": record, **events(record, {current})}
+                  cls, method = current.split(".", 1)
+                  source = package / "Tests/PluginHostTests" / (cls + ".swift")
+                  for number, line in enumerate(source.read_text().splitlines(), 1):
+                      if re.search(r"\bfunc\s+" + re.escape(method) + r"\s*\(", line):
+                          result["focused_source"] = {"path": str(source.relative_to(root)), "line": number, "method": method}
+                          break
+              result["binary_sha256_after"] = digest(binary)
+              assert result["binary_sha256_after"] == result["binary"]["sha256"]
+              result["all_47_groups_passed"] = all(group["complete_pass"] for group in groups)
+              result["all_47_combined_passed"] = result.get("combined", {}).get("complete_pass", False)
+              result["diagnostic_complete"] = True
+              write_result()
+              assert result["all_47_groups_passed"] and result["all_47_combined_passed"], "Host hang/failure/incomplete execution reproduced; preserve diagnostics"
+          except BaseException as error:
+              result["diagnostic_error"] = f"{type(error).__name__}: {error}"
+              write_result()
+              raise
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: elyx-fd-final-posix-${{ github.run_id }}
+          name: elyx-fd-hang-diagnostics-${{ github.run_id }}
           path: ${{ env.EVIDENCE }}/
           if-no-files-found: error
           retention-days: 14
