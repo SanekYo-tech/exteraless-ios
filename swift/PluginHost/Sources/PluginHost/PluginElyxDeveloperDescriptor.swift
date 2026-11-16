@@ -516,10 +516,15 @@ public final class PluginElyxDeveloperResolvedDescriptor: @unchecked Sendable {
         try entry.check()
         #if canImport(Darwin) || canImport(Glibc)
         var original = stat(), copied = stat()
+        #if canImport(Darwin)
+        let typeMask = UInt32(Darwin.S_IFMT), regularFile = UInt32(Darwin.S_IFREG)
+        #else
+        let typeMask = UInt32(Glibc.S_IFMT), regularFile = UInt32(Glibc.S_IFREG)
+        #endif
         guard fcntl(fd, F_GETFL) & O_ACCMODE == O_RDONLY, fstat(fd, &copied) == 0,
               fstat(entry.backing.descriptor, &original) == 0, copied.st_dev == original.st_dev, copied.st_ino == original.st_ino,
               copied.st_size == original.st_size, copied.st_size == claims.byteCount,
-              UInt32(copied.st_mode) & UInt32(S_IFMT) == UInt32(S_IFREG) else { throw PluginElyxDeveloperError.stale("native read fd custody changed") }
+              UInt32(copied.st_mode) & typeMask == regularFile else { throw PluginElyxDeveloperError.stale("native read fd custody changed") }
         #endif
     }
     public func checkCurrent() throws { lock.lock(); defer { lock.unlock() }; try checkLocked() }

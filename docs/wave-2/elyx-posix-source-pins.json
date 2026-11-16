@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-fd-final-posix-20261116-86dc4a19",
+  "branch": "ci/elyx-fd-typecheck-20261116-019de759",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -869,12 +869,12 @@
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift",
-      "origin": "sealed-manifest",
-      "raw_sha256": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
-      "raw_bytes": 36144,
-      "canonical_sha256": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
-      "canonical_bytes": 36144,
-      "git_blob": "fb099fd4e62b18fbedd98e147ad7cb0c9233af4c"
+      "origin": "coordinator-typecheck-fix",
+      "raw_sha256": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9",
+      "raw_bytes": 36357,
+      "canonical_sha256": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9",
+      "canonical_bytes": 36357,
+      "git_blob": "704342580517e67556aedcec7c85df82e9ab72d0"
     },
     {
       "path": "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperFiles.swift",
@@ -1761,5 +1761,21 @@
     "ingress_driver": "tools/compat/tests/test_native_elyx_ingress.py",
     "ingress_linux_capable": true,
     "context": "Real native provider/registry/filesystem and Host/TLS; fixture inspectors/Python engine recorders remain explicit. Ingress compiles production Foundation code with invocation outcome recorders, no live account/listener."
+  },
+  "native_fd_typecheck_followup": {
+    "parent_verification_commit": "ecaa9d851174dcb02862bc347a4dbc85e474897e",
+    "captured_utc": "2026-11-16T00:25:03.823971+00:00",
+    "changed_source_paths": [
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift"
+    ],
+    "change": "checkLocked explicitly qualifies Darwin/Glibc file-kind constants; CoreFoundation import retained",
+    "parent_descriptor_sha256": "42c3dbadc270cb37347325aebcccfe4ef64cc54047ada1569106ca3c6d1f7bf4",
+    "coordinator_postimage_sha256": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9",
+    "historical_seal_override": {
+      "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9"
+    },
+    "workflow_unchanged": true,
+    "expected_host_cases": 47,
+    "expected_ingress_cases": 7
   }
 }
