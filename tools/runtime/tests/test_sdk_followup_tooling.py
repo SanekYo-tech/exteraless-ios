@@ -135,8 +135,10 @@ class SDKFollowupToolingTests(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         commands = []
-        def run(command, timeout):
+        logs = []
+        def run(command, timeout, *, log):
             commands.append((command, timeout))
+            logs.append(Path(log))
             return 'SDK_DEVELOPER_NATIVE_OK\n'
         with tempfile.TemporaryDirectory() as folder, patch.object(module.shutil, 'which', return_value='fixture-swiftc'), \
                 patch.object(module, 'run_bounded', side_effect=run), patch('sys.stdout', io.StringIO()):
@@ -144,6 +146,7 @@ class SDKFollowupToolingTests(unittest.TestCase):
         actual = [Path(value) for value in commands[0][0] if str(value).endswith('.swift')]
         self.assertEqual(actual, developer_native_sources())
         self.assertEqual([timeout for _, timeout in commands], [120, 10])
+        self.assertEqual(logs, [Path(folder) / 'evidence' / name for name in ('compile.log', 'execute.log')])
 
     def test_configured_control_cannot_pass_with_missing_or_clipped_native_label(self):
         value = {'id': 'exteraless.inlineMath.insert', 'inWindow': True, 'title': '= 3  ·  Insert', 'label': '= 3  ·  Insert',

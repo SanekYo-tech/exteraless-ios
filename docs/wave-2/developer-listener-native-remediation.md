@@ -151,3 +151,11 @@ performed. Local checks additionally verified Python AST, retained success/failu
 logs, the helper's existing two-argument calling convention, and scoped whitespace.
 
 **Source freeze:** the three postimages above are the final listener handoff.
+
+## Coordinator tooling join
+
+The helper-inventory unit test now accepts the driver's `log=` keyword and
+requires distinct `evidence/compile.log` and `evidence/execute.log` paths. Its
+actual Swift-source inventory and120/10-second budget assertions are retained.
+This corrects the packaging-suite mock failure in43789436374/433435e8; it does
+not change the native listener or its already-passed Darwin execution.

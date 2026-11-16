@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `78f37532`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+**HEAD `433435e8`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
@@ -38,6 +38,9 @@ Mac43788170016/d296e456 завершён: candidate/7ingress/4ModeABA/UI-model/T
 Core/Hooks PASS. Host test compiler остановился на четырёх `Self.native` внутри
 Task; строки вынесены до capture, все barriers/assertions сохранены. Listener
 в этом старом run ещё падал; его исправление78f37532 уже отдельно DarwinPASS.
+Mac43789436374/433435e8 остановился раньше: tooling mock не принимал новый
+listener `log=`. Mock исправлен с проверкой обоих путей; локально все91 packaging
+tests PASS. Это не native-regression и не новая runtime-ошибка.
 Compat43788453589/78f37532 завершён GREEN; его watcher завершён.
 Compat43788114300/d296e456 завершён GREEN:712Core/273Host/30Hooks
 (9.111/5.571/0.657s),478PythonPASS/36skip (172.88s).
