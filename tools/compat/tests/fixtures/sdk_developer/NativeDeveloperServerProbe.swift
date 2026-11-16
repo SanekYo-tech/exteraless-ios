@@ -99,6 +99,16 @@ struct NativeDeveloperServerProbe {
         let secondRoot = root.appendingPathComponent("second", isDirectory: true)
         try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+        let blockedRoot = root.appendingPathComponent("owned-nondirectory")
+        try Data("owned storage error barrier".utf8).write(to: blockedRoot)
+        let unavailable = PluginDeveloperServer { _, _ in throw Failure(message: "unavailable listener entered its handler") }
+        defer { unavailable.stop() }
+        unavailable.start(tokenDirectory: blockedRoot)
+        try await wait("owned token-write failure within 2s", status: { unavailable.snapshot.status }, until: {
+            unavailable.snapshot.status.hasPrefix("Developer server unavailable:")
+        })
+        try require(unavailable.snapshot.token == nil && unavailable.snapshot.status.contains(NSCocoaErrorDomain),
+                    "storage write failure claimed readiness or failed outside the owned storage barrier; actual status: \(unavailable.snapshot.status)")
         let ledger = Ledger()
         let first = PluginDeveloperServer { request, captured in
             ledger.calls += 1
@@ -142,9 +152,13 @@ struct NativeDeveloperServerProbe {
 
         second.start(tokenDirectory: secondRoot)
         try await wait("second owned listener bind failure within 2s", status: { second.snapshot.status }, until: {
-            second.snapshot.status.hasPrefix("Developer server failed:") || second.snapshot.status.hasPrefix("Developer server unavailable:")
+            let status = second.snapshot.status
+            return status.hasPrefix("Developer server failed:") || status.hasPrefix("Developer server unavailable:")
+                || status.hasPrefix("Developer server waiting:")
         })
-        try require(second.snapshot.token == nil, "bind failure claimed readiness")
+        let collision = second.snapshot
+        try require(collision.token == nil && collision.status.contains("NWError.posix(\(EADDRINUSE),"),
+                    "second listener did not observe the owned EADDRINUSE collision; actual status: \(collision.status)")
         let retired = ledger.session
         first.stop()
         try require(retired?.isActive == false && first.snapshot.token == nil, "stop did not synchronously revoke the native session")
@@ -168,6 +182,6 @@ struct NativeDeveloperServerProbe {
             !FileManager.default.fileExists(atPath: firstRoot.appendingPathComponent(".devserver_token").path)
                 && !FileManager.default.fileExists(atPath: secondRoot.appendingPathComponent(".devserver_token").path)
         })
-        print("SDK_DEVELOPER_NATIVE_OK ready_bind_failure_retry_auth_session_revocation_committed_receipt")
+        print("SDK_DEVELOPER_NATIVE_OK storage_refusal_ready_owned_bind_error_retry_auth_session_revocation_committed_receipt")
     }
 }
