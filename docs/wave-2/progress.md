@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `039fc5da`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `7c927d91`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -25,11 +25,14 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43801470131 /039fc5da failure**: TelegramUI compiled;4Harness type diagnostics и1writeSettings link symbol |
+| UIKit | **43805552582 /7c927d91 compile/link PASS**, packaging failed на перекодированном Map PNG; structured-resource fix готов |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43805552582 завершён: оба app targets собраны/слинкованы; verifier обнаружил
+  изменённые CopyPng байты. Map PNG передан через structured_resources; исходный
+  hash и точная bundle byte equality сохранены.29harness+4Maptooling checksPASS.
 - UIKit43801470131 завершён. Composer импортирует Postbox RenderedPeer;
   Feed использует isComplete и явные Engine-типы.29harness tests/import checkPASS.
 - writeSettings link cause подтверждён Xcode27.1 probe43804717243:

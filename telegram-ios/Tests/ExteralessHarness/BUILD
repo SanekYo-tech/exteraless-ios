@@ -1,5 +1,6 @@
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library")
 load("@build_bazel_rules_apple//apple:ios.bzl", "ios_application")
+load("@build_bazel_rules_apple//apple:resources.bzl", "apple_resource_group")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 
 # Build through ClientUIHarness, never :all or either bare swift_library.
@@ -150,6 +151,14 @@ genrule(
     cmd = "python3 $(location Tools/domain_source_manifest.py) --output $@ $(locations :DomainFingerprintInputs)",
 )
 
+apple_resource_group(
+    name = "OwnedMapTileResource",
+    # The fixture and IPA verifier compare these exact input bytes. Ordinary
+    # resources invoke CopyPng/pngcrush on iOS and would change their SHA-256.
+    structured_resources = ["Fixtures/map-attribution-grid.png"],
+    strip_structured_resources_prefixes = ["Fixtures"],
+)
+
 # TelegramUI contains @objc(AppDelegate) and @objc(SceneDelegate). Tests/Common's
 # main.m would run the real application delegate. Unique names are essential.
 objc_library(
@@ -176,7 +185,7 @@ ios_application(
         ":DomainSourceManifest",
         "Fixtures/client_ui_fixture.plugin",
         "Fixtures/native_plugin_probe.py",
-        "Fixtures/map-attribution-grid.png",
+        ":OwnedMapTileResource",
         "//Telegram:AppStringResources",
         "//Telegram:GeneratedPresentationStrings/Resources/PresentationStrings.data",
         "//submodules/TelegramUI:TelegramUIAssets",
