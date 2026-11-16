@@ -47,6 +47,14 @@ private func elyxReadFixtureFD(_ fd: Int32) throws -> Data {
     return bytes
 }
 
+private func elyxAwaitCancellable<Value: Sendable>(_ reply: OneShotResult<Value>) async throws -> Value {
+    try await withTaskCancellationHandler(operation: {
+        try await reply.awaitValue()
+    }, onCancel: {
+        reply.fail(CancellationError())
+    })
+}
+
 final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
     private typealias Inspect = @Sendable (PluginElyxDeveloperInspection, PluginElyxDeveloperResolvedDescriptor, Plugin) async throws -> Plugin
 
@@ -361,6 +369,7 @@ final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
     func testCancelledWaiterRetainsActualInspectorFDThroughCompletion() async throws {
         let entered = OneShotResult<Int32>()
         let finish = OneShotResult<Void>()
+        defer { finish.succeed(()) }
         let finished = OneShotResult<Void>()
         let rig = try await rig(inspect: { call, resolved, metadata in
             let descriptor = resolved.nativeDescriptorForTesting
@@ -376,7 +385,7 @@ final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
                 reply.succeed(metadata)
                 finished.succeed(())
             }
-            return try await reply.awaitValue()
+            return try await elyxAwaitCancellable(reply)
         })
         let source = try rig.files.open(rig.target)
         let task = Task { try await source.prepare(elyxFileFixtureData("2.0"), shouldExecute: { true }) }
@@ -422,6 +431,7 @@ final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
         var resolved: PluginElyxDeveloperResolvedDescriptor? = try rig.registry.resolve(lease!.descriptorJSON, purpose: .load, caller: .owner(owner))
         let fd = resolved!.nativeDescriptorForTesting
         let entered = OneShotResult<Void>(), finish = OneShotResult<Void>(), finished = OneShotResult<Void>()
+        defer { finish.succeed(()) }
         let reply = OneShotResult<Void>()
         Task.detached { [held = lease!, result = resolved!] in
             entered.succeed(())
@@ -433,7 +443,7 @@ final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
             finished.succeed(())
         }
         lease = nil; resolved = nil
-        let waiter = Task { try await reply.awaitValue() }
+        let waiter = Task { try await elyxAwaitCancellable(reply) }
         _ = try await maintenanceTestWait(entered)
         waiter.cancel()
         do { try await waiter.value; XCTFail("cancelled load waiter succeeded") } catch { }

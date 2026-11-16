@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-fd-hang-diag-20261116-5ae310d4",
+  "branch": "ci/elyx-fd-cancellation-20261116-37c498ed",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -24,12 +24,12 @@
   "files": [
     {
       "path": ".github/workflows/compat-tests.yml",
-      "origin": "diagnostic-workflow",
-      "raw_sha256": "160507e35be1e49a13f9cc9252459e3971d069b02552665b36ebdf92aff7ad03",
-      "raw_bytes": 19894,
-      "canonical_sha256": "160507e35be1e49a13f9cc9252459e3971d069b02552665b36ebdf92aff7ad03",
-      "canonical_bytes": 19894,
-      "git_blob": "83f82ccdc8460168defda6ad81cb74205a702e0f"
+      "origin": "host-only-validation-workflow",
+      "raw_sha256": "c16183804aeda375c8c9bf9cf5568bbb13dbf628a43d30aa403d8f8d1c03a389",
+      "raw_bytes": 9352,
+      "canonical_sha256": "c16183804aeda375c8c9bf9cf5568bbb13dbf628a43d30aa403d8f8d1c03a389",
+      "canonical_bytes": 9352,
+      "git_blob": "94433b22e3c8398b4de0e1cb91e5ba361dbae46d"
     },
     {
       "path": "docs/wave-2/elyx-nfd02-inputs.json",
@@ -1247,12 +1247,12 @@
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift",
-      "origin": "coordinator-test-typecheck-fix",
-      "raw_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
-      "raw_bytes": 48221,
-      "canonical_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
-      "canonical_bytes": 48221,
-      "git_blob": "516c34156c90defdcb52a5f0947031dc40b92163"
+      "origin": "coordinator-cancellation-fixture-fix",
+      "raw_sha256": "762f265f93cd1ab95757eb9dcf76fdc26567820c370f6d49afefbace63f3bf2a",
+      "raw_bytes": 48580,
+      "canonical_sha256": "762f265f93cd1ab95757eb9dcf76fdc26567820c370f6d49afefbace63f3bf2a",
+      "canonical_bytes": 48580,
+      "git_blob": "17a31bab0895f745aa87a4f913f380345029288e"
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperTests.swift",
@@ -1817,5 +1817,21 @@
     },
     "no_ingress_or_python_execution": true,
     "single_focused_rerun_maximum": 1
+  },
+  "cancellation_fixture_followup": {
+    "parent_verification_commit": "e4ad2699b7ad8abc363b7a7e31723fa6561c3602",
+    "diagnostic_run": 43783761287,
+    "captured_utc": "2026-11-16T01:12:42.686518+00:00",
+    "changed_test_paths": [
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift"
+    ],
+    "parent_test_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
+    "test_postimage_sha256": "762f265f93cd1ab95757eb9dcf76fdc26567820c370f6d49afefbace63f3bf2a",
+    "changes": "One private cancellation-aware wait helper, two await substitutions, two finish defers; production unchanged",
+    "expected_host_cases": 47,
+    "ingress_repeated": false,
+    "python_repeated": false,
+    "runtime_limit_seconds": 30,
+    "build_limit_seconds": 180
   }
 }
