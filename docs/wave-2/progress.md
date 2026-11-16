@@ -4,11 +4,16 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `a823e619`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+**HEAD `5fa35f34`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
-**Оба watchers завершены.** Compat43786135131/a823e619 GREEN:
+**Активный Mac-прогон43786995069/5fa35f34:** watcher
+`sh_1e1fd67a3001ifnSh496e6oNXi`, `python-5fa35f34-watch.log`. Workflow собирает
+независимые bounded-диагностики после ошибки соседнего fixture; failure остаётся
+failure, а зависимые этапы проверяют успешные prerequisites. Не poll.
+
+Предыдущие watchers завершены. Compat43786135131/a823e619 GREEN:
 478 passed,36 skipped,147.86s. Mac43786148988 прошёл91 packaging,63 plumbing
 и49 finite SDK tests (13 пропусков), затем failed на readiness реального listener.
 `ses_e1f7a723bffeBMTKIuM4Qx6b3m` получает конкретное NWListener-состояние отдельным
@@ -23,7 +28,7 @@ UIKit43785534046 завершился до компиляции на `aquery`; t
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **a823e619**: isolated fixture helper fix поверх общего source cohort |
+| HEAD | **5fa35f34**: independent native diagnostic continuation; helper fix a823e619 |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
 | Linux Swift | **43784503847 / f704d76c:712 Core /273 Host /30 Hooks PASS**, 9.176/5.545/0.356s |
 | Linux Python | **43786135131 /a823e619 GREEN:478 PASS /36skip**,147.86s |

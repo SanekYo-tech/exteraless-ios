@@ -1,6 +1,90 @@
 # Встроенный CPython: проверяемая поставка для iOS
 
-## Полная client/SDK волна — 15.11.2026
+## Текущий handoff — 16.11.2026
+
+Координатор: Mac43786995069 / `5fa35f34` выполняется с продолжением независимых
+bounded-проверок после соседнего fixture failure. Зависимые этапы требуют своих
+prerequisites; ошибочные этапы не превращаются в успешные.
+
+Статусы CI переданы координатором при назначении и последующем уточнении.
+Окно чтения handoff, ревью и уточнений: **01:26:56–01:32:15 UTC**, без опроса CI.
+Следующие результаты, watcher IDs и владение файлами — [wave-2/progress.md](wave-2/progress.md).
+
+**main `a823e619`** — fixture-only исправление isolated helper; перед ним
+`d717` исправил CI/YAML после source-когорты **`f704d76c` (288 путей)**.
+Все известные замечания source-ревью закрыты. В том числе:
+
+- [ARCH-01/02/03](wave-2/reviews/elyx-archive-p1-closure.md) и последующий
+  [iOS platform P2-01](wave-2/reviews/elyx-ios-platform-closure.md);
+- [NFD-01/03](wave-2/reviews/native-elyx-final-source-closure.md),
+  [NFD-02](wave-2/reviews/elyx-nfd02-closure.md) и последующий
+  [DEV-LIFECYCLE-01](wave-2/reviews/native-elyx-mode-aba-closure.md);
+- [Custom](wave-2/reviews/manager-custom-ordering-closure.md),
+  [Search R1–R5](wave-2/reviews/settings-search-r1-r5-closure.md),
+  [Reset RSR01/02](wave-2/reviews/settings-reset-rsr-closure.md) и
+  [Trust S1–S3](wave-2/reviews/plugin-trust-secondary-closure.md).
+
+Это **source closure** в рассмотренных сценариях. Полный native-паритет ещё
+не подтверждён. SDK Config сохраняет **276 implemented / 0 blocked / 32 unsupported**,
+308 API ID / 508 bindings. Карты 567 source features и 925 SDK routes полны;
+само наличие карт не повышает verification/ported статусы.
+
+### CI по последнему сообщению координатора
+
+| Run / срез | Подтверждённый результат |
+|---|---|
+| Linux `43784503847 / f704d76c` | **712 Core / 273 Host / 30 Hooks PASS**, 9.176 / 5.545 / 0.356 с. Общий run FAILED на PyYAML; CI/YAML-фикс — `d717` |
+| Linux `43785348360 / d717` | Swift job **PASS**; Python **472 PASS / 36 skip / 6 fail** из-за импорта `pytest` из isolated helper |
+| Mac `43785374048 / d717` | Та же ошибка в раннем finite pytest; **до 5 новых native child-процессов этот run не дошёл** |
+| Compat `43786135131 / a823e619` | **GREEN: 478 PASS / 36 skip**, 147.86 с |
+| Mac `43786148988 / a823e619` | **91 runtime-packaging + 63 plumbing + 49 finite SDK / 13 skip PASS**; затем **FAILED: реальный Darwin listener не достиг readiness за 2 с** |
+| UIKit `43785534046 / d717` | **FAILED на `aquery`, до компиляции**. Tooling owner скачивает сохранённый `build.log` |
+
+Локальная проверка fixture-only фикса `a823e619`: **4 PASS / 10 Windows/C skips**;
+emitter с `-I -S` и `noSite` — **PASS**. Swift **712/273/30** относится к прежнему
+main-run `43784503847 / f704d76c`; последующие исправления сохранили production source.
+**5-child native gate не пройден**. NativeDev owner уточняет точное состояние
+`NWListener` отдельной bounded Darwin-only проверкой; причина readiness failure
+ещё не установлена. **20 UIKit-сцен / 434 native XCTest-метода — READY, ещё не исполнены**.
+
+Отдельные bounded Linux receipts уже сохранены в репозитории:
+
+| Gate | Run | Результат |
+|---|---|---|
+| [POSIX Python / NFD-02 / platform](wave-2/elyx-load-preflight-posix-ci.md) | `43774694321` | **50 PASS / 0 skip** |
+| [Host FD](wave-2/elyx-fd-cancellation-posix-ci.md) | `43784959730` | **47 PASS / 0 skip** |
+| [Ingress, более ранний срез](wave-2/elyx-fd-posix-test-followup.md) | `43781210777` | **7 PASS / 0 skip**; общий run FAILED на Host timeout |
+| [Mode ABA](wave-2/elyx-mode-aba-posix-ci.md) | `43783735908` | **4 PASS / 0 skip** |
+
+Свежий C gate: **7/7 на каждой Python 3.12 и 3.14**, точный nativeSpy-счётчик
+**61 calls / 60 buffer frees / 33 context releases**. Linux и этот C gate
+не подтверждают Apple FD execution; оно остаётся отдельной native-проверкой.
+
+Предыдущий полный Mac **build 20 — `43743252038 / e16f3808`** независимо проверен:
+**680 Core / 180 Host / 30 Hooks + 3 SDK child + iOS C219**.
+[Receipt](wave-2/runtime-native-acceptance-20.md) относится к срезу **до `f704d76c`**.
+
+### Последняя проверенная Telegram IPA
+
+**Unsigned Telegram 13.1.1 (40)**: run
+[43779402542](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43779402542),
+HEAD **`6de4ac36`**, artifact **`14187634135`**. Размер **98 177 711 байт**;
+SHA-256: `e28940fdb017941525824ba1906d09e32da6bd973fa1c1c7c41bd294eeee3d99`.
+Delivery: `build/artifacts/telegram-43779402542/exteraless-ios-13.1.1-40-unsigned.ipa`.
+
+[Независимая приёмка build 40](wave-2/ipa-build40-acceptance.md) подтверждает
+**67 unsigned ARM64 Mach-O / 60 frameworks (55 runtime) / 6 extensions /
+1418 resource placements / 419 source pins / 12 distributions**.
+Это compile/package именно `6de4ac36`; новые SDK/Host/UIKit исходники `f704d76c`
+этим артефактом не покрыты. Пользователь подписывает IPA сам. Физическая установка,
+APNs, live RPC и новая UIKit-приёмка ещё не выполнены; полный порт не объявлен готовым.
+
+Runtime закреплён: **CPython 3.12.16, BeeWare `3.12-b13`**, support SHA-256
+`4eea2c76ad70f2df8c1767489315a16d72cd96ce5c086412ee2d154c3bd8e257`.
+**36 файлов Original/SDK сохранены без изменений.** Ниже — исторические срезы;
+их run IDs, hashes, counts и границы относятся к моменту записи.
+
+## Исторический срез полной client/SDK волны — 15.11.2026
 
 - **[Runtime43743252038](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43743252038)
   на `e16f3808` — полностью GREEN.** Пройдены Foundation Core/Host/Hooks,
@@ -33,7 +117,7 @@
 Полный app graph использует **runner `xcode-27`, Xcode 27.1**;
 `macos-26` / Xcode 26.6 — для Foundation/CPython component workflow.
 
-## Интеграционная волна — 14.11.2026
+## История интеграционной волны — 14.11.2026
 
 **[Component 43633853229](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43633853229)
 на `38d335fa` полностью прошёл за 2 мин 44 с.**
@@ -56,7 +140,7 @@
 исполнения плагина; regression включает настоящие библиотеки и проверки доступа.
 Подробности: [`AUDIT_PATHS.md`](../python/exteraless_runtime/AUDIT_PATHS.md).
 
-В текущем дереве runtime подключён к Bazel-графу Telegram: `PluginHost`,
+В дереве этого среза runtime подключён к Bazel-графу Telegram: `PluginHost`,
 отдельный `PluginHooks`, static C-мост, dynamic Python.framework и 54 native
 extension frameworks. Main-app lifecycle соединён с нативными Telegram services,
 SDK loader и менеджером плагинов. **Полная unsigned Telegram IPA проверена:**
@@ -354,7 +438,7 @@ python tools/runtime/check_host_embedding.py --probe engine --fault-injection --
   --output C:\Users\sasha\AppData\Local\Temp\opencode\exteraless-engine-fault-probe
 ```
 
-## Следующее после успешного probe
+## История плана после probe `43612335857`
 
 `43612335857` подтвердил исправленный выбор iPhone 17 / iOS 27.0, но
 `launchctl version` снова завис — проблема воспроизвелась и на обычной модели
