@@ -32,8 +32,8 @@ def support(name, file):
 @contextlib.contextmanager
 def configured(directory, bridge):
     sys.path.insert(0, str(ROOT / "python"))
-    direct = support("_native_elyx_c_support", "test_sdk_direct_hooks.py")
-    archive = support("_native_elyx_archive_support", "test_ios_elyx_archives.py")
+    direct = support("_direct_hook_fixture_support", "test_sdk_direct_hooks.py")
+    archive = support("_elyx_fixture_support", "test_ios_elyx_archives.py")
     import exteraless_runtime as runtime
     original_configure = runtime.configure
 
@@ -177,7 +177,7 @@ def worker(case, storage, directory, packages, bridge=None):
 def emit(directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    fixture = support("_native_elyx_archive_emitter", "test_ios_elyx_archives.py")
+    fixture = support("_elyx_fixture_support", "test_ios_elyx_archives.py")
     source = fixture.zipped([*fixture.entries(), ("obsolete.txt", "remove me")])
     (directory / "owned.elyx").write_bytes(source)
     import base64

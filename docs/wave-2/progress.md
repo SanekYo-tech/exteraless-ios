@@ -2,7 +2,15 @@
 
 ## Текущая точка
 
-### Актуально: полный runtime gate GREEN, компиляция приложения продолжается
+### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
+
+**HEAD `d717af9e`.** UIKit43785534046 выполняется, watcher
+`sh_1e1efc9e3001YcmhVHUZKOCLSQ` (`uikit-d717af9e-watch.log`).
+Mac43785374048 и Compat43785348360 завершились на одном fixture-import:
+изолированный child подтягивал pytest через helper. Исправлены helper-only
+import names; локально4PASS/10platform-skips и изолированный emitterPASS.
+Полный Linux Swift срез уже подтвердил712Core/273Host/30Hooks; отдельныйFD47
+также PASS43784959730. Свежие Mac5/UIKit20 результаты пока ожидаются.
 
 **Общий Host/SDK/UIKit source cohort опубликован: `f704d76c1596eb0086d08e49dd049796a0220c2f`,288paths.**
 59SDKrawpins/10inputreceipts ивсеcurrentSDK/source-identityгруппы сверены поGitindex;

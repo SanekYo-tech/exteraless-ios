@@ -365,7 +365,7 @@ def worker(directory, bridge_path=None):
 
 if __name__ == "__main__":
     worker(Path(sys.argv[1]), Path(sys.argv[2]) if len(sys.argv) > 2 else None)
-else:
+elif __name__ != "_direct_hook_fixture_support":
     import pytest
 
     @pytest.mark.parametrize("transport", ["unit", "C-dispatcher"])
