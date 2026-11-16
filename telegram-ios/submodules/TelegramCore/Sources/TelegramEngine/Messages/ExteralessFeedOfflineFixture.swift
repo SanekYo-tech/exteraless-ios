@@ -47,7 +47,7 @@ public final class ExteralessFeedOfflineFixture {
         let b = channel(9_100_002, title: "Fixture B · protected", protected: true)
         let peers = SimpleDictionary<PeerId, Peer>([a.id: a, b.id: b])
         let resource = LocalFileMediaResource(fileId: 9_100_001, size: Int64(png.count))
-        self.engine.resources.storeResourceData(id: resource.id, data: png, synchronous: true)
+        self.engine.resources.storeResourceData(id: EngineMediaResource.Id(resource.id), data: png, synchronous: true)
         let image = TelegramMediaImage(imageId: MediaId(namespace: Namespaces.Media.LocalImage, id: 9_100_001), representations: [TelegramMediaImageRepresentation(dimensions: PixelDimensions(width: 160, height: 120), resource: resource, progressiveSizes: [], immediateThumbnailData: nil)], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
         func message(_ peer: TelegramChannel, id: Int32, timestamp: Int32, text: String, group: Int64? = nil, attributes: [MessageAttribute] = [], media: [Media] = [], forward: MessageForwardInfo? = nil, replies: SimpleDictionary<MessageId, Message> = SimpleDictionary()) -> Message {
             return Message(stableId: UInt32(id) + (peer.id == a.id ? 0 : 100), stableVersion: edited ? 1 : 0, id: MessageId(peerId: peer.id, namespace: Namespaces.Message.Cloud, id: id), globallyUniqueId: nil, groupingKey: group, groupInfo: nil, threadId: nil, timestamp: timestamp, flags: [.Incoming], tags: [], globalTags: [], localTags: [], customTags: [], forwardInfo: forward, author: peer, text: text, attributes: attributes, media: media, peers: peers, associatedMessages: replies, associatedMessageIds: replies.map { $0.0 }, associatedMedia: [:], associatedThreadInfo: nil, associatedStories: [:])
