@@ -302,7 +302,7 @@ def execute(args, plan, paths):
             for name in ('unsigned-preflight.json', 'runtime-preflight.json'):
                 if (Path(private) / name).is_file():
                     shutil.copyfile(Path(private) / name, args.output / name)
-    run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits,
+    run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits + ['--keep_going'],
                telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
     from native_test_resources import verify_test_host_resources
     host_resources = verify_test_host_resources(telegram, plan)

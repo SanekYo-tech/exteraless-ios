@@ -60,10 +60,21 @@ final class PluginManagerAuthorityTests: XCTestCase {
             let gate = DispatchSemaphore(value: 0)
             let authority = ManagerAuthorityFlag()
             let write = Task.detached {
-                guard gate.wait(timeout: .now() + 2) == .success else {
-                    throw PluginUIFailure.unavailable("Bounded fixture gate expired")
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    // Block an ordinary queue worker, not Swift's cooperative
+                    // executor. Authority is still checked after this held hop.
+                    DispatchQueue.global(qos: .utility).async {
+                        do {
+                            guard gate.wait(timeout: .now() + 2) == .success else {
+                                throw PluginUIFailure.unavailable("Bounded fixture gate expired")
+                            }
+                            try store.apply(change, isCurrent: { authority.isCurrent })
+                            continuation.resume(returning: ())
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
                 }
-                try store.apply(change, isCurrent: { authority.isCurrent })
             }
             authority.revoke()
             gate.signal()
