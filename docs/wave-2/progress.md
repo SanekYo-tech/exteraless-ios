@@ -4,8 +4,10 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `d8705c51` — полный Mac gate GREEN**:43795739683, workflow build33.
-Независимая проверка артефактов выполняется `ses_e1fc5a762ffed9YFp10GajDrY0`.
+**HEAD `84a0456a`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
+722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
+4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
 Archive/developer fixtures получили штатный vendor root;
 78e76dbe публикует проверенный Darwin identity-selector для archive fixture;
 53cab85a исправляет resource ID в debug Feed fixture.
@@ -18,20 +20,22 @@ Archive/developer fixtures получили штатный vendor root;
 | Compat | **43792348534 /3daf8d97 GREEN:521 PASS /36skip**,143.73s |
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
-| Последний полный Mac | **43795739683 /d8705c51 GREEN**, пять SDK children иiOSprobes; independent artifact review pending |
-| UIKit | **43793245829 /53cab85a failure**: Feed прошёл, local weak witness в Map fixture; Weak-container correction готов |
+| Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
+| UIKit | **43797987677 /84a0456a выполняется** после Weak-container correction Map fixture |
 | План приёмки | 5 real SDK children;434 native XCTest methods;20 записываемых сцен; исполнения/кадры ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43797987677/84a0456a: `sh_1e2628e14001isHjNPvGQX2TbS`, `uikit-84a0456a-watch.log`.
 - Mac43795739683/d8705c51 завершён GREEN; watcher завершён.
 - Compat43795725685/d8705c51 завершён GREEN; watcher завершён.
 - Compat43795070738/78e76dbe завершён GREEN; его watcher завершён.
 - UIKit43793245829 завершён; watcher завершён. Исправляется единственная
   диагностированная в этом проходе Map weak-variable warning-as-error.
-- `ses_e1fc5a762ffed9YFp10GajDrY0` проверяет runtime33:43MB runtime,430KB components,
-  точные five-child/source/C/IPA receipts. SDK artifact1.44GB изучается выборочно;
-  следующий upload исключает build/swift-build scratch-каталоги.
+- Runtime33 проверен:43MB runtime,430KB components и49SDKentries через7.05MB Range
+  requests. Полный SDK ZIP hash не пересчитывался;13pytestskips, непереданные
+  staged/vendor bytes иliveFScleanup остаются явно ограниченными scopes.
+  ProbeIPA56unsignedarm64Mach-O; это не новая полная TelegramIPA и неUIKitframes.
 - Archive swap fixture завершён: **Darwin43794021047/cef03eec 7/7PASS**.
   Наблюдения подтвердили один inode при разных /var и /private/var labels;
   fixture выбирает захваченную identity и проверяет точный отказ storage.
