@@ -1,11 +1,17 @@
 diff --git a/crates/mtproto-engine/src/resolver.rs b/crates/mtproto-engine/src/resolver.rs
-index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf05406c31eac5 100644
+index 4be1045c32b3521c450b2722174dd6f65c0920c8..6da6cd10b9ce7253411d642468d226518307c04c 100644
 --- a/crates/mtproto-engine/src/resolver.rs
 +++ b/crates/mtproto-engine/src/resolver.rs
-@@ -1,0 +2,44 @@ use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+@@ -0,0 +1,3 @@
++// Audited iOS-only FFI boundary for MtProtoKit/MTAppNetworkResolver.h.
++#![cfg_attr(target_os = "ios", allow(unsafe_code))]
++
+@@ -1,0 +5,54 @@ use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 +use std::sync::atomic::{AtomicBool, Ordering};
 +
 +#[cfg(target_os = "ios")]
++// SAFETY: These signatures match MTAppNetworkResolver.h/.m. The char output is
++// a byte buffer, and the C bool callback is used only during the synchronous call.
 +unsafe extern "C" {
 +    fn MTAppNetworkResolve(
 +        host: *const std::ffi::c_char,
@@ -22,6 +28,8 @@ index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf0540
 +pub(super) fn policy_epoch() -> u64 {
 +    #[cfg(target_os = "ios")]
 +    {
++        // SAFETY: The native function only reads a process-lifetime atomic u64;
++        // it accepts no pointers and may be called from any engine thread.
 +        unsafe { MTAppNetworkResolverEpoch() }
 +    }
 +    #[cfg(not(target_os = "ios"))]
@@ -33,6 +41,8 @@ index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf0540
 +pub(super) fn cache_lifetime(host: &str, port: u16, fallback: f64) -> f64 {
 +    #[cfg(target_os = "ios")]
 +    if let Ok(host) = std::ffi::CString::new(host) {
++        // SAFETY: host is a live, NUL-terminated CString. The native function
++        // copies it into an NSString before querying the TTL and retains no pointer.
 +        let ttl = unsafe { MTAppNetworkResolverCacheLifetime(host.as_ptr(), port) };
 +        if ttl.is_finite() && ttl >= 0.0 {
 +            return ttl.min(fallback);
@@ -45,9 +55,13 @@ index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf0540
 +
 +#[cfg(target_os = "ios")]
 +extern "C" fn lookup_cancelled(context: *const std::ffi::c_void) -> bool {
++    // SAFETY: MTAppNetworkResolve receives this private callback only with the
++    // valid, aligned AtomicBool borrowed by resolve_blocking_cancellable. It polls
++    // synchronously and never retains context, so the borrow outlives every call.
++    // The atomic load permits concurrent cancellation by the engine worker.
 +    !context.is_null() && unsafe { &*context.cast::<AtomicBool>() }.load(Ordering::Acquire)
 +}
-@@ -8,0 +53,7 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
+@@ -8,0 +66,7 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
 +    resolve_blocking_cancellable(host, port, &AtomicBool::new(false))
 +}
 +
@@ -55,10 +69,15 @@ index 4be1045c32b3521c450b2722174dd6f65c0920c8..5e54082569179d1a86740fc203cf0540
 +    if cancelled.load(Ordering::Acquire) {
 +        return Vec::new();
 +    }
-@@ -11,0 +63,24 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
+@@ -11,0 +76,29 @@ pub fn resolve_blocking(host: &str, port: u16) -> Vec<SocketAddr> {
 +    #[cfg(target_os = "ios")]
 +    if let Ok(name) = std::ffi::CString::new(host) {
 +        let mut output = [0u8; 2048];
++        // SAFETY: name, output and the borrowed cancelled flag stay live until
++        // this synchronous call returns (the resolver worker owns a cloned Arc).
++        // Native code copies the CString, writes at most output.len() bytes and
++        // polls lookup_cancelled only before returning. Its asynchronous MTSignal
++        // callbacks retain no Rust pointers, including the cancellation context.
 +        let count = unsafe {
 +            MTAppNetworkResolve(
 +                name.as_ptr(), port, output.as_mut_ptr(), output.len(), lookup_cancelled,

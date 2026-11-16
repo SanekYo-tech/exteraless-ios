@@ -29,7 +29,7 @@ objc_library(
     ],
     sdk_dylibs = [
         "libz",
-        "libdns_sd",
+        # iOS exports public DNSService APIs through the libSystem umbrella.
     ],
     visibility = [
         "//visibility:public",
