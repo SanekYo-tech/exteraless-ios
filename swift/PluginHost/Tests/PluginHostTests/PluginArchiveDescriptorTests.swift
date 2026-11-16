@@ -72,8 +72,9 @@ final class PluginArchiveDescriptorTests: XCTestCase {
     func testCheckedParentSwapDuringCaptureFailsWithoutFollowingItsLink() throws {
         let (storage, root, _, tree) = try fixture()
         let target = tree.deletingLastPathComponent()
-        // Resolve only the newly created, trusted fixture before installing the
-        // swap. Darwin's descriptor walk reports the /private OS-root spelling.
+        // Foundation can keep /var even after resolvingSymlinksInPath, while the
+        // descriptor walk reports /private/var. These labels are diagnostics;
+        // select only the pre-adversary device/inode/type of this owned fixture.
         let openedTarget = target.resolvingSymlinksInPath()
         let targetIdentity = try Self.fixtureIdentity(target)
         let observations = Recorder<String>()
@@ -91,7 +92,7 @@ final class PluginArchiveDescriptorTests: XCTestCase {
                 observations.append(Self.fixtureDiagnostic("directory-opened", path, expected: targetIdentity,
                                                           pathMatch: path.path == openedTarget.path))
             }
-            guard case .directoryOpened = point, path.path == openedTarget.path, !swapped.value else { return }
+            guard try Self.fixtureIdentity(path) == targetIdentity else { return }
             swapped.set(true)
             try FileManager.default.moveItem(at: target, to: saved)
             try FileManager.default.createSymbolicLink(at: target, withDestinationURL: outside)
@@ -99,6 +100,7 @@ final class PluginArchiveDescriptorTests: XCTestCase {
         var captureError = "<none>"
         XCTAssertThrowsError(try storage.captureArchiveCache(pluginId: "_archive", hooks: hooks)) { error in
             captureError = String(describing: error)
+            XCTAssertEqual(error as? BridgeFailure, .permission("Archive descriptor ownership: directory binding changed"))
         }
         for observation in observations.values { print(observation) }
         print("ARCHIVE_SWAP_RESULT observations=\(observations.values.count) swapped=\(swapped.value) captureError=\(captureError)")
@@ -107,6 +109,8 @@ final class PluginArchiveDescriptorTests: XCTestCase {
         XCTAssertTrue(swapped.value)
         XCTAssertEqual(try Data(contentsOf: marker), Data("outside".utf8))
         XCTAssertTrue(FileManager.default.fileExists(atPath: saved.appendingPathComponent(tree.lastPathComponent + "/contents/main.py").path))
+        XCTAssertEqual(try Self.fixtureIdentity(saved), targetIdentity)
+        XCTAssertEqual(try Data(contentsOf: saved.appendingPathComponent(tree.lastPathComponent + "/contents/main.py")), Data("original".utf8))
     }
 
     func testParentSwapAfterCaptureCannotRedirectPurge() throws {
