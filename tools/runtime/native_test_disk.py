@@ -27,9 +27,9 @@ CLAIM_MARKER = '.native-test-cache-claim.json'
 CACHE_KEY = 'exteraless-bazel-9.2.0-sha256-actions-v1'
 SELECTION_POLICY = 'pressure-largest-allocated-then-lru-v1'
 # Bazel 9.2 RemoteExecutionService.getWriteCachePolicy ignores
-# remote_upload_local_results for disk writes. Empty disk_cache actually disables
-# DiskCacheClient (CombinedCacheClientFactory.isDiskCache). Use the same mode for
-# native aquery/build/run-only; the preceding app build keeps its existing cache.
+# remote_upload_local_results for disk writes. The read-only HTTP adapter adds a
+# nonempty remote_cache to these write-suppression flags, retaining the app
+# build's cache-enabled execution salt throughout aquery/build/run-only.
 NATIVE_CACHE_FLAGS = ('--disk_cache=', '--remote_upload_local_results=false')
 
 
@@ -318,7 +318,7 @@ def _publish(path, report):
 
 
 def recover_capacity(owned_root, repository, generation, cache, bazel_root, bazel_output, run_output,
-                     *, quiesce, limits=Limits(), usage=shutil.disk_usage, clock=time.monotonic,
+                     *, quiesce, cache_configuration=None, limits=Limits(), usage=shutil.disk_usage, clock=time.monotonic,
                      _unlink=_unlink_entry):
     started = clock(); deadline = started + limits.phase_seconds
     owned = checked_workspace(owned_root, repository, generation, bazel_root)
@@ -344,7 +344,10 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
                                 'targetFreeBytes': limits.target_free, 'maximumCacheBytes': limits.maximum_cache},
         'pressureRanking': ['allocated-desc', 'logical-size-desc', 'mtime-asc', 'relative-path-asc'],
         'pressureDeletedFiles': 0, 'lruDeletedFiles': 0,
-        'nativeCacheFlags': list(NATIVE_CACHE_FLAGS), 'nativeExecutionVerified': False}
+        'nativeCacheFlags': (cache_configuration['nativeCacheFlags'] if cache_configuration else list(NATIVE_CACHE_FLAGS)),
+        'nativeExecutionVerified': False}
+    if cache_configuration is not None:
+        report['readOnlyCache'] = cache_configuration
     try:
         report['capacity'] = _capacity(paths, usage)
         report['before'] = report['capacity']

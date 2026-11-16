@@ -24,7 +24,8 @@ import time
 import uuid
 
 from native_test_plan import build_plan, digest, verify_native_results
-from native_test_disk import Limits as DiskLimits, NATIVE_CACHE_FLAGS, checked_workspace, recover_capacity, observe_after_compile
+from native_test_disk import Limits as DiskLimits, checked_workspace, recover_capacity, observe_after_compile
+from native_test_cache import ReadOnlyCache
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
@@ -223,7 +224,7 @@ def copy_case_evidence(telegram, label, destination):
             shutil.copyfile(path, target)
 
 
-def prepare_native_disk(args, bazel_startup):
+def prepare_native_disk(args, bazel_startup, cache_configuration=None):
     """Recheck generation before querying/stopping only this owned Bazel server."""
     started = time.monotonic()
     checked_workspace(args.owned_root, args.repository, args.generation, args.bazel_root)
@@ -240,10 +241,17 @@ def prepare_native_disk(args, bazel_startup):
         raise TimeoutError('Native disk phase exhausted its 60-second resource budget')
     report = recover_capacity(args.owned_root, args.repository, args.generation, args.cache,
         args.bazel_root, bazel_output, args.output, quiesce=quiesce,
-        limits=DiskLimits(phase_seconds=remaining))
+        cache_configuration=cache_configuration, limits=DiskLimits(phase_seconds=remaining))
     report['phaseSecondsIncludingBazelInfo'] = round(time.monotonic() - started, 3)
     write_json(args.output / 'disk-capacity.json', report)
     return bazel_output
+
+
+def native_args(line, command, cache):
+    """One effective cache/platform resource mode for native aquery/build/run-only."""
+    index = 1 + len(line.get_startup_bazel_arguments())
+    startup = command[:index] + ['--host_jvm_args=-Xmx4096m', '--max_idle_secs=30'] + command[index:]
+    return startup + ['--jobs=2', '--local_resources=cpu=2', '--local_resources=memory=6000'] + cache.flags
 
 
 def execute(args, plan, paths):
@@ -291,7 +299,7 @@ def execute(args, plan, paths):
         'generation': args.generation, 'xcode': actual, 'sdk': sdk,
         'tool_sha256': {name: digest(Path(__file__).with_name(name)) for name in (
             'run_native_integration_tests.py', 'native_test_plan.py', 'client_ui_harness_workspace.py',
-            'native_bundle_resources.py', 'native_test_disk.py')},
+            'native_bundle_resources.py', 'native_test_disk.py', 'native_test_cache.py')},
         'client_source_patches': staging['client_source_patches'], 'acceptanceIdentity': identity})
     for logical, path in paths.items():
         relative = logical.replace('@exteraless//', 'external/exteraless/').replace(':', '/')
@@ -308,105 +316,102 @@ def execute(args, plan, paths):
     line.set_build_number('1')
     line.add_cache_dir(str(args.cache))
     labels = [target['label'] for target in plan['targets']]
-    limits = ['--jobs=2', '--local_resources=cpu=2', '--local_resources=memory=6000']
-    # remote_upload_local_results=false alone does NOT stop Bazel 9.2 disk
-    # writes. Use the effective empty disk_cache override throughout this native
-    # phase, including run-only, while retaining all materialized output files.
-    native_cache = list(NATIVE_CACHE_FLAGS)
-    # Same startup resource limits as the preceding full simulator build.
-    def startup(command):
-        index = 1 + len(line.get_startup_bazel_arguments())
-        return command[:index] + ['--host_jvm_args=-Xmx4096m', '--max_idle_secs=30'] + command[index:]
     deadline = min(time.monotonic() + args.compile_seconds, overall_deadline - 330)
-    # A hard-killed process may miss finally; keep raw aquery OUTSIDE the uploaded
-    # evidence directory as well as deleting it normally.
-    with tempfile.TemporaryDirectory(prefix='.native-tests-private-', dir=args.output.parent) as private:
-        graph = Path(private) / 'actions.json'
+    # Binding before aquery supplies one endpoint for the entire phase. Reads
+    # stay paused until the verified, quiescent pressure-GC/capacity gate finishes.
+    with ReadOnlyCache(owned, args.repository, args.generation, args.cache,
+                       report=args.output / 'readonly-cache.json') as cache:
+        # A hard-killed process may miss finally; keep raw aquery OUTSIDE the
+        # uploaded evidence directory as well as deleting it normally.
+        with tempfile.TemporaryDirectory(prefix='.native-tests-private-', dir=args.output.parent) as private:
+            graph = Path(private) / 'actions.json'
+            try:
+                query = native_args(line, line.get_unsigned_test_preflight_arguments(labels), cache)
+                with graph.open('w', encoding='utf-8') as stream, (args.output / 'analysis.log').open('w', encoding='utf-8') as log:
+                    subprocess.run(query, cwd=telegram, stdout=stream, stderr=log, check=True,
+                                   timeout=min(300, max(1, deadline - time.monotonic())))
+                validate_unsigned_actions(graph)
+                validate_runtime_actions(graph, staging)
+            finally:
+                for name in ('unsigned-preflight.json', 'runtime-preflight.json'):
+                    if (Path(private) / name).is_file():
+                        shutil.copyfile(Path(private) / name, args.output / name)
+        bazel_startup = [bazel, *line.get_startup_bazel_arguments(), '--host_jvm_args=-Xmx4096m', '--max_idle_secs=30']
+        bazel_output = prepare_native_disk(args, bazel_startup, cache.configuration())
+        cache.enable_reads()
+        compile_failed = True
         try:
-            query = startup(line.get_unsigned_test_preflight_arguments(labels)) + limits + native_cache
-            with graph.open('w', encoding='utf-8') as stream, (args.output / 'analysis.log').open('w', encoding='utf-8') as log:
-                subprocess.run(query, cwd=telegram, stdout=stream, stderr=log, check=True,
-                               timeout=min(300, max(1, deadline - time.monotonic())))
-            validate_unsigned_actions(graph)
-            validate_runtime_actions(graph, staging)
+            run_logged(native_args(line, line.get_test_arguments(labels, build_only=True), cache) + ['--keep_going'],
+                       telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
+            compile_failed = False
         finally:
-            for name in ('unsigned-preflight.json', 'runtime-preflight.json'):
-                if (Path(private) / name).is_file():
-                    shutil.copyfile(Path(private) / name, args.output / name)
-    bazel_startup = [bazel, *line.get_startup_bazel_arguments(), '--host_jvm_args=-Xmx4096m', '--max_idle_secs=30']
-    bazel_output = prepare_native_disk(args, bazel_startup)
-    compile_failed = True
-    try:
-        run_logged(startup(line.get_test_arguments(labels, build_only=True)) + limits + native_cache + ['--keep_going'],
-                   telegram, args.output / 'compile', max(1, deadline - time.monotonic()))
-        compile_failed = False
-    finally:
-        try:
-            observe_after_compile(args.owned_root, args.repository, args.generation, args.cache,
-                                  args.bazel_root, bazel_output, args.output)
-        except Exception as error:
-            print('NATIVE_DISK post-compile measurement failed: ' + str(error), flush=True)
-            if not compile_failed:
-                raise
-    from native_test_resources import verify_test_host_resources
-    host_resources = verify_test_host_resources(telegram, plan)
-    write_json(args.output / 'native-bundle-resources.json', host_resources)
-    require_build_identity(app, build_plan(telegram)[0], harness_inputs(telegram),
-                           load_staging_manifest(telegram), Path(app['ipa']))
-    if time.monotonic() >= overall_deadline - 330:
-        raise TimeoutError('Native test envelope has no room for simulator preparation and cleanup')
-    record = {'name': 'EXL-NativeTests-' + str(uuid.uuid4()), 'runtime': runtime, 'device_type': device_type}
-    record['udid'] = output(['xcrun', 'simctl', 'create', record['name'], device_type, runtime])
-    uuid.UUID(record['udid'])
-    write_json(args.output / 'simulator.json', record)
-    results = []
-    try:
-        require_single_simulator(record)
-        output(['xcrun', 'simctl', 'boot', record['udid']], timeout=30)
-        output(['xcrun', 'simctl', 'bootstatus', record['udid'], '-b'], timeout=150)
-        deadline = min(time.monotonic() + args.execution_seconds, overall_deadline - 150)
-        for target in plan['targets']:
-            for case in target['classes']:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError('Native integration execution envelope expired')
-                require_single_simulator(record)
-                # The manifest binds each class to its actual host. Composer's
-                # fixtures need the scene/root created by ComposerHarness.
-                host_bundle_id = target['host_bundle_id']
-                output(['xcrun', 'simctl', 'uninstall', record['udid'], host_bundle_id], check=False)
-                if output(['xcrun', 'simctl', 'get_app_container', record['udid'], host_bundle_id, 'app'], check=False):
-                    raise ValueError('The previous test-host installation could not be removed')
-                directory = args.output / 'runs' / ('{:02d}-{}'.format(len(results) + 1, case['class']))
-                # A single-class BUILD filter already selects this exact class;
-                # avoid unioning it with a second copy in the runner's options.
-                test_filter = None if target['build_test_filter'] else case['class']
-                command = startup(line.get_test_arguments(target['label'], run_only=True, test_filter=test_filter,
-                    test_arguments=['--destination=platform=ios_simulator,id=' + record['udid']],
-                    test_environment=['STARTUP_TIMEOUT_SEC=150'], test_timeout=270, streamed=True)) + limits + native_cache
-                try:
-                    result = run_logged(command, telegram, directory, max(1, deadline - time.monotonic()),
-                                        case=case, contract=contract, cancel_test=lambda: shutdown_device(record))
-                finally:
-                    copy_case_evidence(telegram, target['label'], directory)
-                require_single_simulator(record)
-                result.update(target=target['label'], source=case['source'], host=target['host'], host_bundle_id=host_bundle_id)
-                results.append(result)
-                write_json(args.output / 'completed-classes.json', results)
+            try:
+                observe_after_compile(args.owned_root, args.repository, args.generation, args.cache,
+                                      args.bazel_root, bazel_output, args.output)
+            except Exception as error:
+                print('NATIVE_DISK post-compile measurement failed: ' + str(error), flush=True)
+                if not compile_failed:
+                    raise
+        cache.check()
+        from native_test_resources import verify_test_host_resources
+        host_resources = verify_test_host_resources(telegram, plan)
+        write_json(args.output / 'native-bundle-resources.json', host_resources)
         require_build_identity(app, build_plan(telegram)[0], harness_inputs(telegram),
-                               load_staging_manifest(telegram), Path(app['ipa']))
-    finally:
-        shutdown_device(record)
-        if own_device(record):
-            output(['xcrun', 'simctl', 'delete', record['udid']], timeout=20)
-        record['deleted'] = True
+                                load_staging_manifest(telegram), Path(app['ipa']))
+        if time.monotonic() >= overall_deadline - 330:
+            raise TimeoutError('Native test envelope has no room for simulator preparation and cleanup')
+        record = {'name': 'EXL-NativeTests-' + str(uuid.uuid4()), 'runtime': runtime, 'device_type': device_type}
+        record['udid'] = output(['xcrun', 'simctl', 'create', record['name'], device_type, runtime])
+        uuid.UUID(record['udid'])
         write_json(args.output / 'simulator.json', record)
-    result = {'status': 'passed', 'configuration': 'debug_sim_arm64', 'classes': results,
-             'passed_methods': sum(len(item['passed_methods']) for item in results),
-              'source_fingerprint': plan['source_fingerprint'], 'acceptanceIdentity': identity,
-              'native_execution_verified': True, 'host_resources': host_resources,
-              'visual_review': 'recording remains a separate step'}
-    verify_native_results(result, plan, identity)
-    return result
+        results = []
+        try:
+            require_single_simulator(record)
+            output(['xcrun', 'simctl', 'boot', record['udid']], timeout=30)
+            output(['xcrun', 'simctl', 'bootstatus', record['udid'], '-b'], timeout=150)
+            deadline = min(time.monotonic() + args.execution_seconds, overall_deadline - 150)
+            for target in plan['targets']:
+                for case in target['classes']:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('Native integration execution envelope expired')
+                    require_single_simulator(record)
+                    # The manifest binds each class to its actual host. Composer's
+                    # fixtures need the scene/root created by ComposerHarness.
+                    host_bundle_id = target['host_bundle_id']
+                    output(['xcrun', 'simctl', 'uninstall', record['udid'], host_bundle_id], check=False)
+                    if output(['xcrun', 'simctl', 'get_app_container', record['udid'], host_bundle_id, 'app'], check=False):
+                        raise ValueError('The previous test-host installation could not be removed')
+                    directory = args.output / 'runs' / ('{:02d}-{}'.format(len(results) + 1, case['class']))
+                    # A single-class BUILD filter already selects this exact class;
+                    # avoid unioning it with a second copy in the runner's options.
+                    test_filter = None if target['build_test_filter'] else case['class']
+                    command = native_args(line, line.get_test_arguments(target['label'], run_only=True, test_filter=test_filter,
+                        test_arguments=['--destination=platform=ios_simulator,id=' + record['udid']],
+                        test_environment=['STARTUP_TIMEOUT_SEC=150'], test_timeout=270, streamed=True), cache)
+                    try:
+                        result = run_logged(command, telegram, directory, max(1, deadline - time.monotonic()),
+                                            case=case, contract=contract, cancel_test=lambda: shutdown_device(record))
+                    finally:
+                        copy_case_evidence(telegram, target['label'], directory)
+                    require_single_simulator(record)
+                    result.update(target=target['label'], source=case['source'], host=target['host'], host_bundle_id=host_bundle_id)
+                    results.append(result)
+                    write_json(args.output / 'completed-classes.json', results)
+            require_build_identity(app, build_plan(telegram)[0], harness_inputs(telegram),
+                                   load_staging_manifest(telegram), Path(app['ipa']))
+        finally:
+            shutdown_device(record)
+            if own_device(record):
+                output(['xcrun', 'simctl', 'delete', record['udid']], timeout=20)
+            record['deleted'] = True
+            write_json(args.output / 'simulator.json', record)
+        result = {'status': 'passed', 'configuration': 'debug_sim_arm64', 'classes': results,
+                  'passed_methods': sum(len(item['passed_methods']) for item in results),
+                  'source_fingerprint': plan['source_fingerprint'], 'acceptanceIdentity': identity,
+                  'native_execution_verified': True, 'host_resources': host_resources,
+                  'visual_review': 'recording remains a separate step'}
+        verify_native_results(result, plan, identity)
+        return result
 
 
 def main():

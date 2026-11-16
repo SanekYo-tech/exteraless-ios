@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `bfcce7bc`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `f1c28499`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
@@ -25,11 +25,19 @@ NativeSDK5 — completed в точном runtime-component scope.16/16 deliveryh
 | Linux Swift | **712 Core /273 Host /30 Hooks PASS**, последний полный d296e456 |
 | Mac component scopes | **722 Core /30 Hooks**,297 Git pins; listener,47FD,7ingress,4ModeABA также отдельно PASS |
 | Последний полный Mac | **43795739683 /d8705c51 GREEN + independent PASS**,722Core/273Host/30Hooks,5SDKchildren,C219 |
-| UIKit | **43822623419 /bfcce7bc failed-before-native-compile**: recovery исчерпал60s на мелкихLRUentries; большиеblobs ещё доступны |
+| UIKit | **43827361709 /f1c28499 capacity PASS**, native compile timeout послеcache-mode invalidation; cache-reuse fix готовится |
 | План приёмки | **5 real SDK children PASS**;434 native XCTest methods и20 записываемых сцен ещё pending |
 | Проверенная unsigned IPA | **build40 /43779402542 /6de4ac36**,98 177 711байт; новый source cohort не входит |
 
 **Активные независимые работы — не poll:**
+- UIKit43827361709 завершён. Recovery25.038s:10.01GB/7120deletes, free22.39GB,
+  kept8.59GB. ENOSPCнет; compile785s завершилсяна2926/8887actions (Abseil rebuild).
+  disk_cache= изменилcache-enabledaction-salt. Ownerпроверяетreadonlyenabled-cache
+  вариант, чтобысохранитьreuse безновыхдублирующихcachewrites; floors/37/434/20сохранены.
+  Readonlycacheготов:8/8postimages,43checks(2POSIXskip),1739inputscovered.
+  HTTPloopbackAC/CAS GET/HEAD сохраняет cache-enabledsalt; writesdisabled,
+  marker/FD/capacity/cleanupchecks сохранены. `native-test-readonly-cache-followup.md`.
+- Compat43827337107/f1c28499 завершён GREEN; watcher завершён.
 - UIKit43822623419 завершён; watcher завершён. Free2.75→9.31GB, удалено6.41GB/
   37728cachefiles; осталось18.54GBeligiblecache. Floor20GiB не достигнут, compile не стартовал.
   ses_e25088d28ffem4nSC3FcOP577B добавляет pressure-aware large-blob priority втотже60sbudget;

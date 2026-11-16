@@ -110,6 +110,18 @@ class NativeDiskTests(unittest.TestCase):
         self.idle.assert_not_called(); unlink.assert_not_called()
         self.assertTrue(all(p.exists() for p in self.entries + self.retained))
 
+    def test_capacity_receipt_records_the_effective_read_only_cache_mode(self):
+        from native_test_cache import MODE, cache_flags
+        self.free = 200
+        mode = {'mode': MODE, 'readOnly': True, 'nativeCacheFlags': cache_flags('http://127.0.0.1:43217')}
+        report = self.recover(cache_configuration=mode)
+        self.assertEqual(report['readOnlyCache'], mode)
+        self.assertEqual(report['nativeCacheFlags'], mode['nativeCacheFlags'])
+        persisted = json.loads((self.run / 'disk-capacity.json').read_text())
+        self.assertEqual(persisted['readOnlyCache']['mode'], MODE)
+        self.assertEqual(persisted['deletedFiles'], 0)
+        self.idle.assert_not_called()
+
     def test_pressure_equal_allocation_size_ties_keep_lru_and_preserve_retained_files(self):
         report = self.recover()
         self.assertEqual(report['status'], 'recovered')
@@ -304,9 +316,9 @@ class NativeDiskTests(unittest.TestCase):
     def test_native_query_build_and_run_only_keep_effective_cache_override(self):
         source = (ROOT / 'tools/runtime/run_native_integration_tests.py').read_text()
         self.assertEqual(disk.NATIVE_CACHE_FLAGS, ('--disk_cache=', '--remote_upload_local_results=false'))
-        self.assertIn('query = startup(line.get_unsigned_test_preflight_arguments(labels)) + limits + native_cache', source)
-        self.assertIn("line.get_test_arguments(labels, build_only=True)) + limits + native_cache + ['--keep_going']", source)
-        self.assertIn("test_timeout=270, streamed=True)) + limits + native_cache", source)
+        self.assertIn('query = native_args(line, line.get_unsigned_test_preflight_arguments(labels), cache)', source)
+        self.assertIn("native_args(line, line.get_test_arguments(labels, build_only=True), cache) + ['--keep_going']", source)
+        self.assertIn('test_timeout=270, streamed=True), cache)', source)
         self.assertLess(source.index('validate_runtime_actions(graph, staging)'), source.index('bazel_output = prepare_native_disk'))
         self.assertLess(source.index('bazel_output = prepare_native_disk'), source.index('line.get_test_arguments(labels, build_only=True)'))
 

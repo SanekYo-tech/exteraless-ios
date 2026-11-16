@@ -75,7 +75,8 @@ jobs:
           python -B -m unittest tools.ci.tests.test_native_test_workflow
           tools.ci.tests.test_native_fixture_classes tools.ci.tests.test_client_ui_batches
           tools.ci.tests.test_native_input_identity tools.ci.tests.test_client_ui_supplements
-          tools.ci.tests.test_client_ui_map tools.runtime.tests.test_native_test_disk -v
+          tools.ci.tests.test_client_ui_map tools.runtime.tests.test_native_test_disk
+          tools.runtime.tests.test_native_test_cache -v
 
       - name: Stage or refresh the sentinel-owned harness source
         run: >-
