@@ -2,6 +2,7 @@
 
 import ast
 import contextlib
+from dataclasses import replace
 import errno
 import hashlib
 import http.client
@@ -23,6 +24,28 @@ import native_test_cache as cache
 import native_test_disk as disk
 import run_native_integration_tests as native
 from client_ui_harness_workspace import claim_workspace, write_generation
+
+
+def wire(number, value):
+    """Test-only protobuf encoding using the pinned REAPI field numbers."""
+    def varint(value):
+        result = bytearray()
+        while value >= 128:
+            result.append((value & 127) | 128)
+            value >>= 7
+        result.append(value)
+        return bytes(result)
+    if isinstance(value, int):
+        return varint(number << 3) + varint(value)
+    return varint((number << 3) | 2) + varint(len(value)) + value
+
+
+def proto_digest(data):
+    return wire(1, hashlib.sha256(data).hexdigest().encode()) + wire(2, len(data))
+
+
+def proto_file(path, data):
+    return wire(1, path.encode()) + wire(2, proto_digest(data))
 
 
 class _WindowsFixtureReader(cache.ClaimedCacheReader):
@@ -81,7 +104,7 @@ class ReadOnlyCacheTests(unittest.TestCase):
         self.digest = hashlib.sha256(self.content).hexdigest()
         self.blob = self.put('cas', self.digest, self.content)
         self.action_key = hashlib.sha256(b'action-key-not-the-result-hash').hexdigest()
-        self.action_content = b'\x18\x00\x2a\x05owned'
+        self.action_content = wire(2, proto_file('produced.bin', self.content)) + wire(9, wire(1, b'fixture'))
         self.action = self.put('ac', self.action_key, self.action_content)
         self.retained = [self.owned / 'telegram-ios/source.swift', self.base / 'materialized.o',
                          self.base / 'ClientUIHarness.ipa', self.base / 'unrelated-user-data']
@@ -151,14 +174,127 @@ class ReadOnlyCacheTests(unittest.TestCase):
         self.assertNotIn('cache-body-not-for-logs', self.console.getvalue())
 
     def test_cache_misses_include_evicted_cas_of_a_remaining_action_result(self):
+        self.blob.unlink()  # Fixture-only GC before reads are enabled; keep the AC and other outputs.
+        with self.service() as server:
+            server.enable_reads()
+            for method, path in (('GET', '/cas/' + self.digest), ('HEAD', '/cas/' + self.digest),
+                                 ('GET', '/ac/' + self.action_key), ('HEAD', '/ac/' + self.action_key),
+                                 ('GET', '/ac/' + 'f' * 64)):
+                self.assertEqual(self.request(server, method, path)[::2], (404, b''))
+            self.assertEqual(server.stats['acMisses'], 2)
+            self.assertEqual(server.ac_miss_reasons, {'missing-cas': 2})
+            self.assertIsNone(server.failure)
+        self.assertEqual(self.action.read_bytes(), self.action_content)
+        self.assertEqual(self.snapshot(self.retained), {str(p): self.baseline[str(p)] for p in self.retained})
+
+    def tree_action(self, *, missing_child=False, dangling_directory=False):
+        leaf = b'nested-tree-file'
+        leaf_path = self.put('cas', hashlib.sha256(leaf).hexdigest(), leaf)
+        symlink = wire(1, b'link') + wire(2, str(self.retained[-1]).encode())
+        child = wire(1, proto_file('nested.bin', leaf)) + wire(3, symlink)
+        child_key = proto_digest(b'missing-directory') if dangling_directory else proto_digest(child)
+        root = wire(2, wire(1, b'child') + wire(2, child_key))
+        tree = wire(1, root) + wire(2, child)
+        self.put('cas', hashlib.sha256(tree).hexdigest(), tree)
+        output = wire(1, b'bundle') + wire(3, proto_digest(tree)) + wire(4, 1) + wire(5, proto_digest(root))
+        self.action.write_bytes(wire(3, output))
+        if missing_child:
+            leaf_path.unlink()
+        return tree, child
+
+    def test_tree_embedded_children_and_symlink_metadata_form_a_complete_hit(self):
+        _, child = self.tree_action()
+        digest = hashlib.sha256(child).hexdigest()
+        self.assertFalse((self.cache_root / 'cas' / digest[:2] / digest).exists())
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[::2], (200, self.action.read_bytes()))
+            self.assertEqual(self.request(server, 'HEAD', '/ac/' + self.action_key)[0], 200)
+        self.assertEqual(self.snapshot(self.retained), {str(p): self.baseline[str(p)] for p in self.retained})
+
+    def test_tree_missing_leaf_or_missing_embedded_directory_is_an_ac_miss(self):
+        for options in ({'missing_child': True}, {'dangling_directory': True}):
+            self.tree_action(**options)
+            with self.service() as server:
+                server.enable_reads()
+                self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[::2], (404, b''))
+                self.assertIsNone(server.failure)
+
+    def test_stdout_stderr_and_all_three_output_symlink_variants(self):
+        stdout, stderr = b'fixture stdout', b'fixture stderr'
+        for data in (stdout, stderr):
+            self.put('cas', hashlib.sha256(data).hexdigest(), data)
+        base = wire(6, proto_digest(stdout)) + wire(8, proto_digest(stderr))
+        for tag in (10, 11, 12):
+            base += wire(tag, wire(1, ('output-link-' + str(tag)).encode()) + wire(2, b'../input-fixture'))
+        self.action.write_bytes(base)
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[::2], (200, base))
+        for data in (stdout, stderr):
+            digest = hashlib.sha256(data).hexdigest()
+            leaf = self.cache_root / 'cas' / digest[:2] / digest
+            leaf.unlink()
+            with self.service() as server:
+                server.enable_reads()
+                self.assertEqual(self.request(server, 'HEAD', '/ac/' + self.action_key)[0], 404)
+            self.put('cas', digest, data)
+
+    def test_empty_digest_is_implicit_but_wrong_zero_size_digest_misses(self):
+        self.action.write_bytes(wire(2, proto_file('empty.bin', b'')))
         with self.service() as server:
             server.enable_reads()
             self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 200)
-            self.blob.unlink()  # Only this disposable fixture simulates the completed pressure GC.
-            for method, path in (('GET', '/cas/' + self.digest), ('HEAD', '/cas/' + self.digest),
-                                 ('GET', '/ac/' + 'f' * 64)):
-                self.assertEqual(self.request(server, method, path)[::2], (404, b''))
-        self.assertEqual(self.snapshot(self.retained), {str(p): self.baseline[str(p)] for p in self.retained})
+        self.action.write_bytes(wire(2, wire(1, b'empty.bin') + wire(2, wire(1, b'f' * 64))))
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 404)
+
+    def test_malformed_or_unsupported_action_results_are_nonfatal_misses(self):
+        for value in (b'{"output_files": []}', wire(3, 0), b'\x12\x7fshort', b'\x00\x00',
+                      b'\x12' + b'\xff' * 11, wire(99, b'unknown'),
+                      wire(2, wire(1, b'\xff') + wire(2, proto_digest(self.content))),
+                      wire(2, wire(1, b'file') + wire(2, wire(1, b'a' * 64) + wire(1, b'b' * 64))),
+                      wire(2, wire(1, b'file') + wire(2, wire(1, b'a' * 64) + wire(2, (1 << 64) - 1)))):
+            self.action.write_bytes(value)
+            with self.service() as server:
+                server.enable_reads()
+                self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[::2], (404, b''))
+                self.assertEqual(server.ac_miss_reasons, {'malformed': 1})
+                self.assertIsNone(server.failure)
+
+    def test_closure_budgets_and_tree_depth_are_misses_before_http_200(self):
+        self.tree_action()
+        for field, value in (('action_bytes', 1), ('tree_bytes', 1), ('metadata_bytes', 1),
+                             ('closure_fields', 1), ('closure_references', 0),
+                             ('closure_directories', 1), ('closure_depth', 0), ('closure_seconds', 0)):
+            with self.service(limits=replace(cache.HttpLimits(), **{field: value})) as server:
+                server.enable_reads()
+                self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[::2], (404, b''), field)
+                self.assertEqual(server.ac_miss_reasons, {'budget': 1}, field)
+                self.assertIsNone(server.failure)
+
+    def test_cas_size_is_checked_without_claiming_payload_hash_verification(self):
+        self.blob.write_bytes(b'wrong size')
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 404)
+        self.blob.write_bytes(b'x' * len(self.content))
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 200)
+            self.assertIn('content hashes verified by Bazel', server.configuration()['casValidation'])
+
+    def test_inline_contents_cannot_hide_missing_or_mismatched_cas(self):
+        self.action.write_bytes(wire(2, proto_file('file.bin', self.content) + wire(5, b'wrong inline value')))
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 404)
+        self.blob.unlink()
+        self.action.write_bytes(wire(2, proto_file('file.bin', self.content) + wire(5, self.content)))
+        with self.service() as server:
+            server.enable_reads()
+            self.assertEqual(self.request(server, 'GET', '/ac/' + self.action_key)[0], 404)
 
     def test_mutations_and_paths_outside_the_digest_protocol_are_rejected(self):
         with self.service() as server:
@@ -335,7 +471,7 @@ class NativeCacheCommandTests(unittest.TestCase):
             self.assertIn('--remote_executor=', effective)
             self.assertIn('--remote_instance_name=', effective)
             self.assertIn('--remote_verify_downloads=true', effective)
-            self.assertFalse(any(flag.startswith('--remote_download_outputs=') for flag in service.flags))
+            self.assertIn('--remote_download_outputs=all', service.flags)
         self.assertNotIn('--check_up_to_date', commands[1])
         self.assertIn('--check_up_to_date', commands[-1])
         self.assertIn('--cache_test_results=no', commands[-1])

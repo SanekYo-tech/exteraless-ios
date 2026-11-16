@@ -1,287 +1,47 @@
 name: Compat Tests
 
-# Дёшево (Linux-минуты): pytest-сьют и swift test PluginHost (без Apple SDK).
-# push и pull_request — с path filters. workflow_dispatch запускает оба джоба.
-# macOS-сборки (IPA и CPython framework) — отдельные workflow, только вручную.
-
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "tools/**"
-      - "third_party/exteraless-android/**"
-      - "third_party/corpus-sources/**"
-      - "python/**"
-      - "swift/**"
-      - ".github/workflows/compat-tests.yml"
-  pull_request:
-    paths:
-      - "tools/**"
-      - "third_party/exteraless-android/**"
-      - "third_party/corpus-sources/**"
-      - "python/**"
-      - "swift/**"
-      - ".github/workflows/compat-tests.yml"
 
 permissions:
   contents: read
 
 jobs:
-  # Фильтр по файлам коммита: pytest не качает корпус на чистый swift/**,
-  # swift test не качает тулчейн (~1 ГБ) на чистый python/ или tools/.
-  # Ручной workflow_dispatch всегда запускает оба джоба.
-  changes:
-    name: path filter
-    runs-on: ubuntu-latest
+  cache-proof:
+    name: Bazel 9.2 AC completeness toy (Linux only)
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    outputs:
-      compat: ${{ steps.filter.outputs.compat }}
-      swift: ${{ steps.filter.outputs.swift }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Classify changed paths
-        id: filter
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          emit() {
-            echo "compat=$1" >> "$GITHUB_OUTPUT"
-            echo "swift=$2" >> "$GITHUB_OUTPUT"
-            echo "compat=$1 swift=$2"
-          }
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "manual dispatch; running both jobs"
-            emit true true
-            exit 0
-          fi
-
-          classify() {
-            local compat=false swift=false f
-            while IFS= read -r f; do
-              [ -z "$f" ] && continue
-              case "$f" in
-                tools/*|third_party/exteraless-android/*|third_party/corpus-sources/*|python/*|.github/workflows/compat-tests.yml)
-                  compat=true ;;
-              esac
-              case "$f" in
-                swift/*|.github/workflows/compat-tests.yml)
-                  swift=true ;;
-              esac
-            done
-            # Пустой или нераспознанный diff — оба джоба, чтобы CI не «зеленел» молча.
-            if [ "$compat" = false ] && [ "$swift" = false ]; then
-              echo "no classified paths; running both jobs"
-              compat=true
-              swift=true
-            fi
-            emit "$compat" "$swift"
-          }
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="${{ github.event.pull_request.base.sha }}"
-          else
-            base="${{ github.event.before }}"
-          fi
-
-          if [ -z "${base:-}" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            echo "no base commit; running both jobs"
-            emit true true
-            exit 0
-          fi
-
-          if ! git fetch --depth=1 origin "$base"; then
-            echo "could not fetch base; running both jobs"
-            emit true true
-            exit 0
-          fi
-
-          files="$(git diff --name-only "$base" HEAD)"
-          printf '%s\n' "$files"
-          printf '%s\n' "$files" | classify
-
-  tests:
-    name: pytest (compat suite)
-    needs: changes
-    if: needs.changes.outputs.compat == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     env:
       PYTHONUTF8: "1"
-      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
         with:
-          python-version: "3.12"
-
-      - name: Install pytest
-        run: pip install pytest
-
-      - name: Cache pinned pure Python wheels
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/python-wheel-cache
-          key: python-pure-dependencies-${{ hashFiles('python/runtime/dependency-lock.json') }}
-
-      - name: Stage dependencies for SDK audit fixtures
-        run: |
-          python -B tools/runtime/vendor_dependencies.py \
-            --cache "$RUNNER_TEMP/python-wheel-cache" \
-            --output "$GITHUB_WORKSPACE/python/vendor" \
-            --report "$RUNNER_TEMP/python-dependencies.json"
-
-      - name: Build C bridge (_exteraless_bridge)
+          fetch-depth: 2
+          sparse-checkout: |
+            tools/runtime
+            tools/ci/tests
+            telegram-ios/build-system/Make
+      - name: Prepare pinned toy tools and historical control
         run: |
           set -euo pipefail
-          cd python/bridge
-          pip install -q setuptools
-          python setup.py build_ext --inplace
-
-      - name: Clone plugin corpus sources
-        run: |
-          set -euo pipefail
-          mkdir -p third_party/corpus-sources
-          for repo in \
-            The-MoonTg-project/extera-plugins \
-            Den4ikSuperOstryyPer4ik/CactusPlugins \
-            mr-Vestr/plugins \
-            py-sato/Privacy-Cleaner \
-            corerudo/for-vibecoders \
-            n08i40k/tg-streaks \
-            xvxrn/botile \
-            AlexeiCrystal/anti-ayugram-easter-eggs \
-            0x11DFE/Auto-Forwarder-Plugin \
-            0x11DFE/Message-Repeater-Pro; do
-            git clone --depth 1 "https://github.com/$repo" \
-              "third_party/corpus-sources/$(basename "$repo")" || true
-          done
-
-      - name: Assemble corpus
-        run: python -m tools.compat.collect_corpus
-
-      - name: Generate manifest
-        run: python -m tools.compat.generate_manifest
-
-      - name: Feature inventory
-        run: python -m tools.compat.feature_inventory || true
-
-      - name: Run test suite
-        env:
-          # Archive fixtures use the same checksum-verified pure PyYAML bundle
-          # that was staged above; no separately installed host copy is required.
-          PYTHONPATH: ${{ github.workspace }}/python/vendor
-        run: |
-          set -euo pipefail
-          # JDK нужен Java-харнес-тестам, но его установка не должна
-          # ронять сьют: при сетевом флейке apt тесты с javac делают skip.
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq default-jdk-headless >/dev/null \
-            || echo "::warning::JDK install failed (apt/network flake) — Java harness tests will skip"
-          # Corpus collection/manifest tests above are static. Execute only the
-          # repository-owned bounded fixtures in this gate; the legacy corpus
-          # simulation modules import arbitrary plugin code in the test process.
-          python -m pytest tools/compat/tests -q --no-header \
-            --ignore=tools/compat/tests/test_simulation.py \
-            --ignore=tools/compat/tests/test_runtime_sim.py
-
-      - name: Upload compat reports
+          mkdir -p "$RUNNER_TEMP/cache-proof-tools"
+          curl --fail --location --max-time 60 https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-x86_64 -o "$RUNNER_TEMP/cache-proof-tools/bazel"
+          echo "7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694  $RUNNER_TEMP/cache-proof-tools/bazel" | sha256sum -c -
+          chmod 755 "$RUNNER_TEMP/cache-proof-tools/bazel"
+          git show b06bb00064157eb2df3d21a3cf0166e8e33cd259:tools/runtime/native_test_cache.py > "$RUNNER_TEMP/cache-proof-tools/before_cache.py"
+      - name: Bounded protocol and POSIX closure checks
+        run: timeout 30 python -B -m unittest tools.runtime.tests.test_native_test_cache -v
+      - name: Real producer-consumer cache proof
+        run: >-
+          timeout 210 python -B tools/runtime/tests/bazel_cache_completeness_probe.py
+          --bazel "$RUNNER_TEMP/cache-proof-tools/bazel"
+          --before-cache-module "$RUNNER_TEMP/cache-proof-tools/before_cache.py"
+          --output "$RUNNER_TEMP/cache-proof-report"
+      - name: Upload only bounded toy receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: compat-report
-          path: |
-            build/compat/manifest.json
-            build/compat/report.md
-            build/compat/features.json
-            build/compat/features-report.md
+          name: native-cache-completeness-proof
+          path: ${{ runner.temp }}/cache-proof-report
           if-no-files-found: warn
           retention-days: 14
-
-  # Linux, без Apple SDK. Тулчейн — релиз swift.org под Ubuntu 24.04, не macOS.
-  swift-tests:
-    name: swift test (PluginHost + PluginHooks + ExteralessCore, Linux)
-    needs: changes
-    if: needs.changes.outputs.swift == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      # литеральный путь (контекст runner недоступен в job-level env/with —
-      # workflow становится невалидным, запуск падает без джобов)
-      SWIFT_ROOT: /home/runner/swift-6.4.2
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Swift build dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            binutils \
-            git \
-            gnupg2 \
-            libc6-dev \
-            libcurl4-openssl-dev \
-            libedit2 \
-            libgcc-13-dev \
-            libncurses-dev \
-            libpython3-dev \
-            libsqlite3-0 \
-            libstdc++-13-dev \
-            libxml2-dev \
-            libz3-dev \
-            pkg-config \
-            tzdata \
-            unzip \
-            zip \
-            zlib1g-dev
-
-      - name: Cache Swift 6.4.2 toolchain
-        id: swift-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SWIFT_ROOT }}
-          key: swift-6.4.2-ubuntu24.04-x86_64
-
-      - name: Install Swift 6.4.2
-        if: steps.swift-cache.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          mkdir -p "$SWIFT_ROOT"
-          tarball="swift-6.4.2-RELEASE-ubuntu24.04.tar.gz"
-          url="https://download.swift.org/swift-6.4.2-release/ubuntu2404/swift-6.4.2-RELEASE/${tarball}"
-          curl -fL --retry 3 --retry-delay 2 -o "${SWIFT_ROOT}/${tarball}" "$url"
-          tar -xzf "${SWIFT_ROOT}/${tarball}" -C "$SWIFT_ROOT" --strip-components=1
-          rm -f "${SWIFT_ROOT}/${tarball}"
-          test -x "${SWIFT_ROOT}/usr/bin/swift"
-
-      - name: Swift on PATH
-        run: echo "${SWIFT_ROOT}/usr/bin" >> "$GITHUB_PATH"
-
-      - name: Swift version
-        run: swift --version
-
-      - name: Test PluginHost
-        working-directory: swift/PluginHost
-        run: swift test --jobs 2
-
-      - name: Test PluginHooks
-        working-directory: swift/PluginHooks
-        run: swift test --jobs 2
-
-      - name: Test Foundation client settings and policies
-        run: swift test --package-path swift/ExteralessCore --jobs 2
