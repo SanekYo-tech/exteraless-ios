@@ -1,0 +1,287 @@
+{
+  "captured_hashes_bytecounts_anchors_timestamps_execution_evidence_unchanged": true,
+  "creation_scope": "Local Git bytes read once for archival preparation only. Published loader uses checked-in snapshots, not Git/network. No source/runtime/CI execution.",
+  "implementation_source_pins_unchanged": 64,
+  "inverse_storage_metadata_matches_original_input": true,
+  "kind": "hermetic-raw-report-capture",
+  "original_overlay_sha256": "91d6560e3c15ad327c3761bae750f12ed3503fc14054a626551bb65bcd3333ce",
+  "raw_bytes": 3507743,
+  "records": [
+    {
+      "bytes": 8064,
+      "captured_git_revision": "78f37532643004b18e9854607cb77975fc8f65a9",
+      "git_blob": "637bbbe78bc92598e3e473a95ba07276f4b9611e",
+      "origin_report": "docs/wave-2/developer-listener-native-remediation.md",
+      "sha256": "db36648a4cbf4a1b8187e097dfa9f287533b957c5aaf6390cc948c208061ac48",
+      "snapshot_path": "docs/parity/source-report-snapshots/db36648a4cbf4a1b8187e097dfa9f287533b957c5aaf6390cc948c208061ac48.md"
+    },
+    {
+      "bytes": 13131,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "d13ed7ed0eccba81a5b2abd0acc48dca02bc4dff",
+      "origin_report": "docs/wave-2/elyx-c-gate-validation.md",
+      "sha256": "2108d4da990b18325530797d53bd2f6ffa5675dc5795f2f35e6a1c6a4baf8004",
+      "snapshot_path": "docs/parity/source-report-snapshots/2108d4da990b18325530797d53bd2f6ffa5675dc5795f2f35e6a1c6a4baf8004.md"
+    },
+    {
+      "bytes": 10468,
+      "captured_git_revision": "78f37532643004b18e9854607cb77975fc8f65a9",
+      "git_blob": "0e403ea3fe4e6fc5392a10ba3b7edd93be499b69",
+      "origin_report": "docs/wave-2/elyx-fd-cancellation-posix-ci.md",
+      "sha256": "e8f665f882046c2576da2f550cb0e0aeba19ffca79931f0f7e92ad534bae3a98",
+      "snapshot_path": "docs/parity/source-report-snapshots/e8f665f882046c2576da2f550cb0e0aeba19ffca79931f0f7e92ad534bae3a98.md"
+    },
+    {
+      "bytes": 9635,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "40351d6dc12365f80540f728f78cf3816eeffb11",
+      "origin_report": "docs/wave-2/elyx-fd-posix-test-followup.md",
+      "sha256": "926055dffc010cdf8b34bf93fcef66b7d42be01044960ca7e065162f27762fff",
+      "snapshot_path": "docs/parity/source-report-snapshots/926055dffc010cdf8b34bf93fcef66b7d42be01044960ca7e065162f27762fff.md"
+    },
+    {
+      "bytes": 10847,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "98193c9871f4e724f1275b640633696afd80b0bd",
+      "origin_report": "docs/wave-2/elyx-load-preflight-posix-ci.md",
+      "sha256": "35e25649588f1cf6170c75b05735c4c0705dcfcabf22405228cee4130dc51d71",
+      "snapshot_path": "docs/parity/source-report-snapshots/35e25649588f1cf6170c75b05735c4c0705dcfcabf22405228cee4130dc51d71.md"
+    },
+    {
+      "bytes": 11086,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "87e8d4e7eebb91a068d65b009e70fa062c7074e1",
+      "origin_report": "docs/wave-2/elyx-mode-aba-posix-ci.md",
+      "sha256": "ff84c6846157fd7eaef17ef60c17629425cbf73f1d5dac73f358bbae10706276",
+      "snapshot_path": "docs/parity/source-report-snapshots/ff84c6846157fd7eaef17ef60c17629425cbf73f1d5dac73f358bbae10706276.md"
+    },
+    {
+      "bytes": 12328,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "48933fb830e74d2496c0d4698e09893e38795721",
+      "origin_report": "docs/wave-2/ipa-build40-acceptance.md",
+      "sha256": "850ff1a9204ea3e81af5b28d2972c3de7d7fbd2d56b7ec49328dbdd403ed8a80",
+      "snapshot_path": "docs/parity/source-report-snapshots/850ff1a9204ea3e81af5b28d2972c3de7d7fbd2d56b7ec49328dbdd403ed8a80.md"
+    },
+    {
+      "bytes": 1378,
+      "captured_git_revision": "78f37532643004b18e9854607cb77975fc8f65a9",
+      "git_blob": "805f88bc01713a06f12f834769fef0f07292bfea",
+      "origin_report": "docs/wave-2/mac-core-722-acceptance.md",
+      "sha256": "915b1da238d998c4e09b78fd3dbab99b64c4bce493214dd5a1910c6712ef0182",
+      "snapshot_path": "docs/parity/source-report-snapshots/915b1da238d998c4e09b78fd3dbab99b64c4bce493214dd5a1910c6712ef0182.md"
+    },
+    {
+      "bytes": 15962,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "f8accac4d90a304659756ce22a8696a00078359f",
+      "origin_report": "docs/wave-2/module-routes/general.json",
+      "sha256": "53a522771fede9455b8d4a8c02f063cfae2604f2ad7542f1c94b77aee69fcae7",
+      "snapshot_path": "docs/parity/source-report-snapshots/53a522771fede9455b8d4a8c02f063cfae2604f2ad7542f1c94b77aee69fcae7.md"
+    },
+    {
+      "bytes": 1888036,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "39493e1e2185acd64fec98bbcdabf95f2369dbf3",
+      "origin_report": "docs/wave-2/module-routes/plugins.json",
+      "sha256": "1b8c2b1bb167248a741bf27bbdbb082f1dbc51f37254d686ad3385c331a3574c",
+      "snapshot_path": "docs/parity/source-report-snapshots/1b8c2b1bb167248a741bf27bbdbb082f1dbc51f37254d686ad3385c331a3574c.md"
+    },
+    {
+      "bytes": 288647,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "89bd7b0abcd6fa80d31b66f325ac17b9f633c704",
+      "origin_report": "docs/wave-2/module-routes/settings.json",
+      "sha256": "ffc974596dbabdc71a4667e6673eca21dfd0a7eb0ab283832e6984daef1e406f",
+      "snapshot_path": "docs/parity/source-report-snapshots/ffc974596dbabdc71a4667e6673eca21dfd0a7eb0ab283832e6984daef1e406f.md"
+    },
+    {
+      "bytes": 20093,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "03b5a62fa0855c6fa574282a87124c77964cf7fe",
+      "origin_report": "docs/wave-2/reviews/elyx-archive-p1-closure.md",
+      "sha256": "2d671e48b31d7de4841bba6a3bbeb2261ef949c6bb95922aa21665d2b2222a6f",
+      "snapshot_path": "docs/parity/source-report-snapshots/2d671e48b31d7de4841bba6a3bbeb2261ef949c6bb95922aa21665d2b2222a6f.md"
+    },
+    {
+      "bytes": 25131,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "e71e31211f003b5217c46338f7335b765f1b9adc",
+      "origin_report": "docs/wave-2/reviews/elyx-archive-source-closure.md",
+      "sha256": "f76ec27837b44776e0f2bee18d84e9da480962c3e9214a77b3eefdc0db327cfb",
+      "snapshot_path": "docs/parity/source-report-snapshots/f76ec27837b44776e0f2bee18d84e9da480962c3e9214a77b3eefdc0db327cfb.md"
+    },
+    {
+      "bytes": 8356,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "e4047d4e2b9cf8a2e1eb21f232caac5ca0261e87",
+      "origin_report": "docs/wave-2/reviews/elyx-ios-platform-closure.md",
+      "sha256": "b2879207bed9c8edcb0dfa9df42ef480671604393cc0ea90d0e6c4e0c2ded617",
+      "snapshot_path": "docs/parity/source-report-snapshots/b2879207bed9c8edcb0dfa9df42ef480671604393cc0ea90d0e6c4e0c2ded617.md"
+    },
+    {
+      "bytes": 11825,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "073bdd6f0dbdf47a1d29df2987dea19f34f6ec77",
+      "origin_report": "docs/wave-2/reviews/elyx-nfd02-closure.md",
+      "sha256": "1b29daf08e5539e7b460bb092b12b34ce9f73149f70a1aea25c3306f49af5ccf",
+      "snapshot_path": "docs/parity/source-report-snapshots/1b29daf08e5539e7b460bb092b12b34ce9f73149f70a1aea25c3306f49af5ccf.md"
+    },
+    {
+      "bytes": 12888,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "a2ca604b0929b15e7f13061c362e585702404de9",
+      "origin_report": "docs/wave-2/reviews/ghost-toggle-source-closure.md",
+      "sha256": "ac60f90b9c38175f184d4ae2cf1e2b969a0cb510f42d768bedef9cb7d66bd0f0",
+      "snapshot_path": "docs/parity/source-report-snapshots/ac60f90b9c38175f184d4ae2cf1e2b969a0cb510f42d768bedef9cb7d66bd0f0.md"
+    },
+    {
+      "bytes": 25294,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "14d3e339d50dd3dd7533fc35b7a73445389607df",
+      "origin_report": "docs/wave-2/reviews/manager-custom-alias-source-closure.md",
+      "sha256": "395aecb4dd4e9ad9542e016cf7e6b97c656872ee943c0cbbd97d83fbae4536f3",
+      "snapshot_path": "docs/parity/source-report-snapshots/395aecb4dd4e9ad9542e016cf7e6b97c656872ee943c0cbbd97d83fbae4536f3.md"
+    },
+    {
+      "bytes": 19140,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "c3a0d0c6a12c12104030ab15d611533aafca3379",
+      "origin_report": "docs/wave-2/reviews/manager-custom-ordering-closure.md",
+      "sha256": "ef03f0348926d2a602cc0c49eb00d0fa7e7833b18de73c37f93e573276199c3d",
+      "snapshot_path": "docs/parity/source-report-snapshots/ef03f0348926d2a602cc0c49eb00d0fa7e7833b18de73c37f93e573276199c3d.md"
+    },
+    {
+      "bytes": 32151,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "ec51254c13691317ccc6fb82a6fd6936eb98ec4e",
+      "origin_report": "docs/wave-2/reviews/native-elyx-fd-authority-review.md",
+      "sha256": "b025b0368fa0ae787e14701073c4b0116cf1378a938bc27bd47d3ceede0cae08",
+      "snapshot_path": "docs/parity/source-report-snapshots/b025b0368fa0ae787e14701073c4b0116cf1378a938bc27bd47d3ceede0cae08.md"
+    },
+    {
+      "bytes": 27652,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "85572a82868512fa3cdf8b06418e04c20d862ce9",
+      "origin_report": "docs/wave-2/reviews/native-elyx-final-source-closure.md",
+      "sha256": "83713520da8a3e28515dd612234c6973792e1ef802a36a2ac8445df0b49fec67",
+      "snapshot_path": "docs/parity/source-report-snapshots/83713520da8a3e28515dd612234c6973792e1ef802a36a2ac8445df0b49fec67.md"
+    },
+    {
+      "bytes": 12572,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "cd4652d2607b5bab5b4f4320eed5e2943ce984c5",
+      "origin_report": "docs/wave-2/reviews/native-elyx-mode-aba-closure.md",
+      "sha256": "523a137d4fb20b6529e77fb7e4d5ae1116b0b730c285e8eba623b073cd1921fe",
+      "snapshot_path": "docs/parity/source-report-snapshots/523a137d4fb20b6529e77fb7e4d5ae1116b0b730c285e8eba623b073cd1921fe.md"
+    },
+    {
+      "bytes": 26855,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "96424c31e732a2b9ec787d4f421f325f4eb44263",
+      "origin_report": "docs/wave-2/reviews/plugin-trust-level-source-closure.md",
+      "sha256": "0567d638e77f5f4175bea49324dad7a1de9abe5dd156a6c74f6a9feb6dea8e60",
+      "snapshot_path": "docs/parity/source-report-snapshots/0567d638e77f5f4175bea49324dad7a1de9abe5dd156a6c74f6a9feb6dea8e60.md"
+    },
+    {
+      "bytes": 23276,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "19c2d06602e7420ab2179b6e44b78750ef73e7f7",
+      "origin_report": "docs/wave-2/reviews/plugin-trust-secondary-closure.md",
+      "sha256": "7f0722dac75df74d6c3ecd0f0daaf530957faf9ce0f83373ca4b09e70ef1717f",
+      "snapshot_path": "docs/parity/source-report-snapshots/7f0722dac75df74d6c3ecd0f0daaf530957faf9ce0f83373ca4b09e70ef1717f.md"
+    },
+    {
+      "bytes": 34846,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "26b9a2b4a513540e240132672c6a61b6edc48c98",
+      "origin_report": "docs/wave-2/reviews/sdk-symbol-remediation-source-closure.md",
+      "sha256": "d4f4c8b4443b0fb943fd170cbff6343fc05d47225d350ae6addc249582301256",
+      "snapshot_path": "docs/parity/source-report-snapshots/d4f4c8b4443b0fb943fd170cbff6343fc05d47225d350ae6addc249582301256.md"
+    },
+    {
+      "bytes": 3746,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "1e8c4335edb60166566eb22617ef0a3186adff28",
+      "origin_report": "docs/wave-2/reviews/settings-quarantine-source-closure.md",
+      "sha256": "63427e8b63bac2f3050c99427889f64cfb94f3dcf98412ff6db78f16114584a3",
+      "snapshot_path": "docs/parity/source-report-snapshots/63427e8b63bac2f3050c99427889f64cfb94f3dcf98412ff6db78f16114584a3.md"
+    },
+    {
+      "bytes": 18547,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "34a53abf477bcba979097fca0f0f759cb6b39f7d",
+      "origin_report": "docs/wave-2/reviews/settings-recovery-followup.md",
+      "sha256": "9ca35e59e49d8012c358f02a36f7e2bcb6250e081e5629ef70a5267cb5d9e5f1",
+      "snapshot_path": "docs/parity/source-report-snapshots/9ca35e59e49d8012c358f02a36f7e2bcb6250e081e5629ef70a5267cb5d9e5f1.md"
+    },
+    {
+      "bytes": 17198,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "c87b1d49f7c8efe4c4a14d19b1d3ecb03bce88c0",
+      "origin_report": "docs/wave-2/reviews/settings-reset-rsr-closure.md",
+      "sha256": "86ad1055a1fb17b87dd92e434b54cacb4b9fbc474421de9a64d7f0ade15d662f",
+      "snapshot_path": "docs/parity/source-report-snapshots/86ad1055a1fb17b87dd92e434b54cacb4b9fbc474421de9a64d7f0ade15d662f.md"
+    },
+    {
+      "bytes": 23342,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "ceec450282ffaed694739c3530784a7b33a6a934",
+      "origin_report": "docs/wave-2/reviews/settings-reset-source-closure.md",
+      "sha256": "1e958c585c0e2c7e8d2c4654e286315bdc886402a54e010a943be0895b839374",
+      "snapshot_path": "docs/parity/source-report-snapshots/1e958c585c0e2c7e8d2c4654e286315bdc886402a54e010a943be0895b839374.md"
+    },
+    {
+      "bytes": 22220,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "244ba84e99220e2864b74b71086a205f70c5f627",
+      "origin_report": "docs/wave-2/reviews/settings-search-r1-r5-closure.md",
+      "sha256": "3039a143e255c3518c2321659a786b9cb4d8787e15cdb6567824fd740d04930e",
+      "snapshot_path": "docs/parity/source-report-snapshots/3039a143e255c3518c2321659a786b9cb4d8787e15cdb6567824fd740d04930e.md"
+    },
+    {
+      "bytes": 28380,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "947cf7201a884a06d79902b6b691a024063a5270",
+      "origin_report": "docs/wave-2/reviews/settings-search-source-closure.md",
+      "sha256": "a649cc519b15ea93ac959d3905f66c9072c5485aa789c018e011b5db0ad52c86",
+      "snapshot_path": "docs/parity/source-report-snapshots/a649cc519b15ea93ac959d3905f66c9072c5485aa789c018e011b5db0ad52c86.md"
+    },
+    {
+      "bytes": 13454,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "eb1ba4a1fb98ffe1b836c27bbd678c02e724cfab",
+      "origin_report": "docs/wave-2/runtime-native-acceptance-20.md",
+      "sha256": "e8657e9f7d654a0e0fb24f62f73e9085cca378f1a112bb53172c9388f4345358",
+      "snapshot_path": "docs/parity/source-report-snapshots/e8657e9f7d654a0e0fb24f62f73e9085cca378f1a112bb53172c9388f4345358.md"
+    },
+    {
+      "bytes": 283885,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "59b1c3a8d0d86ba7f030b4ed84da47df13440896",
+      "origin_report": "docs/wave-2/sdk-symbols/core-api.json",
+      "sha256": "27d04bd9b7d39fff971842592982445f2d39e3cf5bda4996eca9ba0b6ee6c783",
+      "snapshot_path": "docs/parity/source-report-snapshots/27d04bd9b7d39fff971842592982445f2d39e3cf5bda4996eca9ba0b6ee6c783.md"
+    },
+    {
+      "bytes": 261489,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "a36f011b07a83904e007a6e3bf56aa3b8fa59b89",
+      "origin_report": "docs/wave-2/sdk-symbols/elyx.json",
+      "sha256": "f4e52c05d14eda15c8278c972fdbca16aecd320637e3f19b586db4ed5853ae95",
+      "snapshot_path": "docs/parity/source-report-snapshots/f4e52c05d14eda15c8278c972fdbca16aecd320637e3f19b586db4ed5853ae95.md"
+    },
+    {
+      "bytes": 285821,
+      "captured_git_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+      "git_blob": "8bc772a6c5febeb1eee1209036b0693cd6fe8db9",
+      "origin_report": "docs/wave-2/sdk-symbols/utilities.json",
+      "sha256": "2ac21bccf6e5ca7046bd7a6060c15b1bcebcc44fe4403dd1d39a75af018f16a0",
+      "snapshot_path": "docs/parity/source-report-snapshots/2ac21bccf6e5ca7046bd7a6060c15b1bcebcc44fe4403dd1d39a75af018f16a0.md"
+    }
+  ],
+  "reports": 34,
+  "schema_version": 1,
+  "snapshot_representation": "Exact raw captured Git bytes; SHA-256 filename; no wrappers, newline conversion or base64",
+  "updated_overlay_sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd"
+}

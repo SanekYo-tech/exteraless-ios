@@ -1,20 +1,13 @@
 {
   "boundary": "Exact captured source routes/dispositions, including missing providers and historical findings. No runtime/native/visual verification promotion; shared paths keep each receipt's hash and source boundary.",
   "context": {
-    "assigned_followups": [
-      "ELYX-GAP-01 archive admission and ELYX-P2-01/P2-02 gen/dev handoff, plus utilities-P2-001 daemon lifecycle: assigned; not closed by data merge.",
-      "PLUGINS-P2-01 direct hook ledger and CORE-API-F02 send priority: assigned; no closure overlay selected.",
-      "CORE-API-F01/F03/F04/F05 omission, class existence, callback containment and named-queue cancellation: assigned; no closure overlay selected.",
-      "PLUGINS-P2-02/P2-03 Manager Custom and original alias/link routes: assigned; no closure overlay selected.",
-      "PLUGINS-P2-04 TrustLevel and MS-ROUTE-01 Settings search: assigned; no closure overlay selected.",
-      "GeneralHelper.resetSettings, GeneralHelper.resetAllSettings and GeneralConfig.reset: three explicit partial routes remain assigned. GENERAL-SCALAR-01 is only the separate owner-reported d7 scalar-reader fix."
-    ],
     "captured_revision_candidates": [
       "9bfce05f708fba472ca942bcfe355914847a347d",
       "e16f380836c10de3fb1d08f468f1242788eb245d",
       "d7d499f70ee9c564d089b362c28d26423291c3b8"
     ],
     "coordinator_core_context": "1af: 670 Core / 180 Host / 30 Hooks / 363 pytest, supplied context only",
+    "current_remediation_evidence": "docs/parity/current-source-reconciliation.json",
     "execution_evidence": [
       {
         "commit": "e16f380836c10de3fb1d08f468f1242788eb245d",
@@ -37,14 +30,23 @@
       "report": "docs/wave-2/sdk-general-scalar-readers.md",
       "reported_python_tests_each": 30
     },
-    "history": "docs/parity/cohorts/9bfce05f.json",
-    "latest_ipa": {
+    "historical_assigned_followups": [
+      "ELYX-GAP-01 archive admission and ELYX-P2-01/P2-02 gen/dev handoff, plus utilities-P2-001 daemon lifecycle: assigned; not closed by data merge.",
+      "PLUGINS-P2-01 direct hook ledger and CORE-API-F02 send priority: assigned; no closure overlay selected.",
+      "CORE-API-F01/F03/F04/F05 omission, class existence, callback containment and named-queue cancellation: assigned; no closure overlay selected.",
+      "PLUGINS-P2-02/P2-03 Manager Custom and original alias/link routes: assigned; no closure overlay selected.",
+      "PLUGINS-P2-04 TrustLevel and MS-ROUTE-01 Settings search: assigned; no closure overlay selected.",
+      "GeneralHelper.resetSettings, GeneralHelper.resetAllSettings and GeneralConfig.reset: three explicit partial routes remain assigned. GENERAL-SCALAR-01 is only the separate owner-reported d7 scalar-reader fix."
+    ],
+    "historical_latest_ipa": {
       "commit": "e766b61e241598dccc8017bcd205bfe8b7c792ce",
       "run_id": "43749522967",
       "status_at_handoff": "in-progress"
     },
-    "native_ui_plan": "36 labels / 85 sources / 88 classes / 410 native methods and eight recording scenarios remain source-provided, not executed/visually accepted by this join.",
+    "historical_native_ui_plan": "36 labels / 85 sources / 88 classes / 410 native methods and eight recording scenarios remain source-provided, not executed/visually accepted by this join.",
+    "history": "docs/parity/cohorts/9bfce05f.json",
     "pin_drift_policy": "Preserve captured hashes/lines; authorized later source fixes are precise follow-up inputs, never silently rehashed as tested or rejected as whole-map ID collisions. Coordinator owns any moving Root/SDK manifest refresh.",
+    "previous_individual_join_revision": "8b726b757a692da2c883cd2c3258c1ff84d5c94b",
     "source_audit": "docs/parity/individual-source-input-audit.json"
   },
   "counts": {
@@ -75,6 +77,30 @@
     "source_pin_fields": 459,
     "verified_after": 0,
     "verified_before": 0
+  },
+  "current_source_overlay": {
+    "counts": {
+      "captured_assigned_scopes": 17,
+      "captured_assigned_source_closed": 17,
+      "execution_blockers": 2,
+      "identity_kinds": {
+        "finding": 35,
+        "named-route": 3,
+        "named-scope": 1
+      },
+      "implementation_source_pins": 64,
+      "registered_scopes": 39,
+      "remaining_source_scopes": 0,
+      "report_documents": 34,
+      "source_closed_scopes": 39,
+      "verification_promotions": 0
+    },
+    "input_receipt": {
+      "bytes": 127198,
+      "path": "docs/parity/current-source-followups.json",
+      "sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd"
+    },
+    "report": "docs/parity/current-source-reconciliation.json"
   },
   "findings": [
     {

@@ -1,0 +1,35 @@
+{
+  "actual_commands": [
+    "--individual-only --docs-only",
+    "--individual-only --docs-only --check",
+    "--check-data"
+  ],
+  "captured_anchors_exactly_unchanged": true,
+  "effective_scope_counts_unchanged": {
+    "captured_assigned_scopes": 17,
+    "captured_assigned_source_closed": 17,
+    "execution_blockers": 2,
+    "identity_kinds": {
+      "finding": 35,
+      "named-route": 3,
+      "named-scope": 1
+    },
+    "implementation_source_pins": 64,
+    "registered_scopes": 39,
+    "remaining_source_scopes": 0,
+    "report_documents": 34,
+    "source_closed_scopes": 39,
+    "verification_promotions": 0
+  },
+  "elapsed_seconds": 6.062,
+  "execution_evidence_timestamps_and_bounds_unchanged": true,
+  "f704_source_pins_unchanged": 64,
+  "git_subprocess_calls_allowed": false,
+  "new_overlay_sha256": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd",
+  "raw_snapshot_bytes": 3507743,
+  "report_anchors_fingerprint": "79b3bfd37c318571e06631b85dd6810d7a8118589c749eaaea4f6b04cf80c205",
+  "reports": 34,
+  "result": "passed-hermetic-actual-load-and-cli-regeneration",
+  "schema_version": 1,
+  "scope": "Uses the real 34 tracked-ready snapshot files despite the known live listener report drift. No Git fallback, source/runtime execution, CI or network."
+}

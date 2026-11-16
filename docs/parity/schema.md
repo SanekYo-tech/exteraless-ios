@@ -289,3 +289,92 @@ d7 scalar readers; it does not prove all 925 routes, native UI or the pending IP
 All manifest reads are bounded (16 maps, 16 MiB/map, 12,000 rows, 2,048 pin fields,
 64 steps/evidence entries per route); duplicate JSON object keys are rejected.
 The final check report is `checks/individual-integrity.json`.
+
+## Current independent source-remediation overlay
+
+The optional `current_source_overlay` policy points to the canonically serialized
+`current-source-followups.json` and its raw SHA-256. It is applied after the
+individual join in both ordinary generation and `--individual-only`. No overlay
+policy is required for fixture projects. The materialized output is
+`current-source-reconciliation.json` / `.md`; the SDK, client, individual and
+wave-2 projections carry matching references or the same current layer.
+
+This layer is additive. `individual_source.reported`, author map hashes/signatures,
+old findings/open fields, `native_relation`, implementation/ported status, Config
+overloads and historical cohorts are not overwritten. The previous checklist is
+retained as `individual_context.historical_assigned_followups`; it is no longer
+rendered as the effective open-finding list. Existing `checks/` and `cohorts/`
+remain immutable; new overlay checks are stored at the `docs/parity/` root.
+
+### Identity, dependencies and targets
+
+- The identity key is **`(origin_report, id)`**, not the bare finding label.
+  Kinds distinguish an actual `finding`, an original `named-route` (the three
+  General reset entries), and a `named-scope` (the actual Ghost review title).
+  The origin anchor must name that exact identity in a pinned report.
+- Every registered scope needs exactly one effective state: `source-closed`,
+  `source-partial` or `source-open`. Unknown/duplicate/missing scope keys fail.
+  All previously assigned captured findings and named routes must be accounted
+  for. An owner-reported `source-fixed` item does not become an independent verdict.
+- Aggregate source closure has explicit `requires` identities. Cycles, unknown
+  dependencies and a closed parent with an open prerequisite fail. For example,
+  the historical native Elyx tail reaches its effective closure through NFD-01/02/03
+  and DEV-LIFECYCLE-01, not through the earlier local Python fix alone.
+- Explicit target groups resolve only existing feature/SDK IDs, exact Original
+  module member keys or a bounded module-scope attribution. Unknown targets,
+  wrong overloads and duplicate targets within a group fail. A module-scope link
+  is not a claim that every method of that module passed.
+- `current_source_evidence` stores these links beside each affected SDK symbol,
+  feature or module. It leaves their captured route/disposition untouched.
+  The current f704 projection has 160 links to 25 SDK symbols, 10 Ghost feature
+  IDs, 28 exact module members and one module-scope target.
+
+### Report and source pins
+
+`documents` records exact read-time report hashes/byte sizes and immutable Git
+versions. Every shipped pin additionally has `snapshot_path`, selecting exactly
+`docs/parity/source-report-snapshots/<captured-sha256>.md`. These are the original
+raw report bytes, including JSON origin reports, without wrappers, newline
+conversion or base64. The input sets `require_report_snapshots: true` for all 34.
+The snapshot directory's `.gitattributes` disables text conversion for those raw
+files, preserving the same hashes across Windows and Linux checkouts.
+
+The loader reads and verifies the archived snapshot even if the live report still
+matches. Missing/corrupt archives, a wrong hash filename/directory, symlink escape,
+incorrect byte count or SHA fail before any anchor is accepted. Reads retain the
+existing 16 MiB bound. Changed or missing live reports do not require Git history
+or network, so shallow/source-free checkouts reproduce the exact captured text.
+Unique origin/verdict anchors, captured lines, full line text and their fingerprint
+remain unchanged; an archive does not waive missing or ambiguous anchors.
+
+Only legacy inputs **without** `snapshot_path` and without the required-snapshots
+flag retain the old live-file/Git fallback. That compatibility mode is explicitly
+non-hermetic; the shipped policy does not use it.
+
+`source_pins` is the separately captured **64-file f704 fix-path snapshot**;
+it does not replace the earlier reviewers' source pins. Its Git bytes were
+checked during input capture. Ordinary data regeneration does not require moving
+production files to keep those bytes. The later listener's **three 78f37532
+postimages**, equal to execution revision bbc54817, live in
+`later_evidence_source_deltas` with `changes_original_route_assignments=false`.
+Those versions do not rebind the original SDK source groups.
+
+Execution evidence, prior execution failures and current pending blockers are
+separate typed collections. A failed readiness run cannot reopen a source scope
+through this merge, and an isolated PASS cannot complete the five-child/UI gate.
+Build40/6de4, Linux f704 components, Mac20/e16, Mac722/5fa and the isolated listener
+bbc retain their own counts and limitations. No observed scene frames are claimed.
+
+`--check-data` validates the effective partition, dependency graph, target links,
+input policy hash, captured anchor fingerprint and unchanged verification without
+reading production source or querying CI. New integrity tests also exercise bare-ID
+collisions between reports, missing scope coverage, wrong targets/overloads,
+promotion refusal, Git report fallback and ordinary/individual-only idempotence.
+See `current-source-overlay-checks.json` and `current-source-overlay-handoff.md`.
+
+The hermetic capture correction is verified by `current-source-snapshot-tests.xml`
+and `current-source-hermetic-load-check.json`. Tests prohibit Git/subprocess calls,
+remove/change live reviews, and exercise both ordinary and individual-only CLI
+regeneration with only JSON inventory inputs and captured snapshots. The original
+103-test receipts remain historical; the focused overlay module was rerun for this
+loader correction.

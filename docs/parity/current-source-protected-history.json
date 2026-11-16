@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "scope": "Existing checks/cohorts, captured seven maps and readonly individual-route helper are immutable through this overlay task",
+  "sha256": {
+    "docs/parity/checks/final-source-output.sha256": "d752039dc2c619dbe3351916d084ce99f120ade0f606ca4e365d930df3628f67",
+    "docs/parity/checks/individual-integrity.json": "9cec992843a6b177a49b770a93bec9cae7e42561f18aeeb896f6cdf4cd7e34b7",
+    "docs/parity/checks/individual-inventory-regressions.xml": "ff479d5149a14dccb584e845afbc698238ab3d672a3c49623056c25d37d43658",
+    "docs/parity/checks/individual-regeneration-check.json": "379e04bf74c05f60189b6990388657bbb644108040a6e754870d47e6a6c3efbe",
+    "docs/parity/checks/individual-routes-tests.xml": "e486c67ea31ab7af6fe441e3c2864a74e31c7e72800210bcabc9787336b3a2df",
+    "docs/parity/checks/individual-source-output.sha256": "deacb05d1fe5d3650f7804b3c025b19655deb31ef3c454e3343f76b1ea3966ee",
+    "docs/parity/checks/inventory-tests-fac6cf26.xml": "547ccaa41dab992bff8505edad7311892e4d08df21892e312ea492cd3b8ae2cf",
+    "docs/parity/cohorts/93a1badc.json": "fceeaabf60fba6936c88b8234a0fc4d500f8acd0da3f31302b2ec5b4b56642cf",
+    "docs/parity/cohorts/9bfce05f.json": "7a6451a88474f36348db0718b03fb25bfabb5c32e1bc58915ff71bbec19411a6",
+    "docs/wave-2/module-routes/general.json": "53a522771fede9455b8d4a8c02f063cfae2604f2ad7542f1c94b77aee69fcae7",
+    "docs/wave-2/module-routes/plugins.json": "1b8c2b1bb167248a741bf27bbdbb082f1dbc51f37254d686ad3385c331a3574c",
+    "docs/wave-2/module-routes/settings.json": "ffc974596dbabdc71a4667e6673eca21dfd0a7eb0ab283832e6984daef1e406f",
+    "docs/wave-2/sdk-symbols/core-api.json": "27d04bd9b7d39fff971842592982445f2d39e3cf5bda4996eca9ba0b6ee6c783",
+    "docs/wave-2/sdk-symbols/elyx.json": "f4e52c05d14eda15c8278c972fdbca16aecd320637e3f19b586db4ed5853ae95",
+    "docs/wave-2/sdk-symbols/newui.json": "2d07544d4806b466d6d3969191ccb88148d4efc027c6cd07210d6a247d41e400",
+    "docs/wave-2/sdk-symbols/utilities.json": "2ac21bccf6e5ca7046bd7a6060c15b1bcebcc44fe4403dd1d39a75af018f16a0",
+    "tools/compat/individual_routes.py": "d834ca70c12de3f3dab5ab3b3f09a542167221e548e18e8052b260faf6a7efbb"
+  }
+}

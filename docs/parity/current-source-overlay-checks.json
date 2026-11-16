@@ -1,0 +1,152 @@
+{
+  "baseline_revision": "8b726b757a692da2c883cd2c3258c1ff84d5c94b",
+  "canonical_sdk_contract": {
+    "contract_sha256": "37e50430c52002829a904ae102fbf1fd941aed8d6218272721e0360ab4c96c40",
+    "hash_mode": "sdk-config-input-v1",
+    "path": "docs/parity/client-features.json"
+  },
+  "captured_author_maps_and_findings_unchanged": true,
+  "code_sha256": {
+    "tools/compat/feature_inventory.py": "0334cc943423e5b47f4623c75bb525e73e60a8b6f115547d2bdb8482702b80f0",
+    "tools/compat/tests/test_feature_inventory_overlay.py": "503d2e8826f8a600d126b81b2c327be859dd27126a1171743ad16cf81e6f05f2"
+  },
+  "current_counts": {
+    "captured_assigned_scopes": 17,
+    "captured_assigned_source_closed": 17,
+    "execution_blockers": 2,
+    "identity_kinds": {
+      "finding": 35,
+      "named-route": 3,
+      "named-scope": 1
+    },
+    "implementation_source_pins": 64,
+    "registered_scopes": 39,
+    "remaining_source_scopes": 0,
+    "report_documents": 34,
+    "source_closed_scopes": 39,
+    "verification_promotions": 0
+  },
+  "data_scope": "Historical source receipts and unsupported/native_relation statuses were compared to immutable 8b Git bytes. New current links are additive; tests and Git data checks are not native/runtime execution.",
+  "distinct_linked_targets": {
+    "feature": 10,
+    "module-member": 28,
+    "module-scope": 1,
+    "sdk-symbol": 25
+  },
+  "hermetic_capture": {
+    "capture_receipt": "docs/parity/current-source-snapshot-capture.json",
+    "capture_sha256": "3f7ab01d942cff1586c21a12f78123ffd61e38121dc9cdf6ec0b50ff1bd341e2",
+    "captured_report_sha256_bytecounts_timestamps_anchors_unchanged": true,
+    "git_fallback_scope": "Legacy inputs without snapshot_path only; shipped 34-document policy has no Git/network requirement",
+    "inverse_storage_metadata_matches_original_input": true,
+    "native_execution_evidence_and_f704_source_pins_unchanged": true,
+    "original_overlay_sha256": "91d6560e3c15ad327c3761bae750f12ed3503fc14054a626551bb65bcd3333ce",
+    "raw_bytes": 3507743,
+    "report_anchors_fingerprint": "79b3bfd37c318571e06631b85dd6810d7a8118589c749eaaea4f6b04cf80c205",
+    "reports": 34,
+    "required_snapshots": true
+  },
+  "historical_pre_hermetic_verification": {
+    "code_sha256": {
+      "tools/compat/feature_inventory.py": "1ff0f8cd83262536068a86afb51ac39e4bcef5295eaddf73e4bf7abcb219bdbe",
+      "tools/compat/tests/test_feature_inventory_overlay.py": "4bed963ad9dc3c92d732df522cc5219bbc357ca3d6d765750788d15ddc683183"
+    },
+    "performed_checks": {
+      "check_data": "passed",
+      "external_pytest_plugins": false,
+      "individual_only_check": "passed-idempotent",
+      "individual_only_regeneration": "passed",
+      "interpreter": "CPython 3.12.10",
+      "maximum_shell_timeout_seconds": 30,
+      "native_execution": false,
+      "ordinary_regeneration_fixture": "test_ordinary_and_individual_only_cli_regeneration_preserve_overlay_and_raw_maps passed through the actual main dataflow with source-free fixtures",
+      "runtime_or_sdk_imports": false,
+      "test_suites": [
+        {
+          "errors": 0,
+          "failures": 0,
+          "junit_seconds": 0.715,
+          "passed": 27,
+          "path": "docs/parity/current-source-overlay-tests.xml",
+          "sha256": "8040b1f882161848c1d09eee083a6a8384f07af7c5fe82451e3332a7d8a7dafc",
+          "skipped": 0
+        },
+        {
+          "errors": 0,
+          "failures": 0,
+          "junit_seconds": 1.497,
+          "passed": 76,
+          "path": "docs/parity/current-source-inventory-tests.xml",
+          "sha256": "c55bb9aa66e3b43649c306f319b2d0892dd80f45dbdc1e187f5f721d9036b7ce",
+          "skipped": 0
+        }
+      ],
+      "total_passed": 103
+    },
+    "report_sha256": "17cf1d311ff054adef84e626984cf57ff53d0ea4c3d95258b27ca133c3dc9031",
+    "scope": "Initial 103-test overlay acceptance preceded the discovered shallow-checkout Git fallback failure; retained as historical results, not rerun for this fix."
+  },
+  "link_occurrences": 160,
+  "materialized_sha256": {
+    "docs/parity/client-features.json": "c010246d770015f5422193605999af78d78cd99f46b7db443bc3af22412edd3e",
+    "docs/parity/current-source-followups.json": "cc5d19b504519e29b46a0d650e14cffeb6ce926dbe46dcd43bc4624fdbb0d9cd",
+    "docs/parity/current-source-reconciliation.json": "4bd23a5a65e81d051f66aed8a81b92610551548a4c148e02299634147665d2ad",
+    "docs/parity/individual-source-join.json": "273202f4d3a9142c87865d74a4852056c227f569002f3cda040eb8f1a2611946",
+    "docs/parity/join-policy.json": "a7a951e6ca3b127d95670c1e762939d77666653704a6314d6be43b6f137d6850",
+    "docs/parity/sdk-surface.json": "5e5e9fbcfee7d363860342599bd82d85c3e739ca5a449f2113f86b5de803994a",
+    "docs/parity/wave-2-reconciliation.json": "356968e288b059d4486c82ad6542b4cf7bfa8e283006e3d80d579946d33fd111"
+  },
+  "native_scene_frames_observed": 0,
+  "old_helper_edited": false,
+  "original_config_overloads_unchanged": 308,
+  "original_features_unchanged_except_additive_current_links": 567,
+  "original_individual_member_counts": [
+    14,
+    102,
+    666
+  ],
+  "original_module_records_unchanged_except_additive_current_links": 30,
+  "original_sdk_rows_unchanged_except_additive_current_links": 925,
+  "performed_checks": {
+    "actual_load_regeneration": {
+      "check_data": "passed",
+      "elapsed_seconds": 6.062,
+      "git_subprocess_calls_allowed": false,
+      "individual_only_regeneration_and_check": "passed-idempotent",
+      "path": "docs/parity/current-source-hermetic-load-check.json",
+      "sha256": "a1806b39ebe249bf8ae7fbc23ae528de4b55097695ab1e1fe84071237eaa8561"
+    },
+    "external_pytest_plugins": false,
+    "focused_overlay_tests": {
+      "errors": 0,
+      "failures": 0,
+      "junit_seconds": 1.549,
+      "passed": 43,
+      "path": "docs/parity/current-source-snapshot-tests.xml",
+      "sha256": "a207458138b8310df3c86e0d5e84b84832adfbd7b932a141f98c603da65029e1",
+      "skipped": 0
+    },
+    "interpreter": "CPython 3.12.10",
+    "maximum_shell_timeout_seconds": 30,
+    "native_execution": false,
+    "runtime_or_sdk_imports": false,
+    "source_free_cli_fixture": "Ordinary and individual-only CLI with JSON inventory inputs and snapshots, absent/changed live review, all subprocess/Git calls raising; exact output/anchor equality passed"
+  },
+  "protected_history_and_maps_files": 17,
+  "protected_mismatches": [],
+  "result": "passed-hermetic-report-load-regeneration-and-data-integrity",
+  "schema_version": 1,
+  "source_capture_checks": {
+    "f704_implementation_git_pins": 64,
+    "later_report_file_versions": 3,
+    "listener_execution_git": "bbc548175e4ad622d3fd329403cc364fa873a620",
+    "listener_later_postimages": 3,
+    "listener_publication_git": "78f37532643004b18e9854607cb77975fc8f65a9",
+    "report_documents": 34,
+    "report_versions_at_f704": 31,
+    "scope": "Initial capture compared the named fix bytes with frozen Git f704; later listener postimages separately matched publication and execution commits. Report loader validates read-time hashes/anchors; no full binary verification was repeated.",
+    "source_group_rebinding": false
+  },
+  "source_revision": "f704d76c1596eb0086d08e49dd049796a0220c2f",
+  "verification_promotions": 0
+}

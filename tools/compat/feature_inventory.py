@@ -1138,12 +1138,14 @@ def merge_parity(payload, previous=None, fragments=()):
                 elif explicit:
                     current.pop(key, None)
             individual_routes.preserve_record(current, old)
+            if "current_source_evidence" in old:
+                current["current_source_evidence"] = deepcopy(old["current_source_evidence"])
     for document in previous_documents:
         orphaned.update({r["id"]: r for r in document.get("orphaned_parity", [])})
     if orphaned:
         result["orphaned_parity"] = [orphaned[k] for k in sorted(orphaned)]
     for document in previous_documents:
-        for key in ("source_reconciliation", "pill_types", "individual_source_reconciliation"):
+        for key in ("source_reconciliation", "pill_types", "individual_source_reconciliation", "current_source_reconciliation"):
             if key in document:
                 result[key] = deepcopy(document[key])
     if "features" in result:
@@ -1347,7 +1349,7 @@ def join_source_receipts(client, sdk, documents, policy):
                                "sdk_names_outside_original_inventory": sorted((named | excluded) - {r["id"] for r in sdk["symbols"]})}
 
 
-def validate_source_join(client, sdk, report, policy):
+def validate_source_join(client, sdk, report, policy, *, check_current=True):
     """Data integrity only; never compile, execute adapters, or inspect CI."""
     counts = policy["required_counts"]
     for section, rows, count_key in (("features", client["features"], "features"),
@@ -1408,9 +1410,15 @@ def validate_source_join(client, sdk, report, policy):
             if row["id"] not in report["sdk_symbol_partition"].get(row["native_relation"]["status"], []):
                 raise ValueError(f"reconciliation SDK relation differs: {row['id']}")
     individual_checks = individual_routes.validate(client, sdk)
+    current_checks = validate_current_source_overlay(client, sdk, report) if check_current else {}
+    if check_current and policy.get("current_source_overlay"):
+        receipt = client.get("current_source_reconciliation", {}).get("input_receipt", {})
+        expected = policy["current_source_overlay"]
+        if (receipt.get("path"), receipt.get("sha256")) != (expected["path"], expected["sha256"]):
+            raise ValueError("materialized current overlay differs from explicit policy")
     return {"features": len(selected), "modules": len(client["modules"]), "sdk_symbols": len(sdk["symbols"]),
             "compatibility_apis": len(client["compatibility_apis"]), "pill_types": len(types),
-            "verified_before": before, "verified_after": after, "result": "passed-data-only", **individual_checks}
+            "verified_before": before, "verified_after": after, "result": "passed-data-only", **individual_checks, **current_checks}
 
 
 class SourceSnapshot:
@@ -1613,7 +1621,9 @@ def materialize_source_join(client, sdk, documents, sources, policy, project, pr
     report["source_evidence_fingerprint"] = _sha(_json_text(report["source_file_pins"]).encode("utf-8"))
     report["proof_boundary"] = "Published author claims and targeted source anchors only. No code review, CI query, compilation, plugin/native execution, UI/frames or verified promotions. Reference counts do not establish runtime effects."
     report["sdk_925_boundary"] = policy["sdk_claim_boundary"]
-    report["data_checks"] = validate_source_join(result, sdk_result, report, policy)
+    if result.get("current_source_reconciliation"):
+        report["current_source_reconciliation"] = deepcopy(result["current_source_reconciliation"])
+    report["data_checks"] = validate_source_join(result, sdk_result, report, policy, check_current=False)
     metadata = {"report": "docs/parity/wave-2-reconciliation.json", "receipts": {k: {f: v[f] for f in ("path", "sha256")} for k, v in sources.items()},
                 "source_evidence_fingerprint": report["source_evidence_fingerprint"], "proof_boundary": report["proof_boundary"]}
     result["source_reconciliation"] = deepcopy(metadata)
@@ -2034,6 +2044,11 @@ def render_index(payload, sdk):
             f"**Individual source routes:** {counts['sdk_symbols']} SDK symbols and {counts['module_maps']} module maps / {counts['module_members']} original member identities.",
             "[Exact individual join](individual-source-join.json) · [Captured-input audit](individual-source-input-audit.json) · [Previous fac6 cohort](cohorts/9bfce05f.json).",
             "Source dispositions retain partial/unsupported operations and active findings; route completeness grants no native/visual verification.", ""]
+    current = payload.get("current_source_reconciliation")
+    if current:
+        lines[8:8] = [f"**Current review overlay:** {current['counts']['source_closed_scopes']} review-scoped source closures; "
+                      f"{current['counts']['execution_blockers']} separate execution blockers; no verification promotions.",
+                      "[Effective source/evidence layer](current-source-reconciliation.md) · [Overlay handoff](current-source-overlay-handoff.md).", ""]
     return "\n".join(lines)
 
 
@@ -2102,6 +2117,7 @@ def render_individual_reconciliation(client, sdk, report):
     joined = report["individual_source_reconciliation"]
     counts = joined["counts"]
     context = joined.get("context", {})
+    current = report.get("current_source_reconciliation")
     apis = Counter(row["implementation"]["status"] for row in client["compatibility_apis"])
     lines = ["# Individual source-route reconciliation", "",
              f"**{counts['sdk_symbols']}/{len(sdk['symbols'])} SDK symbols; {counts['module_maps']} module maps; {counts['module_members']} exact Original member identities. Verification promotions: 0.**", "",
@@ -2121,22 +2137,26 @@ def render_individual_reconciliation(client, sdk, report):
               "Raw map hashes and each author's source boundary/pins are retained verbatim. Shared paths may have different hashes in different captured maps.",
               "Route lines remain captured lines; current source changes are listed separately in the input audit. Matching a later Git blob does not make it tested.",
               "General supplies a d7d499f7 boundary without an author pin table. Its raw map is pinned; separately derived Git pins are labelled in the audit.", "",
-              "## Findings retained for follow-up", "",
+              "## Captured author findings (historical)" if current else "## Findings retained for follow-up", "",
               "| Receipt owner | Finding | Reported state |", "|---|---|---|"]
     for finding in joined["findings"]:
         value = finding["reported"]
         lines.append(f"| {finding['receipt']['owner']} | `{value.get('id', 'unnamed')}` | {value.get('status', 'source finding; no closure supplied by join')} |")
     lines += [""]
-    lines.extend("- " + item for item in context.get("assigned_followups", []))
+    if current:
+        lines += ["The raw author states above remain immutable. The effective later closures are keyed by origin report and finding/scope ID.", "",
+                  render_current_source_overlay(current, embedded=True)]
+    else:
+        lines.extend("- " + item for item in context.get("assigned_followups", []))
     lines += ["",
               "A new production edit or remediation report is not automatically a closure overlay. This data join creates no new behavior finding or review verdict.", "",
               "## Execution evidence boundary", ""]
     for evidence in context.get("execution_evidence", []):
         lines.append(f"- **{evidence['label']} {evidence['run_id']} / {evidence['commit']}**: {evidence['status']}. {evidence['scope']} [{Path(evidence['report']).name}](../../{evidence['report']}).")
-    if context.get("latest_ipa"):
+    if context.get("latest_ipa") and not current:
         ipa = context["latest_ipa"]
         lines.append(f"- Full IPA **{ipa['run_id']} / {ipa['commit']}**: {ipa['status_at_handoff']}; not queried or promoted to success by this join.")
-    if context.get("native_ui_plan"):
+    if context.get("native_ui_plan") and not current:
         lines.append("- " + context["native_ui_plan"])
     lines += ["",
               "## Integrity", "",
@@ -2148,6 +2168,352 @@ def render_individual_reconciliation(client, sdk, report):
 
 def _json_text(value):
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _source_scope_key(value):
+    if not isinstance(value, dict):
+        raise ValueError("source overlay scope identity must be an object")
+    path = individual_routes._path(value.get("origin_report"))
+    identity = value.get("id")
+    individual_routes._text(identity, "finding/scope identity")
+    return path, identity
+
+
+def _source_overlay_targets(client, sdk, groups):
+    """Resolve only explicit stable IDs; a module-scope link is not a member pass."""
+    if not isinstance(groups, dict) or len(groups) > 128:
+        raise ValueError("invalid/bounded source overlay target groups")
+    features = {row["id"] for row in client.get("features", [])}
+    symbols = {row["id"] for row in sdk.get("symbols", [])}
+    modules = {row["id"]: row for row in client.get("modules", {}).values()}
+    members = {name: {individual_routes.member_key(row) for row in module.get("public_method_bodies", [])}
+               for name, module in modules.items()}
+    result = {}
+    for name, targets in groups.items():
+        individual_routes._text(name, "target group")
+        resolved, seen = [], set()
+        for target in individual_routes._list(targets, "overlay targets", 4096, nonempty=True):
+            individual_routes._flags(target)
+            kind, identity = target.get("kind"), target.get("id")
+            if kind == "feature":
+                valid = identity in features
+            elif kind == "sdk-symbol":
+                valid = identity in symbols
+            elif kind == "module-scope":
+                valid = identity in modules
+            elif kind == "module-member":
+                valid = identity in members.get(target.get("module_id"), set())
+            else:
+                valid = False
+            if not valid:
+                raise ValueError(f"unknown source overlay target: {target}")
+            key = (kind, target.get("module_id"), identity)
+            if key in seen:
+                raise ValueError(f"duplicate source overlay target in {name}: {identity}")
+            seen.add(key)
+            resolved.append(deepcopy(target))
+        result[name] = resolved
+    return result
+
+
+def _source_report_snapshot_path(pin, required=False):
+    """Content-addressed raw report text; only old inputs may depend on Git."""
+    if not isinstance(pin, dict):
+        raise ValueError("source overlay document pin must be an object")
+    sha = individual_routes._sha(pin.get("sha256"))
+    if type(pin.get("bytes")) is not int or not 0 <= pin["bytes"] <= individual_routes.MAX_BYTES:
+        raise ValueError("overlay document requires a bounded captured byte count")
+    if type(required) is not bool:
+        raise ValueError("require_report_snapshots must be a Boolean")
+    if "snapshot_path" not in pin:
+        if required:
+            raise ValueError("hermetic source overlay requires every report snapshot")
+        return None
+    path = individual_routes._path(pin["snapshot_path"])
+    if path != f"docs/parity/source-report-snapshots/{sha}.md":
+        raise ValueError("report snapshot path must select its exact captured SHA-256 filename")
+    return path
+
+
+def compile_current_source_overlay(client, sdk, document):
+    """Pure effective source states; captured claims and implementation stay intact."""
+    if not isinstance(document, dict) or type(document.get("schema_version")) is not int or document["schema_version"] != 1:
+        raise ValueError("unknown current source overlay schema")
+    individual_routes._flags(document)
+    if any(key in document for key in ("features", "symbols", "modules", "compatibility_apis", "implementation", "native_relation")):
+        raise ValueError("source overlay cannot override inventory/implementation fields")
+    groups = _source_overlay_targets(client, sdk, document.get("target_groups"))
+    documents = document.get("documents", {})
+    if not isinstance(documents, dict) or not documents or len(documents) > 96:
+        raise ValueError("invalid/bounded source overlay document pins")
+    for path, pin in documents.items():
+        individual_routes._path(path)
+        _source_report_snapshot_path(pin, document.get("require_report_snapshots", False))
+    pins = document.get("source_pins", {})
+    if not isinstance(pins, dict) or len(pins) > 256:
+        raise ValueError("invalid/bounded implementation snapshot pins")
+    for path, pin in pins.items():
+        individual_routes._path(path)
+        individual_routes._sha(pin.get("sha256"))
+        if not re.fullmatch(r"[0-9a-f]{40}", pin.get("git_revision", "")):
+            raise ValueError("implementation pin must keep its immutable Git revision")
+    origins = {}
+    for origin in individual_routes._list(document.get("origins"), "origin scopes", 256, nonempty=True):
+        individual_routes._flags(origin)
+        key = _source_scope_key(origin)
+        if key in origins:
+            raise ValueError(f"duplicate source overlay origin identity: {key}")
+        if key[0] not in documents or origin.get("identity_kind") not in {"finding", "named-route", "named-scope"}:
+            raise ValueError("source overlay origin lacks a pinned report/kind")
+        individual_routes._text(origin.get("anchor"), "origin report anchor")
+        if origin["id"] not in origin["anchor"]:
+            raise ValueError("origin anchor must name its exact finding/scope identity")
+        names = individual_routes._list(origin.get("target_groups"), "scope target groups", 32, nonempty=True)
+        if len(names) != len(set(names)) or not set(names) <= groups.keys():
+            raise ValueError("unknown/duplicate scope target group")
+        origins[key] = origin
+    closures = {}
+    for closure in individual_routes._list(document.get("closures"), "source closures", 256, nonempty=True):
+        individual_routes._flags(closure)
+        key = _source_scope_key(closure)
+        if key not in origins or key in closures:
+            raise ValueError(f"unknown/duplicate source closure identity: {key}")
+        if closure.get("source_state") not in {"source-closed", "source-partial", "source-open"}:
+            raise ValueError("source closure state cannot be a runtime/verification promotion")
+        individual_routes._text(closure.get("scope"), "review-scoped closure boundary")
+        individual_routes._list(closure.get("limitations"), "closure limitations", 32, nonempty=True)
+        for citation in individual_routes._list(closure.get("reviews"), "independent review citations", 16, nonempty=True):
+            if citation.get("path") not in documents:
+                raise ValueError("source closure review has no pinned document")
+            individual_routes._text(citation.get("anchor"), "review verdict anchor")
+        for path in closure.get("source_paths", []):
+            if path not in pins:
+                raise ValueError("source closure fix path has no captured Git pin")
+        closures[key] = closure
+    if closures.keys() != origins.keys():
+        raise ValueError("current source overlay origin/closure partition incomplete")
+    visiting, done = set(), set()
+    def visit(key):
+        if key in visiting:
+            raise ValueError("cyclic source closure prerequisite")
+        if key in done:
+            return
+        visiting.add(key)
+        dependencies = [_source_scope_key(value) for value in closures[key].get("requires", [])]
+        if len(dependencies) > 32 or len(dependencies) != len(set(dependencies)):
+            raise ValueError("duplicate/bounded source closure prerequisites")
+        for dependency in dependencies:
+            if dependency not in closures:
+                raise ValueError("unknown source closure prerequisite")
+            visit(dependency)
+            if closures[key]["source_state"] == "source-closed" and closures[dependency]["source_state"] != "source-closed":
+                raise ValueError("aggregate source closure still has an open prerequisite")
+        visiting.remove(key)
+        done.add(key)
+    for key in closures:
+        visit(key)
+    # Every formerly assigned captured finding and named reset route must remain
+    # accounted for. A separate owner-reported source-fixed item is not promoted.
+    captured = client.get("individual_source_reconciliation", {}).get("findings", [])
+    assigned = {(row["receipt"]["path"], row["reported"]["id"]) for row in captured
+                if row["reported"].get("status") != "source-fixed"}
+    for module in client.get("modules", {}).values():
+        source = module.get("individual_source", {})
+        assigned.update((source["receipt"]["path"], value) for value in source.get("reported", {}).get("remaining_portable_routes", []))
+    if not assigned <= origins.keys():
+        raise ValueError("current source overlay dropped a captured assigned finding/route")
+    effective = []
+    for key, closure in closures.items():
+        origin = origins[key]
+        targets = []
+        for name in origin["target_groups"]:
+            for target in groups[name]:
+                if target not in targets:
+                    targets.append(deepcopy(target))
+        effective.append({**deepcopy(closure), "identity_kind": origin["identity_kind"],
+                          "origin_anchor": origin["anchor"], "origin_sha256": documents[key[0]]["sha256"],
+                          "targets": targets, "verified": False, "ported": False,
+                          "native_execution_claimed": False, "resolved_by_data_join": False})
+    for collection in ("execution_evidence", "execution_blockers", "execution_history"):
+        seen = set()
+        for item in individual_routes._list(document.get(collection, []), collection, 64):
+            individual_routes._text(item.get("id"), collection + " identity")
+            if item["id"] in seen:
+                raise ValueError("duplicate execution evidence/blocker identity")
+            seen.add(item["id"])
+            individual_routes._text(item.get("scope"), "execution evidence boundary")
+            if item.get("report"):
+                if item["report"] not in documents:
+                    raise ValueError("execution evidence lacks its pinned report")
+                individual_routes._text(item.get("anchor"), "execution report anchor")
+            elif item.get("source") != "coordinator-handoff":
+                raise ValueError("execution observation needs a report or explicit coordinator attribution")
+    for delta in document.get("later_evidence_source_deltas", []):
+        if delta.get("report") not in documents or delta.get("changes_original_route_assignments") is not False:
+            raise ValueError("later execution source delta must keep original source groups")
+        for path, pin in delta.get("source_pins", {}).items():
+            individual_routes._path(path)
+            individual_routes._sha(pin.get("sha256"))
+            if not re.fullmatch(r"[0-9a-f]{40}", pin.get("git_revision", "")):
+                raise ValueError("execution delta needs its own immutable Git source pin")
+    closed = [row for row in effective if row["source_state"] == "source-closed"]
+    return {"effective_scopes": effective,
+            "counts": {"registered_scopes": len(origins), "source_closed_scopes": len(closed),
+                       "remaining_source_scopes": len(effective) - len(closed),
+                       "identity_kinds": dict(sorted(Counter(row["identity_kind"] for row in effective).items())),
+                       "captured_assigned_scopes": len(assigned),
+                       "captured_assigned_source_closed": sum((row["origin_report"], row["id"]) in assigned for row in closed),
+                       "report_documents": len(documents), "implementation_source_pins": len(pins),
+                       "execution_blockers": len(document.get("execution_blockers", [])), "verification_promotions": 0}}
+
+
+def load_current_source_overlay(project, policy):
+    descriptor = policy.get("current_source_overlay")
+    if descriptor is None:
+        return None
+    project = Path(project).resolve()
+    path = individual_routes._path(descriptor.get("path"))
+    file = project / path
+    if not file.is_file() or not file.resolve().is_relative_to(project) or file.stat().st_size > 4 * 1024 * 1024:
+        raise ValueError("current source overlay missing/outside project/over byte bound")
+    raw = file.read_bytes()
+    if len(raw) > 4 * 1024 * 1024:
+        raise ValueError("current source overlay exceeds byte bound")
+    sha = _sha(raw)
+    if sha != individual_routes._sha(descriptor.get("sha256")):
+        raise ValueError("current source overlay revision differs from explicit policy")
+    document = json.loads(raw.decode("utf-8"), object_pairs_hook=individual_routes._json_object)
+    if raw != _json_text(document).encode("utf-8"):
+        raise ValueError("owned source overlay input must use canonical inventory JSON serialization")
+    if not isinstance(document.get("documents"), dict) or len(document["documents"]) > 96:
+        raise ValueError("invalid/bounded source overlay document pins")
+    texts = {}
+    for report, pin in document.get("documents", {}).items():
+        individual_routes._path(report)
+        snapshot = _source_report_snapshot_path(pin, document.get("require_report_snapshots", False))
+        if snapshot is not None:
+            snapshot_file = project / snapshot
+            if (not snapshot_file.resolve().is_relative_to(project) or not snapshot_file.is_file()
+                    or snapshot_file.stat().st_size > individual_routes.MAX_BYTES):
+                raise ValueError(f"captured report snapshot missing/outside project/over byte bound: {snapshot}")
+            # Prefer and validate the archive even if the live report still matches.
+            # A broken shipped archive must not be hidden by local files or Git.
+            with snapshot_file.open("rb") as source:
+                data = source.read(pin["bytes"] + 1)
+        else:
+            # Backward compatibility only: inputs without archived reports are
+            # explicitly non-hermetic and may need locally available Git history.
+            report_file = project / report
+            data = report_file.read_bytes() if report_file.is_file() and report_file.resolve().is_relative_to(project) and report_file.stat().st_size <= individual_routes.MAX_BYTES else None
+            if data is None or _sha(data) != pin["sha256"]:
+                revision = pin.get("git_revision", "")
+                if not re.fullmatch(r"[0-9a-f]{40}", revision):
+                    raise ValueError(f"legacy non-hermetic captured review bytes unavailable: {report}")
+                import subprocess
+                data = subprocess.check_output(["git", "show", revision + ":" + report], cwd=project, timeout=10)
+        if len(data) > individual_routes.MAX_BYTES or len(data) != pin["bytes"] or _sha(data) != pin["sha256"]:
+            raise ValueError(f"captured source-review pin mismatch: {report}")
+        texts[report] = data.decode("utf-8").splitlines()
+    citations = [{"path": row["origin_report"], "anchor": row["anchor"]} for row in document.get("origins", [])]
+    citations += [ref for row in document.get("closures", []) for ref in row.get("reviews", [])]
+    citations += [{"path": item["report"], "anchor": item["anchor"]} for name in ("execution_evidence", "execution_blockers", "execution_history")
+                  for item in document.get(name, []) if item.get("report")]
+    anchors = []
+    for citation in citations:
+        lines = texts.get(citation["path"], [])
+        matches = [(index, line) for index, line in enumerate(lines, 1) if citation["anchor"] in line]
+        if len(matches) != 1:
+            raise ValueError(f"source overlay report anchor missing/ambiguous: {citation}")
+        index, line = matches[0]
+        anchor = {"path": citation["path"], "sha256": document["documents"][citation["path"]]["sha256"],
+                  "anchor": citation["anchor"], "line": index, "text": line}
+        if anchor not in anchors:
+            anchors.append(anchor)
+    return {"input_receipt": {"path": path, "sha256": sha, "bytes": len(raw)},
+            "input": document, "report_anchors": anchors,
+            "report_anchors_fingerprint": individual_routes.fingerprint(anchors)}
+
+
+def apply_current_source_overlay(client, sdk, loaded):
+    result, surface = deepcopy(client), deepcopy(sdk)
+    compiled = compile_current_source_overlay(result, surface, loaded["input"])
+    summary = {"schema_version": 1, "kind": "current-review-scoped-source-overlay", **deepcopy(loaded), **compiled}
+    records = {("feature", row["id"]): row for row in result.get("features", [])}
+    records.update({("sdk-symbol", row["id"]): row for row in surface.get("symbols", [])})
+    records.update({("module-scope", row["id"]): row for row in result.get("modules", {}).values()})
+    for row in records.values():
+        row.pop("current_source_evidence", None)
+    for scope in compiled["effective_scopes"]:
+        for target in scope["targets"]:
+            kind = target["kind"]
+            record = records[("module-scope", target["module_id"])] if kind == "module-member" else records[(kind, target["id"])]
+            link = {"origin_report": scope["origin_report"], "id": scope["id"], "source_state": scope["source_state"],
+                    "target": deepcopy(target), "overlay_sha256": loaded["input_receipt"]["sha256"],
+                    "scope": scope["scope"], "verified": False, "ported": False}
+            record.setdefault("current_source_evidence", []).append(link)
+    result["current_source_reconciliation"] = deepcopy(summary)
+    surface["current_source_reconciliation"] = deepcopy(summary)
+    return result, surface, summary
+
+
+def validate_current_source_overlay(client, sdk, report=None):
+    summary = client.get("current_source_reconciliation")
+    if not summary and not sdk.get("current_source_reconciliation"):
+        return {}
+    if summary != sdk.get("current_source_reconciliation") or report is not None and summary != report.get("current_source_reconciliation"):
+        raise ValueError("current source overlay cohorts differ between reports")
+    document = summary["input"]
+    # The input is stored using canonical generator JSON, so its raw policy pin is
+    # also independently recoverable without reading any moving report/source file.
+    if _sha(_json_text(document).encode("utf-8")) != summary["input_receipt"]["sha256"]:
+        raise ValueError("materialized source overlay input changed")
+    if individual_routes.fingerprint(summary["report_anchors"]) != summary["report_anchors_fingerprint"]:
+        raise ValueError("captured source overlay report anchors changed")
+    expected_client, expected_sdk, expected = apply_current_source_overlay(client, sdk, {
+        key: summary[key] for key in ("input_receipt", "input", "report_anchors", "report_anchors_fingerprint")})
+    if expected != summary:
+        raise ValueError("materialized effective source closure partition changed")
+    for original, rebuilt, sections in ((client, expected_client, ("features", "modules")), (sdk, expected_sdk, ("symbols",))):
+        for section in sections:
+            left, right = original.get(section, []), rebuilt.get(section, [])
+            pairs = zip(left.values(), right.values()) if isinstance(left, dict) else zip(left, right)
+            if any(a.get("current_source_evidence") != b.get("current_source_evidence") for a, b in pairs):
+                raise ValueError("materialized source overlay target links changed")
+    return {"current_source_closed_scopes": summary["counts"]["source_closed_scopes"],
+            "current_source_remaining_scopes": summary["counts"]["remaining_source_scopes"],
+            "current_execution_blockers": summary["counts"]["execution_blockers"]}
+
+
+def render_current_source_overlay(summary, embedded=False):
+    document, counts = summary["input"], summary["counts"]
+    lines = ["## Effective source closures" if embedded else "# Current source remediation / evidence overlay", "",
+             f"**{counts['source_closed_scopes']} source-closed scopes; {counts['remaining_source_scopes']} registered source scopes remain open. "
+             f"Execution blockers: {counts['execution_blockers']}. Verified/ported promotions: 0.**", "",
+             f"Source snapshot: `{document['source_revision']}`. [Machine projection](current-source-reconciliation.json) · "
+             "[Explicit input](current-source-followups.json) · [Handoff](current-source-overlay-handoff.md).", "",
+             "Old raw maps, reported open fields, signatures, dispositions and their source pins remain unchanged. "
+             "A source-closed counterexample does not implement every remaining partial/unsupported contract.", "",
+             "| Origin / exact identity | Effective source state | Independent closure evidence |", "|---|---|---|"]
+    for row in summary["effective_scopes"]:
+        reviews = ", ".join(f"[{Path(ref['path']).name}](../../{ref['path']})" for ref in row["reviews"])
+        lines.append(f"| [{Path(row['origin_report']).name}](../../{row['origin_report']}) · `{row['id']}` | {row['source_state']} | {reviews} |")
+    lines += ["", "Scope bounds, dependency chains, exact inventory targets and frozen fix-file pins are in the JSON. "
+              "IDs such as R1, S1 and NFD-01 are local to their origin report, never global aliases.", "",
+              "### Available execution evidence", ""]
+    for evidence in document.get("execution_evidence", []):
+        link = f" [{Path(evidence['report']).name}](../../{evidence['report']})" if evidence.get("report") else " (coordinator handoff)"
+        lines.append(f"- **{evidence['id']} — {evidence['status']}**: {evidence['scope']}{link}")
+    if document.get("execution_history"):
+        lines += ["", "### Earlier execution blockers (historical)", ""]
+        lines.extend(f"- **{item['id']} / {item.get('run_id', 'no run')} — {item['status']}**: {item['scope']}"
+                     for item in document["execution_history"])
+    lines += ["", "### Current execution blockers / pending acceptance", ""]
+    for blocker in document.get("execution_blockers", []):
+        lines.append(f"- **{blocker['id']} — {blocker['status']}**: {blocker['scope']}")
+    lines.extend("- " + value for value in document.get("pending_acceptance", []))
+    lines += ["", "Historical failures and later isolated passes retain their exact scopes. They neither reopen independent source closures nor complete the full five-child/UIKit gates. "
+              "No native scene frames were observed by this join.", ""]
+    return "\n".join(lines)
 
 
 def main(argv=None):
@@ -2177,6 +2543,7 @@ def main(argv=None):
     individual_policy_path = args.individual_policy or args.source_join or args.project_root / "docs/parity/join-policy.json"
     individual_policy = _load_json(individual_policy_path) or {}
     individual_manifests = individual_routes.load_manifests(args.project_root, individual_policy)
+    current_overlay = load_current_source_overlay(args.project_root, individual_policy)
     if args.individual_only and not individual_manifests:
         parser.error("--individual-only requires an explicit nonempty individual_manifests policy")
     documents, sources = {}, {}
@@ -2229,12 +2596,27 @@ def main(argv=None):
     if individual_manifests:
         payload, sdk, individual = individual_routes.join(payload, sdk, individual_manifests, individual_policy.get("individual_context"))
         reconciliation = individual_routes.reconcile(reconciliation or _load_json(args.docs / "wave-2-reconciliation.json"), payload, sdk, individual)
-        if reconciliation.get("original_id_sets"):
-            reconciliation["data_checks"] = validate_source_join(payload, sdk, reconciliation, individual_policy)
+    current = None
+    if current_overlay:
+        payload, sdk, current = apply_current_source_overlay(payload, sdk, current_overlay)
+        reconciliation = reconciliation or _load_json(args.docs / "wave-2-reconciliation.json") or {}
+        reconciliation["current_source_reconciliation"] = deepcopy(current)
+        if individual is not None:
+            individual["current_source_overlay"] = {"report": "docs/parity/current-source-reconciliation.json",
+                                                     "input_receipt": deepcopy(current["input_receipt"]),
+                                                     "counts": deepcopy(current["counts"])}
+            payload["individual_source_reconciliation"] = deepcopy(individual)
+            sdk["individual_source_reconciliation"] = deepcopy(individual)
+            reconciliation["individual_source_reconciliation"] = deepcopy(individual)
+    if reconciliation and reconciliation.get("original_id_sets"):
+        reconciliation["data_checks"] = validate_source_join(payload, sdk, reconciliation, individual_policy)
     outputs = {client_path: _json_text(payload), sdk_path: _json_text(sdk),
                args.docs / "index.md": render_index(payload, sdk)}
     if individual is not None:
         outputs[args.docs / "individual-source-join.json"] = _json_text(individual)
+    if current is not None:
+        outputs[args.docs / "current-source-reconciliation.json"] = _json_text(current)
+        outputs[args.docs / "current-source-reconciliation.md"] = render_current_source_overlay(current)
     if not args.docs_only:
         outputs.update({args.out / "features.json": _json_text(payload), args.out / "features-report.md": render_index(payload, sdk)})
     if reconciliation is not None:
