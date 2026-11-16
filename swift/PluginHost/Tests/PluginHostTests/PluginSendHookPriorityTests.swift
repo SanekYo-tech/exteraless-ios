@@ -171,7 +171,8 @@ final class PluginSendHookPriorityTests: HostLifecycleTestCase {
         let f = try fixture(engine: engine)
         try await loadSenders(f)
         let old = try XCTUnwrap(f.host.callbackOwner(id: "alpha"))
-        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: Self.native)) }
+        let native = Self.native
+        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: native)) }
         _ = try await maintenanceTestWait(entered)
         let reload = Task { try await f.host.reloadPlugin(id: "alpha") }
         let retired = await waitUntil({ f.host.callbackOwner(id: "alpha") == nil }, timeout: 1)
@@ -199,7 +200,8 @@ final class PluginSendHookPriorityTests: HostLifecycleTestCase {
         let f = try fixture(engine: engine)
         try await loadSenders(f)
         let owner = f.host.callbackOwner(id: "beta")
-        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: Self.native)) }
+        let native = Self.native
+        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: native)) }
         _ = try await maintenanceTestWait(entered)
         try f.host.setGrantedPermissions(id: "beta", permissions: [])
         gate.signal()
@@ -222,7 +224,8 @@ final class PluginSendHookPriorityTests: HostLifecycleTestCase {
         })
         let f = try fixture(engine: engine)
         try await loadSenders(f)
-        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: Self.native)) }
+        let native = Self.native
+        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: native)) }
         _ = try await maintenanceTestWait(entered)
         let unload = Task { try await f.host.setPluginEnabled(id: "beta", false) }
         let retired = await waitUntil({ f.host.callbackOwner(id: "beta") == nil }, timeout: 1)
@@ -247,7 +250,8 @@ final class PluginSendHookPriorityTests: HostLifecycleTestCase {
         })
         let f = try fixture(engine: engine)
         try await loadSenders(f)
-        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: Self.native)) }
+        let native = Self.native
+        let waiting = Task { try await f.host.events.preSendMessageResult(.init(account: 0, paramsJSON: native)) }
         _ = try await maintenanceTestWait(entered)
         waiting.cancel()
         do { _ = try await waiting.value; XCTFail("cancelled native send must not publish a decision") }

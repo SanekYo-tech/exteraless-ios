@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `d296e456`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+**HEAD `78f37532`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
@@ -32,19 +32,26 @@ ExteralessHarness в test_clients. Точное исключение и bounded 
 README/PLAN/runtime docs и Obsidian обновлены; source closure overlays в parity
 сводит `ses_e1fc2b7aeffe9GcuqtB99tTZZz`.
 
-**Три текущих watchers на d296e456 — не poll:**
-- Mac43788170016: `sh_1e2088c56001gl8CaWIXs06pOx`, `python-d296e456-watch.log`.
+**Текущий UIKit watcher — не poll:**
 - UIKit43788169856: `sh_1e2088cca001U378Kki29sg3D6`, `uikit-d296e456-watch.log`.
-- Compat43788114300: `sh_1e208e59f001MlZjzxhFgsAI9Q`, `compat-d296e456-watch.log`.
+Mac43788170016/d296e456 завершён: candidate/7ingress/4ModeABA/UI-model/TL/Java/
+Core/Hooks PASS. Host test compiler остановился на четырёх `Self.native` внутри
+Task; строки вынесены до capture, все barriers/assertions сохранены. Listener
+в этом старом run ещё падал; его исправление78f37532 уже отдельно DarwinPASS.
+Compat43788453589/78f37532 завершён GREEN; его watcher завершён.
+Compat43788114300/d296e456 завершён GREEN:712Core/273Host/30Hooks
+(9.111/5.571/0.657s),478PythonPASS/36skip (172.88s).
 Darwin compiler fixes и Postbox visibility опубликованы; старый UI postimage
 сохранён, новый admission manifest — `plugin-ui-darwin-compiler-postimage.json`.
+Listener fix78f37532 новее этих трёх runs. Текущий Mac собирает остальные
+независимые результаты; его ещё не отменяем новым dispatch.
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **d296e456**: Darwin compiler corrections / scoped Postbox harness access |
+| HEAD | **78f37532**: verified Darwin listener fix поверх d296e456 compiler/graph fixes |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
-| Linux Swift | **43784503847 / f704d76c:712 Core /273 Host /30 Hooks PASS**, 9.176/5.545/0.356s |
-| Linux Python | **43786135131 /a823e619 GREEN:478 PASS /36skip**,147.86s |
+| Linux Swift | **43788114300 /d296e456 GREEN:712 Core /273 Host /30 Hooks**,9.111/5.571/0.657s |
+| Linux Python | **43788114300 /d296e456 GREEN:478 PASS /36skip**,172.88s |
 | FD / mode native | **47 FD PASS** в43784959730; **7 ingress PASS** в43781210777; **4 Mode ABA PASS** в43783735908 |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
 | Native XCTest / UIKit | Finaltooling: **37labels /89sources /92classes /434methods**,20scenes и5realSDKchildren; delivery10/10verified, execution/framespending |

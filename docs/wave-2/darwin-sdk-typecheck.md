@@ -21,3 +21,18 @@ correction and its selected verifier. The preceding final-cohort manifest is
 preserved byte-for-byte. All13 selected files and3 shared composition regions
 pass the existing source checks; the component inventory has complete sparse
 coverage. Native execution remains pending.
+
+## Follow-up: 43788170016 / d296e456
+
+The Darwin record/syscall and UI callback fixes compiled. The next Host/test
+build reached four region-isolation checker failures in
+`PluginSendHookPriorityTests`: each Task read `Self.native` inside its body.
+Each test now evaluates that static String into a local immutable value before
+creating the Task. The held worker barriers, cancellation/retirement schedules,
+deadlines and all assertions are retained; no production source is changed.
+The same run predates the independently passed listener fix78f37532.
+
+Independent stages in43788170016 passed the native candidate fixture, all7
+ingress tests, all4 Mode ABA tests, the standalone UI model fixture, TL/Java
+fixtures and Core/Hooks. Host test compilation still failed on the four captures,
+so no full Host, HNS or five-child runtime pass is inferred from those successes.
