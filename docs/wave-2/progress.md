@@ -4,26 +4,30 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `d717af9e`.** UIKit43785534046 выполняется, watcher
-`sh_1e1efc9e3001YcmhVHUZKOCLSQ` (`uikit-d717af9e-watch.log`).
-Mac43785374048 и Compat43785348360 завершились на одном fixture-import:
-изолированный child подтягивал pytest через helper. Исправлены helper-only
-import names; локально4PASS/10platform-skips и изолированный emitterPASS.
-Полный Linux Swift срез уже подтвердил712Core/273Host/30Hooks; отдельныйFD47
-также PASS43784959730. Свежие Mac5/UIKit20 результаты пока ожидаются.
+**HEAD `a823e619`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+(288 файлов). Все известные source findings закрыты независимым ревью;
+полная native/UIKit-приёмка нового среза ещё выполняется.
 
-**Общий Host/SDK/UIKit source cohort опубликован: `f704d76c1596eb0086d08e49dd049796a0220c2f`,288paths.**
-59SDKrawpins/10inputreceipts ивсеcurrentSDK/source-identityгруппы сверены поGitindex;
-30ConfigtestsPASS. ModeABA CI43783735908/11b87846:4nativePASS/0skip,64inputs/13spans.
-DEV-LIFECYCLE01 independentlysource-closed. ПоследняяfullIPA40independentPASS.
-Послеcommit:полныйCompatCI, затемMac5children иUIKit20/434methods. FD47timeout
-диагностируетсянаfrozenCI; дваcancellationwaiterfixturecyclesисправленывготовомсрезе.
+**Оба watchers завершены.** Compat43786135131/a823e619 GREEN:
+478 passed,36 skipped,147.86s. Mac43786148988 прошёл91 packaging,63 plumbing
+и49 finite SDK tests (13 пропусков), затем failed на readiness реального listener.
+`ses_e1f7a723bffeBMTKIuM4Qx6b3m` получает конкретное NWListener-состояние отдельным
+bounded Darwin-прогоном; production fake-readiness не допускается.
+
+Mac43785374048 и Compat43785348360 остановились на импорте pytest из helper
+в изолированном child. Исправление опубликовано в a823e619; локально4PASS,
+10 явных Windows/C-пропусков и изолированный emitterPASS.
+UIKit43785534046 завершился до компиляции на `aquery`; tooling owner
+`ses_e25088d28ffem4nSC3FcOP577B` разбирает сохранённый `build.log` и исправляет граф.
+Документацию/Obsidian обновляет `ses_e1e097ef2ffel8U59jMlx2vf1a`.
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **f704d76c**: complete SDK/Host/UIKit source cohort published; 288paths |
+| HEAD | **a823e619**: isolated fixture helper fix поверх общего source cohort |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
-| Последний разобранный Linux | **43764252538 / aca0eb38 GREEN:712 Core /180 Host /30 Hooks**; **43769700681 /31287b92:398 pytest PASS/23skip (48.45s)** |
+| Linux Swift | **43784503847 / f704d76c:712 Core /273 Host /30 Hooks PASS**, 9.176/5.545/0.356s |
+| Linux Python | **43786135131 /a823e619 GREEN:478 PASS /36skip**,147.86s |
+| FD / mode native | **47 FD PASS** в43784959730; **7 ingress PASS** в43781210777; **4 Mode ABA PASS** в43783735908 |
 | SDK Config | **276 implemented / 0 blocked / 32 unsupported**, ровно 308 API; 59 source pins / 10 input receipts |
 | Native XCTest / UIKit | Finaltooling: **37labels /89sources /92classes /434methods**,20scenes и5realSDKchildren; delivery10/10verified, execution/framespending |
 | Полная IPA | **43779402542 /6de4ac36 GREEN, build40**, independentlyPASS; artifact14187634135 |
@@ -32,12 +36,17 @@ DEV-LIFECYCLE01 independentlysource-closed. ПоследняяfullIPA40independe
 **IPA watcher завершён SUCCESS.** `43779402542/6de4ac36`,build40:
 `exteraless-ios-13.1.1-40`/14187634135,ZIP273790711bytes/SHA
 03c89e65e136ab7ae8388b377097b0cdb296ca936d6a68ec0ed3d1665be969d6.
-Preflight14188291130. `ses_e1fc5a762ffed9YFp10GajDrY0` скачивает/проверяетв
-build/artifacts/telegram-43779402542 исоздаётipa-build40-acceptance.md.
+Preflight14188291130. Независимый отчёт — `ipa-build40-acceptance.md`;
+артефакты сохранены в `build/artifacts/telegram-43779402542`.
 Проверка завершенаPASS:67unsignedarm64Mach-O/60frameworks/6extensions,
 1418placements/419sourcepins. IPA-SHAe28940fdb017941525824ba1906d09e32da6bd973fa1c1c7c41bd294eeee3d99.
 Короткийdeliverypath:build/artifacts/telegram-43779402542/exteraless-ios-13.1.1-40-unsigned.ipa.
 НовыйHost/SDKcohort/UI20ещёнепокрываютсяэтойIPA. Rustpatch/gilbaseверны;неpoll.
+
+## История интеграции и прежних checkpoint
+
+Ниже сохранены последовательные записи. Текущее состояние и активные owners
+указаны в верхней секции; старые слова «в работе» относятся к своим checkpoint.
 
 **FullCompat43784503847/f704d76c завершён:** SwiftjobSUCCESS712Core/273Host/30Hooks
 (9.176/5.545/0.356s), включаявсеFD47. Python428PASS/37skip/49fail из-заединственной

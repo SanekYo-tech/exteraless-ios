@@ -158,6 +158,7 @@ jobs:
         run: python -B -m pytest tools/runtime/tests/test_dependency_bundle.py tools/compat/tests/test_ios_runtime.py -q
 
       - name: Create owned SDK followup evidence directory
+        id: sdk_environment
         run: |
           SDK_FOLLOWUP_DIR="$(mktemp -d "$RUNNER_TEMP/sdk-followup.XXXXXX")"
           echo "SDK_FOLLOWUP_DIR=$SDK_FOLLOWUP_DIR" >> "$GITHUB_ENV"
@@ -180,6 +181,10 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/sdk-followup.xml"
 
       - name: Compile 120s and run 10s actual Darwin developer listener
+        # Continue independent bounded checks after a sibling fixture fails.
+        # No test step tolerates errors; the job and artifact publication gate
+        # remain failed. Dependent stages below require their actual inputs.
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 3
         run: >-
           python -B -m pytest -q -s tools/compat/tests/test_sdk_developer_native.py
@@ -187,6 +192,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-listener.xml"
 
       - name: Compile and verify native Elyx candidate against independent ZIP bodies
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 3
         env:
           PYTHONPATH: ${{ github.workspace }}/python/vendor
@@ -196,6 +202,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-candidate.xml"
 
       - name: Compile 120s and run 30s native FD, activation and transaction tests
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 3
         run: >-
           python -B -m pytest -q -s tools/compat/tests/test_native_elyx_files.py
@@ -203,6 +210,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-files.xml"
 
       - name: Compile 120s and run 30s actual native ingress tests
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 3
         run: >-
           python -B -m pytest -q -s tools/compat/tests/test_native_elyx_ingress.py
@@ -210,6 +218,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-ingress.xml"
 
       - name: Reject invalid and counterfeit readiness without a native success substitute
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 2
         run: >-
           python -B -m pytest -q -s tools/compat/tests/test_native_elyx_readiness.py
@@ -217,6 +226,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-readiness.xml"
 
       - name: Compile 120s and run 30s actual Root developer-mode ABA tests
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 3
         run: >-
           python -B -m pytest -q -s tools/compat/tests/test_native_elyx_mode_aba.py
@@ -224,6 +234,7 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/native-mode-aba.xml"
 
       - name: Check fifth-child owned ZIP and JSON fixture inputs
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 1
         run: >-
           python -B -m pytest -q tools/runtime/tests/test_elyx_developer_fixtures.py
@@ -231,16 +242,20 @@ jobs:
           --junitxml "$SDK_FOLLOWUP_DIR/fifth-child-inputs.xml"
 
       - name: Test shipping native UI models and generation leases
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         run: python -B telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_fixture.py
 
       - name: Test shipping native TL codec and request ownership
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         run: python -B tools/compat/tests/tl_bridge/run_native_fixtures.py
 
       - name: Compile Foundation TL and run seven Java byte-value codec cases
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 6
         run: python -B tools/runtime/check_java_tl_codec.py --output "$RUNNER_TEMP/swift-components/JavaTLCodec"
 
       - name: Restore compiled Swift test packages
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         id: swift-test-cache
         continue-on-error: true
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -252,19 +267,25 @@ jobs:
           key: runtime-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'swift/ExteralessCore/Tests/**') }}
 
       - name: Compile all Host sources and test lifecycle, maintenance and callback gates
+        id: swift_host
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 6
         run: python -B tools/runtime/check_swift_components.py --package PluginHost --output "$RUNNER_TEMP/swift-components/PluginHost"
 
       - name: Test lightweight Core hook routing
+        id: swift_hooks
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 6
         run: python -B tools/runtime/check_swift_components.py --package PluginHooks --output "$RUNNER_TEMP/swift-components/PluginHooks"
 
       - name: Compile all Foundation Core sources and run every policy and actor test
+        id: swift_core
+        if: ${{ !cancelled() && steps.sdk_environment.outcome == 'success' }}
         timeout-minutes: 6
         run: python -B tools/runtime/check_swift_components.py --package ExteralessCore --output "$RUNNER_TEMP/swift-components/ExteralessCore"
 
       - name: Save verified Swift test packages
-        if: steps.swift-test-cache.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && steps.swift_host.outcome == 'success' && steps.swift_hooks.outcome == 'success' && steps.swift_core.outcome == 'success' && steps.swift-test-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -275,6 +296,7 @@ jobs:
           key: runtime-swift-v2-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/PluginHost/Tests/**', 'swift/PluginHooks/Package.swift', 'swift/PluginHooks/Sources/**', 'swift/PluginHooks/Tests/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'swift/ExteralessCore/Tests/**') }}
 
       - name: Restore the PluginUI remediation executable build cache
+        if: ${{ !cancelled() && steps.swift_host.outcome == 'success' && steps.swift_core.outcome == 'success' }}
         id: hns-cache
         continue-on-error: true
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -283,6 +305,8 @@ jobs:
           key: plugin-ui-hns-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/*.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIRemediationFixture.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py', 'tools/runtime/check_swift_components.py') }}
 
       - name: Run 23 shipping PluginUI remediation scenarios with Core and Host
+        id: native_hns
+        if: ${{ !cancelled() && steps.swift_host.outcome == 'success' && steps.swift_core.outcome == 'success' }}
         timeout-minutes: 10
         run: |
           python -B telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py \
@@ -292,7 +316,7 @@ jobs:
             --compile-seconds 480 --run-seconds 30
 
       - name: Save the verified PluginUI remediation executable build cache
-        if: steps.hns-cache.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && steps.native_hns.outcome == 'success' && steps.hns-cache.outputs.cache-hit != 'true' }}
         continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -300,9 +324,12 @@ jobs:
           key: plugin-ui-hns-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('swift/PluginHost/Package.swift', 'swift/PluginHost/Sources/**', 'swift/ExteralessCore/Package.swift', 'swift/ExteralessCore/Sources/**', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/*.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/PluginUIRemediationFixture.swift', 'telegram-ios/submodules/TelegramUI/Sources/ExteralessClient/PluginUI/Tests/run_remediation_fixture.py', 'tools/runtime/check_swift_components.py') }}
 
       - name: Compile and run Swift adapter with native CPython
+        id: swift_engine
+        if: ${{ !cancelled() && steps.swift_host.outcome == 'success' }}
         run: python tools/runtime/check_swift_embedding.py --output "$RUNNER_TEMP/python-swift"
 
       - name: Run five isolated SDK children through actual Swift Host and C bridge
+        if: ${{ !cancelled() && steps.swift_host.outcome == 'success' && steps.swift_core.outcome == 'success' && steps.swift_engine.outcome == 'success' }}
         timeout-minutes: 12
         run: |
           python -B tools/runtime/check_swift_plugin_embedding.py \
