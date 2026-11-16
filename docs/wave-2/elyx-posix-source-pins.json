@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "4bcf80a0d7160264accbb6b415facde82cf87928",
-  "branch": "ci/elyx-fd-typecheck-20261116-019de759",
+  "branch": "ci/elyx-fd-test-20261116-40bf925c",
   "captured_utc": "2026-11-15T22:12:03.631929+00:00",
   "base_trees": {
     "python/sdk": "6928955ed0162a63489b132467c7f9fac8af23f7",
@@ -1247,12 +1247,12 @@
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift",
-      "origin": "sealed-manifest",
-      "raw_sha256": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
-      "raw_bytes": 48223,
-      "canonical_sha256": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
-      "canonical_bytes": 48223,
-      "git_blob": "a3c61d9c0170def860eca29682e0c733c6e25b39"
+      "origin": "coordinator-test-typecheck-fix",
+      "raw_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
+      "raw_bytes": 48221,
+      "canonical_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
+      "canonical_bytes": 48221,
+      "git_blob": "516c34156c90defdcb52a5f0947031dc40b92163"
     },
     {
       "path": "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperTests.swift",
@@ -1773,6 +1773,22 @@
     "coordinator_postimage_sha256": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9",
     "historical_seal_override": {
       "swift/PluginHost/Sources/PluginHost/PluginElyxDeveloperDescriptor.swift": "3ee9582d0042bff01220e45fee5f7e85819a1bd77f5e4145c7906a94aff580f9"
+    },
+    "workflow_unchanged": true,
+    "expected_host_cases": 47,
+    "expected_ingress_cases": 7
+  },
+  "native_fd_test_followup": {
+    "parent_verification_commit": "a5720a43e05ff0e9f73103b3c5f1359af4f8b1dd",
+    "captured_utc": "2026-11-16T00:34:28.303447+00:00",
+    "changed_source_paths": [
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift"
+    ],
+    "change": "Lift try over the rethrowing || expression; preserve filesystem predicate, two-second deadline and final assertions",
+    "parent_fixture_sha256": "12dddc14329807020d93278d7301ec42113fbd7d51d5ecf307c10666c0fb58b8",
+    "coordinator_postimage_sha256": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80",
+    "historical_seal_override": {
+      "swift/PluginHost/Tests/PluginHostTests/PluginElyxDeveloperFilesTests.swift": "66c284f7fdd5bda12d6d18bb801f6bcaaefa96475d5cecd8533aa3fc2f39ce80"
     },
     "workflow_unchanged": true,
     "expected_host_cases": 47,

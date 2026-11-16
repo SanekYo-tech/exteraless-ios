@@ -388,7 +388,7 @@ final class PluginElyxDeveloperFilesTests: HostLifecycleTestCase {
         finish.succeed(())
         _ = try await maintenanceTestWait(finished)
         let deadline = ProcessInfo.processInfo.systemUptime + 2
-        while (rig.registry.outstandingCount != 0 || !(try children(rig.staging)).isEmpty), ProcessInfo.processInfo.systemUptime < deadline {
+        while try (rig.registry.outstandingCount != 0 || !children(rig.staging).isEmpty), ProcessInfo.processInfo.systemUptime < deadline {
             try await Task.sleep(nanoseconds: 1_000_000)
         }
         XCTAssertEqual(rig.registry.outstandingCount, 0)
