@@ -41,6 +41,9 @@ final class PluginArchiveDescriptorTests: XCTestCase {
     func testCheckedParentSwapDuringCaptureFailsWithoutFollowingItsLink() throws {
         let (storage, root, _, tree) = try fixture()
         let target = tree.deletingLastPathComponent()
+        // Resolve only the newly created, trusted fixture before installing the
+        // swap. Darwin's descriptor walk reports the /private OS-root spelling.
+        let openedTarget = target.resolvingSymlinksInPath()
         let saved = root.appendingPathComponent("saved-owner")
         let outside = root.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
@@ -48,7 +51,7 @@ final class PluginArchiveDescriptorTests: XCTestCase {
         try Data("outside".utf8).write(to: marker)
         let swapped = MaintenanceTestFlag(false)
         let hooks = PluginArchiveFileHooks { point, path in
-            guard case .directoryOpened = point, path.path == target.path, !swapped.value else { return }
+            guard case .directoryOpened = point, path.path == openedTarget.path, !swapped.value else { return }
             swapped.set(true)
             try FileManager.default.moveItem(at: target, to: saved)
             try FileManager.default.createSymbolicLink(at: target, withDestinationURL: outside)

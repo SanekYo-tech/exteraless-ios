@@ -36,3 +36,16 @@ Independent stages in43788170016 passed the native candidate fixture, all7
 ingress tests, all4 Mode ABA tests, the standalone UI model fixture, TL/Java
 fixtures and Core/Hooks. Host test compilation still failed on the four captures,
 so no full Host, HNS or five-child runtime pass is inferred from those successes.
+
+## Native execution follow-up: 43789795179 / 1df7fda0
+
+Listener, all47 FD/activation/transaction cases,7 ingress and4 Mode ABA tests
+passed on Darwin. The complete Host suite compiled and executed; one older archive
+descriptor test did not trigger its swap hook because it compared the raw `/var`
+fixture path against the descriptor walk's `/private/var` path. Its three failures
+were the absent expected throw, false `swapped` flag and absent saved tree.
+
+The expected hook path is now canonicalized once, while the newly created fixture
+is still trusted and before the adversarial swap hook is installed. No callback
+resolves a replaced link. The real parent swap, expected refusal and both-tree
+preservation assertions remain required. Production archive code is unchanged.

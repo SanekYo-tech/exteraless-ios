@@ -4,7 +4,7 @@
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `433435e8`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
+**HEAD `1df7fda0`**, общий Host/SDK/UIKit cohort опубликован в `f704d76c`
 (288 файлов). Все известные source findings закрыты независимым ревью;
 полная native/UIKit-приёмка нового среза ещё выполняется.
 
@@ -31,9 +31,19 @@ ExteralessHarness в test_clients. Точное исключение и bounded 
 5/5 postimages сверены,29harness testsPASS. Следующий build использует --keep_going.
 README/PLAN/runtime docs и Obsidian обновлены; source closure overlays в parity
 сводит `ses_e1fc2b7aeffe9GcuqtB99tTZZz`.
+Overlay получил39 закрытых scopes,18/18 output hashes сверены,103 авторских
+tests и coordinator --check-data/SDK --check PASS. Перед публикацией owner
+устраняет зависимость восстановления захваченных reports от полной Git history:
+для shallow CI нужны проверяемые локальные snapshots. Старые reports/пины не меняются.
 
 **Текущий UIKit watcher — не poll:**
 - UIKit43788169856: `sh_1e2088cca001U378Kki29sg3D6`, `uikit-d296e456-watch.log`.
+Mac43789795179/1df7fda0 завершён: listener/47FD/7ingress/4ModeABA PASS.
+Полный Host скомпилирован и выполнен; один archive test не включил swap-hook из-за
+сравнения /var с /private/var. Ожидаемый путь fixture нормализован до установки hook;
+expected throw и обе проверки сохранности деревьев сохранены. Новый run требуется.
+Compat43789426184/433435e8 завершён GREEN.
+Compat43789773288/1df7fda0 также GREEN; его watcher завершён.
 Mac43788170016/d296e456 завершён: candidate/7ingress/4ModeABA/UI-model/TL/Java/
 Core/Hooks PASS. Host test compiler остановился на четырёх `Self.native` внутри
 Task; строки вынесены до capture, все barriers/assertions сохранены. Listener
@@ -51,7 +61,7 @@ Listener fix78f37532 новее этих трёх runs. Текущий Mac со�
 
 | Проверка / поставка | Текущее подтверждённое состояние |
 |---|---|
-| HEAD | **78f37532**: verified Darwin listener fix поверх d296e456 compiler/graph fixes |
+| HEAD | **1df7fda0**: listener tooling join;433435e8 immutable Task payload captures |
 | Полный Mac/CPython gate | **43743252038 / e16f3808 GREEN, independent PASS**:680 Core /180 Host /30 Hooks,9 Ghost tests,3 native SDK child,iOS219 |
 | Linux Swift | **43788114300 /d296e456 GREEN:712 Core /273 Host /30 Hooks**,9.111/5.571/0.657s |
 | Linux Python | **43788114300 /d296e456 GREEN:478 PASS /36skip**,172.88s |
