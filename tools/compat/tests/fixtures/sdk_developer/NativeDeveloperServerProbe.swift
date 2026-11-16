@@ -17,10 +17,18 @@ struct NativeDeveloperServerProbe {
     }
 
     @MainActor
-    static func wait(_ reason: String, until predicate: () -> Bool) async throws {
+    static func wait(_ reason: String, status: () -> String, until predicate: () -> Bool) async throws {
         let deadline = ProcessInfo.processInfo.systemUptime + 2
-        while !predicate() {
-            try require(ProcessInfo.processInfo.systemUptime < deadline, reason)
+        var previous: String?
+        while true {
+            let complete = predicate()
+            let observed = String(status().prefix(2048)).replacingOccurrences(of: "\n", with: "\\n")
+            if observed != previous {
+                print("SDK_DEVELOPER_NATIVE_STATE \(reason): \(observed)")
+                previous = observed
+            }
+            if complete { return }
+            try require(ProcessInfo.processInfo.systemUptime < deadline, "\(reason); actual status: \(observed)")
             try await Task.sleep(nanoseconds: 10_000_000)
         }
     }
@@ -75,7 +83,17 @@ struct NativeDeveloperServerProbe {
     }
 
     @MainActor
-    static func main() async throws {
+    static func main() async {
+        do { try await run() }
+        catch {
+            let message = (error as? Failure)?.message ?? String(describing: error)
+            FileHandle.standardError.write(Data(("SDK_DEVELOPER_NATIVE_FAILED " + String(message.prefix(4096)) + "\n").utf8))
+            exit(1)
+        }
+    }
+
+    @MainActor
+    static func run() async throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let firstRoot = root.appendingPathComponent("first", isDirectory: true)
         let secondRoot = root.appendingPathComponent("second", isDirectory: true)
@@ -104,7 +122,7 @@ struct NativeDeveloperServerProbe {
         defer { first.stop(); second.stop() }
         try require(first.snapshot.token == nil, "stopped listener claimed readiness")
         first.start(tokenDirectory: firstRoot)
-        try await wait("own listener failed to become ready; fixed port may already be occupied", until: { first.snapshot.token != nil })
+        try await wait("own listener readiness within 2s", status: { first.snapshot.status }, until: { first.snapshot.token != nil })
         let firstToken = first.snapshot.token!
         let ping = try await Task.detached { try exchange(["@": .string("ping"), "#": .integer(17)]) }.value
         try require(ping["ok"] == .bool(true) && ping["#"] == .integer(17) && ledger.calls == 1, "free ping framing failed")
@@ -123,14 +141,14 @@ struct NativeDeveloperServerProbe {
         let admitted = ledger.calls
 
         second.start(tokenDirectory: secondRoot)
-        try await wait("second listener did not report bind failure", until: {
+        try await wait("second owned listener bind failure within 2s", status: { second.snapshot.status }, until: {
             second.snapshot.status.hasPrefix("Developer server failed:") || second.snapshot.status.hasPrefix("Developer server unavailable:")
         })
         try require(second.snapshot.token == nil, "bind failure claimed readiness")
         let retired = ledger.session
         first.stop()
         try require(retired?.isActive == false && first.snapshot.token == nil, "stop did not synchronously revoke the native session")
-        try await wait("failed listener was not retryable after port release", until: {
+        try await wait("owned listener retry after port release within 2s", status: { second.snapshot.status }, until: {
             second.start(tokenDirectory: secondRoot)
             return second.snapshot.token != nil
         })
@@ -146,7 +164,7 @@ struct NativeDeveloperServerProbe {
         try require(allowed["ok"] == .bool(true) && ledger.calls == admitted + 1, "current own token failed native auth")
         second.stop()
         try require(ledger.session?.isActive == false && second.snapshot.token == nil, "replacement session was not revoked")
-        try await wait("native token files survived stop", until: {
+        try await wait("native token file cleanup within 2s", status: { "first=\(first.snapshot.status); second=\(second.snapshot.status)" }, until: {
             !FileManager.default.fileExists(atPath: firstRoot.appendingPathComponent(".devserver_token").path)
                 && !FileManager.default.fileExists(atPath: secondRoot.appendingPathComponent(".devserver_token").path)
         })
