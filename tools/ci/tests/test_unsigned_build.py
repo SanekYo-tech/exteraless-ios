@@ -130,8 +130,9 @@ class UnsignedBuildTests(unittest.TestCase):
         rules = self.root / 'build-system/bazel-rules/rules_apple'
         source = rules / 'apple/internal/ios_rules.bzl'
         source.parent.mkdir(parents=True)
-        original = ROOT / 'telegram-ios/build-system/bazel-rules/rules_apple/apple/internal/ios_rules.bzl'
-        source.write_text(original.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
+        for name in ('ios_rules.bzl', 'codesigning_support.bzl'):
+            original = ROOT / 'telegram-ios/build-system/bazel-rules/rules_apple/apple/internal' / name
+            (source.parent / name).write_text(original.read_text(encoding='utf-8'), encoding='utf-8', newline='\n')
         target = self.root / 'build-system/patches/unsigned-rules-apple.patch'
         target.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'telegram-ios/build-system/patches/unsigned-rules-apple.patch', target)

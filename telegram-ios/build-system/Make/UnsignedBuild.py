@@ -1,9 +1,10 @@
 """Explicit unsigned packaging for the pinned rules_apple, without keychains.
 
 The six iOS packaging guards use the same approach as VoidGram's unsigned
-build patch. The normal signed path is selected unless Make.py receives
---unsigned. Work on a disposable checkout/copy: the patch is applied to the
-submodule worktree, not committed as a different upstream gitlink.
+build patch. Unsigned copy-only archives request Darwin copy-on-write clones.
+The normal signed path is selected unless Make.py receives --unsigned. Work
+on a disposable checkout/copy: the patch is applied to the submodule worktree,
+not committed as a different upstream gitlink.
 """
 
 import hashlib
@@ -15,41 +16,61 @@ import subprocess
 
 RULES_APPLE_REVISION = '485016eb5b0948cc17307064e7977a6d68e94046'
 IOS_RULES_SHA256 = 'b6776b1c10a2c965f01259dd95ebe1b045afc5e22b3446b8ae81d44f11c3a7da'
+IOS_RULES_PATCHED_SHA256 = '4cc092a71d45c778af7f4b13e67e257ec0fe8a5254417181f638c5ce66703f9d'
+CODESIGNING_SUPPORT_SHA256 = '029e3ec958b6c07f7692b248438f1a8a28e9976fcfc453e1e170cca409ff0a55'
+CODESIGNING_SUPPORT_PATCHED_SHA256 = '81f314b0306c4e5127acf8c57c195390ca864de96285712bf4f54a8322c82dbc'
 UNSIGNED_FEATURE = 'exteraless_unsigned_compilation'
-_ORIGINAL = 'if platform_prerequisites.platform.is_device:'
-_GUARDED = 'if platform_prerequisites.platform.is_device and "{}" not in features:'.format(UNSIGNED_FEATURE)
+_RULES_IMAGES = {
+    'apple/internal/ios_rules.bzl': (IOS_RULES_SHA256, IOS_RULES_PATCHED_SHA256),
+    'apple/internal/codesigning_support.bzl': (
+        CODESIGNING_SUPPORT_SHA256, CODESIGNING_SUPPORT_PATCHED_SHA256),
+}
+
+
+def _source_sha256(path):
+    # Match the upstream LF blob, including its final newline. Do not strip
+    # whitespace or reinterpret Starlark escapes while checking source identity.
+    return hashlib.sha256(path.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
 
 
 def prepare_unsigned_rules(base_path):
-    """Apply the checked-in patch idempotently, verifying its pinned input.
+    """Apply the checked-in patch idempotently, verifying both pinned images.
 
 Use a content hash rather than .git: the canonical CI source copy deliberately
 does not contain dangling submodule .git pointers to the checkout directory.
 Line endings are normalized for the hash, so Windows can run the same check.
+Also accept the exact historical six-guard patch as an upgrade input.
 """
     base = Path(base_path)
     rules = base / 'build-system/bazel-rules/rules_apple'
-    source = rules / 'apple/internal/ios_rules.bzl'
     patch = base / 'build-system/patches/unsigned-rules-apple.patch'
-    if not source.is_file():
-        raise RuntimeError('rules_apple is missing; run git submodule update --init --recursive')
-    text = source.read_text(encoding='utf-8')
-    pristine = text.replace(_GUARDED, _ORIGINAL)
-    if hashlib.sha256(pristine.encode('utf-8')).hexdigest() != IOS_RULES_SHA256:
-        raise RuntimeError('Unsigned packaging expects rules_apple {}; review the patch for this source revision'.format(RULES_APPLE_REVISION))
-    if text != pristine:
-        if text.count(_GUARDED) != 6:
-            raise RuntimeError('The unsigned rules_apple patch is only partially applied')
+    pending = []
+    for name, (pristine, patched) in _RULES_IMAGES.items():
+        source = rules / name
+        if not source.is_file():
+            raise RuntimeError('rules_apple is missing {}; run git submodule update --init --recursive'.format(name))
+        digest = _source_sha256(source)
+        if digest not in (pristine, patched):
+            raise RuntimeError('Unsigned packaging expects rules_apple {}; review the patch for this source revision ({} sha256={})'.format(
+                RULES_APPLE_REVISION, name, digest))
+        if digest == pristine:
+            pending.append(name)
+    if pending == ['apple/internal/ios_rules.bzl']:
+        raise RuntimeError('The unsigned rules_apple patch is only partially applied')
+    if not pending:
         print('Unsigned packaging patch already present')
         return
+    # Restrict upgrades to known pristine files; never reapply the six guards
+    # on an existing unsigned checkout, or touch any other vendored source.
+    includes = ['--include=' + name for name in pending]
     for flags in (['--check'], []):
         subprocess.run(
-            ['git', 'apply', '--ignore-space-change'] + flags + [str(patch.resolve())],
+            ['git', 'apply', '--ignore-space-change'] + includes + flags + [str(patch.resolve())],
             cwd=rules, check=True
         )
-    patched = source.read_text(encoding='utf-8')
-    if patched.count(_GUARDED) != 6 or patched.replace(_GUARDED, _ORIGINAL) != pristine:
-        raise RuntimeError('Unsigned packaging patch did not produce the expected source')
+    for name, (_, patched) in _RULES_IMAGES.items():
+        if _source_sha256(rules / name) != patched:
+            raise RuntimeError('Unsigned packaging patch did not produce the expected source: ' + name)
     print('Unsigned packaging: pinned rules_apple patch applied')
 
 

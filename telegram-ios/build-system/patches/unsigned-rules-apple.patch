@@ -37,3 +37,34 @@ diff --git a/apple/internal/ios_rules.bzl b/apple/internal/ios_rules.bzl
          processor_partials.append(
              partials.provisioning_profile_partial(
                  actions = actions,
+diff --git a/apple/internal/codesigning_support.bzl b/apple/internal/codesigning_support.bzl
+--- a/apple/internal/codesigning_support.bzl
++++ b/apple/internal/codesigning_support.bzl
+@@ -679,9 +679,26 @@ def _post_process_and_sign_archive_action(
+     # If there is no work to be done, skip the processing/signing action, just
+     # copy the file over.
+     has_work = any([signing_command_lines, ipa_post_processor_path, should_compress])
+     if not has_work:
++        copy_command = "cp -p '%s' '%s'" % (input_archive.path, output_archive.path)
++        if "exteraless_unsigned_compilation" in features:
++            # Request a clone; cp's filesystem fallback is OS-version dependent.
++            # Propagate cp's status without a wrapper retry, including ENOSPC.
++            copy_command = """
++platform=$(uname -s) || exit $?
++if [ "$platform" = Darwin ]; then
++    echo 'Unsigned archive copy: clone requested; sharing depends on cp and the filesystem.' >&2
++    exec cp -c -p {input} {output}
++else
++    echo 'Unsigned archive copy: non-Darwin byte copy; clone not requested.' >&2
++    exec cp -p {input} {output}
++fi
++""".format(
++                input = shell.quote(input_archive.path),
++                output = shell.quote(output_archive.path),
++            )
+         actions.run_shell(
+-            command = "cp -p '%s' '%s'" % (input_archive.path, output_archive.path),
++            command = copy_command,
+             inputs = [input_archive],
+             mnemonic = mnemonic,
+             outputs = [output_archive],
