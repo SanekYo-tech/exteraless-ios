@@ -23,16 +23,28 @@ class ApplicationLaunchFailureTests(unittest.TestCase):
                 return self.code[start + 1:end]
         self.fail('Unclosed body: ' + marker)
 
-    def test_missing_container_rejects_before_store_or_account_construction(self):
+    def test_missing_container_warns_and_continues_in_private_store(self):
         launch = self.body('func application(_ application: UIApplication, didFinishLaunchingWithOptions')
-        guard = self.body('guard let appGroupUrl = maybeAppGroupUrl else')
-        self.assertIn('self.clientLaunchFailure =', guard)
-        self.assertIn('return true', guard)
-        self.assertNotIn('presentNative', guard)
-        for operation in ('self.prepareClientSettings(', 'setupAccountManager('):
-            self.assertLess(launch.index('guard let appGroupUrl'), launch.index(operation))
-        self.assertNotIn('NSHomeDirectory()', guard)
-        self.assertNotIn('createDirectory', guard)
+        fallback = launch[launch.index('if let sharedContainer = maybeAppGroupUrl'):launch.index('var isDebugConfiguration')]
+        self.assertIn('self.privateLaunchContainer()', fallback)
+        self.assertIn('self.clientContainerWarning =', fallback)
+        self.assertNotIn('self.clientLaunchFailure =', fallback[:fallback.index('} else {')])
+        self.assertNotIn('return true', fallback[:fallback.index('} else {')])
+        self.assertLess(launch.index('self.clientContainerWarning ='), launch.index('self.prepareClientSettings('))
+        self.assertNotIn('presentNative', fallback)
+        helper = self.body('private func privateLaunchContainer()')
+        self.assertIn('applicationSupportDirectory', helper)
+        self.assertIn('createDirectory', helper)
+        self.assertIn('exteraless-private-container', self.source[self.source.index('private func privateLaunchContainer()'):])
+        self.assertNotIn('NSHomeDirectory()', helper)
+        warning = self.body('private func presentClientContainerWarningIfNeeded()')
+        self.assertIn('root.present(alert, animated: false)', warning)
+        self.assertNotIn('rootViewController = controller', warning)
+        self.assertIn('self.clientLaunchFailure == nil', warning)
+        self.assertNotIn('self.clientLaunchFailure = ', warning)
+        attach = self.body('func attach(scene: UIWindowScene')
+        self.assertLess(attach.index('self.window?.makeKeyAndVisible()'),
+                        attach.index('self.presentClientContainerWarningIfNeeded()'))
 
     def test_failure_is_rendered_only_after_scene_owns_visible_window(self):
         attach = self.body('func attach(scene: UIWindowScene')

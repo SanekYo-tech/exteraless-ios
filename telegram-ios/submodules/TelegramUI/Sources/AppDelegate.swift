@@ -419,6 +419,8 @@ private final class ExteralessToolsPendingShortcutCoordinator {
     private var clientPreparationAlert: UIAlertController?
     private var clientLaunchFailure: String?
     private var clientLaunchFailureController: UIViewController?
+    private var clientContainerWarning: String?
+    private var clientContainerWarningAlert: UIAlertController?
     private var clientAPIErrorMessage: String?
     private var clientAPIErrorAlert: UIAlertController?
     private var clientRetentionRecoveries: [ExteralessAccountRecoveryEntry] = []
@@ -883,11 +885,17 @@ private final class ExteralessToolsPendingShortcutCoordinator {
             networkEngineFactory: RustNetworkEngineFactory()
         )
         
-        guard let appGroupUrl = maybeAppGroupUrl else {
-            // didFinishLaunching runs before the window belongs to a scene.
-            // Presenting an alert here can silently fail and leave an empty app.
-            // Keep the failure until attach(scene:) can display it in a real window.
-            self.clientLaunchFailure = "The shared application container is unavailable. The installed app needs the App Group \(appGroupName) in both its signed entitlements and provisioning profile. Signing without changing the Bundle ID does not automatically grant this capability. Re-sign with a matching profile and retain the same app data."
+        let appGroupUrl: URL
+        if let sharedContainer = maybeAppGroupUrl {
+            appGroupUrl = sharedContainer
+        } else if let privateContainer = self.privateLaunchContainer() {
+            // A missing App Group must not stop the first screen. The private
+            // container is a separate store: it does not read, move, or delete
+            // data that would live in the shared container once signing grants it.
+            appGroupUrl = privateContainer
+            self.clientContainerWarning = "App Group \(appGroupName) is not available in the signed entitlements or provisioning profile. The app is using its private container and will continue. Extensions will not share this data. Adding the App Group later does not move accounts created here. Existing shared data was not deleted."
+        } else {
+            self.clientLaunchFailure = "The shared application container is unavailable, and the app could not create its private container. Check free storage and the app's container access, then reopen the app. Existing account data has not been reset."
             return true
         }
         
@@ -2099,6 +2107,32 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         window.makeKeyAndVisible()
     }
 
+    private func privateLaunchContainer() -> URL? {
+        guard let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let container = support.appendingPathComponent("exteraless-private-container", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+            return container
+        } catch {
+            return nil
+        }
+    }
+
+    private func presentClientContainerWarningIfNeeded() {
+        guard let message = self.clientContainerWarning, self.clientContainerWarningAlert == nil,
+              self.clientLaunchFailure == nil, self.window?.windowScene != nil,
+              let root = self.window?.rootViewController else { return }
+        let alert = UIAlertController(title: "App Group unavailable", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Continue", style: .default, handler: { [weak self] _ in
+            self?.clientContainerWarningAlert = nil
+        }))
+        self.clientContainerWarning = nil
+        self.clientContainerWarningAlert = alert
+        root.present(alert, animated: false)
+    }
+
     private func presentClientAPIErrorIfNeeded() {
         guard let message = self.clientAPIErrorMessage, self.clientAPIErrorAlert == nil,
               self.clientSettingsPrepared, !self.clientSettingsPreparing,
@@ -2219,6 +2253,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         self.mainWindow?.updateDeviceMetrics()
         self.window?.makeKeyAndVisible()
         self.presentClientLaunchFailureIfNeeded()
+        self.presentClientContainerWarningIfNeeded()
         self.presentClientPreparationFailureIfNeeded()
         self.presentClientAPIErrorIfNeeded()
         self.presentClientRetentionRecoveryIfNeeded()
