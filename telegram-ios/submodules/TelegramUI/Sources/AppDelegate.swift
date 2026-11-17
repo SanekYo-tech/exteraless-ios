@@ -417,6 +417,8 @@ private final class ExteralessToolsPendingShortcutCoordinator {
     private var clientSettingsPreparing = true
     private var clientPreparationFailure: String?
     private var clientPreparationAlert: UIAlertController?
+    private var clientLaunchFailure: String?
+    private var clientLaunchFailureController: UIViewController?
     private var clientAPIErrorAlert: UIAlertController?
     private var clientRetentionRecoveries: [ExteralessAccountRecoveryEntry] = []
     private var clientRetentionRecoveryAlert: (id: UUID, controller: UIAlertController)?
@@ -881,7 +883,10 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         )
         
         guard let appGroupUrl = maybeAppGroupUrl else {
-            self.mainWindow?.presentNative(UIAlertController(title: nil, message: "Error 2", preferredStyle: .alert))
+            // didFinishLaunching runs before the window belongs to a scene.
+            // Presenting an alert here can silently fail and leave an empty app.
+            // Keep the failure until attach(scene:) can display it in a real window.
+            self.clientLaunchFailure = "The shared application container is unavailable. The installed app needs the App Group \(appGroupName) in both its signed entitlements and provisioning profile. Signing without changing the Bundle ID does not automatically grant this capability. Re-sign with a matching profile and retain the same app data."
             return true
         }
         
@@ -2062,6 +2067,42 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         }
     }
 
+    private func presentClientLaunchFailureIfNeeded() {
+        guard let message = self.clientLaunchFailure, self.clientLaunchFailureController == nil,
+              let window = self.window, window.windowScene != nil else { return }
+        let controller = UIViewController()
+        controller.view.backgroundColor = .systemBackground
+        let title = UILabel()
+        title.text = "Unable to start exteraless"
+        title.font = .preferredFont(forTextStyle: .title2)
+        title.textColor = .label
+        title.numberOfLines = 0
+        let detail = UILabel()
+        detail.text = message
+        detail.font = .preferredFont(forTextStyle: .body)
+        detail.textColor = .secondaryLabel
+        detail.numberOfLines = 0
+        title.adjustsFontForContentSizeCategory = true
+        detail.adjustsFontForContentSizeCategory = true
+        let content = UIStackView(arrangedSubviews: [title, detail])
+        content.axis = .vertical
+        content.spacing = 16
+        content.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
+            content.trailingAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
+            content.centerYAnchor.constraint(equalTo: controller.view.safeAreaLayoutGuide.centerYAnchor),
+            content.topAnchor.constraint(greaterThanOrEqualTo: controller.view.safeAreaLayoutGuide.topAnchor, constant: 24),
+            content.bottomAnchor.constraint(lessThanOrEqualTo: controller.view.safeAreaLayoutGuide.bottomAnchor, constant: -24)
+        ])
+        self.clientLaunchFailureController = controller
+        // Startup was rejected before account construction; the diagnostic root
+        // must not depend on the account-backed Display presentation hierarchy.
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+    }
+
     private func presentClientPreparationFailureIfNeeded() {
         guard let message = self.clientPreparationFailure, self.clientPreparationAlert == nil,
               self.window?.windowScene != nil else { return }
@@ -2164,6 +2205,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
 
         self.mainWindow?.updateDeviceMetrics()
         self.window?.makeKeyAndVisible()
+        self.presentClientLaunchFailureIfNeeded()
         self.presentClientPreparationFailureIfNeeded()
         self.presentClientRetentionRecoveryIfNeeded()
 

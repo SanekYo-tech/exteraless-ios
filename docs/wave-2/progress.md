@@ -2,10 +2,30 @@
 
 ## Текущая точка
 
+### Приоритет: чёрный экран build41 на устройстве
+
+Пользователь сообщил: iOS27.0.1, IPA подписана без намеренного изменения Bundle ID.
+**43912353956 /79fedf4f действительно SUCCESS**, но это packaging, не launch PASS.
+Оба artifact ZIP скачаны с проверкой GitHub SHA-256. IPA41:98669864 байта,
+`d3fe5fed758d6d374b44719fa8514473fee03dcd2784d0acb2165c3cd876e8ed`.
+67arm64 Mach-O /6extensions /55runtimeframeworks /1413resources проверены;
+436Gitpins +3 nestedRustpostimages совпадают. `ipa-build41-launch-investigation.md`.
+
+Найден silent failure path: missing App Group → `Error 2` до windowScene →
+bootstrap прекращён. Локально исправлена отложенная видимая диагностика при attach,
+2 source-order tests PASS; причина на телефоне ещё не доказана.
+`ses_e1606d6edffeShbAskFmakBPX4` — независимый startup source review;
+`ses_e1604ea3fffe290iCeY4oRJ2ZM` — нормальный Telegram first-launch simulator capture.
+Старая формулировка «ENOSPC устранён накоплением outputs» не была подтверждена
+замерами и не означает, что native434/visual20 прошли. Они остаются pending.
+
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
-**HEAD `d245ec52`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
+**HEAD `79fedf4f`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
 **Независимая проверка runtime33 PASS:** `runtime-native-acceptance-33.md`.
+[IPA Build 43912353956](https://github.com/SanekYo-tech/exteraless-ios/actions/runs/43912353956) выполняется.
+UIKit gate был отменён общим concurrency-key iOS Build (`cancel-in-progress: true`);
+будет перезапущен после завершения IPA. Compat `735be8e5` GREEN.
 722Core/273Host/30Hooks,23HNS,47FD/7ingress/4Mode и пять реальных SDK children:
 4.227/2.672/0.997/7.159/5.566s. C219/169/41, cleanup2/2,629/629Gitfingerprints.
 Archive/developer fixtures получили штатный vendor root;
