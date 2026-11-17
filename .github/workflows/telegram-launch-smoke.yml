@@ -1,0 +1,193 @@
+name: Normal Telegram Launch Smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-ui-harness
+  cancel-in-progress: false
+
+jobs:
+  normal-launch:
+    runs-on: xcode-27
+    timeout-minutes: 215
+    env:
+      OWNED_ROOT: /Users/Shared/exteraless-launch-smoke
+      SOURCE_DIR: /Users/Shared/exteraless-launch-smoke/telegram-ios
+      BAZEL_USER_ROOT: /Users/Shared/exteraless-launch-smoke/bazel-user-root
+      WORKSPACE_GENERATION: ${{ github.run_id }}-${{ github.run_attempt }}
+      BAZEL_DISK_CACHE: /Users/runner/Library/Caches/exteraless-bazel-disk
+      PYTHON_SUPPORT_CACHE: /Users/runner/Library/Caches/exteraless-python-support
+      PRODUCTION_BASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout the complete pinned source graph
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Set up analysis Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Create fresh diagnostic output and select pinned Xcode
+        run: |
+          set -euo pipefail
+          LAUNCH_RUN_DIR="$(mktemp -d "$RUNNER_TEMP/telegram-launch.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.XXXXXX")"
+          echo "LAUNCH_RUN_DIR=$LAUNCH_RUN_DIR" >> "$GITHUB_ENV"
+          SELECTED_XCODE="$(python -B -c 'import sys; sys.path.insert(0, "tools/runtime"); from client_ui_harness_build import pinned_xcode_app; print(pinned_xcode_app("telegram-ios"))')"
+          test -d "$SELECTED_XCODE/Contents/Developer"
+          export DEVELOPER_DIR="$SELECTED_XCODE/Contents/Developer"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Check smoke ownership and evidence contracts
+        run: python -B -m unittest tools.runtime.tests.test_telegram_launch_smoke -v
+
+      - name: Configure the same normal-app API identity without printing values
+        env:
+          TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID }}
+          TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('telegram-ios/build-system/exteraless-configuration.json')
+          config = json.loads(path.read_text())
+          app_id = os.environ.get('TELEGRAM_APP_ID', '').strip()
+          app_hash = os.environ.get('TELEGRAM_APP_HASH', '').strip()
+          if app_id and app_hash:
+              config['api_id'], config['api_hash'] = app_id, app_hash
+          path.write_text(json.dumps(config, indent='\t') + '\n')
+          PY
+
+      - name: Stage the separately sentinel-owned source generation
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py stage
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --source "$GITHUB_WORKSPACE/telegram-ios"
+
+      - name: Restore checksum-checked runtime archives
+        id: python-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.PYTHON_SUPPORT_CACHE }}
+          key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json', 'python/runtime/new-native-dependency-lock.json') }}
+
+      - name: Stage and verify the complete production runtime resources
+        timeout-minutes: 10
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 600 -- python tools/runtime/prepare_telegram_runtime.py
+          --source-root "$GITHUB_WORKSPACE" --telegram-root "$SOURCE_DIR"
+          --cache "$PYTHON_SUPPORT_CACHE" --dependency-cache "$PYTHON_SUPPORT_CACHE/wheels"
+          --report "$LAUNCH_RUN_DIR/build/runtime-staging.json"
+
+      - name: Install pinned frame tools before the full build consumes disk
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          python -m venv "$LAUNCH_RUN_DIR/frame-env"
+          "$LAUNCH_RUN_DIR/frame-env/bin/python" -m pip install --require-hashes --only-binary=:all: --no-deps -r telegram-ios/Tests/ExteralessHarness/Tools/frame-requirements.txt
+          python tools/runtime/client_ui_harness_tools.py --output "$LAUNCH_RUN_DIR/tools" --cache "$LAUNCH_RUN_DIR/tools-cache"
+          echo "$LAUNCH_RUN_DIR/tools" >> "$GITHUB_PATH"
+
+      - name: Restore full-app Bazel actions
+        id: bazel-cache
+        continue-on-error: true
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.BAZEL_DISK_CACHE }}
+          key: bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-launch-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-
+
+      - name: Claim the fixed action cache for this owned generation
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 45 -- python -B tools/runtime/native_test_disk.py claim
+          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --cache "$BAZEL_DISK_CACHE" --output "$LAUNCH_RUN_DIR/build/cache-claim.json"
+
+      - name: Build the full graph and retain the actual fresh normal Telegram IPA
+        id: app-build
+        timeout-minutes: 112
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 6720 -- python -u tools/runtime/telegram_launch_smoke.py --phase build
+          --telegram-root "$SOURCE_DIR" --output "$LAUNCH_RUN_DIR/build"
+          --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
+
+      - name: Bound recording capacity through the claimed action cache only
+        timeout-minutes: 2
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 90 -- python -B tools/runtime/native_test_disk.py recordings
+          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
+          --output "$LAUNCH_RUN_DIR/build/frame-capacity.json"
+
+      - name: Record normal first launch on one newly created simulator
+        timeout-minutes: 5
+        run: >-
+          python -u tools/runtime/client_ui_harness_workspace.py exec
+          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
+          --seconds 300 -- "$LAUNCH_RUN_DIR/frame-env/bin/python" -u tools/runtime/telegram_launch_smoke.py
+          --phase launch --telegram-root "$SOURCE_DIR" --output "$LAUNCH_RUN_DIR/launch"
+          --build-report "$LAUNCH_RUN_DIR/build/telegram-build.json"
+
+      - name: Preserve complete build diagnostics and actual launch evidence on failure too
+        if: ${{ always() && env.LAUNCH_RUN_DIR != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-launch-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.LAUNCH_RUN_DIR }}/launch/
+            ${{ env.LAUNCH_RUN_DIR }}/tools/frame-tools.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/*.log
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-build.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-runtime.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/build-result.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/build-failure.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/preflight.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/runtime-staging.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/native-bundle-resources.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/cache-claim.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/frame-capacity.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Retain the exact main simulator IPA
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-launch-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.LAUNCH_RUN_DIR }}/build/Telegram.ipa
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-build.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Save completed Bazel actions, including a partially failed build
+        if: ${{ !cancelled() && steps.bazel-cache.outputs.cache-hit != 'true' && steps.bazel-cache.outputs.cache-primary-key != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ env.BAZEL_DISK_CACHE }}
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+
+      - name: Report evidence status without claiming visual acceptance
+        if: always()
+        run: |
+          echo 'Normal Telegram, unchanged BundleID, fresh owned simulator, zero app launch arguments. Review launch-result.json, 2/10/20s screenshots, first-launch.mp4, ffprobe.json and PTS-labelled sheets. Build success is not startup or visual PASS. Physical iOS 27.0.1 is not verified by this run.' >> "$GITHUB_STEP_SUMMARY"

@@ -67,3 +67,23 @@ A separate normal-Telegram first-launch simulator recording is being prepared
 from the exact build41 source; this explicitly launches the real app, not the
 loginless ClientUIHarness. Main-app screen evidence, not the existing runtime33
 component receipt, will determine whether correctly provisioned startup progresses.
+
+## Independent startup review
+
+`reviews/build41-launch-source-review.md` checked the actual startup chain and
+did not establish the physical-device cause. It found additional concrete paths:
+Client API account producers may complete without a value; Passcode's file lock
+can block main before scene attachment; settings file locks can hold the settings
+worker while main remains responsive; the startup write-probe failure also
+attempted a pre-scene alert and returned.
+
+The current small follow-up retains write-probe failure for the same diagnostic
+root and makes Client API errors scene-aware, storing them even if settings are
+not ready yet and replaying after readiness/scene attachment. Ten source/tooling
+checks passed. Client API factory resumption and lock-contention diagnoses are
+not claimed closed by these presentation changes.
+
+Baseline normal-app capture is run44110646483, snapshot5b16fb66 with production
+source79fedf4f. Its watcher belongs to the launch-smoke owner. The baseline does
+not include the new AppDelegate diagnostics, allowing original startup behavior
+to be observed independently.

@@ -49,6 +49,26 @@ class ApplicationLaunchFailureTests(unittest.TestCase):
         self.assertNotIn('presentNative', render)
         self.assertIn('detail.numberOfLines = 0', render)
 
+    def test_write_probe_failure_is_retained_instead_of_presenting_before_scene(self):
+        failure = self.body('if !writeAbilityTestSuccess')
+        self.assertIn('self.clientLaunchFailure =', failure)
+        self.assertIn('return true', failure)
+        self.assertNotIn('presentNative', failure)
+        self.assertNotIn('preconditionFailure', failure)
+
+    def test_api_error_is_kept_before_readiness_and_replayed_at_scene_attachment(self):
+        preparation = self.body('private func prepareClientSettings(')
+        observer = preparation[preparation.index('self.clientAPIErrorsDisposable.set'):]
+        self.assertIn('self.clientAPIErrorMessage = error.map', observer)
+        self.assertNotIn('guard let self, self.clientSettingsPrepared', observer)
+        present = self.body('private func presentClientAPIErrorIfNeeded()')
+        self.assertIn('self.clientSettingsPrepared', present)
+        self.assertIn('self.window?.windowScene != nil', present)
+        self.assertIn('self.clientAPIErrorAlert == nil', present)
+        attach = self.body('func attach(scene: UIWindowScene')
+        self.assertLess(attach.index('self.window?.makeKeyAndVisible()'),
+                        attach.index('self.presentClientAPIErrorIfNeeded()'))
+
 
 if __name__ == '__main__':
     unittest.main()

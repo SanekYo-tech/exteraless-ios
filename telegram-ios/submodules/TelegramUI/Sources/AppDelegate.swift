@@ -419,6 +419,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
     private var clientPreparationAlert: UIAlertController?
     private var clientLaunchFailure: String?
     private var clientLaunchFailureController: UIViewController?
+    private var clientAPIErrorMessage: String?
     private var clientAPIErrorAlert: UIAlertController?
     private var clientRetentionRecoveries: [ExteralessAccountRecoveryEntry] = []
     private var clientRetentionRecoveryAlert: (id: UUID, controller: UIAlertController)?
@@ -951,12 +952,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         }
         
         if !writeAbilityTestSuccess {
-            let alertController = UIAlertController(title: nil, message: "The device does not have sufficient free space.", preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: "OK", style: .default, handler: { _ in
-                preconditionFailure()
-            }))
-            self.mainWindow?.presentNative(alertController)
-            
+            self.clientLaunchFailure = "The application could not write to its data container. Check free storage and the app's container access, then reopen the app. Existing account data has not been reset."
             return true
         }
         
@@ -2015,6 +2011,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                     self.clientSettingsPrepared = true
                     self.clientSettingsReady.set(.single(()))
                 }
+                self.presentClientAPIErrorIfNeeded()
                 self.presentClientRetentionRecoveryIfNeeded()
             case let .failed(message):
                 self.clientSettingsPreparing = false
@@ -2049,17 +2046,12 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         }))
         self.clientAPIErrorsDisposable.set((ExteralessClientAPIEnvironment.shared.errors
         |> deliverOnMainQueue).start(next: { [weak self] error in
-            guard let self, self.clientSettingsPrepared, let error else { return }
+            guard let self else { return }
+            self.clientAPIErrorMessage = error.map { $0.errorDescription ?? "Client API configuration failed." }
+            guard error != nil else { return }
             self.clientRetentionRecoveryAlert?.controller.dismiss(animated: false)
             self.clientRetentionRecoveryAlert = nil
-            self.clientAPIErrorAlert?.dismiss(animated: false)
-            let alert = UIAlertController(title: "Client API", message: error.errorDescription ?? "Client API configuration failed.", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: { [weak self] _ in
-                self?.clientAPIErrorAlert = nil
-                self?.presentClientRetentionRecoveryIfNeeded()
-            }))
-            self.clientAPIErrorAlert = alert
-            self.mainWindow?.presentNative(alert)
+            self.presentClientAPIErrorIfNeeded()
         }))
         MainActor.assumeIsolated {
             ExteralessClientRuntime.shared.prepare(rootPath: rootPath, durabilityRootURL: durabilityRootURL,
@@ -2103,9 +2095,23 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         window.makeKeyAndVisible()
     }
 
+    private func presentClientAPIErrorIfNeeded() {
+        guard let message = self.clientAPIErrorMessage, self.clientAPIErrorAlert == nil,
+              self.clientSettingsPrepared, !self.clientSettingsPreparing,
+              self.clientLaunchFailure == nil, self.clientPreparationFailure == nil,
+              self.clientPreparationAlert == nil, self.window?.windowScene != nil else { return }
+        let alert = UIAlertController(title: "Client API", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: { [weak self] _ in
+            self?.clientAPIErrorAlert = nil
+            self?.presentClientRetentionRecoveryIfNeeded()
+        }))
+        self.clientAPIErrorAlert = alert
+        self.mainWindow?.presentNative(alert)
+    }
+
     private func presentClientPreparationFailureIfNeeded() {
         guard let message = self.clientPreparationFailure, self.clientPreparationAlert == nil,
-              self.window?.windowScene != nil else { return }
+              self.clientLaunchFailure == nil, self.window?.windowScene != nil else { return }
         let alert = UIAlertController(title: "Settings recovery", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Retry", style: .default, handler: { [weak self] _ in
             guard let self else { return }
@@ -2207,6 +2213,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         self.window?.makeKeyAndVisible()
         self.presentClientLaunchFailureIfNeeded()
         self.presentClientPreparationFailureIfNeeded()
+        self.presentClientAPIErrorIfNeeded()
         self.presentClientRetentionRecoveryIfNeeded()
 
         let handledLaunchShortcut = self.handledLaunchShortcut

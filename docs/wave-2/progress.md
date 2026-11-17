@@ -14,8 +14,16 @@
 Найден silent failure path: missing App Group → `Error 2` до windowScene →
 bootstrap прекращён. Локально исправлена отложенная видимая диагностика при attach,
 2 source-order tests PASS; причина на телефоне ещё не доказана.
-`ses_e1606d6edffeShbAskFmakBPX4` — независимый startup source review;
-`ses_e1604ea3fffe290iCeY4oRJ2ZM` — нормальный Telegram first-launch simulator capture.
+Независимое startup review готово: `reviews/build41-launch-source-review.md`.
+Дополнительные source paths — ClientAPI `.complete()` без account value,
+блокировки Passcode/settings (внешний holder не наблюдался), write-probe pre-scene alert.
+Локально исправлена scene-aware presentation write/API ошибок; 10checksPASS,
+factory resumption/physicalrootcause не объявлены закрытыми.
+**Normal Telegram launch44110646483 выполняется:** immutable snapshot5b16fb66,
+production base79fedf4f, локальныйf8e37b2dAppDelegatefix не включён.
+Owner `ses_e1604ea3fffe290iCeY4oRJ2ZM` уже запустил watcher/download, не дублировать.
+Ожидаются 2/10/20s screenshots, реальное видео/ffprobePTS и app logs;
+native/visual результат пока не установлен.8 local smoke/launch-source checks PASS.
 Старая формулировка «ENOSPC устранён накоплением outputs» не была подтверждена
 замерами и не означает, что native434/visual20 прошли. Они остаются pending.
 
