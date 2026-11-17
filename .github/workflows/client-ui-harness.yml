@@ -1,108 +1,79 @@
-name: Client UIKit Acceptance
+name: Normal Telegram Launch Smoke
 
-# Expensive full app graph + serial fresh simulators. Coordinator dispatches only
-# after the complete source cohort and the matching Xcode build are ready.
 on:
   workflow_dispatch:
-    inputs:
-      diagnostic_recordings:
-        description: Collect diagnostic frames if the native gate fails
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  # One harness source tree, across all refs on persistent or ephemeral runners.
   group: client-ui-harness
   cancel-in-progress: false
 
 jobs:
-  acceptance:
+  normal-launch:
     runs-on: xcode-27
     timeout-minutes: 215
-    concurrency:
-      # Also share the current normal app workflow's same-ref admission key.
-      # The build owner can widen both keys to one repository-wide app queue.
-      group: ios-build-${{ github.ref }}
-      cancel-in-progress: false
     env:
-      # The normal app build owns /Users/Shared/telegram-ios. This separate tree
-      # has its own sentinel, generation and lock; only its source child is synced.
-      OWNED_ROOT: /Users/Shared/exteraless-client-ui-harness
-      SOURCE_DIR: /Users/Shared/exteraless-client-ui-harness/telegram-ios
-      BAZEL_USER_ROOT: /Users/Shared/exteraless-client-ui-harness/bazel-user-root
+      OWNED_ROOT: /Users/Shared/exteraless-launch-smoke
+      SOURCE_DIR: /Users/Shared/exteraless-launch-smoke/telegram-ios
+      BAZEL_USER_ROOT: /Users/Shared/exteraless-launch-smoke/bazel-user-root
       WORKSPACE_GENERATION: ${{ github.run_id }}-${{ github.run_attempt }}
-      # Reuse app actions; only the explicitly claimed disk-action cache may be
-      # boundedly reclaimed before native compile. Python/download caches remain separate.
       BAZEL_DISK_CACHE: /Users/runner/Library/Caches/exteraless-bazel-disk
       PYTHON_SUPPORT_CACHE: /Users/runner/Library/Caches/exteraless-python-support
+      PRODUCTION_BASE_SHA: 79fedf4f4324bc5f8f65b573370bd03fda3daa57
     steps:
-      - name: Checkout complete app graph
+      - name: Checkout the complete pinned source graph
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Set up CI analysis Python
+      - name: Set up analysis Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
 
-      - name: Create fresh run diagnostics
+      - name: Create fresh diagnostic output and select pinned Xcode
         run: |
           set -euo pipefail
-          CLIENT_UI_RUN_DIR="$(mktemp -d "$RUNNER_TEMP/client-ui.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.XXXXXX")"
-          echo "CLIENT_UI_RUN_DIR=$CLIENT_UI_RUN_DIR" >> "$GITHUB_ENV"
-
-      - name: Select the version-pinned app toolchain
-        run: |
-          set -euo pipefail
+          LAUNCH_RUN_DIR="$(mktemp -d "$RUNNER_TEMP/telegram-launch.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}.XXXXXX")"
+          echo "LAUNCH_RUN_DIR=$LAUNCH_RUN_DIR" >> "$GITHUB_ENV"
           SELECTED_XCODE="$(python -B -c 'import sys; sys.path.insert(0, "tools/runtime"); from client_ui_harness_build import pinned_xcode_app; print(pinned_xcode_app("telegram-ios"))')"
           test -d "$SELECTED_XCODE/Contents/Developer"
           export DEVELOPER_DIR="$SELECTED_XCODE/Contents/Developer"
           echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
-          xcode-select -p
           xcodebuild -version
           xcrun --sdk iphonesimulator --show-sdk-version
 
-      - name: Fail early on missing production seams or incompatible SDK
-        run: >-
-          python tools/runtime/client_ui_harness_build.py --phase preflight
-          --output "$CLIENT_UI_RUN_DIR/build"
+      - name: Check smoke ownership and evidence contracts
+        run: python -B -m unittest tools.runtime.tests.test_telegram_launch_smoke -v
 
-      - name: Check bounded driver contracts
-        run: python -B -m unittest discover -s telegram-ios/Tests/ExteralessHarness/Tests -v
+      - name: Configure the same normal-app API identity without printing values
+        env:
+          TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID }}
+          TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('telegram-ios/build-system/exteraless-configuration.json')
+          config = json.loads(path.read_text())
+          app_id = os.environ.get('TELEGRAM_APP_ID', '').strip()
+          app_hash = os.environ.get('TELEGRAM_APP_HASH', '').strip()
+          if app_id and app_hash:
+              config['api_id'], config['api_hash'] = app_id, app_hash
+          path.write_text(json.dumps(config, indent='\t') + '\n')
+          PY
 
-      - name: Check native map, glob and evidence contracts
-        run: >-
-          python -B -m unittest tools.ci.tests.test_native_test_workflow
-          tools.ci.tests.test_native_fixture_classes tools.ci.tests.test_client_ui_batches
-          tools.ci.tests.test_native_composer_cohorts
-          tools.ci.tests.test_native_input_identity tools.ci.tests.test_client_ui_supplements
-          tools.ci.tests.test_client_ui_recording_fallback
-          tools.ci.tests.test_client_ui_map tools.runtime.tests.test_native_test_disk
-          tools.runtime.tests.test_native_test_cache -v
-
-      - name: Stage or refresh the sentinel-owned harness source
+      - name: Stage the separately sentinel-owned source generation
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py stage
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
           --source "$GITHUB_WORKSPACE/telegram-ios"
 
-      - name: Reset accumulated Bazel output bases
-        timeout-minutes: 10
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 540 -- python -B tools/runtime/native_test_disk.py reset
-          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --bazel-root "$BAZEL_USER_ROOT"
-          --output "$CLIENT_UI_RUN_DIR/build/output-base-reset.json"
-
-      - name: Restore checked Python inputs
+      - name: Restore checksum-checked runtime archives
         id: python-cache
         continue-on-error: true
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -110,7 +81,7 @@ jobs:
           path: ${{ env.PYTHON_SUPPORT_CACHE }}
           key: python-ios-support-${{ hashFiles('python/runtime/support-lock.json', 'python/runtime/dependency-lock.json', 'python/runtime/new-native-dependency-lock.json') }}
 
-      - name: Prepare full runtime resources and frameworks
+      - name: Stage and verify the complete production runtime resources
         timeout-minutes: 10
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -118,53 +89,46 @@ jobs:
           --seconds 600 -- python tools/runtime/prepare_telegram_runtime.py
           --source-root "$GITHUB_WORKSPACE" --telegram-root "$SOURCE_DIR"
           --cache "$PYTHON_SUPPORT_CACHE" --dependency-cache "$PYTHON_SUPPORT_CACHE/wheels"
-          --report "$CLIENT_UI_RUN_DIR/build/runtime-staging.json"
+          --report "$LAUNCH_RUN_DIR/build/runtime-staging.json"
 
-      - name: Restore app-graph Bazel actions
+      - name: Install pinned frame tools before the full build consumes disk
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          python -m venv "$LAUNCH_RUN_DIR/frame-env"
+          "$LAUNCH_RUN_DIR/frame-env/bin/python" -m pip install --require-hashes --only-binary=:all: --no-deps -r telegram-ios/Tests/ExteralessHarness/Tools/frame-requirements.txt
+          python tools/runtime/client_ui_harness_tools.py --output "$LAUNCH_RUN_DIR/tools" --cache "$LAUNCH_RUN_DIR/tools-cache"
+          echo "$LAUNCH_RUN_DIR/tools" >> "$GITHUB_PATH"
+
+      - name: Restore full-app Bazel actions
         id: bazel-cache
         continue-on-error: true
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ${{ env.BAZEL_DISK_CACHE }}
-          key: bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-ui-${{ github.run_id }}-${{ github.run_attempt }}
+          key: bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-launch-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-
 
-      - name: Claim only the fixed Bazel disk action cache for this source generation
-        timeout-minutes: 1
+      - name: Claim the fixed action cache for this owned generation
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
           --seconds 45 -- python -B tools/runtime/native_test_disk.py claim
           --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --cache "$BAZEL_DISK_CACHE" --output "$CLIENT_UI_RUN_DIR/build/native-cache-claim.json"
+          --cache "$BAZEL_DISK_CACHE" --output "$LAUNCH_RUN_DIR/build/cache-claim.json"
 
-      - name: Build full Telegram plus loginless UIKit app, unsigned
-        id: app_build
+      - name: Build the full graph and retain the actual fresh normal Telegram IPA
+        id: app-build
         timeout-minutes: 112
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 6720 -- python -u tools/runtime/client_ui_harness_build.py
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RUN_DIR/build"
+          --seconds 6720 -- python -u tools/runtime/telegram_launch_smoke.py --phase build
+          --telegram-root "$SOURCE_DIR" --output "$LAUNCH_RUN_DIR/build"
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
 
-      - name: Compile and run required native IntegrationTests, unsigned iOS 27
-        id: native
-        timeout-minutes: 35
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 2100 -- python -u tools/runtime/run_native_integration_tests.py
-          --telegram-root "$SOURCE_DIR" --owned-root "$OWNED_ROOT"
-          --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
-          --app-build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
-          --output "$CLIENT_UI_RUN_DIR/native-tests" --compile-seconds 900 --execution-seconds 900
-
-      - name: Reclaim remaining action cache for recordings
-        id: recording_capacity
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' }}
+      - name: Bound recording capacity through the claimed action cache only
         timeout-minutes: 2
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -172,199 +136,50 @@ jobs:
           --seconds 90 -- python -B tools/runtime/native_test_disk.py recordings
           --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
-          --output "$CLIENT_UI_RUN_DIR/build/frame-capacity.json"
+          --output "$LAUNCH_RUN_DIR/build/frame-capacity.json"
 
-      - name: Install checksum-pinned CI frame tools
-        id: frame_tools
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
+      - name: Record normal first launch on one newly created simulator
         timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          python -m venv "$CLIENT_UI_RUN_DIR/frame-env"
-          "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -m pip install --require-hashes --only-binary=:all: --no-deps -r telegram-ios/Tests/ExteralessHarness/Tools/frame-requirements.txt
-          python tools/runtime/client_ui_harness_tools.py --output "$CLIENT_UI_RUN_DIR/tools" --cache "$CLIENT_UI_RUN_DIR/tools-cache"
-          echo "$CLIENT_UI_RUN_DIR/tools" >> "$GITHUB_PATH"
-          if [ '${{ steps.native.outcome }}' = 'success' ]; then
-            echo "CLIENT_UI_RECORDING_ROOT=$CLIENT_UI_RUN_DIR/evidence" >> "$GITHUB_ENV"
-          else
-            echo "CLIENT_UI_RECORDING_ROOT=$CLIENT_UI_RUN_DIR/diagnostic-recordings" >> "$GITHUB_ENV"
-          fi
-
-      - name: Record baseline core-light, core-dark and SDK scenarios
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 10
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
-          --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
-          --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/baseline"
-          --scenario core-light --scenario core-dark --scenario sdk-ui
+          --seconds 300 -- "$LAUNCH_RUN_DIR/frame-env/bin/python" -u tools/runtime/telegram_launch_smoke.py
+          --phase launch --telegram-root "$SOURCE_DIR" --output "$LAUNCH_RUN_DIR/launch"
+          --build-report "$LAUNCH_RUN_DIR/build/telegram-build.json"
 
-      - name: Record Feed, Player and Pill domains serially from the same IPA
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 10
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
-          --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
-          --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/domains"
-          --scenario feed-render --scenario player-render --scenario pill-render
-
-      - name: Record Avatar and Composer from the same IPA in the final serial batch
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 10
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 600 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 600
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
-          --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa"
-          --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/final-visuals"
-          --scenario avatar-render --scenario composer-render
-
-      - name: Verify all three recorded batches and publish the shared evidence identity
-        if: ${{ !cancelled() && steps.native.outcome == 'success' && steps.frame_tools.outcome == 'success' }}
-        timeout-minutes: 1
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 45 -- python -B tools/runtime/verify_client_ui_batches.py
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json"
-          --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --baseline "$CLIENT_UI_RUN_DIR/evidence/baseline" --domains "$CLIENT_UI_RUN_DIR/evidence/domains"
-          --final-visuals "$CLIENT_UI_RUN_DIR/evidence/final-visuals"
-          --output "$CLIENT_UI_RUN_DIR/evidence/batches.json" --summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Record Reset supplement 1 of 4, ready and held prepare return
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 4
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-1"
-          --scenario reset-ready-cancelled --scenario reset-prepare-before-return --scenario reset-prepare-after-return
-
-      - name: Record Reset supplement 2 of 4, reset reply return and actual pop
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 4
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-2"
-          --scenario reset-reply-before-return --scenario reset-reply-after-return --scenario reset-prepare-actual-pop
-
-      - name: Record Reset supplement 3 of 4, pop and retired-context witnesses
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 4
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 180 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 180
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-3"
-          --scenario reset-reply-actual-pop --scenario reset-retired-ready --scenario reset-retired-prepare
-
-      - name: Record Reset supplement 4 of 4, retired reset reply
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 3
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 120 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 120
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/reset-4"
-          --scenario reset-retired-reply
-
-      - name: Record secondary trust permissions in one fresh owned process
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 3
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 150
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/trust-secondary"
-          --scenario trust-secondary-permissions
-
-      - name: Record native Map attributions, light and dark, in one fresh owned process
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.frame_tools.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
-        timeout-minutes: 3
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 150 -- "$CLIENT_UI_RUN_DIR/frame-env/bin/python" -u tools/runtime/record_client_ui_batch.py --envelope-seconds 150
-          ${{ steps.native.outcome == 'failure' && '--diagnostic-native-failure' || '' }}
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --ipa "$CLIENT_UI_RUN_DIR/build/ClientUIHarness.ipa" --staging-manifest "$SOURCE_DIR/build-input/exteraless/runtime-staging.json"
-          --telegram-root "$SOURCE_DIR" --output "$CLIENT_UI_RECORDING_ROOT/supplements/map-attribution"
-          --scenario map-attribution
-
-      - name: Verify all base and supplemental scenes from the single IPA
-        if: ${{ !cancelled() && steps.native.outcome == 'success' && steps.frame_tools.outcome == 'success' }}
-        timeout-minutes: 1
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 30 -- python -B tools/runtime/verify_client_ui_supplements.py
-          --build-report "$CLIENT_UI_RUN_DIR/build/build-result.json" --native-tests "$CLIENT_UI_RUN_DIR/native-tests/result.json"
-          --base-batches "$CLIENT_UI_RUN_DIR/evidence/batches.json" --supplements "$CLIENT_UI_RUN_DIR/evidence/supplements"
-          --output "$CLIENT_UI_RUN_DIR/evidence/complete-gate.json"
-
-      - name: Upload recorded frames and semantic evidence
-        if: ${{ always() && env.CLIENT_UI_RUN_DIR != '' }}
+      - name: Preserve complete build diagnostics and actual launch evidence on failure too
+        if: ${{ always() && env.LAUNCH_RUN_DIR != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: client-ui-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: telegram-launch-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.CLIENT_UI_RUN_DIR }}/evidence/
-            ${{ env.CLIENT_UI_RUN_DIR }}/diagnostic-recordings/
-            ${{ env.CLIENT_UI_RUN_DIR }}/native-tests/
-            ${{ env.CLIENT_UI_RUN_DIR }}/tools/frame-tools.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/preflight.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/build-result.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/build.log
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/build-failure.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/native-cache-claim.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/output-base-reset.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/frame-capacity.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/unsigned-preflight.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-preflight.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-staging.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/domain-source-fingerprints.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/native-bundle-resources.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/native-test-plan.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/harness-inputs.json
+            ${{ env.LAUNCH_RUN_DIR }}/launch/
+            ${{ env.LAUNCH_RUN_DIR }}/tools/frame-tools.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/*.log
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-build.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-runtime.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/build-result.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/build-failure.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/preflight.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/runtime-staging.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/native-bundle-resources.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/cache-claim.json
+            ${{ env.LAUNCH_RUN_DIR }}/build/frame-capacity.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Retain the exact main simulator IPA
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: telegram-launch-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.LAUNCH_RUN_DIR }}/build/Telegram.ipa
+            ${{ env.LAUNCH_RUN_DIR }}/build/telegram-build.json
           if-no-files-found: error
           retention-days: 7
 
-      - name: Save completed Bazel actions
+      - name: Save completed Bazel actions, including a partially failed build
         if: ${{ !cancelled() && steps.bazel-cache.outputs.cache-hit != 'true' && steps.bazel-cache.outputs.cache-primary-key != '' }}
         continue-on-error: true
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -372,7 +187,7 @@ jobs:
           path: ${{ env.BAZEL_DISK_CACHE }}
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
-      - name: Evidence status
+      - name: Report evidence status without claiming visual acceptance
         if: always()
         run: |
-          echo 'Evidence: base 3+3+2 retains evidence/batches.json; Reset 3+3+3+1, secondary trust 1 and Map attribution 1 join in complete-gate.json (20 scenes, 9 fresh serial simulators). One retained IPA, 30s/app. Map has two <4s palette segments, injected owned OSM PNG/failure, and permitted public Apple/GeoServices map requests. Supplemental hard envelopes total 990s including verification; job limit is 215m. Native PNG/ffprobe PTS frame review remains required.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Normal Telegram, unchanged BundleID, fresh owned simulator, zero app launch arguments. Review launch-result.json, 2/10/20s screenshots, first-launch.mp4, ffprobe.json and PTS-labelled sheets. Build success is not startup or visual PASS. Physical iOS 27.0.1 is not verified by this run.' >> "$GITHUB_STEP_SUMMARY"
