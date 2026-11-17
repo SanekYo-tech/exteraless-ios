@@ -81,6 +81,21 @@ class ApplicationLaunchFailureTests(unittest.TestCase):
         self.assertLess(attach.index('self.window?.makeKeyAndVisible()'),
                         attach.index('self.presentClientAPIErrorIfNeeded()'))
 
+    def test_failed_settings_still_open_the_login_pipeline(self):
+        preparation = self.body('private func prepareClientSettings(')
+        failed = preparation[preparation.index('case let .failed(message):'):]
+        self.assertLess(failed.index('self.presentClientPreparationFailureIfNeeded()'),
+                        failed.index('self.clientSettingsReady.set(.single(()))'))
+        account = (ROOT / 'telegram-ios/submodules/TelegramCore/Sources/Account/Account.swift').read_text(encoding='utf-8')
+        start = account.index('let originalNetworkArguments = networkArguments')
+        gate = account[start:account.index('let keychain = makeExclusiveKeychain', start)]
+        self.assertNotIn('ExteralessAccountRetentionEnvironment.shared.current.configuration == nil', gate)
+        self.assertIn('if accountState is AuthorizedAccountState', gate)
+        self.assertIn('networkArguments = originalNetworkArguments', gate)
+        window = (ROOT / 'telegram-ios/submodules/Display/Source/NativeWindowHostView.swift').read_text(encoding='utf-8')
+        self.assertIn('window.backgroundColor = .systemBackground', window)
+        self.assertNotIn('backgroundColor = UIColor.black', self.source)
+
     def test_presented_api_event_is_consumed_after_guards_without_relatching_resolver(self):
         present = self.body('private func presentClientAPIErrorIfNeeded()')
         self.assertLess(present.index('else { return }'), present.index('self.clientAPIErrorMessage = nil'))

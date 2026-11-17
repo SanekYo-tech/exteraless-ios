@@ -623,20 +623,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
         let statusBarHost = ApplicationStatusBarHost(scene: window.windowScene)
         self.statusBarHost = statusBarHost
         self.mainWindow = Window1(hostView: hostView, statusBarHost: statusBarHost)
-        if let traitCollection = window.rootViewController?.traitCollection {
-            if #available(iOS 13.0, *) {
-                switch traitCollection.userInterfaceStyle {
-                case .light, .unspecified:
-                    hostView.containerView.backgroundColor = UIColor.white
-                default:
-                    hostView.containerView.backgroundColor = UIColor.black
-                }
-            } else {
-                hostView.containerView.backgroundColor = UIColor.white
-            }
-        } else {
-            hostView.containerView.backgroundColor = UIColor.white
-        }
+        hostView.containerView.backgroundColor = .systemBackground
         self.window = window
         self.nativeWindow = window
         
@@ -1721,13 +1708,13 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                 |> delay(0.5, queue: Queue.mainQueue())
                 let progressDisposable = progressSignal.start()
                 
+                self.mainWindow.present(context.rootController, on: .root)
                 let isReady: Signal<Bool, NoError> = context.isReady.get()
                 authContextReadyDisposable.set((isReady
                 |> filter { $0 }
                 |> take(1)
                 |> deliverOnMainQueue).start(next: { _ in
                     progressDisposable.dispose()
-                    self.mainWindow.present(context.rootController, on: .root)
                 }))
             } else {
                 authContextReadyDisposable.set(nil)
@@ -2030,6 +2017,11 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                 self.clientRetentionRecoveryPending.removeAll()
                 self.clientPreparationFailure = message
                 self.presentClientPreparationFailureIfNeeded()
+                // The alert is dismissible. It must not be the only thing on screen.
+                if !self.clientSettingsPrepared {
+                    self.clientSettingsPrepared = true
+                    self.clientSettingsReady.set(.single(()))
+                }
             }
         }))
         self.clientRetentionRecoveryDisposable.set((ExteralessAccountRecoveryCenter.shared.pending

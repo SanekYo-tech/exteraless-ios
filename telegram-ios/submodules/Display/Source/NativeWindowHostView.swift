@@ -386,6 +386,7 @@ private final class NativeWindow: UIWindow, WindowHost {
 /// Establish scene ownership before the root controller loads its input views.
 public func nativeWindowHostView(windowScene: UIWindowScene? = nil) -> (UIWindow & WindowHost, WindowHostView) {
     let window = NativeWindow(frame: windowScene?.screen.bounds ?? UIScreen.main.bounds)
+    window.backgroundColor = .systemBackground
     if let windowScene {
         window.windowScene = windowScene
     }

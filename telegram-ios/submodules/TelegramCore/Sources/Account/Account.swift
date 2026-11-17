@@ -913,9 +913,6 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                     }
                     |> mapToSignal { (values: (PostboxCoding?, LocalizationSettings?, ProxySettings?, NetworkSettings?, AppConfiguration)) -> Signal<AccountResult, NoError> in
                         let (accountState, localizationSettings, proxySettings, networkSettings, appConfig) = values
-                        if !(accountState is AuthorizedAccountState), ExteralessAccountRetentionEnvironment.shared.current.configuration == nil {
-                            return .complete()
-                        }
                         let originalNetworkArguments = networkArguments
                         let apiTestingEnvironment: Bool
                         if let state = accountState as? AuthorizedAccountState {
@@ -931,7 +928,12 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                 recordId: id.int64, testingEnvironment: apiTestingEnvironment,
                                 existingAuthorization: accountState is AuthorizedAccountState)
                         } catch {
-                            return .complete()
+                            // A missing Client API selection must not swallow the first
+                            // login screen. Authorized accounts still fail closed.
+                            if accountState is AuthorizedAccountState {
+                                return .complete()
+                            }
+                            networkArguments = originalNetworkArguments
                         }
                         let keychain = makeExclusiveKeychain(id: id, postbox: postbox)
                         
