@@ -36,6 +36,10 @@ Device-build теперьнеотменяетsame-refUIKitjob. Изменени�
 `ses_e15e1d73fffeUuSeAdIagJQ37d` завершает оборванный unsigned archive clone patch
 с малым Darwin proof. Их working-tree изменения до приёмки не публиковать.
 
+По запросу пользователя запущена сборка **44121170313** с `f2baf586`.
+После успешной проверки IPA тот же workflow публикует unsigned GitHub release.
+Это не launch PASS и не приёмка 434/20. Запись baseline44110646483 не отменяется.
+
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 
 **HEAD `79fedf4f`; полный Mac gate на `d8705c51` GREEN**:43795739683, workflow build33.
