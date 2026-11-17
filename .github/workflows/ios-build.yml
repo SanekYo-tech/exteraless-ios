@@ -19,6 +19,9 @@ jobs:
     name: Telegram-iOS + embedded Python
     runs-on: xcode-27
     timeout-minutes: 360
+    outputs:
+      app_version: ${{ steps.package.outputs.app_version }}
+      build_number: ${{ steps.package.outputs.build_number }}
 
     env:
       SOURCE_DIR: /Users/Shared/telegram-ios
@@ -137,6 +140,7 @@ jobs:
             bazel-ios-unsigned-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('telegram-ios/versions.json', 'docs/submodule-pins.json', 'telegram-ios/MODULE.bazel.lock') }}-
 
       - name: Build
+        id: package
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
@@ -144,6 +148,8 @@ jobs:
           export BUILD_NUMBER="${{ github.run_number }}"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
             --cacheDir="$BAZEL_DISK_CACHE" \
@@ -227,3 +233,100 @@ jobs:
         with:
           path: ${{ env.BAZEL_DISK_CACHE }}
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+
+  publish:
+    name: Publish unsigned release
+    needs: build
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download the verified IPA artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: exteraless-ios-${{ needs.build.outputs.app_version }}-${{ needs.build.outputs.build_number }}
+          path: release-assets
+
+      - name: Check artifact identity before creating the release
+        env:
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
+          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, zipfile
+          root = Path('release-assets')
+          ipa = root / 'Telegram.ipa'
+          manifest = json.loads((root / 'build-manifest.json').read_text())
+          digest = hashlib.sha256(ipa.read_bytes()).hexdigest()
+          expected = {
+              'version': os.environ['APP_VERSION'],
+              'build_number': os.environ['BUILD_NUMBER'],
+              'sha256': digest,
+          }
+          for key, value in expected.items():
+              if str(manifest.get(key)) != value:
+                  raise SystemExit(f'Release artifact {key} mismatch: {manifest.get(key)!r} != {value!r}')
+          if not str(manifest.get('signing', '')).startswith('unsigned'):
+              raise SystemExit('Refusing to publish an artifact that is not unsigned')
+          with zipfile.ZipFile(ipa) as archive:
+              if archive.testzip() is not None or any(name.endswith('.mobileprovision') for name in archive.namelist()):
+                  raise SystemExit('IPA failed ZIP/profile check before release')
+          for name in ('Telegram.DSYMs.zip', 'runtime-manifest.json', 'Telegram_dossier.zip'):
+              if not (root / name).is_file():
+                  raise SystemExit('Missing release asset: ' + name)
+          if not any((root / 'signing-entitlements').glob('*.entitlements')):
+              raise SystemExit('Missing entitlement templates')
+          print('Release identity verified', manifest['version'], manifest['build_number'], digest)
+          PY
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
+          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          tag="exteraless-ios-${APP_VERSION}-${BUILD_NUMBER}"
+          ipa="exteraless-ios-${APP_VERSION}-${BUILD_NUMBER}.ipa"
+          mv release-assets/Telegram.ipa "release-assets/${ipa}"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, textwrap, zipfile
+          version, build = os.environ['APP_VERSION'], os.environ['BUILD_NUMBER']
+          notes = textwrap.dedent(f'''\
+          Unsigned IPA exteraless iOS {version} ({build}).
+
+          Подписывается своим сертификатом. Bundle ID не менять: `ph.telegra.Telegraph`.
+          В профиле и entitlements нужен App Group `group.ph.telegra.Telegraph`.
+          Шаблоны прав лежат в `signing-entitlements.zip`.
+
+          Относительно build 41: отказ App Group, ошибка записи контейнера и ошибка Client API
+          показываются после подключения окна к сцене, а не остаются пустым экраном.
+          Подтверждённый API-alert не повторяется после успешной перезагрузки settings.
+
+          Это не доказательство причины чёрного экрана на конкретном устройстве и не приёмка
+          434 native tests, 20 сцен и кадрового ревью. До публикации тот же workflow проверил
+          unsigned Mach-O, resources, entitlement templates и SHA-256 артефакта.
+
+          Commit: {os.environ['GITHUB_SHA']}
+          ''')
+          Path(os.environ['RUNNER_TEMP'], 'release-notes.md').write_text(notes)
+          with zipfile.ZipFile('release-assets/signing-entitlements.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for path in sorted(Path('release-assets/signing-entitlements').glob('*.entitlements')):
+                  archive.write(path, path.name)
+          PY
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "exteraless iOS ${APP_VERSION} (${BUILD_NUMBER})" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "release-assets/${ipa}" \
+            release-assets/Telegram.DSYMs.zip \
+            release-assets/signing-entitlements.zip \
+            release-assets/build-manifest.json \
+            release-assets/runtime-manifest.json \
+            release-assets/Telegram_dossier.zip
