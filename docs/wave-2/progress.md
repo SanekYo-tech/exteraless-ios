@@ -36,9 +36,11 @@ Device-build теперьнеотменяетsame-refUIKitjob. Изменени�
 `ses_e15e1d73fffeUuSeAdIagJQ37d` завершает оборванный unsigned archive clone patch
 с малым Darwin proof. Их working-tree изменения до приёмки не публиковать.
 
-По запросу пользователя запущена сборка **44121170313** с `f2baf586`.
-После успешной проверки IPA тот же workflow публикует unsigned GitHub release.
-Это не launch PASS и не приёмка 434/20. Запись baseline44110646483 не отменяется.
+Сборка **44121170313** / `f2baf586` собрала IPA 13.1.1 (42) и загрузила артефакт
+`exteraless-ios-13.1.1-42`. Job сборки SUCCESS. Публикация релиза упала: upload-artifact
+сохранил абсолютный путь `Shared/telegram-ios/build/artifacts/*`, а publish искал
+файлы в корне. Повторная сборка не нужна. Короткий publish-existing workflow публикует
+этот же артефакт после проверки SHA-256. Это не launch PASS и не приёмка 434/20.
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 

@@ -1,0 +1,80 @@
+name: Publish existing unsigned IPA
+
+# Recovers a release when the iOS build uploaded its artifact but the publish
+# job looked for files at the artifact root. It does not rebuild or sign.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful iOS Build run whose artifact is already uploaded
+        required: true
+        type: string
+      artifact_name:
+        description: Artifact name, for example exteraless-ios-13.1.1-42
+        required: true
+        type: string
+      version:
+        description: CFBundleShortVersionString
+        required: true
+        type: string
+      build_number:
+        description: CFBundleVersion / GitHub run_number of that build
+        required: true
+        type: string
+      target_sha:
+        description: Commit that produced the IPA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout the release publisher
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Download the already uploaded IPA artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.artifact_name }}
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: release-assets
+
+      - name: Verify identity and stage a flat release
+        env:
+          APP_VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          python3 -B tools/ci/publish_unsigned_release.py \
+            --assets release-assets \
+            --version "$APP_VERSION" \
+            --build-number "$BUILD_NUMBER" \
+            --commit "$TARGET_SHA" \
+            --stage release-stage \
+            --notes "$RUNNER_TEMP/release-notes.md"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          tag="exteraless-ios-${APP_VERSION}-${BUILD_NUMBER}"
+          gh release create "$tag" \
+            --target "$TARGET_SHA" \
+            --title "exteraless iOS ${APP_VERSION} (${BUILD_NUMBER})" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            release-stage/*
