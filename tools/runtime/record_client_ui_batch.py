@@ -225,12 +225,13 @@ class Recording:
                     os.kill(observed['pid'], signum)
             observed['sentSignals'].append(int(signum))
             return True
-        except (ProcessLookupError, PermissionError):
-            # ESRCH: the owned group is already gone after the leader was
-            # reaped. EPERM: a busy runner recycled the PID into another
-            # user's process; our own group members are already dead.
+        except ProcessLookupError:
+            # ESRCH establishes absence. EPERM only establishes denied signaling;
+            # it proves neither PID recycling nor closure of the owned group.
             return True
         except OSError as error:
+            observed.setdefault('signalErrors', []).append({'signal': int(signum), 'errno': error.errno,
+                'errorType': type(error).__name__, 'error': str(error)})
             self.payload['processErrors'].append(observed['role'] + ': ' + str(error))
             return False
 
@@ -399,6 +400,7 @@ def record(args):
                     run.payload['batchVerification'] = {'status': 'failed', 'errorType': type(error).__name__, 'error': str(error)}
             passed = (failure is None and run.payload['recorderReturnCode'] == 0 and run.payload['recorderReaped']
                 and not run.payload['innerDeadlineExceeded'] and not run.payload['interruptedSignal']
+                and all(item['groupClosed'] for item in run.payload['children'])
                 and not run.payload['processErrors'] and all(item['status'] == 'passed' for item in run.payload['postchecks'].values())
                 and run.payload['batchVerification']['status'] == 'passed')
             run.payload['phase'] = 'interrupted' if run.payload['interruptedSignal'] else ('complete' if passed else 'failed')

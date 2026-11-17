@@ -83,6 +83,7 @@ class NormalLaunchContracts(unittest.TestCase):
         self.assertIn('--phase launch', text)
         self.assertNotIn('run_native_integration_tests.py', text)
         self.assertNotIn('native_test_disk.py reset', text)
+        self.assertNotIn('native_test_disk.py recordings', text)
         self.assertNotIn('private-actions.json', text)
         self.assertLess(text.index('Install pinned frame tools'), text.index('Build the full graph'))
 

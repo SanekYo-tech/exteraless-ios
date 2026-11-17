@@ -1,6 +1,7 @@
 """Real Python children and real mutable files; no Apple tools or recordings."""
 
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import tempfile
 import threading
 import time
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/runtime'))
@@ -64,6 +66,30 @@ def wrapper_main(root):
     config = configure(root)
     if sys.argv[1:2] == ['--postcheck']:
         raise SystemExit(recorder.postcheck_main(sys.argv[2:]))
+    if config.get('bootstrap_copy_error'):
+        original_identity = recorder.require_build_identity
+        def identity_then_deny_copy(*args, **kwargs):
+            value = original_identity(*args, **kwargs)
+            original_read = Path.read_bytes
+            def read_bytes(path):
+                if path == root / 'wrapper.py':
+                    raise PermissionError(errno.EACCES, 'fixture bootstrap copy denied')
+                return original_read(path)
+            Path.read_bytes = read_bytes
+            return value
+        recorder.require_build_identity = identity_then_deny_copy
+    if config.get('deny_reaped_signals'):
+        original_send = recorder.Recording.send
+        def denied_send(self, process, observed, signum):
+            if observed['reaped']:
+                # Fault injection after the REAL child exits; no live child is
+                # denied cleanup. Also tests the POSIX error branch on Windows,
+                # without claiming a real Windows process-group observation.
+                observed['processGroup'] = process.pid
+                with patch.object(os, 'killpg', create=True, side_effect=PermissionError(errno.EPERM, 'fixture denied signal')):
+                    return original_send(self, process, observed, signum)
+            return original_send(self, process, observed, signum)
+        recorder.Recording.send = denied_send
     if config.get('signal_bridge'):
         # Windows os.kill(SIGTERM) uses TerminateProcess, not a Python handler.
         # Exercise the handler in the wrapper; it still kills/reaps a REAL child

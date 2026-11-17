@@ -30,8 +30,10 @@ The created UUID, name, type and runtime are checked again before cleanup.
 The source workspace is `/Users/Shared/exteraless-launch-smoke`, with the existing
 workspace helper's sentinel, generation and lock. Its required children remain
 `telegram-ios` and `bazel-user-root`. No output-base reset or broad cleanup runs.
-The only bounded reclamation is the existing explicitly claimed disk-action cache
-recording-capacity phase. Frame dependencies are checksum/hash-pinned and installed
+The main-branch launch phase checks4 GiB actual free space without deletion: it
+does not invent a completed native-test receipt to call post-native reclamation.
+The already-dispatched baseline snapshot retains its historical helper call.
+Frame dependencies are checksum/hash-pinned and installed
 before the full build consumes disk. Resources are staged by the existing lock-
 verifying preparer, including `.runtime` inputs, archives and application assets.
 

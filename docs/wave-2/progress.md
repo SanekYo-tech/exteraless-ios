@@ -19,6 +19,8 @@ bootstrap прекращён. Локально исправлена отложе
 блокировки Passcode/settings (внешний holder не наблюдался), write-probe pre-scene alert.
 Локально исправлена scene-aware presentation write/API ошибок; 10checksPASS,
 factory resumption/physicalrootcause не объявлены закрытыми.
+API-message replay исправлен в7ba521c3 и независимо source-approved:
+`reviews/build41-api-message-closure.md`. 11 tooling checks PASS; это не launch proof.
 **Normal Telegram launch44110646483 выполняется:** immutable snapshot5b16fb66,
 production base79fedf4f, локальныйf8e37b2dAppDelegatefix не включён.
 Owner `ses_e1604ea3fffe290iCeY4oRJ2ZM` уже запустил watcher/download, не дублировать.
@@ -26,6 +28,13 @@ Owner `ses_e1604ea3fffe290iCeY4oRJ2ZM` уже запустил watcher/download,
 native/visual результат пока не установлен.8 local smoke/launch-source checks PASS.
 Старая формулировка «ENOSPC устранён накоплением outputs» не была подтверждена
 замерами и не означает, что native434/visual20 прошли. Они остаются pending.
+CI cleanup review принят: output reset удалён, EPERM не повышает cleanup до success,
+recording reclamation требует terminal native/closedHTTP/realBazelshutdown.
+Workflow wiring исправлен; normal-launch отдельно проверяет4GiB безудаления.
+Coordinator53tests ran (51PASS/2POSIXskip); `ci-cleanup-correction-review.md`.
+Device-build теперьнеотменяетsame-refUIKitjob. Изменения baseline44110646483некасаются.
+`ses_e15e1d73fffeUuSeAdIagJQ37d` завершает оборванный unsigned archive clone patch
+с малым Darwin proof. Их working-tree изменения до приёмки не публиковать.
 
 ### Актуально: общий source cohort опубликован, Apple-приёмка выполняется
 

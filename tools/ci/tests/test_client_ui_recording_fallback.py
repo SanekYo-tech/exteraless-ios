@@ -1,6 +1,7 @@
 """Source-bound diagnostics: real bounded Python processes, never native/frame PASS."""
 
 import copy
+import errno
 import hashlib
 import json
 import os
@@ -10,6 +11,8 @@ import signal
 import sys
 import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/runtime'))
@@ -17,6 +20,43 @@ from native_test_plan import verify_native_results
 from verify_client_ui_batches import verify
 from tools.ci.tests import test_client_ui_batches as batches
 from tools.ci.tests.client_ui_recording_process_fixture import RecordingFixture, process_alive, write
+import record_client_ui_batch as recorder
+
+
+class RecordingSignalChecks(unittest.TestCase):
+    def run_stop(self, error):
+        run = recorder.Recording(SimpleNamespace(envelope_seconds=120, diagnostic_native_failure=False,
+                                               output=Path('unused-fixture-output')), ['core-light'])
+        process = Mock(pid=12345)
+        process.poll.return_value = process.wait.return_value = 0
+        observed = {'role': 'recorder', 'pid': process.pid, 'processGroup': process.pid,
+                    'returnCode': None, 'reaped': False, 'groupClosed': False, 'sentSignals': []}
+        with patch.object(recorder.os, 'killpg', create=True, side_effect=error) as kill:
+            run.stop([(process, observed)], grace=0)
+        kill.assert_called_once_with(process.pid, getattr(signal, 'SIGKILL', 9))
+        return run, observed
+
+    def test_eperm_is_denied_unknown_group_cleanup_not_pid_recycling(self):
+        run, child = self.run_stop(PermissionError(errno.EPERM, 'Operation not permitted'))
+        self.assertTrue(child['reaped'])
+        self.assertFalse(child['groupClosed'])
+        self.assertEqual(child['sentSignals'], [])
+        self.assertEqual(child['signalErrors'][0]['errno'], errno.EPERM)
+        self.assertEqual(child['signalErrors'][0]['errorType'], 'PermissionError')
+        self.assertTrue(run.payload['processErrors'])
+
+    def test_esrch_plus_reaped_leader_allows_closed_group(self):
+        run, child = self.run_stop(ProcessLookupError(errno.ESRCH, 'No such process'))
+        self.assertTrue(child['reaped'])
+        self.assertTrue(child['groupClosed'])
+        self.assertEqual(run.payload['processErrors'], [])
+
+    def test_unspecified_oserror_stays_unknown_without_invented_permission_errno(self):
+        run, child = self.run_stop(OSError('unknown signaling failure'))
+        self.assertFalse(child['groupClosed'])
+        self.assertIsNone(child['signalErrors'][0]['errno'])
+        self.assertEqual(child['signalErrors'][0]['errorType'], 'OSError')
+        self.assertTrue(run.payload['processErrors'])
 
 
 class DiagnosticRecordingChecks(unittest.TestCase):
@@ -94,6 +134,51 @@ class DiagnosticRecordingChecks(unittest.TestCase):
             self.assertEqual(receipt['recorderReturnCode'], 7)
             self.assertTrue(receipt['cohortUnchanged'])
             self.assert_reaped(receipt)
+
+    def test_denied_cleanup_keeps_failed_sidecar_and_blocks_ordinary_acceptance(self):
+        with RecordingFixture(native_passed=True, diagnostic=False) as state:
+            state.config['deny_reaped_signals'] = True
+            result = state.run()
+            self.assertEqual(result.returncode, 1, result.stderr)
+            receipt = state.receipt()
+            self.assertEqual(receipt['phase'], 'failed')
+            self.assertEqual(receipt['recorderReturnCode'], 0)
+            self.assertTrue(receipt['recorderReaped'])
+            self.assertTrue(receipt['processErrors'])
+            self.assertTrue(all(child['reaped'] and not child['groupClosed'] for child in receipt['children']))
+            self.assertTrue(all(error['errno'] == errno.EPERM for child in receipt['children'] for error in child['signalErrors']))
+            self.assertFalse((state.root / 'recordings/batch-identity.json').exists())
+
+    def test_denied_cleanup_preserves_nonzero_recorder_exit_and_diagnostic_sidecar(self):
+        with RecordingFixture() as state:
+            state.config.update(deny_reaped_signals=True, exit_code=7)
+            result = state.run()
+            self.assertEqual(result.returncode, 7, result.stderr)
+            receipt = state.receipt()
+            self.assertEqual(receipt['phase'], 'failed')
+            self.assertEqual(receipt['recorderReturnCode'], 7)
+            self.assertTrue(receipt['processErrors'])
+            self.assertTrue(any(not child['groupClosed'] for child in receipt['children']))
+            self.assertFalse((state.root / 'recordings/batch-identity.json').exists())
+
+    def test_bootstrap_copy_error_stays_prelaunch_failure_with_unknown_postchecks(self):
+        with RecordingFixture() as state:
+            state.config['bootstrap_copy_error'] = True
+            result = state.run()
+            self.assertEqual(result.returncode, 1, result.stderr)
+            receipt = state.receipt()
+            self.assertEqual(receipt['recordingError']['type'], 'PermissionError')
+            self.assertIn('bootstrap copy denied', receipt['recordingError']['error'])
+            self.assertEqual(receipt['phase'], 'failed')
+            self.assertEqual(receipt['children'], [])
+            self.assertIsNone(receipt['recorderReturnCode'])
+            self.assertFalse(receipt['recorderReaped'])
+            self.assertFalse(receipt['postchecksComplete'])
+            self.assertFalse(receipt['cohortUnchanged'])
+            self.assertTrue(all(check['status'] == 'not-run' for check in receipt['postchecks'].values()))
+            self.assertEqual(state.inventories(), [])
+            self.assertFalse((state.root / 'driver-ready.json').exists())
+            self.assertFalse((state.root / 'recordings/batch-identity.json').exists())
 
     def test_postcheck_still_runs_after_failed_recording(self):
         for changed in ('source', 'native'):

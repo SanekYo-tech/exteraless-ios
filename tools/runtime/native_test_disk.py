@@ -1,4 +1,4 @@
-"""Bounded recovery of the one CI Bazel action cache before native test compilation.
+"""Bounded recovery of the one CI Bazel action cache before native compile/recording.
 
 Only ac/cas digest files in the explicitly claimed fixed cache are disposable.
 Output bases, source, retained IPA, results, simulators and toolchains are never
@@ -6,8 +6,9 @@ deletion candidates. Production deletion requires POSIX dirfd/O_NOFOLLOW.
 """
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import errno
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,8 @@ class Limits:
 
 RECORDING_LIMITS = Limits(minimum_free=4 * GIB, target_free=6 * GIB,
                           maximum_cache=GIB, phase_seconds=45)
+RECORDING_SECONDS = 85  # Inside the generation-locked owned-exec's 90s envelope.
+RECEIPT_BYTES = 1024 * 1024
 
 
 class DiskCapacityError(RuntimeError):
@@ -70,16 +73,22 @@ def _directory(path):
     return path
 
 
-def _json_file(path):
+def _json_file(path, *, maximum_bytes=4096):
     before = path.lstat()
-    if _is_link(before) or not stat.S_ISREG(before.st_mode) or before.st_size > 4096:
+    if _is_link(before) or not stat.S_ISREG(before.st_mode) or before.st_size > maximum_bytes:
         raise ValueError('Invalid disk ownership metadata: ' + str(path))
     fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
     try:
         actual = os.fstat(fd)
         if (actual.st_dev, actual.st_ino) != (before.st_dev, before.st_ino):
             raise ValueError('Disk ownership metadata changed while opening')
-        value = json.loads(os.read(fd, 4097))
+        with os.fdopen(os.dup(fd), 'rb') as stream:
+            data = stream.read(maximum_bytes + 1)
+        after = os.fstat(fd)
+        if (len(data) > maximum_bytes or len(data) != before.st_size
+                or (after.st_size, after.st_mtime_ns) != (before.st_size, before.st_mtime_ns)):
+            raise ValueError('Disk ownership metadata changed or exceeded its size bound')
+        value = json.loads(data)
         if not isinstance(value, dict):
             raise ValueError('Disk ownership metadata must be an object')
         return value
@@ -323,7 +332,7 @@ def _publish(path, report):
 
 def recover_capacity(owned_root, repository, generation, cache, bazel_root, bazel_output, run_output,
                      *, quiesce, cache_configuration=None, limits=Limits(), usage=shutil.disk_usage, clock=time.monotonic,
-                     _unlink=_unlink_entry):
+                     _unlink=_unlink_entry, report_path=None, report=None):
     started = clock(); deadline = started + limits.phase_seconds
     owned = checked_workspace(owned_root, repository, generation, bazel_root)
     cache = _directory(_cache_path(cache))
@@ -338,8 +347,9 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
     if cache.is_relative_to(owned) or owned.is_relative_to(cache) or run_output.is_relative_to(cache):
         raise ValueError('Disposable action cache overlaps retained native inputs/outputs')
     paths = {'ownedRoot': owned, 'bazelOutput': bazel_output, 'diskActionCache': cache, 'runOutput': run_output}
-    report_path = run_output / 'disk-capacity.json'
-    report = {'schema': 1, 'status': 'measuring', 'generation': generation, 'cacheKey': CACHE_KEY,
+    report_path = report_path if report_path is not None else run_output / 'disk-capacity.json'
+    report = report if report is not None else {}
+    report.update({'schema': 1, 'status': 'measuring', 'generation': generation, 'cacheKey': CACHE_KEY,
         'minimumFreeBytes': limits.minimum_free, 'targetFreeBytes': limits.target_free,
         'maximumCacheBytes': limits.maximum_cache, 'phaseLimitSeconds': limits.phase_seconds,
         'deletedFiles': 0, 'deletedBytes': 0, 'deletedAllocatedBytes': 0, 'skippedChangedOrLinked': 0,
@@ -349,7 +359,7 @@ def recover_capacity(owned_root, repository, generation, cache, bazel_root, baze
         'pressureRanking': ['allocated-desc', 'logical-size-desc', 'mtime-asc', 'relative-path-asc'],
         'pressureDeletedFiles': 0, 'lruDeletedFiles': 0,
         'nativeCacheFlags': (cache_configuration['nativeCacheFlags'] if cache_configuration else list(NATIVE_CACHE_FLAGS)),
-        'nativeExecutionVerified': False}
+        'nativeExecutionVerified': False})
     if cache_configuration is not None:
         report['readOnlyCache'] = cache_configuration
     try:
@@ -455,67 +465,158 @@ def sys_platform_is_posix():
     return os.name == 'posix'
 
 
-def _iter_output_bases(bazel_root):
-    """Yield validated output-base directories under the owned user root.
+def _post_native_receipts(owned, generation, cache, bazel_root, run_output, native_results):
+    """Consume the existing runner schemas; missing/unfinished evidence is not idle."""
+    from native_test_cache import MODE, cache_flags
+    native_dir = _directory(run_output / 'native-tests')
+    if Path(native_results) != native_dir / 'result.json':
+        raise ValueError('Use the exact native-tests/result.json from --run-output')
+    result, source, capacity, service = (_json_file(native_dir / name, maximum_bytes=RECEIPT_BYTES)
+        for name in ('result.json', 'source-identity.json', 'disk-capacity.json', 'readonly-cache.json'))
+    if not ((result.get('status') == 'passed' and result.get('native_execution_verified') is True)
+            or (result.get('status') == 'failed' and result.get('native_execution_verified') is False
+                and isinstance(result.get('error'), str))):
+        raise ValueError('Recording capacity requires an actual terminal native result')
+    if (source.get('generation') != generation or not isinstance(source.get('plan'), dict)
+            or not isinstance(source.get('acceptanceIdentity'), dict) or not source['acceptanceIdentity']
+            or not isinstance(source['plan'].get('source_fingerprint'), str)):
+        raise ValueError('Native source identity is missing or belongs to another generation')
+    if result['status'] == 'passed' and (result.get('acceptanceIdentity') != source['acceptanceIdentity']
+            or result.get('source_fingerprint') != source['plan'].get('source_fingerprint')):
+        raise ValueError('Terminal native result differs from its source identity')
+    if (capacity.get('schema') != 1 or capacity.get('generation') != generation
+            or capacity.get('cacheKey') != CACHE_KEY
+            or capacity.get('status') not in ('recovered', 'sufficient-no-deletion', 'failed-before-compile')):
+        raise ValueError('Native capacity receipt is unfinished or belongs to another generation/cache')
+    paths = capacity.get('capacity', {})
+    for name, path in (('ownedRoot', owned), ('diskActionCache', cache), ('runOutput', native_dir)):
+        if paths.get(name, {}).get('path') != str(path):
+            raise ValueError('Native capacity receipt path differs: ' + name)
+    base = _directory(Path(paths.get('bazelOutput', {}).get('path', '')))
+    if base == bazel_root or not base.is_relative_to(bazel_root):
+        raise ValueError('Native output base is outside the exact owned Bazel user root')
+    if (service.get('generation') != generation or service.get('mode') != MODE
+            or service.get('cacheKey') != CACHE_KEY or service.get('readOnly') is not True
+            or service.get('cacheEnabledSaltBit') is not True or service.get('status') != 'stopped'
+            or 'error' not in service or service['error'] is not None
+            or service.get('rootDescriptorOpen') is not False
+            or any(type(service.get(key)) is not int or service[key] != 0
+                   for key in ('activeConnections', 'activeWorkers'))):
+        raise ValueError('Native read-only HTTP cache closure is not verified')
+    flags = cache_flags(service.get('endpoint', ''))
+    configuration = capacity.get('readOnlyCache', {})
+    if (service.get('nativeCacheFlags') != flags or configuration.get('nativeCacheFlags') != flags
+            or configuration.get('mode') != MODE or configuration.get('endpoint') != service['endpoint']):
+        raise ValueError('Native read-only cache phase configuration differs')
+    return result, base, service
 
-    Bazel stores one hash-named output base per workspace under its user root;
-    the shared install directory and lock files never contain execroot.
+
+def _existing_bazel(owned, deadline, clock):
+    """Select the already installed arm64 CI pin, without locate_bazel/download/copy."""
+    telegram = owned / 'telegram-ios'
+    pin = _json_file(telegram / 'versions.json').get('bazel', '')
+    if not re.fullmatch(r'9\.2\.0:[0-9a-f]{64}', pin):
+        raise ValueError('Recording cleanup requires the selected Bazel 9.2.0 SHA-256 pin')
+    binary = _directory(telegram / 'build-input') / 'bazel-9.2.0-darwin-arm64'
+    before = binary.lstat()
+    if (_is_link(before) or not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= 256 * 1024 * 1024
+            or not os.access(binary, os.X_OK)):
+        raise ValueError('Selected Bazel must already be a regular executable')
+    fd = os.open(binary, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        actual = os.fstat(stream.fileno())
+        if (actual.st_dev, actual.st_ino) != (before.st_dev, before.st_ino):
+            raise ValueError('Selected Bazel changed while opening')
+        digest = hashlib.sha256()
+        remaining = before.st_size
+        while remaining:
+            if clock() >= deadline:
+                raise TimeoutError('Recording capacity budget exhausted while verifying Bazel')
+            chunk = stream.read(min(1024 * 1024, remaining))
+            if not chunk:
+                raise ValueError('Selected Bazel was truncated')
+            digest.update(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(stream.fileno())
+        if (after.st_size, after.st_mtime_ns) != (before.st_size, before.st_mtime_ns):
+            raise ValueError('Selected Bazel changed while hashing')
+    if digest.hexdigest() != pin.split(':')[1]:
+        raise ValueError('Existing selected Bazel differs from its SHA-256 pin; no replacement attempted')
+    return binary
+
+
+def reclaim_for_recordings(owned_root, repository, generation, cache, bazel_root, run_output, native_results,
+                           *, _run=subprocess.run, usage=shutil.disk_usage, clock=time.monotonic,
+                           _unlink=_unlink_entry):
+    """Run ONLY inside generation-locked owned-exec, after a terminal native step.
+
+    Reclaim claimed AC/CAS leaves, never output bases. A closed HTTP receipt and
+    a successful nonblocking owned-server shutdown are mandatory even on free-pass.
     """
-    root = _directory(bazel_root)
-    for child in root.iterdir():
-        info = child.lstat()
-        if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-            continue
-        if child.name == 'install':
-            continue
-        if (child / 'execroot').is_dir():
-            yield child
-
-
-def reset_output_bases(owned_root, repository, generation, bazel_root):
-    """Remove accumulated Bazel output bases; keep install and non-output content.
-
-    The persistent workspace reuses one bazel-user-root across runs. Rsync
-    staging replaces the source tree but never the sibling output bases, so
-    completed-run outputs accumulate until the volume fills. Only directories
-    that actually contain execroot are removed; the shared install directory
-    and lock files are preserved. The disk action cache lives outside this
-    root and is not touched.
-    """
-    checked_workspace(owned_root, repository, generation, bazel_root)
-    root = _directory(bazel_root)
-    removed = []
-    for child in _iter_output_bases(bazel_root):
-        shutil.rmtree(child)
-        removed.append(child.name)
-    report = {'schema': 1, 'status': 'reset', 'generation': generation,
-              'bazelRoot': str(root), 'removedOutputBases': removed,
-              'retained': ['install', 'lock', 'non-output files'],
-              'note': 'Output bases are recreated on the next Bazel invocation; '
-                      'the disk action cache and staged source are unaffected.'}
-    return report
-
-
-def reclaim_for_recordings(owned_root, repository, generation, cache, bazel_root, run_output):
-    """After native tests, before frame tools: reclaim remaining cache.
-
-    Uses the same verified AC/CAS reclamation with recording-specific limits:
-    a 4 GiB floor for pip/ffmpeg/simulator frames, a 6 GiB target, and a 1 GiB
-    cache cap. The Bazel server is idle by this point (the workflow runs this
-    after the native step and the server's max_idle_secs has elapsed).
-    """
-    bases = list(_iter_output_bases(bazel_root))
-    if len(bases) != 1:
-        raise ValueError('Expected one Bazel output base for capacity measurement; found: '
-                         + str([b.name for b in bases]))
-    def quiesce(timeout):
-        return {'status': 'assumed-idle-post-native-step', 'seconds': 0.0,
-                'note': 'Sequential workflow step; server max_idle_secs=30 already elapsed'}
-    report = recover_capacity(owned_root, repository, generation, cache,
-                              bazel_root, bases[0], run_output,
-                              quiesce=quiesce, limits=RECORDING_LIMITS)
-    report['purpose'] = 'before-frame-tools-and-recordings'
-    return report
+    started = clock(); deadline = started + RECORDING_SECONDS
+    owned = checked_workspace(owned_root, repository, generation, bazel_root)
+    cache, bazel_root, run_output = Path(cache), Path(bazel_root), _directory(run_output)
+    runner_temp = os.environ.get('RUNNER_TEMP')
+    if not ((run_output != owned and run_output.is_relative_to(owned))
+            or (runner_temp and run_output != _directory(runner_temp)
+                and run_output.is_relative_to(Path(runner_temp)))):
+        raise ValueError('Run output must be inside the owned workspace/explicit RUNNER_TEMP')
+    if any(run_output == path or run_output.is_relative_to(path) or path.is_relative_to(run_output)
+           for path in (owned / 'telegram-ios', bazel_root, cache)):
+        raise ValueError('Run output overlaps retained source/Bazel outputs or disposable cache')
+    report_path = _directory(run_output / 'build') / 'frame-capacity.json'
+    report = {'schema': 1, 'generation': generation, 'purpose': 'before-frame-tools-and-recordings',
+              'status': 'checking-native-phase', 'phaseLimitSecondsIncludingBazel': RECORDING_SECONDS,
+              'deletedFiles': 0, 'deletedBytes': 0, 'nativeExecutionVerified': False, 'bazelCommands': []}
+    try:
+        _verify_claim(owned, repository, generation, cache)
+        result, base, service = _post_native_receipts(owned, generation, cache, bazel_root, run_output, native_results)
+        report.update(nativeResult=result, nativeResultsPath=str(native_results), closedReadOnlyCache=service)
+        binary = _existing_bazel(owned, deadline, clock)
+        startup = [str(binary), '--output_user_root=' + str(bazel_root), '--host_jvm_args=-Xmx4096m',
+                   '--max_idle_secs=30', '--noblock_for_lock']
+        def command(arguments):
+            checked_workspace(owned, repository, generation, bazel_root)
+            remaining = min(15, deadline - clock())
+            if remaining <= 0:
+                raise TimeoutError('Recording capacity budget exhausted before Bazel ' + arguments[0])
+            receipt = {'command': startup + arguments, 'timeoutSeconds': remaining, 'returnCode': None}
+            report['bazelCommands'].append(receipt)
+            began = clock()
+            try:
+                completed = _run(receipt['command'], cwd=owned / 'telegram-ios', stdin=subprocess.DEVNULL,
+                                 capture_output=True, text=True, timeout=remaining, check=False)
+                receipt.update(returnCode=completed.returncode, stdout=completed.stdout[-16384:], stderr=completed.stderr[-4096:])
+                if completed.returncode != 0:
+                    raise subprocess.CalledProcessError(completed.returncode, receipt['command'],
+                                                        completed.stdout, completed.stderr)
+                return completed.stdout.strip()
+            except BaseException as error:
+                receipt.update(errorType=type(error).__name__, error=str(error))
+                raise
+            finally:
+                receipt['seconds'] = round(clock() - began, 3)
+        actual = command(['info', 'output_base'])
+        if actual != str(base):
+            raise ValueError('Actual owned Bazel output base differs from native capacity receipt')
+        command(['shutdown'])
+        report['bazelQuiescence'] = dict(report['bazelCommands'][-1], status='owned-server-shutdown-complete')
+        # Do not use a stale/partially published native or service receipt after shutdown.
+        if _post_native_receipts(owned, generation, cache, bazel_root, run_output, native_results) != (result, base, service):
+            raise ValueError('Native phase receipts changed during owned Bazel shutdown')
+        remaining = min(RECORDING_LIMITS.phase_seconds, deadline - clock())
+        if remaining <= 0:
+            raise TimeoutError('Recording capacity budget exhausted before cache recovery')
+        return recover_capacity(owned, repository, generation, cache, bazel_root, base, run_output,
+            quiesce=lambda _timeout: report['bazelQuiescence'], limits=replace(RECORDING_LIMITS, phase_seconds=remaining),
+            cache_configuration=service, usage=usage, clock=clock, _unlink=_unlink,
+            report_path=report_path, report=report)
+    except BaseException as error:
+        report.update(status='failed-before-recordings', errorType=type(error).__name__, error=str(error))
+        raise
+    finally:
+        report['phaseSecondsIncludingBazel'] = round(clock() - started, 3)
+        _publish(report_path, report)
 
 
 def observe_after_compile(owned_root, repository, generation, cache, bazel_root, bazel_output, run_output):
@@ -535,26 +636,27 @@ def observe_after_compile(owned_root, repository, generation, cache, bazel_root,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('claim', 'reset', 'recordings'))
+    parser.add_argument('action', choices=('claim', 'recordings'))
     parser.add_argument('--owned-root', type=Path, required=True)
     parser.add_argument('--repository', required=True)
     parser.add_argument('--generation', required=True)
     parser.add_argument('--cache', type=Path)
     parser.add_argument('--bazel-root', type=Path)
+    parser.add_argument('--run-output', type=Path)
+    parser.add_argument('--native-results', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.action == 'claim':
+        if args.cache is None:
+            parser.error('claim requires --cache')
         report = claim_cache(args.owned_root, args.repository, args.generation, args.cache)
-    elif args.action == 'reset':
-        if args.bazel_root is None:
-            parser.error('reset requires --bazel-root')
-        report = reset_output_bases(args.owned_root, args.repository, args.generation, args.bazel_root)
     else:
-        if args.cache is None or args.bazel_root is None:
-            parser.error('recordings requires --cache and --bazel-root')
-        args.output.parent.mkdir(parents=True, exist_ok=True)
+        if any(value is None for value in (args.cache, args.bazel_root, args.run_output, args.native_results)):
+            parser.error('recordings requires --cache, --bazel-root, --run-output and --native-results')
+        if args.output != args.run_output / 'build/frame-capacity.json':
+            parser.error('recordings requires --output at --run-output/build/frame-capacity.json')
         report = reclaim_for_recordings(args.owned_root, args.repository, args.generation,
-                                        args.cache, args.bazel_root, args.output.parent)
+                                        args.cache, args.bazel_root, args.run_output, args.native_results)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     _write_json(args.output, report)
     print('NATIVE_DISK_' + args.action.upper() + ' ' + json.dumps(report, sort_keys=True), flush=True)

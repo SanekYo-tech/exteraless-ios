@@ -92,16 +92,6 @@ jobs:
           --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
           --source "$GITHUB_WORKSPACE/telegram-ios"
 
-      - name: Reset accumulated Bazel output bases
-        timeout-minutes: 10
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 540 -- python -B tools/runtime/native_test_disk.py reset
-          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --bazel-root "$BAZEL_USER_ROOT"
-          --output "$CLIENT_UI_RUN_DIR/build/output-base-reset.json"
-
       - name: Restore checked Python inputs
         id: python-cache
         continue-on-error: true
@@ -164,7 +154,7 @@ jobs:
 
       - name: Reclaim remaining action cache for recordings
         id: recording_capacity
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 2
         run: >-
           python -u tools/runtime/client_ui_harness_workspace.py exec
@@ -172,11 +162,13 @@ jobs:
           --seconds 90 -- python -B tools/runtime/native_test_disk.py recordings
           --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
+          --run-output "$CLIENT_UI_RUN_DIR"
+          --native-results "$CLIENT_UI_RUN_DIR/native-tests/result.json"
           --output "$CLIENT_UI_RUN_DIR/build/frame-capacity.json"
 
       - name: Install checksum-pinned CI frame tools
         id: frame_tools
-        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
+        if: ${{ !cancelled() && steps.app_build.outcome == 'success' && steps.recording_capacity.outcome == 'success' && (steps.native.outcome == 'success' || (inputs.diagnostic_recordings && steps.native.outcome == 'failure')) }}
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -352,7 +344,6 @@ jobs:
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build.log
             ${{ env.CLIENT_UI_RUN_DIR }}/build/build-failure.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/native-cache-claim.json
-            ${{ env.CLIENT_UI_RUN_DIR }}/build/output-base-reset.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/frame-capacity.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/unsigned-preflight.json
             ${{ env.CLIENT_UI_RUN_DIR }}/build/runtime-preflight.json

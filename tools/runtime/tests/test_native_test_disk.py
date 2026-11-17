@@ -336,5 +336,269 @@ class NativeDiskTests(unittest.TestCase):
         self.assertTrue(all(p.exists() for p in self.retained))
 
 
+class RecordingCapacityTests(unittest.TestCase):
+    ready = NativeDiskTests.ready
+    usage = NativeDiskTests.usage
+
+    def setUp(self):
+        NativeDiskTests.setUp(self)
+        from native_test_cache import MODE, cache_flags
+        self.run_output = self.run.parent
+        (self.run_output / 'build').mkdir()
+        self.report_path = self.run_output / 'build/frame-capacity.json'
+        self.native_result = {'status': 'failed', 'native_execution_verified': False, 'error': 'fixture native compile failed'}
+        self.service = {'generation': self.generation, 'mode': MODE, 'cacheKey': disk.CACHE_KEY,
+            'status': 'stopped', 'readOnly': True, 'cacheEnabledSaltBit': True, 'error': None,
+            'rootDescriptorOpen': False, 'activeConnections': 0, 'activeWorkers': 0,
+            'endpoint': 'http://127.0.0.1:43117', 'nativeCacheFlags': cache_flags('http://127.0.0.1:43117')}
+        self.source = {'generation': self.generation, 'acceptanceIdentity': {'fixture': 'identity'},
+                       'plan': {'source_fingerprint': 'fixture', 'largePlan': 'x' * 10000}}
+        self.capacity = {'schema': 1, 'generation': self.generation, 'status': 'recovered', 'cacheKey': disk.CACHE_KEY,
+            'readOnlyCache': self.service.copy(), 'capacity': {key: {'path': str(path)} for key, path in (
+                ('ownedRoot', self.owned), ('diskActionCache', self.cache), ('bazelOutput', self.bazel_output), ('runOutput', self.run))}}
+        self.write_receipts()
+        self.binary = self.owned / 'telegram-ios/build-input/bazel-9.2.0-darwin-arm64'
+        self.binary.parent.mkdir()
+        self.binary.write_bytes(b'test-only pinned Bazel stand-in; subprocess calls are injected')
+        self.binary.chmod(0o700)
+        (self.owned / 'telegram-ios/versions.json').write_text(json.dumps({
+            'bazel': '9.2.0:' + hashlib.sha256(self.binary.read_bytes()).hexdigest()}))
+        self.command = Mock(side_effect=self.bazel_command)
+        self.free = 7 * disk.GIB
+        self.unlinks = []
+
+    def write_receipts(self):
+        for name, value in (('result.json', self.native_result), ('source-identity.json', self.source),
+                            ('disk-capacity.json', self.capacity), ('readonly-cache.json', self.service)):
+            (self.run / name).write_text(json.dumps(value), encoding='utf-8')
+
+    def bazel_command(self, argv, **kwargs):
+        self.assertEqual(kwargs['cwd'], self.owned / 'telegram-ios')
+        self.assertGreater(kwargs['timeout'], 0)
+        self.assertLessEqual(kwargs['timeout'], 15)
+        self.assertEqual(argv[:5], [str(self.binary), '--output_user_root=' + str(self.bazel_root),
+            '--host_jvm_args=-Xmx4096m', '--max_idle_secs=30', '--noblock_for_lock'])
+        self.assertIn(argv[5:], (['info', 'output_base'], ['shutdown']))
+        return subprocess.CompletedProcess(argv, 0, str(self.bazel_output) + '\n' if argv[5] == 'info' else '', '')
+
+    def reclaim(self, **options):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return disk.reclaim_for_recordings(self.owned, self.repo, self.generation, self.cache, self.bazel_root,
+                self.run_output, options.pop('native_results', self.run / 'result.json'),
+                _run=self.command, usage=self.usage, _unlink=self.recording_unlink, **options)
+
+    def recording_unlink(self, cache, entry):
+        self.assertEqual(self.command.call_args.args[0][-1], 'shutdown')
+        self.unlinks.append(cache.joinpath(*entry['parts']))
+        cache.joinpath(*entry['parts']).unlink()
+        self.free += disk.GIB  # Explicit injected capacity observation, not an estimated count.
+        return True
+
+    def test_closed_post_native_free_pass_uses_actual_info_shutdown_and_own_receipt(self):
+        original = {p: p.read_bytes() for p in self.run.iterdir()}
+        report = self.reclaim()
+        self.assertEqual(report['status'], 'sufficient-no-deletion')
+        self.assertEqual(report['purpose'], 'before-frame-tools-and-recordings')
+        self.assertEqual(report['nativeResult'], self.native_result)
+        self.assertEqual(report['bazelQuiescence']['status'], 'owned-server-shutdown-complete')
+        self.assertEqual(report['bazelQuiescence']['returnCode'], 0)
+        self.assertEqual(self.command.call_count, 2)
+        self.assertEqual(report['minimumFreeBytes'], 4 * disk.GIB)
+        self.assertEqual(report['targetFreeBytes'], 6 * disk.GIB)
+        self.assertEqual(report['maximumCacheBytes'], disk.GIB)
+        self.assertEqual(report['nativeCacheFlags'], self.service['nativeCacheFlags'])
+        self.assertEqual(report['readOnlyCache']['status'], 'stopped')
+        self.assertFalse(report['nativeExecutionVerified'])
+        self.assertEqual(report, json.loads(self.report_path.read_text()))
+        self.assertEqual({p: p.read_bytes() for p in original}, original)
+        self.assertTrue(all(p.exists() for p in self.entries + self.retained))
+        self.assertEqual(self.unlinks, [])
+
+    def test_closed_post_native_pressure_reclaims_only_claimed_leaves(self):
+        self.free = 3 * disk.GIB
+        report = self.reclaim()
+        self.assertEqual(report['status'], 'recovered')
+        self.assertEqual(report['deletedFiles'], 1)
+        self.assertEqual(report['capacity']['runOutput']['free'], 4 * disk.GIB)
+        self.assertEqual(report['keptCacheBytes'], 128)
+        self.assertEqual(report['pressureDeletedFiles'], 1)
+        self.assertEqual(self.unlinks, [self.entries[0]])
+        self.assertTrue(all(p.exists() for p in self.retained))
+
+    def test_passed_large_native_result_is_preserved_but_not_promoted_to_acceptance(self):
+        self.native_result = {'status': 'passed', 'native_execution_verified': True,
+            'acceptanceIdentity': self.source['acceptanceIdentity'], 'source_fingerprint': 'fixture',
+            'classes': [{'passed_methods': ['method-' + str(i) for i in range(434)]}]}
+        self.write_receipts()
+        report = self.reclaim()
+        self.assertEqual(report['nativeResult'], self.native_result)
+        self.assertFalse(report['nativeExecutionVerified'])
+
+    def test_unfinished_or_inconsistent_native_results_refuse_even_with_free_space(self):
+        for value in ({'status': 'not-run', 'native_execution_verified': False},
+                      {'status': 'declarations-checked', 'native_execution_verified': False},
+                      {'status': 'failed', 'native_execution_verified': True, 'error': 'failed'},
+                      {'status': 'passed', 'native_execution_verified': True}):
+            with self.subTest(value=value):
+                self.native_result = value; self.write_receipts()
+                with self.assertRaises(ValueError):
+                    self.reclaim()
+                self.command.assert_not_called()
+                self.assertEqual(self.unlinks, [])
+                self.assertEqual(json.loads(self.report_path.read_text())['status'], 'failed-before-recordings')
+
+    def test_missing_unknown_active_or_failed_http_closure_refuses_before_bazel(self):
+        original = self.service.copy()
+        for change in ({'status': 'serving-after-capacity-gate'}, {'status': 'stopped-with-error', 'error': 'worker failed'},
+                       {'rootDescriptorOpen': True}, {'activeWorkers': 1}, {'activeConnections': 1},
+                       {'activeConnections': False}, {'generation': 'previous-generation'}, {'error': 'unresolved failure'}):
+            with self.subTest(change=change):
+                self.service = dict(original, **change); self.write_receipts()
+                with self.assertRaisesRegex(ValueError, 'closure'):
+                    self.reclaim()
+        (self.run / 'readonly-cache.json').unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.reclaim()
+        self.command.assert_not_called()
+        self.assertEqual(self.unlinks, [])
+
+    def test_receipt_generation_and_paths_are_bound_before_commands(self):
+        for kind in ('source', 'capacity', 'run-path', 'base-path', 'result-path', 'workspace'):
+            with self.subTest(kind=kind):
+                source, capacity = json.loads(json.dumps(self.source)), json.loads(json.dumps(self.capacity))
+                options = {}
+                if kind == 'source': self.source['generation'] = 'stale'
+                if kind == 'capacity': self.capacity['generation'] = 'stale'
+                if kind == 'run-path': self.capacity['capacity']['runOutput']['path'] = str(self.run.parent)
+                if kind == 'base-path': self.capacity['capacity']['bazelOutput']['path'] = str(self.base)
+                if kind == 'result-path': options['native_results'] = self.run.parent / 'result.json'
+                if kind == 'workspace': self.ready('stale')
+                self.write_receipts()
+                with self.assertRaises(ValueError): self.reclaim(**options)
+                self.source, self.capacity = source, capacity
+                self.ready()
+        self.command.assert_not_called()
+        self.assertEqual(self.unlinks, [])
+
+    def test_source_phase_record_and_overlarge_or_missing_evidence_are_not_adopted(self):
+        for value in ({'generation': self.generation, 'ready': True},
+                      dict(self.source, padding='x' * disk.RECEIPT_BYTES)):
+            (self.run / 'source-identity.json').write_text(json.dumps(value))
+            with self.assertRaises(ValueError): self.reclaim()
+        (self.run / 'source-identity.json').unlink()
+        with self.assertRaises(FileNotFoundError): self.reclaim()
+        self.command.assert_not_called()
+        self.assertEqual(self.unlinks, [])
+
+    def test_selected_bazel_missing_or_changed_is_not_downloaded_copied_or_replaced(self):
+        self.binary.write_bytes(b'wrong bytes')
+        with self.assertRaisesRegex(ValueError, 'SHA-256'): self.reclaim()
+        self.assertEqual(self.binary.read_bytes(), b'wrong bytes')
+        self.binary.unlink()
+        with self.assertRaises(FileNotFoundError): self.reclaim()
+        self.assertFalse(self.binary.exists())
+        self.command.assert_not_called()
+        self.assertEqual(self.unlinks, [])
+
+    def test_read_receipts_refuses_symlink_or_junction_parent(self):
+        moved = self.run.with_name('moved-native-tests')
+        self.run.rename(moved)
+        NativeDiskTests.directory_link(self, self.run, moved)
+        with self.assertRaisesRegex(ValueError, 'symlink/reparse'): self.reclaim()
+        self.command.assert_not_called()
+        self.assertEqual(self.unlinks, [])
+
+    def test_reset_cli_is_removed_and_legacy_recordings_without_phase_inputs_refuses(self):
+        for action in ('reset', 'recordings'):
+            result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/runtime/native_test_disk.py'), action,
+                '--owned-root', str(self.owned), '--repository', self.repo, '--generation', self.generation,
+                '--cache', str(self.cache), '--bazel-root', str(self.bazel_root), '--output', str(self.report_path)],
+                capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertFalse(hasattr(disk, 'reset_output_bases'))
+        self.assertTrue(all(p.exists() for p in self.entries + self.retained))
+
+    def test_info_wrong_base_or_failed_shutdown_never_reclaims(self):
+        self.free = 0
+        self.command.side_effect = lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, str(self.base), '')
+        with self.assertRaisesRegex(ValueError, 'Actual owned Bazel output base'): self.reclaim()
+        self.assertEqual(self.command.call_count, 1)
+        self.command.reset_mock()
+        def failed_shutdown(argv, **kwargs):
+            if argv[-1] == 'shutdown':
+                return subprocess.CompletedProcess(argv, 9, '', 'server still busy')
+            return self.bazel_command(argv, **kwargs)
+        self.command.side_effect = failed_shutdown
+        with self.assertRaises(subprocess.CalledProcessError): self.reclaim()
+        report = json.loads(self.report_path.read_text())
+        self.assertEqual(report['status'], 'failed-before-recordings')
+        self.assertEqual(report['bazelCommands'][-1]['returnCode'], 9)
+        self.assertNotIn('bazelQuiescence', report)
+        self.assertEqual(self.unlinks, [])
+        self.assertTrue(all(p.exists() for p in self.entries + self.retained))
+
+    def test_command_timeout_is_unknown_and_preserves_failure_sidecar(self):
+        self.command.side_effect = subprocess.TimeoutExpired('fixture Bazel', 15)
+        with self.assertRaises(subprocess.TimeoutExpired): self.reclaim()
+        report = json.loads(self.report_path.read_text())
+        self.assertIsNone(report['bazelCommands'][0]['returnCode'])
+        self.assertEqual(report['bazelCommands'][0]['errorType'], 'TimeoutExpired')
+        self.assertNotIn('bazelQuiescence', report)
+        self.assertEqual(report['deletedFiles'], 0)
+        self.assertEqual(self.unlinks, [])
+
+    def test_generation_or_terminal_result_change_during_shutdown_refuses_reclaim(self):
+        for change in ('generation', 'terminal-result'):
+            with self.subTest(change=change):
+                def shutdown(argv, **kwargs):
+                    result = self.bazel_command(argv, **kwargs)
+                    if argv[-1] == 'shutdown':
+                        if change == 'generation': self.ready('changed')
+                        else: (self.run / 'result.json').write_text(json.dumps(dict(self.native_result, error='changed')))
+                    return result
+                self.command.side_effect = shutdown
+                with self.assertRaises(ValueError): self.reclaim()
+                self.ready(); self.write_receipts()
+        self.assertEqual(self.unlinks, [])
+
+    def test_recordings_budget_caps_info_shutdown_and_remaining_reclamation(self):
+        now = [0.0]
+        original = disk._existing_bazel
+        def selection(*args):
+            binary = original(*args)
+            now[0] = 70
+            return binary
+        def slow_info(argv, **kwargs):
+            result = self.bazel_command(argv, **kwargs)
+            now[0] += 15
+            return result
+        self.command.side_effect = slow_info
+        with patch.object(disk, '_existing_bazel', side_effect=selection), self.assertRaises(TimeoutError):
+            self.reclaim(clock=lambda: now[0])
+        self.assertEqual(self.command.call_count, 1)
+        report = json.loads(self.report_path.read_text())
+        self.assertEqual(report['phaseSecondsIncludingBazel'], 85)
+        self.assertEqual(report['deletedFiles'], 0)
+        self.assertEqual(disk.Limits().minimum_free, 20 * disk.GIB)
+
+    def test_outer_owned_exec_holds_generation_lock_across_info_shutdown_and_recovery(self):
+        from client_ui_harness_workspace import execute_owned, locked_workspace
+        def locked_command(argv, **kwargs):
+            with self.assertRaises(TimeoutError):
+                with locked_workspace(self.owned, self.repo, wait=0):
+                    self.fail('The outer generation lock must remain held')
+            return self.bazel_command(argv, **kwargs)
+        self.command.side_effect = locked_command
+        def run_under_lock(argv, **kwargs):
+            self.assertEqual(kwargs['timeout'], 90)
+            self.assertEqual(self.reclaim()['status'], 'sufficient-no-deletion')
+        execute_owned(self.owned, self.repo, self.generation, ['fixture-helper'], 90, run=run_under_lock)
+        self.ready('new-generation')
+        execute = Mock()
+        with self.assertRaisesRegex(ValueError, 'generation'):
+            execute_owned(self.owned, self.repo, self.generation, ['fixture-helper'], 90, run=execute)
+        execute.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

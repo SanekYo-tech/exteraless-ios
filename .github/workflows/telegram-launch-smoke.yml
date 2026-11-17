@@ -128,16 +128,6 @@ jobs:
           --telegram-root "$SOURCE_DIR" --output "$LAUNCH_RUN_DIR/build"
           --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
 
-      - name: Bound recording capacity through the claimed action cache only
-        timeout-minutes: 2
-        run: >-
-          python -u tools/runtime/client_ui_harness_workspace.py exec
-          --root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --seconds 90 -- python -B tools/runtime/native_test_disk.py recordings
-          --owned-root "$OWNED_ROOT" --repository "$GITHUB_REPOSITORY" --generation "$WORKSPACE_GENERATION"
-          --cache "$BAZEL_DISK_CACHE" --bazel-root "$BAZEL_USER_ROOT"
-          --output "$LAUNCH_RUN_DIR/build/frame-capacity.json"
-
       - name: Record normal first launch on one newly created simulator
         timeout-minutes: 5
         run: >-
@@ -164,7 +154,6 @@ jobs:
             ${{ env.LAUNCH_RUN_DIR }}/build/runtime-staging.json
             ${{ env.LAUNCH_RUN_DIR }}/build/native-bundle-resources.json
             ${{ env.LAUNCH_RUN_DIR }}/build/cache-claim.json
-            ${{ env.LAUNCH_RUN_DIR }}/build/frame-capacity.json
           if-no-files-found: warn
           retention-days: 7
 

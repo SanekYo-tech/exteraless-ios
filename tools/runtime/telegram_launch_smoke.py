@@ -314,6 +314,13 @@ def launch_main(telegram, output, build_report):
     failure = None
     launch_wall = time.time()
     try:
+        # This path has no native-test phase or HTTP-cache close receipt. Do not
+        # invoke post-native reclamation under an invented terminal result.
+        free = shutil.disk_usage(output).free
+        report['recordingCapacity'] = {'freeBytes': free, 'minimumFreeBytes': 4 * 1024 ** 3,
+                                       'cacheDeletionPerformed': False}
+        if free < 4 * 1024 ** 3:
+            raise ValueError('Normal launch recording requires 4 GiB of free space')
         if (built["status"] != "built" or report["ipaSha256"] != built["ipaSha256"]
                 or report["identity"] != built["identity"]):
             raise ValueError("Main app build/source/IPA identity mismatch")
