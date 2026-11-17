@@ -69,6 +69,19 @@ class ApplicationLaunchFailureTests(unittest.TestCase):
         self.assertLess(attach.index('self.window?.makeKeyAndVisible()'),
                         attach.index('self.presentClientAPIErrorIfNeeded()'))
 
+    def test_presented_api_event_is_consumed_after_guards_without_relatching_resolver(self):
+        present = self.body('private func presentClientAPIErrorIfNeeded()')
+        self.assertLess(present.index('else { return }'), present.index('self.clientAPIErrorMessage = nil'))
+        self.assertLess(present.index('self.clientAPIErrorMessage = nil'), present.index('UIAlertController('))
+        self.assertNotIn('configure(', present)
+        self.assertNotIn('clientSettingsReady.set', present)
+        preparation = self.body('private func prepareClientSettings(')
+        first_ready = preparation[preparation.index('if !self.clientSettingsPrepared'):]
+        self.assertLess(first_ready.index('self.clientAPIErrorMessage = nil'),
+                        first_ready.index('self.clientSettingsPrepared = true'))
+        self.assertLess(first_ready.index('self.clientAPIErrorMessage = nil'),
+                        first_ready.index('self.clientSettingsReady.set(.single(()))'))
+
 
 if __name__ == '__main__':
     unittest.main()

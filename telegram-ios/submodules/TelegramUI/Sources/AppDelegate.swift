@@ -2008,6 +2008,10 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                 self.clientPreparationAlert?.dismiss(animated: false)
                 self.clientPreparationAlert = nil
                 if !self.clientSettingsPrepared {
+                    // Errors from an unsuccessful bootstrap were already owned
+                    // by Settings recovery. A successful retry supersedes that
+                    // UI message before any account factory is allowed to run.
+                    self.clientAPIErrorMessage = nil
                     self.clientSettingsPrepared = true
                     self.clientSettingsReady.set(.single(()))
                 }
@@ -2100,6 +2104,9 @@ private final class ExteralessToolsPendingShortcutCoordinator {
               self.clientSettingsPrepared, !self.clientSettingsPreparing,
               self.clientLaunchFailure == nil, self.clientPreparationFailure == nil,
               self.clientPreparationAlert == nil, self.window?.windowScene != nil else { return }
+        // Consume this presentation event; .ready/attach may run again without
+        // a new error emission. A later error is queued separately by the stream.
+        self.clientAPIErrorMessage = nil
         let alert = UIAlertController(title: "Client API", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .cancel, handler: { [weak self] _ in
             self?.clientAPIErrorAlert = nil

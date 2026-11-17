@@ -87,3 +87,13 @@ Baseline normal-app capture is run44110646483, snapshot5b16fb66 with production
 source79fedf4f. Its watcher belongs to the launch-smoke owner. The baseline does
 not include the new AppDelegate diagnostics, allowing original startup behavior
 to be observed independently.
+
+## API diagnostic event consumption
+
+Follow-up review found that a retained Client API message could reappear after
+OK on a subsequent successful settings reload. The pending UI event is now
+consumed only after all scene/readiness guards pass. Initial bootstrap success
+also discards the superseded bootstrap UI error **before** opening the first
+account gate; errors produced by an account after that gate stay pending for
+scene attachment. Resolver, vault, pin and account-factory semantics are unchanged.
+Eleven startup/smoke tooling checks pass; visible native behavior remains pending.
