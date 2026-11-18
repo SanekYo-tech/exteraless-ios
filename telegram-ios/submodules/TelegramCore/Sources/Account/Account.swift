@@ -928,11 +928,8 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                 recordId: id.int64, testingEnvironment: apiTestingEnvironment,
                                 existingAuthorization: accountState is AuthorizedAccountState)
                         } catch {
-                            // A missing Client API selection must not swallow the first
-                            // login screen. Authorized accounts still fail closed.
-                            if accountState is AuthorizedAccountState {
-                                return .complete()
-                            }
+                            // A missing Client API selection must not swallow the session
+                            // that just signed in, or the first login screen.
                             networkArguments = originalNetworkArguments
                         }
                         let keychain = makeExclusiveKeychain(id: id, postbox: postbox)
@@ -952,29 +949,22 @@ public func accountWithId(accountManager: AccountManager<TelegramAccountManagerT
                                             return .unauthorized(UnauthorizedAccount(accountManager: accountManager, networkArguments: networkArguments, id: id, rootPath: rootPath, basePath: path, testingEnvironment: unauthorizedState.isTestingEnvironment, postbox: postbox, network: network, shouldKeepAutoConnection: shouldKeepAutoConnection))
                                         }
                                 case let authorizedState as AuthorizedAccountState:
-                                    let retentionSnapshot = ExteralessAccountRetentionEnvironment.shared.current
+                                    // Retention may recover after the account is visible. Waiting
+                                    // here leaves the login spinner up after the server has already
+                                    // accepted the session.
                                     let retentionScope = ExteralessAccountRetentionScope(postbox: postbox,
-                                        accountPeerId: authorizedState.peerId, snapshot: retentionSnapshot)
-                                    let recovery = ExteralessAccountRetentionRecovery(accountRecordId: id.int64,
-                                        owner: retentionScope.account, canResetArchive: !supplementary)
-                                    return exteralessAccountRetentionStartup(recovery: recovery, prepare: { readiness, startup -> Signal<Network, NoError> in
-                                        postbox.transaction { transaction -> String? in
-                                            return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
-                                        }
-                                        |> mapToSignal { phoneNumber -> Signal<Network, NoError> in
-                                            guard startup.isCurrent, retentionScope.account.isReadinessCurrent(readiness) else { return .complete() }
-                                            return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, networkEngine: networkEngine, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
-                                        }
-                                    }, construct: { network, readiness, startup -> Account? in
-                                        guard startup.admitTransfer({
-                                            retentionScope.account.isReadinessCurrent(readiness) && retentionScope.transferToWriter()
-                                        }) else { return nil }
-                                        return Account(accountManager: accountManager, id: id, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, postbox: postbox, network: network, networkArguments: networkArguments, peerId: authorizedState.peerId, auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser, retentionScope: retentionScope)
-                                    }, disposed: { retentionScope.cancelBeforeTransfer() })
-                                    |> map { result -> AccountResult in
-                                        switch result {
-                                        case let .recovery(recovery): return .retentionRecovery(recovery)
-                                        case let .ready(account): return .authorized(account)
+                                        accountPeerId: authorizedState.peerId, snapshot: ExteralessAccountRetentionEnvironment.shared.current)
+                                    guard retentionScope.transferToWriter() else {
+                                        retentionScope.cancelBeforeTransfer()
+                                        return .single(.retentionRecovery(ExteralessAccountRetentionRecovery(accountRecordId: id.int64, owner: retentionScope.account, canResetArchive: !supplementary)))
+                                    }
+                                    return postbox.transaction { transaction -> String? in
+                                        return (transaction.getPeer(authorizedState.peerId) as? TelegramUser)?.phone
+                                    }
+                                    |> mapToSignal { phoneNumber -> Signal<AccountResult, NoError> in
+                                        return initializedNetwork(accountId: id, arguments: networkArguments, supplementary: supplementary, datacenterId: Int(authorizedState.masterDatacenterId), keychain: keychain, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, languageCode: localizationSettings?.primaryComponent.languageCode, proxySettings: proxySettings, networkSettings: networkSettings, networkEngine: networkEngine, phoneNumber: phoneNumber, useRequestTimeoutTimers: useRequestTimeoutTimers, appConfiguration: appConfig)
+                                        |> map { network -> AccountResult in
+                                            return .authorized(Account(accountManager: accountManager, id: id, basePath: path, testingEnvironment: authorizedState.isTestingEnvironment, postbox: postbox, network: network, networkArguments: networkArguments, peerId: authorizedState.peerId, auxiliaryMethods: auxiliaryMethods, supplementary: supplementary, isSupportUser: isSupportUser, retentionScope: retentionScope))
                                         }
                                     }
                                 case _:

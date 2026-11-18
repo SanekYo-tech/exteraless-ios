@@ -580,6 +580,7 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
                                         let _ = beginSignUp(account: strongSelf.account, data: data).startStandalone()
                                     }
                                 case .loggedIn:
+                                    controller?.inProgress = false
                                     controller?.animateSuccess()
                             }
                         }, error: { error in

@@ -90,8 +90,10 @@ class ApplicationLaunchFailureTests(unittest.TestCase):
         start = account.index('let originalNetworkArguments = networkArguments')
         gate = account[start:account.index('let keychain = makeExclusiveKeychain', start)]
         self.assertNotIn('ExteralessAccountRetentionEnvironment.shared.current.configuration == nil', gate)
-        self.assertIn('if accountState is AuthorizedAccountState', gate)
+        self.assertNotIn('return .complete()', gate)
         self.assertIn('networkArguments = originalNetworkArguments', gate)
+        self.assertIn('retentionScope.transferToWriter()', account)
+        self.assertNotIn('exteralessAccountRetentionStartup', account[account.index('case let authorizedState as AuthorizedAccountState:'):account.index('case _:', account.index('case let authorizedState as AuthorizedAccountState:'))])
         window = (ROOT / 'telegram-ios/submodules/Display/Source/NativeWindowHostView.swift').read_text(encoding='utf-8')
         self.assertIn('window.backgroundColor = .systemBackground', window)
         self.assertNotIn('backgroundColor = UIColor.black', self.source)

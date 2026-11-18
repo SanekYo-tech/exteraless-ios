@@ -1608,6 +1608,7 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                 contextReadyDisposable.set((isReady
                 |> filter { $0 }
                 |> take(1)
+                |> timeout(2.0, queue: .mainQueue(), alternate: .single(true))
                 |> deliverOnMainQueue).start(next: { _ in
                     guard self.contextValue === context else { return }
                     let readyTime = CFAbsoluteTimeGetCurrent() - startTime
@@ -1713,7 +1714,12 @@ private final class ExteralessToolsPendingShortcutCoordinator {
                 authContextReadyDisposable.set((isReady
                 |> filter { $0 }
                 |> take(1)
+                |> timeout(2.0, queue: .mainQueue(), alternate: .single(true))
                 |> deliverOnMainQueue).start(next: { _ in
+                    progressDisposable.dispose()
+                }, error: { _ in
+                    progressDisposable.dispose()
+                }, completed: {
                     progressDisposable.dispose()
                 }))
             } else {
